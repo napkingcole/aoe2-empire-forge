@@ -1,0 +1,550 @@
+{
+  "civilization_list": [
+    {
+      "internal_name": "Gaia",
+      "tech_tree_name": "GAIA",
+      "data_name": "GAIA",
+      "hud_style": "CivWest",
+      "name_string_id": 10102
+    },
+    {
+      "internal_name": "Britons",
+      "tech_tree_name": "BRITONS",
+      "data_name": "BRITON-CIV",
+      "hud_style": "CivAsia",
+      "name_string_id": 10271,
+      "computer_name_string_table_offset": 4400,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_britons.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/377_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Franks",
+      "tech_tree_name": "FRANKS",
+      "data_name": "FRANKISH-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10272,
+      "computer_name_string_table_offset": 4420,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_franks.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/105_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Goths",
+      "tech_tree_name": "GOTHS",
+      "data_name": "GOTHIC-CIV",
+      "hud_style": "CivWest",
+      "name_string_id": 10273,
+      "computer_name_string_table_offset": 4440,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_goths.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/195_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Teutons",
+      "tech_tree_name": "TEUTONS",
+      "data_name": "TEUTONIC-CIV",
+      "hud_style": "CivAsia",
+      "name_string_id": 10274,
+      "computer_name_string_table_offset": 4460,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_teutons.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/251_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Japanese",
+      "tech_tree_name": "JAPANESE",
+      "data_name": "JAPANESE-CIV",
+      "hud_style": "CivWest",
+      "name_string_id": 10275,
+      "computer_name_string_table_offset": 4480,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_japanese.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/050_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Chinese",
+      "tech_tree_name": "CHINESE",
+      "data_name": "CHINESE-CIV",
+      "hud_style": "CivAsia",
+      "name_string_id": 10276,
+      "computer_name_string_table_offset": 4500,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_chinese.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/190_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Byzantines",
+      "tech_tree_name": "BYZANTINES",
+      "data_name": "BYZANTINE-CIV",
+      "hud_style": "CivWest",
+      "name_string_id": 10277,
+      "computer_name_string_table_offset": 4520,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_byzantines.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/461_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Persians",
+      "tech_tree_name": "PERSIANS",
+      "data_name": "PERSIAN-CIV",
+      "hud_style": "CivWest",
+      "name_string_id": 10278,
+      "computer_name_string_table_offset": 4540,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_persians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/190_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Saracens",
+      "tech_tree_name": "SARACENS",
+      "data_name": "SARACEN-CIV",
+      "hud_style": "CivAsia",
+      "name_string_id": 10279,
+      "computer_name_string_table_offset": 4560,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_saracens.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/436_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Turks",
+      "tech_tree_name": "TURKS",
+      "data_name": "TURKISH-CIV",
+      "hud_style": "CivWest",
+      "name_string_id": 10280,
+      "computer_name_string_table_offset": 4580,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_turks.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/046_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Vikings",
+      "tech_tree_name": "VIKINGS",
+      "data_name": "VIKING-CIV",
+      "hud_style": "CivMedi",
+      "name_string_id": 10281,
+      "computer_name_string_table_offset": 4600,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_vikings.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/110_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Mongols",
+      "tech_tree_name": "MONGOLS",
+      "data_name": "MONGOL-CIV",
+      "hud_style": "CivNomad",
+      "name_string_id": 10282,
+      "computer_name_string_table_offset": 4620,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_mongols.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/043_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Celts",
+      "tech_tree_name": "CELTS",
+      "data_name": "CELTIC-CIV",
+      "hud_style": "CivMeso",
+      "name_string_id": 10283,
+      "computer_name_string_table_offset": 4640,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_celts.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/191_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Spanish",
+      "tech_tree_name": "SPANISH",
+      "data_name": "SPANISH-CIV",
+      "hud_style": "CivAfri",
+      "name_string_id": 10284,
+      "computer_name_string_table_offset": 5800,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_spanish.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/370_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Aztecs",
+      "tech_tree_name": "AZTECS",
+      "data_name": "AZTEC-CIV",
+      "hud_style": "CivAsia",
+      "name_string_id": 10285,
+      "computer_name_string_table_offset": 5820,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_aztecs.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/041_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Mayans",
+      "tech_tree_name": "MAYANS",
+      "data_name": "MAYAN-CIV",
+      "hud_style": "CivAsia",
+      "name_string_id": 10286,
+      "computer_name_string_table_offset": 5840,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_mayans.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/355_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Huns",
+      "tech_tree_name": "HUNS",
+      "data_name": "HUN-CIV",
+      "hud_style": "CivNomad",
+      "name_string_id": 10287,
+      "computer_name_string_table_offset": 5860,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_huns.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/230_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Koreans",
+      "tech_tree_name": "KOREANS",
+      "data_name": "KOREAN-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10288,
+      "computer_name_string_table_offset": 5880,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_koreans.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/035_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Italians",
+      "tech_tree_name": "ITALIANS",
+      "data_name": "ITALIAN-CIV",
+      "hud_style": "CivAsia",
+      "name_string_id": 10289,
+      "computer_name_string_table_offset": 5900,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_italians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/047_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Indians",
+      "tech_tree_name": "INDIANS",
+      "data_name": "INDIAN-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10290,
+      "computer_name_string_table_offset": 5920,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_indians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/036_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Incas",
+      "tech_tree_name": "INCAS",
+      "data_name": "INCAN-CIV",
+      "name_string_id": 10291,
+      "computer_name_string_table_offset": 5940,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_inca.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/252_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Magyars",
+      "tech_tree_name": "MAGYAR",
+      "data_name": "MAGYAR-CIV",
+      "hud_style": "CivSeas",
+      "name_string_id": 10292,
+      "computer_name_string_table_offset": 5960,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_magyars.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/195_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Slavs",
+      "tech_tree_name": "SLAVS",
+      "data_name": "SLAVIC-CIV",
+      "hud_style": "CivAsia",
+      "name_string_id": 10293,
+      "computer_name_string_table_offset": 5980,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_slavs.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/046_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Portuguese",
+      "tech_tree_name": "PORTUGUESE",
+      "data_name": "PORTUGUESE-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10294,
+      "computer_name_string_table_offset": 106000,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_portuguese.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/408_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Ethiopians",
+      "tech_tree_name": "ETHIOPIANS",
+      "data_name": "ETHIOPIAN-CIV",
+      "hud_style": "CivWest",
+      "name_string_id": 10295,
+      "computer_name_string_table_offset": 106020,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_ethiopians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/050_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Malians",
+      "tech_tree_name": "MALIANS",
+      "data_name": "MALIAN-CIV",
+      "hud_style": "CivSlav",
+      "name_string_id": 10296,
+      "computer_name_string_table_offset": 106040,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_malians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/093_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Berbers",
+      "tech_tree_name": "BERBERS",
+      "data_name": "BERBERS-CIV",
+      "hud_style": "CivWest",
+      "name_string_id": 10297,
+      "computer_name_string_table_offset": 106060,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_berber.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/105_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Khmer",
+      "tech_tree_name": "KHMER",
+      "data_name": "KHMER-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10298,
+      "computer_name_string_table_offset": 106080,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_khmer.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/133_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Malay",
+      "tech_tree_name": "MALAY",
+      "data_name": "MALAY-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10299,
+      "computer_name_string_table_offset": 106100,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_malay.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/044_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Burmese",
+      "tech_tree_name": "BURMESE",
+      "data_name": "BURMESE-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10300,
+      "computer_name_string_table_offset": 106120,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_burmese.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/461_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Vietnamese",
+      "tech_tree_name": "VIETNAMESE",
+      "data_name": "VIETNAMESE-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10301,
+      "computer_name_string_table_offset": 106140,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_vietnamese.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/463_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Bulgarians",
+      "tech_tree_name": "BULGARIANS",
+      "data_name": "BULGARIANS-CIV",
+      "hud_style": "CivNomad",
+      "name_string_id": 10302,
+      "computer_name_string_table_offset": 106160,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_bulgarians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/231_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Tatars",
+      "tech_tree_name": "TATARS",
+      "data_name": "TATARS-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10303,
+      "computer_name_string_table_offset": 106180,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_tatars.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/117_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Cumans",
+      "tech_tree_name": "CUMANS",
+      "data_name": "CUMANS-CIV",
+      "hud_style": "CivAfri",
+      "name_string_id": 10304,
+      "computer_name_string_table_offset": 106200,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_cumans.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/253_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Lithuanians",
+      "tech_tree_name": "LITHUANIANS",
+      "data_name": "LITHUANIANS-CIV",
+      "hud_style": "CivAfri",
+      "name_string_id": 10305,
+      "computer_name_string_table_offset": 106220,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_lithuanians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/099_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Burgundians",
+      "tech_tree_name": "BURGUNDIANS",
+      "data_name": "BURGUNDIANS-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10306,
+      "computer_name_string_table_offset": 106240,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_burgundians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/042_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Sicilians",
+      "tech_tree_name": "SICILIANS",
+      "data_name": "SICILIANS-CIV",
+      "hud_style": "CivMeso",
+      "name_string_id": 10307,
+      "computer_name_string_table_offset": 106260,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_sicilians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/043_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Poles",
+      "tech_tree_name": "POLES",
+      "data_name": "POLES-CIV",
+      "hud_style": "CivAfri",
+      "name_string_id": 10308,
+      "computer_name_string_table_offset": 106280,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_poles.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/369_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Bohemians",
+      "tech_tree_name": "BOHEMIANS",
+      "data_name": "BOHEMIANS-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10309,
+      "computer_name_string_table_offset": 106300,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_bohemians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/190_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Dravidians",
+      "tech_tree_name": "DRAVIDIANS",
+      "data_name": "DRAVIDIANS-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10310,
+      "computer_name_string_table_offset": 106320,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_dravidians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/405_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Bengalis",
+      "tech_tree_name": "BENGALIS",
+      "data_name": "BENGALIS-CIV",
+      "hud_style": "CivMeso",
+      "name_string_id": 10311,
+      "computer_name_string_table_offset": 106340,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_bengalis.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/037_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Gurjaras",
+      "tech_tree_name": "GURJARAS",
+      "data_name": "GURJARAS-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10312,
+      "computer_name_string_table_offset": 106360,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_gurjaras.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/232_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Romans",
+      "tech_tree_name": "ROMANS",
+      "data_name": "ROMANS-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10313,
+      "computer_name_string_table_offset": 106380,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_romans.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/356_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Armenians",
+      "tech_tree_name": "ARMENIANS",
+      "data_name": "ARMENIANS-CIV",
+      "hud_style": "CivAfri",
+      "name_string_id": 10314,
+      "computer_name_string_table_offset": 106400,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_armenians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/114_50730.png"
+      ]
+    },
+    {
+      "internal_name": "Georgians",
+      "tech_tree_name": "GEORGIANS",
+      "data_name": "GEORGIANS-CIV",
+      "hud_style": "CivOrie",
+      "name_string_id": 10315,
+      "computer_name_string_table_offset": 106420,
+      "tech_tree_image_path": "/resources/civ_techtree/menu_techtree_georgians.png",
+      "unique_unit_image_paths": [
+        "/resources/uniticons/106_50730.png"
+      ]
+    }
+  ]
+}
