@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Configure — AoE2 Civ Builder{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h2 class="mb-0">Configure Your Mod</h2>
+    <p class="text-secondary small mb-0">
+      Drag to reorder · assign each civ to a vanilla slot · then build.
+    </p>
+  </div>
+  <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-secondary">← Re-upload</a>
+</div>
+
+<form action="{{ url_for('build') }}" method="post" id="build-form">
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div><span class="step-badge">1</span> Mod name</div>
+    </div>
+    <div class="card-body">
+      <input type="text" name="mod_name" class="form-control"
+             placeholder="My Custom Civs" value="Custom Civs">
+      <div class="form-text">Used as the output zip filename.</div>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div>
+        <span class="step-badge">2</span>
+        Civs
+        <span class="badge bg-secondary ms-1">{{ civs | length }}</span>
+      </div>
+      <span class="text-secondary small">☰ drag to reorder</span>
+    </div>
+    <div class="card-body p-2">
+      <ul id="civ-list" class="list-unstyled mb-0">
+        {% for civ in civs %}
+        <li class="civ-card" data-filename="{{ civ.filename }}">
+          <div class="drag-handle" title="Drag to reorder">☰</div>
+          <div class="civ-card-body">
+            <div class="fw-semibold">{{ civ.name }}</div>
+            <div class="text-secondary small">{{ civ.bonus_count }} bonuses · {{ civ.filename }}</div>
+          </div>
+          <div class="civ-card-right">
+            <select name="replace_{{ civ.filename }}"
+                    class="form-select form-select-sm replace-select"
+                    required>
+              <option value="" disabled>— pick vanilla civ —</option>
+              {% for vc in vanilla_civs %}
+              <option value="{{ vc }}"
+                      {{ 'selected' if defaults.get(civ.filename) == vc else '' }}>
+                {{ vc }}
+              </option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-btn"
+                    title="Remove this civ">✕</button>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  {# Hidden inputs for civ order — populated by JS on submit #}
+  <div id="order-inputs"></div>
+
+  <div class="d-grid">
+    <button type="submit" id="build-btn" class="btn btn-success btn-lg">Build Mod ⚙️</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+  Sortable.create(document.getElementById("civ-list"), {
+    animation: 150,
+    handle: ".drag-handle",
+    ghostClass: "sortable-ghost",
+  });
+
+  document.querySelectorAll(".remove-btn").forEach(btn => {
+    btn.addEventListener("click", function () {
+      this.closest(".civ-card").remove();
+    });
+  });
+
+  document.getElementById("build-form").addEventListener("submit", function () {
+    // Populate hidden order inputs first.
+    const container = document.getElementById("order-inputs");
+    container.innerHTML = "";
+    document.querySelectorAll(".civ-card").forEach(card => {
+      const input = document.createElement("input");
+      input.type  = "hidden";
+      input.name  = "civ_order[]";
+      input.value = card.dataset.filename;
+      container.appendChild(input);
+    });
+
+    // Then lock the button so the user knows it's working.
+    const btn = document.getElementById("build-btn");
+    btn.disabled = true;
+    btn.innerHTML =
+      `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Building mod…`;
+  });
+</script>
+{% endblock %}

@@ -10,7 +10,7 @@ from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import Tech, ResearchLocation, ResearchResourceCost
 from genieutils.unitheaders import UnitHeaders
 
-from bonus_catalog import civ_bonus_techs, team_bonus_tech
+from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list
 
 # ── EffectCommand types ───────────────────────────────────────────────────────
 EC_SET       = 0
@@ -82,6 +82,101 @@ _KM_UU_TECHS: dict[int, tuple[int, int]] = {
     87: (1001, 1002), # Liao Dao
 }
 
+# Display names for KM UU indices. Vanilla indices (0-38, 78-87) are creatable
+# units in our pipeline. KM-custom indices (39-77, 88+) are not creatable here,
+# but we still surface their names for the civ-picker description block.
+# Mirrors the full `uniqueNames` table in Fritz's process_mod/modStrings.js.
+_KM_UU_NAMES: dict[int, str] = {
+    0:  "Longbowman",
+    1:  "Throwing Axeman",
+    2:  "Huskarl",
+    3:  "Teutonic Knight",
+    4:  "Samurai",
+    5:  "Chu Ko Nu",
+    6:  "Cataphract",
+    7:  "Mameluke",
+    8:  "War Elephant",
+    9:  "Janissary",
+    10: "Berserk",
+    11: "Mangudai",
+    12: "Woad Raider",
+    13: "Conquistador",
+    14: "Jaguar Warrior",
+    15: "Plumed Archer",
+    16: "Tarkan",
+    17: "War Wagon",
+    18: "Genoese Crossbowman",
+    19: "Ghulam",
+    20: "Kamayuk",
+    21: "Magyar Huszar",
+    22: "Boyar",
+    23: "Organ Gun",
+    24: "Shotel Warrior",
+    25: "Gbeto",
+    26: "Camel Archer",
+    27: "Ballista Elephant",
+    28: "Karambit Warrior",
+    29: "Arambai",
+    30: "Rattan Archer",
+    31: "Konnik",
+    32: "Keshik",
+    33: "Kipchak",
+    34: "Leitis",
+    35: "Coustillier",
+    36: "Serjeant",
+    37: "Obuch",
+    38: "Hussite Wagon",
+    39: "Crusader Knight",
+    40: "Xolotl Warrior",
+    41: "Saboteur",
+    42: "Ninja",
+    43: "Flamethrower",
+    44: "Photonman",
+    45: "Centurion",
+    46: "Apukispay",
+    47: "Monkey Boy",
+    48: "Amazon Warrior",
+    49: "Amazon Archer",
+    50: "Iroquois Warrior",
+    51: "Varangian Guard",
+    52: "Gendarme",
+    53: "Cuahchiqueh",
+    54: "Ritterbruder",
+    55: "Kazak",
+    56: "Szlachcic",
+    57: "Cuirassier",
+    58: "Rajput",
+    59: "Seljuk Archer",
+    60: "Numidian Javelinman",
+    61: "Sosso Guard",
+    62: "Swiss Pikeman",
+    63: "Headhunter",
+    64: "Teulu",
+    65: "Maillotin",
+    66: "Hashashin",
+    67: "Highlander",
+    68: "Stradiot",
+    69: "Ahosi",
+    70: "Landsknecht",
+    71: "Clibinarii",
+    72: "Silahtar",
+    73: "Jaridah",
+    74: "Wolf Warrior",
+    75: "Warrior Monk",
+    76: "Castellan",
+    77: "Wind Warrior",
+    78: "Chakram Thrower",
+    79: "Urumi Swordsman",
+    80: "Ratha",
+    81: "Composite Bowman",
+    82: "Monaspa",
+    83: "White Feather Guard",
+    84: "Fire Archer",
+    85: "Tiger Cavalry",
+    86: "Iron Pagoda",
+    87: "Liao Dao",
+}
+
 # ── String ID allocation ──────────────────────────────────────────────────────
 # Vanilla strings are in the 0–26xxx range; we start well above that.
 # Each custom civ gets a block of STRING_BLOCK_SIZE IDs.
@@ -97,6 +192,17 @@ STR_IMPERIAL_UT = 3
 # AoE2 DLL offset conventions: name+0, creation tooltip = name+1000, help = name+100000
 DLL_CREATION_OFFSET = 1000
 DLL_HELP_OFFSET     = 100000
+
+# UT name strings live in their own high-range block so the engine treats them as
+# brand-new strings rather than overrides of vanilla 7xxx tech names. Overriding
+# vanilla IDs works for the "research complete" toast but NOT for the in-game
+# Castle UT button label — confirmed in-game by comparing our mod (which reused
+# vanilla 7419 for Britons' Yeomen slot and showed "Yeomen" on the button) to
+# NapKingCole's Unhinged Empires mod (which uses 79xxx-range IDs and shows the
+# correct UT name). Avoid 79000–79999 — that's the range NapKingCole uses, so
+# this offset keeps us conflict-free if both mods ever load together.
+STR_UT_BASE       = 75000
+STR_UT_PER_CIV    = 10  # 0=Castle UT, 1=Imperial UT, remaining slots reserved
 
 # Vanilla AoE2 DE (all DLC) ships with 60 civs. Community testing suggests
 # crashes occur around 64+; keep a small buffer.
@@ -131,7 +237,8 @@ def _make_tech(name: str, effect_id: int, civ_index: int,
                button: int = -1, research_time: int = 60,
                icon_id: int = -1,
                lang_name: int = -1, lang_desc: int = -1,
-               lang_help: int = -1) -> Tech:
+               lang_help: int = -1, lang_tech_tree: int = -1,
+               hot_key_id: int = -1) -> Tech:
     """Construct a Tech with sensible defaults."""
     req = (age_req, -1, -1, -1, -1, -1) if age_req != -1 else (-1, -1, -1, -1, -1, -1)
     if location != -1:
@@ -139,7 +246,7 @@ def _make_tech(name: str, effect_id: int, civ_index: int,
             location_id=location,
             research_time=research_time,
             button_id=button,
-            hot_key_id=-1,
+            hot_key_id=hot_key_id,
         )]
     else:
         # Vanilla auto-fire techs always carry exactly one ResearchLocation with
@@ -159,7 +266,7 @@ def _make_tech(name: str, effect_id: int, civ_index: int,
         type=0,
         icon_id=icon_id,
         language_dll_help=lang_help,
-        language_dll_tech_tree=-1,
+        language_dll_tech_tree=lang_tech_tree,
         name=name,
         repeatable=0,
         research_locations=locations,
@@ -172,15 +279,17 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
                        base_unit_count: int) -> None:
     """
     Populate the civ's tech_tree effect (indexed by tech_tree_id, which is an
-    EFFECT index) with type=102 'disable tech' commands for all unit lines and
-    upgrade techs NOT present in the civ's tree specification.
+    EFFECT index) with two kinds of commands:
 
-    AoE2 DE mechanism:
-      - tech_tree_id points to an effect in dat.effects (NOT dat.techs).
-      - That effect contains type=102 commands whose d value is a tech ID to
-        disable.  Disabling a "make available" tech prevents the units it
-        unlocks from appearing in training buildings at runtime.
-      - Upgrade techs (EC_UPGRADE) are also disabled this way.
+    1. EC type=8 'unlock tech' — for make-avail techs that the game locks by
+       default and each civ must explicitly enable (e.g. Battle Elephant tech
+       630, Elephant Archer tech 480).  These techs are NOT in any civ's
+       type=102 disable list; instead every civ that wants them adds a type=8
+       command to its TT effect.  Without this, the units never appear in
+       training buildings even if the unit is "enabled" by a global tech.
+
+    2. EC type=102 'disable tech' — for all unit-line / upgrade techs NOT in
+       the civ's tree specification.
 
     tree[0] = unit IDs the civ can train.
     tree[1] = building IDs the civ can build.
@@ -194,6 +303,32 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     if not tree_units and not tree_buildings and not tree_techs:
         return
 
+    # ── Step 0: Build EC type=8 'unlock' map from all civ TT effects.
+    # ec8_info[tech_id] = (a, b, c, d) template for the type=8 command.
+    # ec8_unit_techs[unit_id] = [tech_ids] that need type=8 to unlock and
+    # whose effect enables or upgrades to unit_id.
+    ec8_info: dict[int, tuple[int, int, int, float]] = {}
+    for civ in dat.civs:
+        tti = civ.tech_tree_id
+        if 0 <= tti < len(dat.effects):
+            for c in dat.effects[tti].effect_commands:
+                if c.type == 8:
+                    tid = int(c.a)
+                    if tid not in ec8_info:
+                        ec8_info[tid] = (int(c.a), int(c.b), int(c.c), c.d)
+    ec8_unit_techs: dict[int, list[int]] = {}
+    for tech_id, _ in ec8_info.items():
+        if tech_id >= len(dat.techs):
+            continue
+        eid = dat.techs[tech_id].effect_id
+        if eid < 0 or eid >= len(dat.effects):
+            continue
+        for c in dat.effects[eid].effect_commands:
+            if c.type == 2 and int(c.b) == 1:   # EC_ENABLE
+                ec8_unit_techs.setdefault(int(c.a), []).append(tech_id)
+            elif c.type == 3:                     # EC_UPGRADE → to unit b
+                ec8_unit_techs.setdefault(int(c.b), []).append(tech_id)
+
     # ── Step 1: Collect all potentially-disableable tech IDs from vanilla civs.
     all_disableable: set[int] = set()
     for civ in dat.civs:
@@ -202,7 +337,6 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
             for c in dat.effects[tti].effect_commands:
                 if c.type == 102:
                     all_disableable.add(int(c.d))
-
 
     # ── Step 2: Build reverse maps from effect inspection of each disableable tech.
     # enable_map:  unit/building_id → [tech_ids that make it available via EC_ENABLE b=1]
@@ -227,15 +361,35 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         keep_enabled.update(enable_map.get(uid, []))   # make-avail techs
         keep_enabled.update(upgrade_map.get(uid, []))  # upgrade techs producing this unit
 
-    # ── Step 4: Write type=102 disable commands into the civ's TT effect.
+    # ── Step 3b: Collect EC type=8 unlocks needed for tree units.
+    ec8_to_add: set[int] = set()
+    for uid in tree_units | tree_buildings:
+        for tech_id in ec8_unit_techs.get(uid, []):
+            ec8_to_add.add(tech_id)
+
+    # ── Step 3c: Mutual exclusions.
+    # Armored Elephants replace the ram-line for Indian civs — disable rams when present.
+    _ARMORED_ELEPHANT_MAKE_AVAIL = 837
+    _RAM_TECHS = {162, 712}  # Bat Ram (make avail), Upgrade Rams
+    if _ARMORED_ELEPHANT_MAKE_AVAIL in keep_enabled:
+        keep_enabled -= _RAM_TECHS
+
+    # ── Step 4: Write type=8 unlock + type=102 disable commands into TT effect.
     to_disable = all_disableable - keep_enabled
     tt_eff_id  = dat.civs[civ_index].tech_tree_id
-    dat.effects[tt_eff_id].effect_commands = [
+    ec8_cmds = [
+        EffectCommand(type=8, a=ec8_info[tid][0], b=ec8_info[tid][1],
+                      c=ec8_info[tid][2], d=ec8_info[tid][3])
+        for tid in sorted(ec8_to_add)
+    ]
+    dat.effects[tt_eff_id].effect_commands = ec8_cmds + [
         EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(tid))
         for tid in sorted(to_disable)
     ]
+    n_unlocked = len(ec8_cmds)
     print(f"       Tech tree: {len(to_disable)} techs disabled, "
-          f"{len(keep_enabled & all_disableable)} unit-line techs kept")
+          f"{len(keep_enabled & all_disableable)} unit-line techs kept"
+          + (f", {n_unlocked} type=8 unlocks" if n_unlocked else ""))
 
 
 # ── Bonus application ────────────────────────────────────────────────────────
@@ -309,6 +463,55 @@ def _multiply_effect(dat: DatFile, effect_id: int, multiplier: int) -> None:
             dat.effects[effect_id].effect_commands.append(deepcopy(ec))
 
 
+def _apply_ec_list_entry(dat: DatFile, civ_index: int, ec_entry: dict,
+                         multiplier: int = 1) -> None:
+    """Create a civ-owned auto-fire tech+effect from one ec_list catalog entry.
+
+    ec_entry format:
+      {"requires": [tech_id, ...], "ecs": [{"type": T, "A": A, "B": B, "C": C, "D": D}, ...]}
+    """
+    requires: list[int] = ec_entry.get("requires", [])
+    ecs_dicts: list[dict] = ec_entry.get("ecs", [])
+    if not ecs_dicts:
+        return
+
+    cmds = [EffectCommand(type=d["type"], a=d["A"], b=d["B"], c=d["C"], d=d["D"])
+            for d in ecs_dicts]
+    # Multiplier: repeat all commands multiplier times total
+    if multiplier > 1:
+        orig = list(cmds)
+        for _ in range(multiplier - 1):
+            cmds.extend(deepcopy(cmd) for cmd in orig)
+
+    eff = Effect(name="C-Bonus EC-list", effect_commands=cmds)
+    dat.effects.append(eff)
+    eff_id = len(dat.effects) - 1
+
+    # Build 6-slot required_techs tuple
+    n = min(len(requires), 6)
+    req_tuple = tuple(requires[:n]) + (-1,) * (6 - n)
+
+    tech = Tech(
+        required_techs=req_tuple,
+        resource_costs=_zero_costs(),
+        required_tech_count=n,
+        civ=civ_index,
+        full_tech_mode=0,
+        language_dll_name=-1,
+        language_dll_description=-1,
+        effect_id=eff_id,
+        type=0,
+        icon_id=-1,
+        language_dll_help=-1,
+        language_dll_tech_tree=-1,
+        name="C-Bonus EC-list",
+        repeatable=0,
+        research_locations=[ResearchLocation(location_id=-1, research_time=0,
+                                             button_id=0, hot_key_id=-1)],
+    )
+    dat.techs.append(tech)
+
+
 # ── createCivBonus implementation ────────────────────────────────────────────
 # These bonus IDs cannot be expressed as vanilla tech deepcopies; they need
 # custom EffectCommand lists built from scratch.
@@ -327,6 +530,21 @@ _ELEPHANT_UNITS = [239, 558, 873, 875, 1120, 1122, 1132, 1134, 1744, 1746, 1180]
 
 # Farmer unit IDs and their work-rate multipliers (from KM source)
 _FARMER_WORK_RATES = [(214, 1.23), (259, 1.23), (50, 1.15), (1187, 1.15)]
+
+# Foot archer unit IDs (unitClasses["footArcher"] from KM civbuilder.cpp line 130)
+_FOOT_ARCHER_UNITS = [
+    4, 8, 24, 73, 185, 492, 530, 559,      # Archer line + Longbow/ChuKoNu/Crossbow/Slinger/Arbalest variants
+    763, 765, 866, 868, 1129, 1131,         # Plumed, Genoese, Rattan (base + elite)
+    1800, 1802, 1968, 1970,                 # Composite Bowman, Fire Archer (base + elite)
+]
+_SKIRMISHER_UNITS = [6, 7, 1155]   # Skirmisher, Elite Skirmisher, Imperial Skirmisher
+
+# Feudal Knight unit ID (reuses Ekeshik slot 1262 per KM convention)
+_FEUDAL_KNIGHT  = 1262
+_KNIGHT         = 38
+
+# Farm unit IDs and their variants (for 2×2 farm resizing)
+_FARM_UNITS = [50, 357, 1187, 1188, 1193, 1194, 1195]
 
 
 def _free_tech_cmds(tech_ids: list[int]) -> list[EffectCommand]:
@@ -366,6 +584,17 @@ def _stable_tech_ids(dat: DatFile) -> list[int]:
     for i, t in enumerate(dat.techs):
         locs = getattr(t, 'research_locations', [])
         if locs and locs[0].location_id == BUILDING_STABLE:
+            out.append(i)
+    return out
+
+
+def _siege_workshop_tech_ids(dat: DatFile) -> list[int]:
+    """Return IDs of all techs whose primary research location is the Siege Workshop."""
+    BUILDING_SIEGE_WORKSHOP = 49
+    out = []
+    for i, t in enumerate(dat.techs):
+        locs = getattr(t, 'research_locations', [])
+        if locs and locs[0].location_id == BUILDING_SIEGE_WORKSHOP:
             out.append(i)
     return out
 
@@ -450,11 +679,157 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                                 name="C-Bonus, blacksmith no gold")
         return True
 
+    if bonus_id == 137:          # -50% food cost on Blacksmith + Siege Workshop techs
+        factor = 0.5 ** mult
+        tids = _blacksmith_tech_ids(dat) + _siege_workshop_tech_ids(dat)
+        cmds = [
+            EffectCommand(type=EC_TECH_COST, a=tid, b=0, c=0, d=rc.amount * factor)
+            for tid in tids
+            for rc in dat.techs[tid].resource_costs
+            if rc.flag == 1 and rc.type == 0
+        ]
+        if cmds:
+            _add_auto_fire_tech(dat, civ_index, cmds,
+                                name="C-Bonus, -50% food blacksmith+siege techs")
+        return True
+
+    if bonus_id == 138:          # -50% cost on all Stable techs
+        factor = 0.5 ** mult
+        cmds = [
+            EffectCommand(type=EC_TECH_COST, a=tid, b=rc.type, c=0, d=rc.amount * factor)
+            for tid in _stable_tech_ids(dat)
+            for rc in dat.techs[tid].resource_costs
+            if rc.flag == 1
+        ]
+        if cmds:
+            _add_auto_fire_tech(dat, civ_index, cmds,
+                                name="C-Bonus, -50% cost stable techs")
+        return True
+
+    # ── Cavalier in Castle Age ────────────────────────────────────────────────
+    if bonus_id == 103:          # Cavalier upgrade available in Castle Age
+        _TECH_CAVALIER = 209
+        _KNIGHT_MAKE_AVAIL = 166   # "Knight (make avail)" — fires at Castle Age
+        src = dat.techs[_TECH_CAVALIER]
+        new_tech = deepcopy(src)
+        new_tech.civ = civ_index
+        # Require Castle Age (102) + Knight make-avail (166), count=2.
+        # Since 166 fires automatically when Castle Age is reached, Cavalier
+        # becomes researchable the moment the civ enters Castle Age.
+        new_tech.required_techs = (102, _KNIGHT_MAKE_AVAIL, -1, -1, -1, -1)
+        new_tech.required_tech_count = 2
+        eid = src.effect_id
+        if 0 <= eid < len(dat.effects):
+            new_eff = deepcopy(dat.effects[eid])
+            dat.effects.append(new_eff)
+            new_tech.effect_id = len(dat.effects) - 1
+        dat.techs.append(new_tech)
+        # Disable the global Cavalier tech (209) for this civ so it doesn't
+        # reappear as a duplicate button in Imperial Age.
+        tt_eff_id = dat.civs[civ_index].tech_tree_id
+        dat.effects[tt_eff_id].effect_commands.append(
+            EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(_TECH_CAVALIER))
+        )
+        return True
+
+    # ── Archer cost reductions ────────────────────────────────────────────────
+    if bonus_id == 133:          # Foot archers and skirmishers cost -10/20/30%
+        # Three compounding multipliers applied per age advance.
+        # 0.9 × 0.889 × 0.875 ≈ 0.7  (i.e. -30% total in Imperial Age)
+        all_units = _FOOT_ARCHER_UNITS + _SKIRMISHER_UNITS
+        for age_req, factor in [(101, 0.9 ** mult), (102, 0.889 ** mult), (103, 0.875 ** mult)]:
+            cmds = [EffectCommand(type=EC_MULTIPLY, a=uid, b=-1, c=100, d=factor)
+                    for uid in all_units]
+            _add_auto_fire_tech(dat, civ_index, cmds, age_req=age_req,
+                                name=f"C-Bonus, foot archers+skirms cost -{10 + (age_req - 101) * 10}%")
+        return True
+
+    # ── 2×2 Farms ─────────────────────────────────────────────────────────────
+    if bonus_id == 330:          # Farms are 2×2 instead of 3×3 tile footprint
+        # Directly resize this civ's farm units from clearance 1.5 (3×3 tiles)
+        # to 1.0 (2×2 tiles). Affects collision, clearance, and outline sizes.
+        for uid in _FARM_UNITS:
+            if uid >= len(dat.civs[civ_index].units):
+                continue
+            u = dat.civs[civ_index].units[uid]
+            if u is None:
+                continue
+            if abs(u.collision_size_x - 1.5) < 0.01:
+                u.collision_size_x = 1.0
+            if abs(u.collision_size_y - 1.5) < 0.01:
+                u.collision_size_y = 1.0
+            cx, cy = u.clearance_size
+            u.clearance_size = (
+                1.0 if abs(cx - 1.5) < 0.01 else cx,
+                1.0 if abs(cy - 1.5) < 0.01 else cy,
+            )
+            if abs(u.outline_size_x - 1.5) < 0.01:
+                u.outline_size_x = 1.0
+            if abs(u.outline_size_y - 1.5) < 0.01:
+                u.outline_size_y = 1.0
+        return True
+
+    # ── Feudal Age Knights ────────────────────────────────────────────────────
+    if bonus_id == 332:          # Knights available in Feudal Age (30HP version → upgrades to Knight)
+        # Step 0: copy Knight (38) data into unit slot 1262 for this civ.
+        # Slot 1262 is vanilla "Ekeshik" which has train_location.unit_id=-1 so it
+        # can't be trained from anywhere. Copying Knight data gives it the Stable
+        # train location (btn 2) and correct graphics, then we reduce the stats.
+        knight = dat.civs[civ_index].units[_KNIGHT]
+        if knight is not None and _FEUDAL_KNIGHT < len(dat.civs[civ_index].units):
+            feudal_knight = deepcopy(knight)
+            feudal_knight.id        = _FEUDAL_KNIGHT
+            feudal_knight.enabled   = 0    # starts hidden; EC_ENABLE fires at Feudal Age
+            feudal_knight.hit_points = 30
+            feudal_knight.speed      = 1.25
+            feudal_knight.line_of_sight = 3.0
+            if feudal_knight.bird is not None:
+                feudal_knight.bird.search_radius = 3.0
+            if feudal_knight.creatable and feudal_knight.creatable.train_locations:
+                feudal_knight.creatable.train_locations[0].train_time = 45
+            dat.civs[civ_index].units[_FEUDAL_KNIGHT] = feudal_knight
+
+        # Tech 1: make Feudal Knight available at Feudal Age
+        avail_cmds = [EffectCommand(type=EC_ENABLE, a=_FEUDAL_KNIGHT, b=1, c=-1, d=0.0)]
+        avail_eff = Effect(name="Feudal Knight (make avail)", effect_commands=avail_cmds)
+        dat.effects.append(avail_eff)
+        avail_tech = _make_tech("Feudal Knight (make avail)",
+                                effect_id=len(dat.effects) - 1,
+                                civ_index=civ_index,
+                                age_req=101)  # fires at Feudal Age
+        dat.techs.append(avail_tech)
+        avail_tech_id = len(dat.techs) - 1
+
+        # Tech 2: upgrade Feudal Knights → Knights when Castle Age is reached
+        upgrade_cmds = [EffectCommand(type=EC_UPGRADE, a=_FEUDAL_KNIGHT, b=_KNIGHT, c=-1, d=0.0)]
+        upgrade_eff = Effect(name="Feudal Knight → Knight (Castle Age)", effect_commands=upgrade_cmds)
+        dat.effects.append(upgrade_eff)
+        upgrade_tech = Tech(
+            name="Feudal Knight → Knight (Castle Age)",
+            required_techs=(102, avail_tech_id, -1, -1, -1, -1),
+            required_tech_count=2,
+            resource_costs=_zero_costs(),
+            civ=civ_index,
+            full_tech_mode=0,
+            language_dll_name=-1,
+            language_dll_description=-1,
+            effect_id=len(dat.effects) - 1,
+            type=0,
+            icon_id=-1,
+            language_dll_help=-1,
+            language_dll_tech_tree=-1,
+            repeatable=0,
+            research_locations=[ResearchLocation(location_id=-1, research_time=0,
+                                                 button_id=0, hot_key_id=-1)],
+        )
+        dat.techs.append(upgrade_tech)
+        return True
+
     return False  # not handled
 
 
 def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
-                   tb_eff_id: int) -> None:
+                   tb_eff_id: int) -> dict:
     """
     Apply civ bonuses and team bonus from civ_def to the DAT.
 
@@ -484,31 +859,60 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         multiplier = int(entry[1]) if len(entry) > 1 else 1
 
         tech_ids = civ_bonus_techs(bonus_id)
-        if not tech_ids:
-            if _create_bonus_handler(dat, bonus_id, civ_index, multiplier):
+        if tech_ids:
+            for tech_id in tech_ids:
+                new_tid = _allocate_tech(dat, tech_id, civ_index)
+                if new_tid < 0:
+                    continue
+
+                is_global = (new_tid == tech_id)
+                eff_id = dat.techs[new_tid].effect_id
+
+                if is_global:
+                    # Global tech (civ=-1): never modify the shared effect.
+                    # Build a stripped, multiplied copy as a new civ-specific tech.
+                    if 0 <= eff_id < len(dat.effects):
+                        src_cmds = [
+                            ec for ec in dat.effects[eff_id].effect_commands
+                            if ec.type not in (EC_ENABLE, EC_UPGRADE)
+                        ]
+                        # For multiplier=1 the global already fires for our civ;
+                        # only add (multiplier-1) extra repetitions.
+                        extra = []
+                        for _ in range(max(0, multiplier - 1)):
+                            extra.extend(deepcopy(ec) for ec in src_cmds)
+                        if extra:
+                            new_eff = Effect(name=f"C-Bonus extra {bonus_id}",
+                                             effect_commands=extra)
+                            dat.effects.append(new_eff)
+                            extra_tech = deepcopy(dat.techs[tech_id])
+                            extra_tech.civ = civ_index
+                            extra_tech.effect_id = len(dat.effects) - 1
+                            dat.techs.append(extra_tech)
+                else:
+                    # Civ-specific copy: keep all commands (EC_ENABLE and
+                    # EC_UPGRADE must stay so upgrades/enables actually fire).
+                    _multiply_effect(dat, eff_id, multiplier)
                 applied += 1
-            else:
-                skipped.append(bonus_id)
             continue
 
-        for tech_id in tech_ids:
-            new_tid = _allocate_tech(dat, tech_id, civ_index)
-            if new_tid < 0:
-                continue
-            # Strip EC_ENABLE and EC_UPGRADE: those enable specific foreign units/
-            # buildings (e.g. Caravanserai via bonus 55, Flemish Militia via 108).
-            eff_id = dat.techs[new_tid].effect_id
-            if 0 <= eff_id < len(dat.effects):
-                dat.effects[eff_id].effect_commands = [
-                    ec for ec in dat.effects[eff_id].effect_commands
-                    if ec.type not in (EC_ENABLE, EC_UPGRADE)
-                ]
-            _multiply_effect(dat, eff_id, multiplier)
+        ec_entries = civ_bonus_ec_list(bonus_id)
+        if ec_entries:
+            for ec_entry in ec_entries:
+                _apply_ec_list_entry(dat, civ_index, ec_entry, multiplier)
+            applied += len(ec_entries)
+            continue
+
+        if _create_bonus_handler(dat, bonus_id, civ_index, multiplier):
             applied += 1
+        else:
+            skipped.append(bonus_id)
 
     print(f"       Bonuses: {applied} techs applied, "
           f"{len(skipped)} bonus IDs skipped (not in catalog): {skipped[:8]}"
           + ("…" if len(skipped) > 8 else ""))
+
+    bonus_result = {"applied": applied, "skipped": skipped}
 
     # ── Team bonus (index 4) ──────────────────────────────────────────────────
     team_entries = raw[4] if len(raw) > 4 and isinstance(raw[4], list) else []
@@ -519,24 +923,13 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         tb_id      = int(entry[0])
         multiplier = int(entry[1]) if len(entry) > 1 else 1
 
-        src_tech_id = team_bonus_tech(tb_id)
-        if src_tech_id is None:
+        # catalog value is an effect index (not a tech index) — matches KM's C++:
+        #   tbEffect.EffectCommands += df->Effects[teamBonuses[teamBonusIndex]]
+        eff_idx = team_bonus_tech(tb_id)
+        if eff_idx is None or not (0 <= eff_idx < len(dat.effects)):
             continue
 
-        # Copy the effect commands from the vanilla tech into the team bonus effect.
-        # Filter EC_ENABLE/EC_UPGRADE only when the source tech is civ-specific (civ≥0):
-        # those techs bundle civ-UU enables (e.g. tech 399 civ=11 enables Berserk) that
-        # must not leak to other civs.  Global techs (civ=-1) are safe to copy whole —
-        # their EC_ENABLE IS the intended bonus (e.g. tech 601 civ=-1 enables Genitour).
-        src_eid = dat.techs[src_tech_id].effect_id
-        if src_eid < 0 or src_eid >= len(dat.effects):
-            continue
-        src_civ = dat.techs[src_tech_id].civ
-        if src_civ >= 0:
-            safe_cmds = [ec for ec in dat.effects[src_eid].effect_commands
-                         if ec.type not in (EC_ENABLE, EC_UPGRADE)]
-        else:
-            safe_cmds = list(dat.effects[src_eid].effect_commands)
+        safe_cmds = list(dat.effects[eff_idx].effect_commands)
         if not safe_cmds:
             continue
         for ec in safe_cmds:
@@ -546,16 +939,30 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
 
     print(f"       Team bonus: {team_applied}/{len(team_entries)} entries applied")
 
+    bonus_result["team_applied"] = team_applied
+    bonus_result["team_total"]   = len(team_entries)
+    return bonus_result
 
-def _apply_km_uu(dat: DatFile, civ_index: int, km_uu_index: int) -> None:
-    """Allocate make-avail + elite upgrade techs for a vanilla KM UU index."""
+
+def _apply_km_uu(dat: DatFile, civ_index: int, km_uu_index: int) -> tuple[int, int]:
+    """Allocate make-avail + elite upgrade techs for a vanilla KM UU index.
+
+    Returns (new_make_avail_tech_id, new_elite_tech_id) — the DAT indices of
+    the freshly allocated civ-specific copies. Both are -1 if the index is
+    unknown. Pass these IDs to _patch_per_civ_techtree via civ_result so the
+    CivTechTrees JSON Trigger Tech ID field can be updated correctly.
+    """
     pair = _KM_UU_TECHS.get(km_uu_index)
     if pair is None:
-        return
+        return -1, -1
     make_avail_id, elite_id = pair
-    _allocate_tech(dat, make_avail_id, civ_index)
-    _allocate_tech(dat, elite_id, civ_index)
-    print(f"       KM UU index {km_uu_index}: allocated make-avail={make_avail_id}, elite={elite_id}")
+    # Share _seen so the elite tech's required-tech pointer to make_avail
+    # reuses the already-allocated copy instead of creating a duplicate.
+    seen: dict[int, int] = {}
+    new_ma = _allocate_tech(dat, make_avail_id, civ_index, seen)
+    new_el = _allocate_tech(dat, elite_id,      civ_index, seen)
+    print(f"       KM UU index {km_uu_index}: make-avail {make_avail_id}→{new_ma}, elite {elite_id}→{new_el}")
+    return new_ma, new_el
 
 
 def _assign_language(dat: DatFile, civ_index: int, language_value: int) -> None:
@@ -577,7 +984,7 @@ def _assign_language(dat: DatFile, civ_index: int, language_value: int) -> None:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> int:
+def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> dict:
     """
     Apply a custom civ to dat.  Returns the civ's index.
 
@@ -598,8 +1005,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> in
             f"already at {civ_index}. Use --replace to overwrite a vanilla civ slot."
         )
 
-    alias = civ_def.get("alias", f"Custom Civ {civ_index}")
-    mode  = "Overwriting" if overwrite else "Appending"
+    alias    = civ_def.get("alias", f"Custom Civ {civ_index}")
+    warnings = []
+    mode     = "Overwriting" if overwrite else "Appending"
     print(f"  [{civ_index}] {mode} civ: {alias!r}")
 
     # 0. When overwriting, neutralize existing civ-specific techs for this slot
@@ -618,6 +1026,27 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> in
     # For nullification: treat a recognised vanilla KM UU the same as a custom UU —
     # don't preserve the original civ's UU techs (the desired UU will be allocated later).
     suppress_preserve = has_custom_uu or km_uu_is_vanilla
+
+    # Capture the original civ's UT tech IDs BEFORE nullification so the
+    # CivTechTrees JSON patcher can find the vanilla Yeomen / Warwolf nodes
+    # by Node ID and retarget them to our new tech IDs. The sids captured
+    # here are no longer used for naming — UT name strings now live in a
+    # fresh high-range (STR_UT_BASE), see _append_unique_tech_stubs.
+    orig_castle_ut_sid: int | None = None
+    orig_imp_ut_sid:    int | None = None
+    orig_castle_ut_tech_id: int | None = None
+    orig_imp_ut_tech_id:    int | None = None
+    if overwrite:
+        for ti, tech in enumerate(dat.techs):
+            if tech.civ == civ_index:
+                for loc in (tech.research_locations or []):
+                    if loc.location_id == BUILDING_CASTLE:
+                        if loc.button_id == 7 and orig_castle_ut_sid is None:
+                            orig_castle_ut_sid = tech.language_dll_name
+                            orig_castle_ut_tech_id = ti
+                        elif loc.button_id == 8 and orig_imp_ut_sid is None:
+                            orig_imp_ut_sid = tech.language_dll_name
+                            orig_imp_ut_tech_id = ti
 
     if overwrite:
         # When no UU is being set, preserve the vanilla UU make-avail techs,
@@ -666,12 +1095,22 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> in
             if i in preserve_indices:
                 continue
             t.civ = 99  # civ 99 never exists → tech silently never fires
+            # Also remove from all research location panels to prevent ghost buttons.
+            for loc in (t.research_locations or []):
+                loc.location_id = -1
             n_nullified += 1
         print(f"       Nullified {n_nullified} existing civ={civ_index} techs")
 
     # 1. Clone from civ 1 (first playable vanilla civ — full standard unit set).
     new_civ = deepcopy(dat.civs[1])
-    new_civ.name     = alias
+    # Preserve the slot's vanilla DAT name ("British", "French", ...). The engine
+    # appears to key civ-description lookup off this field, so renaming it to the
+    # alias makes the picker fall back to the base game's vanilla description.
+    # User-visible name is handled by the string override at 10271+i.
+    if overwrite:
+        new_civ.name = dat.civs[civ_index].name
+    else:
+        new_civ.name = alias
     new_civ.icon_set = civ_def.get("architecture", 1)
 
     # Castle graphic: copy units[82] from the chosen source civ (0-indexed KM value → DAT civ N+1).
@@ -718,9 +1157,16 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> in
     imperial_ut_entries = (_bonuses_raw[3]
                            if len(_bonuses_raw) > 3 and isinstance(_bonuses_raw[3], list)
                            else [])
+    castle_ut_sid = STR_UT_BASE + civ_index * STR_UT_PER_CIV + 0
+    imp_ut_sid    = STR_UT_BASE + civ_index * STR_UT_PER_CIV + 1
+    castle_ut_tech_id: int | None = None
+    imp_ut_tech_id:    int | None = None
     if castle_ut_entries or imperial_ut_entries:
-        _append_unique_tech_stubs(dat, civ_index, alias,
-                                  castle_ut_entries, imperial_ut_entries)
+        castle_ut_sid, imp_ut_sid, castle_ut_tech_id, imp_ut_tech_id = (
+            _append_unique_tech_stubs(
+                dat, civ_index, alias,
+                castle_ut_entries, imperial_ut_entries)
+        )
 
     # 5. Team bonus and tech tree effects.
     # tech_tree_id and team_bonus_id are EFFECT indices (not tech indices).
@@ -737,27 +1183,45 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> in
 
     # 6b. KM vanilla UU: allocate make-avail + elite techs AFTER tree wiring so
     #     the freshly-appended techs aren't in all_disableable and won't be disabled.
+    km_uu_make_avail_tech_id: int = -1
+    km_uu_elite_tech_id:      int = -1
     if km_uu_is_vanilla:
-        _apply_km_uu(dat, civ_index, km_uu_index)
+        km_uu_make_avail_tech_id, km_uu_elite_tech_id = _apply_km_uu(dat, civ_index, km_uu_index)
     elif km_uu_index is not None:
-        print(f"       WARNING: KM UU index {km_uu_index} is a KM-custom unit "
-              f"— not supported in standalone builder; vanilla UU preserved")
+        msg = (f"KM UU index {km_uu_index} is a KM-custom unit "
+               f"— not supported in standalone builder; vanilla UU preserved")
+        print(f"       WARNING: {msg}")
+        warnings.append(msg)
 
     # 7. Apply bonuses from catalog.
+    bonus_results: dict = {"applied": 0, "skipped": [], "team_applied": 0, "team_total": 0}
     if "bonuses" in civ_def:
-        _apply_bonuses(dat, civ_index, civ_def, tb_eff_id)
+        bonus_results = _apply_bonuses(dat, civ_index, civ_def, tb_eff_id)
 
     # 8. Assign language audio: remap sound items from source civ → civ_index.
     lang_val = civ_def.get("language", 0)
     _assign_language(dat, civ_index, lang_val)
 
     print(f"       tech_tree_id(eff)={tt_eff_id}  team_bonus_id(eff)={tb_eff_id}")
-    return civ_index
+    return {
+        "civ_index":             civ_index,
+        "alias":                 alias,
+        "bonus_results":         bonus_results,
+        "warnings":              warnings,
+        "castle_ut_sid":         castle_ut_sid,
+        "imp_ut_sid":            imp_ut_sid,
+        "castle_ut_tech_id":     castle_ut_tech_id,
+        "imp_ut_tech_id":        imp_ut_tech_id,
+        "orig_castle_ut_tech_id":  orig_castle_ut_tech_id,
+        "orig_imp_ut_tech_id":    orig_imp_ut_tech_id,
+        "km_uu_make_avail_tech_id": km_uu_make_avail_tech_id,
+        "km_uu_elite_tech_id":      km_uu_elite_tech_id,
+    }
 
 
 # Keep old name as alias for backwards compatibility.
 def append_civ(dat: DatFile, civ_def: dict) -> int:
-    return apply_civ(dat, civ_def, target_slot=None)
+    return apply_civ(dat, civ_def, target_slot=None)["civ_index"]
 
 
 # ── Unique unit helpers ───────────────────────────────────────────────────────
@@ -892,46 +1356,108 @@ def _append_elite_upgrade_tech(dat: DatFile, civ_index: int, alias: str,
     ))
 
 
-def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str) -> list:
-    """Collect effect commands from catalog for a UT's bonus entries."""
+# KM bonus index → vanilla DAT tech ID, for castle and imperial UTs.
+# Auto-extracted from Fritz's civbuilder.cpp `castleUniqueTechIDs[]` /
+# `impUniqueTechIDs[]` arrays cross-referenced against enums/tech_ids.h.
+# These are the techs whose effect commands KM cloned to implement each
+# preset UT. We copy their effects into our newly-created UT stub so that
+# researching it actually does what the name advertises.
+_KM_CASTLE_UT_TECHS: dict[int, int] = {
+    0: 460, 1: 578, 2: 3, 3: 685, 4: 754, 5: 627, 6: 464, 7: 482,
+    8: 462, 9: 689, 10: 574, 11: 83, 12: 16, 13: 483, 14: 516,
+    15: 506, 16: 494, 17: 484, 18: 622, 19: 486, 20: 691, 21: 514,
+    22: 624, 23: 576, 24: 485, 25: 487, 26: 488, 27: 572, 28: 490,
+    29: 756, 30: 512, 31: 492, 32: 687, 33: 489, 34: 491, 35: 628,
+    36: 463, 37: 782, 38: 784, 44: 831, 45: 833, 46: 835, 47: 455,
+    48: 9, 49: 883, 50: 28, 51: 922, 52: 923, 54: 499, 55: 1070,
+    56: 1080, 57: 1061, 58: 996, 59: 1006,
+}
+
+_KM_IMP_UT_TECHS: dict[int, int] = {
+    0: 24, 1: 579, 2: 461, 3: 686, 4: 755, 5: 626, 6: 61, 7: 5,
+    8: 52, 9: 690, 10: 575, 11: 493, 12: 457, 13: 21, 14: 517,
+    15: 507, 16: 902, 17: 59, 18: 623, 19: 445, 20: 692, 21: 515,
+    22: 625, 23: 577, 24: 4, 25: 6, 26: 7, 27: 573, 28: 454, 29: 757,
+    30: 513, 31: 440, 32: 688, 33: 11, 34: 10, 35: 629, 36: 49,
+    37: 783, 38: 785, 44: 832, 45: 834, 46: 836, 47: 884, 48: 921,
+    49: 924, 54: 1069, 55: 1081, 56: 1062, 57: 997, 58: 1007,
+}
+
+
+def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
+                          lookup: dict[int, int]) -> list:
+    """Collect effect commands for a UT's bonus entries.
+
+    `entries` is bonuses[2] (castle) or bonuses[3] (imperial) from the KM JSON.
+    `lookup` maps KM bonus_id → vanilla DAT tech ID; pass _KM_CASTLE_UT_TECHS or
+    _KM_IMP_UT_TECHS depending on which slot is being built. We then deep-copy
+    that tech's effect commands into our new UT stub so research actually fires
+    the right behavior. Previously this called civ_bonus_techs() which uses an
+    entirely different bonus-ID namespace and produced wrong effects (e.g.
+    Stirrups would research Britons' "Castle 15% cheaper" tech).
+    """
     cmds = []
     for entry in entries:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
             continue
         bonus_id   = int(entry[0])
         multiplier = int(entry[1]) if len(entry) > 1 else 1
-        tech_ids = civ_bonus_techs(bonus_id)
-        if not tech_ids:
-            print(f"       {label} bonus {bonus_id}: not in catalog — skipped")
+        tech_id    = lookup.get(bonus_id)
+        if tech_id is None:
+            print(f"       {label} bonus {bonus_id}: not in UT catalog — skipped")
             continue
-        for tech_id in tech_ids:
-            if tech_id < 0 or tech_id >= len(dat.techs):
-                continue
-            eid = dat.techs[tech_id].effect_id
-            if eid < 0 or eid >= len(dat.effects):
-                continue
-            src = [ec for ec in dat.effects[eid].effect_commands
-                   if ec.type not in (EC_ENABLE, EC_UPGRADE)]
-            for ec in src:
-                for _ in range(multiplier):
-                    cmds.append(deepcopy(ec))
+        if tech_id < 0 or tech_id >= len(dat.techs):
+            continue
+        eid = dat.techs[tech_id].effect_id
+        if eid < 0 or eid >= len(dat.effects):
+            continue
+        src = [ec for ec in dat.effects[eid].effect_commands
+               if ec.type not in (EC_ENABLE, EC_UPGRADE)]
+        for ec in src:
+            for _ in range(multiplier):
+                cmds.append(deepcopy(ec))
     return cmds
 
 
 def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
                                castle_ut_entries: list,
-                               imperial_ut_entries: list) -> None:
-    """Create Castle UT (btn9) and Imperial UT (btn15) from bonus catalog entries."""
+                               imperial_ut_entries: list,
+                               ) -> tuple[int, int, int | None, int | None]:
+    """Create Castle UT (btn7) and Imperial UT (btn8) from bonus catalog entries.
+
+    Returns (castle_sid, imp_sid, castle_tech_id, imp_tech_id).
+    Always allocates fresh high-range string IDs (STR_UT_BASE + civ_index*10 + slot)
+    so the engine's in-game UT button label honors our mod strings instead of
+    falling back to the vanilla tech name baked into the base game.
+    """
     # Default costs: Castle UT = 300 food + 300 gold; Imperial UT = 450 food + 225 stone
+    # icon_id 33 = vanilla Castle UT icon; 107 = vanilla Imperial UT icon
     ut_configs = [
-        (7,  "Castle UT",   102, castle_ut_entries,   300, 3, 300),
-        (8,  "Imperial UT", 103, imperial_ut_entries, 450, 2, 225),
+        (7,  "Castle UT",   102, castle_ut_entries,   300, 3, 300,  33, 0, _KM_CASTLE_UT_TECHS),
+        (8,  "Imperial UT", 103, imperial_ut_entries, 450, 2, 225, 107, 1, _KM_IMP_UT_TECHS),
     ]
-    for btn, label, age_req, entries, cost_food, cost_b_type, cost_b in ut_configs:
+    used_sids: list[int] = []
+    used_tech_ids: list[int | None] = []
+    for i, (btn, label, age_req, entries, cost_food, cost_b_type, cost_b, icon, ut_slot, ut_lookup) in enumerate(ut_configs):
+        name_sid = STR_UT_BASE + civ_index * STR_UT_PER_CIV + ut_slot
+        used_sids.append(name_sid)
         if not entries:
+            used_tech_ids.append(None)
             continue
-        cmds = _build_ut_effect_cmds(dat, entries, label)
+        cmds = _build_ut_effect_cmds(dat, entries, label, ut_lookup)
         eff_id = _append_effect(dat, Effect(name=f"{alias} {label}", effect_commands=cmds))
+        # Copy hotkey from first entry's vanilla tech so S/D keys work in-game.
+        hotkey = -1
+        if entries and isinstance(entries[0], (list, tuple)) and entries[0]:
+            src_slot = int(entries[0][0])
+            src_tid  = ut_lookup.get(src_slot)
+            if src_tid is not None and 0 <= src_tid < len(dat.techs):
+                src_locs = getattr(dat.techs[src_tid], 'research_locations', [])
+                if src_locs:
+                    hotkey = src_locs[0].hot_key_id
+        # 4-string DAT wiring mirrors NapKingCole's Unhinged Empires pattern:
+        # name (button label), description (button hover), help (full tooltip),
+        # tech_tree (F1/help-context). Strings file must emit all four IDs.
         tech = _make_tech(
             name=f"{alias} {label}",
             effect_id=eff_id,
@@ -940,6 +1466,12 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
             location=BUILDING_CASTLE,
             button=btn,
             research_time=60,
+            icon_id=icon,
+            lang_name=name_sid,
+            lang_desc=name_sid + DLL_CREATION_OFFSET,
+            lang_help=name_sid + DLL_HELP_OFFSET,
+            lang_tech_tree=name_sid + 150000,
+            hot_key_id=hotkey,
         )
         # Apply costs (food + gold for castle UT; food + stone for imperial UT).
         tech.resource_costs = (
@@ -947,5 +1479,16 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
             ResearchResourceCost(type=cost_b_type, amount=cost_b, flag=1),
             ResearchResourceCost(type=-1, amount=0, flag=0),
         )
+        # KM's allocateTech() does a full struct copy of vanilla techs, which preserves
+        # repeatable=1. EC_RESOURCE with b=-1 (trickle/rate type) requires repeatable=1
+        # to sustain the effect (e.g. Vineyards farm gold, Paper Money market gold).
+        tech.repeatable = 1
         _append_tech(dat, tech)
-        print(f"       {label}: {len(cmds)} effect commands")
+        used_tech_ids.append(len(dat.techs) - 1)
+        print(f"       {label}: {len(cmds)} effect commands (sid={name_sid})")
+    return (
+        used_sids[0] if len(used_sids) > 0 else _str_id(civ_index, STR_CASTLE_UT),
+        used_sids[1] if len(used_sids) > 1 else _str_id(civ_index, STR_IMPERIAL_UT),
+        used_tech_ids[0] if len(used_tech_ids) > 0 else None,
+        used_tech_ids[1] if len(used_tech_ids) > 1 else None,
+    )

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Results — AoE2 Civ Builder{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0">Build Results</h2>
+  <div class="d-flex gap-2">
+    {% if has_download %}
+    <a href="{{ url_for('download') }}" class="btn btn-success">
+      <i class="fa-solid fa-download"></i> Download {{ out_name }}
+    </a>
+    {% endif %}
+    <a href="{{ url_for('configure') }}" class="btn btn-outline-secondary">← Reconfigure</a>
+  </div>
+</div>
+
+{% if not results %}
+  <div class="alert alert-warning">No civs were built. <a href="{{ url_for('configure') }}">Go back and configure.</a></div>
+{% endif %}
+
+{% for r in results %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <div>
+      <strong>{{ r.alias if r.alias else r.name }}</strong>
+      <span class="text-secondary small ms-2">→ replaces <em>{{ r.replace }}</em></span>
+    </div>
+    {% if r.get('error') %}
+      <span class="badge bg-danger">Error</span>
+    {% elif r.get('bonus_results', {}).get('skipped') %}
+      <span class="badge bg-warning text-dark">{{ r.bonus_results.skipped | length }} skipped</span>
+    {% else %}
+      <span class="badge bg-success">OK</span>
+    {% endif %}
+  </div>
+
+  <div class="card-body">
+
+    {% if r.get('error') %}
+      <div class="alert alert-danger mb-0">{{ r.error }}</div>
+
+    {% else %}
+      {# ── Warnings ──────────────────────────────────────────────────────── #}
+      {% for w in r.get('warnings', []) %}
+      <div class="alert alert-warning py-2 small mb-3">⚠ {{ w }}</div>
+      {% endfor %}
+
+      {# ── Bonus summary ─────────────────────────────────────────────────── #}
+      {% set br = r.get('bonus_results', {}) %}
+      <div class="row g-3 mb-3">
+        <div class="col-6 col-md-3">
+          <div class="stat-box text-center">
+            <div class="stat-number text-success">{{ br.get('applied', 0) }}</div>
+            <div class="stat-label">Bonuses applied</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="stat-box text-center">
+            <div class="stat-number {{ 'text-warning' if br.get('skipped') else 'text-success' }}">
+              {{ br.get('skipped', []) | length }}
+            </div>
+            <div class="stat-label">Bonuses skipped</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="stat-box text-center">
+            <div class="stat-number">{{ br.get('team_applied', 0) }}/{{ br.get('team_total', 0) }}</div>
+            <div class="stat-label">Team bonus entries</div>
+          </div>
+        </div>
+      </div>
+
+      {# ── Skipped bonuses table ─────────────────────────────────────────── #}
+      {% if br.get('skipped') %}
+      <details class="mb-3">
+        <summary class="text-secondary fw-semibold mb-2" style="cursor:pointer;">
+          Skipped bonuses ({{ br.skipped | length }})
+        </summary>
+        <table class="table table-sm table-skipped-bonuses mt-2 mb-0">
+          <thead>
+            <tr>
+              <th style="width:60px">ID</th>
+              <th>Bonus</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for bid in br.skipped %}
+            <tr>
+              <td class="text-secondary font-monospace">{{ bid }}</td>
+              <td>{{ bonus_name(bid) }}</td>
+              <td class="text-secondary small">{{ skip_reason(bid) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
+
+      {# ── Build log ─────────────────────────────────────────────────────── #}
+      {% if r.get('log') %}
+      <details>
+        <summary class="text-secondary fw-semibold mb-2" style="cursor:pointer;">
+          Build log
+        </summary>
+        <pre class="build-log mt-2">{{ r.log | trim }}</pre>
+      </details>
+      {% endif %}
+
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+{% if has_download %}
+<div class="d-grid mt-2">
+  <a href="{{ url_for('download') }}" class="btn btn-success btn-lg">
+    <i class="fa-solid fa-download"></i> Download {{ out_name }}
+  </a>
+</div>
+
+<div class="card mt-4">
+  <div class="card-header">
+    <strong>Installation Instructions</strong>
+  </div>
+  <div class="card-body">
+    <p class="small mb-2">
+      <strong>{{ out_name }}</strong> is a wrapper that contains two separate mod ZIPs.
+      You must install <em>both</em> as separate mods — the game needs each one active at the same time.
+    </p>
+    <ol class="small mb-3">
+      <li class="mb-1">Unzip <strong>{{ out_name }}</strong> — you'll find two files inside:
+        <ul class="mt-1">
+          <li><code>{{ out_name | replace('.zip', '') }}-data.zip</code> — modified game data (DAT, tech trees)</li>
+          <li><code>{{ out_name | replace('.zip', '') }}-ui.zip</code> — civ names, icons, AI stubs</li>
+        </ul>
+      </li>
+      <li class="mb-1">In AoE2:DE, open <strong>Mods → My Mods</strong> and click <strong>Import Mod</strong> to install each zip as its own mod.</li>
+      <li class="mb-1">Make sure <strong>both</strong> mods show a green checkmark (active) before launching a game.</li>
+    </ol>
+    <div class="alert alert-warning py-2 small mb-0">
+      If only the data mod is active, your civs will play correctly but show their old vanilla names
+      and icons in the selection screen. Both mods must be active together.
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -27,13 +27,35 @@ import zipfile
 from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
-from civ_appender import apply_civ
+from civ_appender import apply_civ, _KM_UU_TECHS, _KM_UU_NAMES
 
 # Languages KM ships string files for.
 LANGUAGES = ["br", "de", "en", "es", "fr", "hi", "it", "jp",
              "ko", "ms", "mx", "tr", "tw", "vi", "zh"]
 
 AI_PER_STUB = b"; Civbuilder generated AI File\n; Feel free to edit as you please\n"
+
+# Ordered list of civ names by dat slot position: index N = dat slot N+1 (Gaia is slot 0).
+# name_string_id = 10271 + N, description_string_id = 10271 + N + 109879.
+# Vanilla civs (0-44) match the base-game civTechTrees.json ordering.
+# KM custom civs (45-55) and SA DLC civs (56-58) continue in dat-slot order.
+KM_TECHTREE_ORDER = [
+    # Vanilla civs — positions 0-44, dat slots 1-45
+    "Britons", "Franks", "Goths", "Teutons", "Japanese", "Chinese",
+    "Byzantines", "Persians", "Saracens", "Turks", "Vikings", "Mongols",
+    "Celts", "Spanish", "Aztecs", "Maya", "Huns", "Koreans", "Italians",
+    "Hindustanis", "Inca", "Magyars", "Slavs", "Portuguese", "Ethiopians",
+    "Malians", "Berbers", "Khmer", "Malay", "Burmese", "Vietnamese",
+    "Bulgarians", "Tatars", "Cumans", "Lithuanians", "Burgundians",
+    "Sicilians", "Poles", "Bohemians", "Dravidians", "Bengalis",
+    "Gurjaras", "Romans", "Armenians", "Georgians",
+    # KM custom civs — positions 45-55, dat slots 46-56
+    "Achaemenids", "Athenians", "Spartans",
+    "Shu", "Wu", "Wei", "Jurchens", "Khitans",
+    "Macedonians", "Thracians", "Puru",
+    # South American DLC civs — positions 56-58, dat slots 57-59
+    "Muisca", "Mapuche", "Tupi",
+]
 
 
 def _civ_file_name(civ_name: str) -> str:
@@ -51,16 +73,31 @@ def _find_civ_slot(dat, name: str) -> int | None:
 
 
 def _decode_flag(civ_def: dict) -> bytes | None:
-    """Decode customFlagData base64 PNG, or return None if absent."""
+    """Decode customFlagData base64 PNG/JPG and return PNG bytes, or None if absent."""
+    import io
     raw = civ_def.get("customFlagData", "")
     if not raw:
         return None
-    if raw.startswith("data:image/png;base64,"):
-        raw = raw[len("data:image/png;base64,"):]
+    # Strip data-URI prefix for any image format.
+    for prefix in ("data:image/png;base64,", "data:image/jpeg;base64,",
+                   "data:image/jpg;base64,"):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix):]
+            break
     try:
-        return base64.b64decode(raw)
+        img_bytes = base64.b64decode(raw)
     except Exception:
         return None
+    # If not already PNG, convert via Pillow.
+    if not img_bytes.startswith(b'\x89PNG'):
+        try:
+            from PIL import Image
+            buf = io.BytesIO()
+            Image.open(io.BytesIO(img_bytes)).save(buf, format="PNG")
+            img_bytes = buf.getvalue()
+        except Exception:
+            return None
+    return img_bytes
 
 
 def _build_ui_zip(civ_def: dict, ui_civ_name: str, name_string_id: int) -> bytes:
@@ -243,14 +280,66 @@ def _patch_techtree_json(techtree_path: Path, replaced_civ_id: str,
     return json.dumps(data, separators=(",", ":")).encode("utf-8")
 
 
-def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict) -> bytes | None:
+def _uu_actual_unit_id(dat, make_avail_tech_id: int) -> int:
+    """Return the unit ID enabled by a make-avail tech's EC_ENABLE command, or tech_id as fallback."""
+    if 0 <= make_avail_tech_id < len(dat.techs):
+        eff_id = dat.techs[make_avail_tech_id].effect_id
+        if 0 <= eff_id < len(dat.effects):
+            for ec in dat.effects[eff_id].effect_commands:
+                if ec.type == 2 and ec.b == 1:  # EC_ENABLE, enabled=1
+                    return ec.a
+    return make_avail_tech_id
+
+
+def _uu_actual_elite_id(dat, elite_tech_id: int, base_unit_id: int) -> int:
+    """Return the upgraded-to unit ID from an elite upgrade tech's EC_UPGRADE command, or base_unit_id as fallback."""
+    if 0 <= elite_tech_id < len(dat.techs):
+        eff_id = dat.techs[elite_tech_id].effect_id
+        if 0 <= eff_id < len(dat.effects):
+            for ec in dat.effects[eff_id].effect_commands:
+                if ec.type == 3 and ec.a == base_unit_id:  # EC_UPGRADE from base
+                    return ec.b
+    return base_unit_id
+
+
+def _resolve_uu_info(civ_def: dict, dat, slot: int) -> dict | None:
+    """Return {unit_id, elite_id, icon_id, dll_name, name} for the civ's KM UU, or None."""
+    bonuses = civ_def.get("bonuses", [])
+    uu_refs = bonuses[1] if len(bonuses) > 1 else []
+    km_uu_idx = uu_refs[0] if uu_refs and isinstance(uu_refs[0], int) else None
+    if km_uu_idx is None:
+        return None
+    pair = _KM_UU_TECHS.get(km_uu_idx)
+    if not pair:
+        return None
+    # pair[0]/pair[1] are TECH indices; extract actual unit IDs from the techs' EC commands.
+    unit_id  = _uu_actual_unit_id(dat, pair[0])
+    elite_id = _uu_actual_elite_id(dat, pair[1], unit_id)
+    try:
+        u = dat.civs[slot].units[unit_id]
+        return {
+            "unit_id":  unit_id,
+            "elite_id": elite_id,
+            "icon_id":  u.icon_id,
+            "dll_name": u.language_dll_name,
+            "name":     _KM_UU_NAMES.get(km_uu_idx, "Unique Unit"),
+        }
+    except (IndexError, AttributeError):
+        return None
+
+
+def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
+                             dat=None, slot: int | None = None,
+                             civ_result: dict | None = None) -> bytes | None:
     """
     Patch a per-civ CivTechTrees JSON file (game's native format, one file per civ).
 
     The game reads CivTechTrees/{CIV_NAME}.json for the in-game tech tree viewer.
-    This function takes the vanilla civ's JSON (e.g. SARACENS.json) and sets each
-    node's "Node Status" based on the civ_def tree arrays, then returns the
-    patched bytes to be included in the data zip as CivTechTrees/{same_name}.json.
+    Sets each node's "Node Status" based on civ_def tree arrays.  When dat+slot
+    are provided, also re-targets the UniqueUnit node to the custom civ's UU
+    (updates Node ID, Picture Index, Name/Help String IDs).  When civ_result is
+    provided, also re-targets the Castle/Imperial UT Research nodes to the newly
+    appended UT techs so the tech tree viewer shows the correct custom UTs.
     """
     try:
         with open(civ_json_path, encoding="utf-8") as f:
@@ -264,22 +353,143 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict) -> bytes | None:
     building_ids = set(tree[1]) if len(tree) > 1 and isinstance(tree[1], list) else set()
     tech_ids     = set(tree[2]) if len(tree) > 2 and isinstance(tree[2], list) else set()
 
+    uu_unit_info: dict | None = None
+    if dat is not None and slot is not None:
+        uu_unit_info = _resolve_uu_info(civ_def, dat, slot)
+
     STATUS_OK  = "ResearchedCompleted"
     STATUS_OFF = "NotAvailable"
+
+    # Pre-scan: collect all UniqueUnit Node IDs so we can distinguish castle UU
+    # nodes from upgrade-chain nodes (e.g. Hindustanis' Imperial Camel Rider has
+    # Link ID=330 pointing to Heavy Camel Rider — NOT another UniqueUnit — and
+    # should not be patched with the custom civ's castle UU).
+    def _collect_uu_node_ids(obj: object) -> set[int]:
+        ids: set[int] = set()
+        if isinstance(obj, dict):
+            if obj.get("Node Type") == "UniqueUnit":
+                nid = obj.get("Node ID")
+                if nid is not None:
+                    ids.add(int(nid))
+            for v in obj.values():
+                ids |= _collect_uu_node_ids(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                ids |= _collect_uu_node_ids(item)
+        return ids
+
+    _all_uu_node_ids: set[int] = _collect_uu_node_ids(data)
+
+    # Index UniqueUnit nodes in encounter order so we can assign regular/elite.
+    _uu_node_counter: list[int] = [0]
+
+    def _patch_uu_node(node: dict) -> None:
+        """Retarget a UniqueUnit node to the custom civ's UU (regular or elite).
+
+        Skips nodes whose original Link ID points to a non-UniqueUnit (these are
+        upgrade-chain results like Imperial Camel Rider, not castle UU nodes).
+        """
+        if uu_unit_info is None:
+            return
+        orig_link = node.get("Link ID")
+        if orig_link is not None and int(orig_link) > 0 and int(orig_link) not in _all_uu_node_ids:
+            node["Node Status"] = STATUS_OFF  # upgrade-chain UU from replaced civ; hide it
+            return
+        idx = _uu_node_counter[0]
+        _uu_node_counter[0] += 1
+
+        if idx == 0:
+            # Regular unit node.
+            unit_id  = uu_unit_info["unit_id"]
+            icon_id  = uu_unit_info["icon_id"]
+            dll_name = uu_unit_info["dll_name"]
+            name     = uu_unit_info["name"]
+            node["Link ID"] = -1
+        else:
+            # Elite unit node — use the actual elite unit ID resolved from the upgrade tech.
+            elite_id = uu_unit_info.get("elite_id", uu_unit_info["unit_id"])
+            try:
+                eu = dat.civs[slot].units[elite_id]
+                icon_id  = eu.icon_id
+                dll_name = eu.language_dll_name
+            except (IndexError, AttributeError):
+                icon_id  = uu_unit_info["icon_id"]
+                dll_name = uu_unit_info["dll_name"]
+            unit_id  = elite_id
+            name     = f"Elite {uu_unit_info['name']}"
+            node["Link ID"] = uu_unit_info["unit_id"]
+            # Update Trigger Tech ID to our new allocated elite upgrade tech so
+            # the tech-tree panel tracks the correct research state.
+            if _km_uu_elite_tech_id >= 0:
+                node["Trigger Tech ID"] = _km_uu_elite_tech_id
+
+        node["Node ID"]        = unit_id
+        node["Picture Index"]  = icon_id
+        node["Name String ID"] = dll_name + 10000
+        node["Help String ID"] = dll_name + 100000
+        node["Name"]           = name
+        node["Node Status"]    = STATUS_OK
+
+    # The KM UU elite upgrade tech ID allocated by civ_appender for this civ.
+    # Used to set Trigger Tech ID on the elite UniqueUnit node so the tech-tree
+    # panel correctly tracks when the elite unit is unlocked.
+    _km_uu_elite_tech_id = (civ_result or {}).get("km_uu_elite_tech_id", -1)
+
+    # Pre-compute UT retargeting info from civ_result (if available).
+    _orig_castle_ut_tid = (civ_result or {}).get("orig_castle_ut_tech_id")
+    _orig_imp_ut_tid    = (civ_result or {}).get("orig_imp_ut_tech_id")
+    _new_castle_ut_tid  = (civ_result or {}).get("castle_ut_tech_id")
+    _new_imp_ut_tid     = (civ_result or {}).get("imp_ut_tech_id")
+    _castle_ut_sid      = (civ_result or {}).get("castle_ut_sid")
+    _imp_ut_sid         = (civ_result or {}).get("imp_ut_sid")
+    _castle_ut_name     = (civ_result or {}).get("castle_ut_name", "")
+    _imp_ut_name        = (civ_result or {}).get("imp_ut_name", "")
 
     def patch_nodes(nodes: list) -> int:
         changed = 0
         for node in nodes:
-            use_type = node.get("Use Type", "")
-            node_id  = node.get("Node ID", -1)
+            use_type  = node.get("Use Type", "")
+            node_type = node.get("Node Type", "")
+            node_id   = node.get("Node ID", -1)
+
+            if node_type == "UniqueUnit" and uu_unit_info is not None:
+                _patch_uu_node(node)
+                changed += 1
+                continue  # status already set inside _patch_uu_node
+
+            # Retarget vanilla Castle/Imperial UT Research nodes to our new UT techs.
+            # Point Name/Help string IDs directly at the UT's base sid and
+            # base+100000 (matches what build_all.py writes to the strings file
+            # under the high-range UT block).
+            if (use_type == "Tech" and node_type == "Research"
+                    and node.get("Building ID") == 82):
+                if node_id == _orig_castle_ut_tid and _new_castle_ut_tid is not None:
+                    node["Node ID"] = _new_castle_ut_tid
+                    if _castle_ut_sid:
+                        node["Name String ID"] = _castle_ut_sid
+                        node["Help String ID"] = _castle_ut_sid + 100000
+                    if _castle_ut_name:
+                        node["Name"] = _castle_ut_name
+                    node["Node Status"] = STATUS_OK
+                    changed += 1
+                    continue
+                if node_id == _orig_imp_ut_tid and _new_imp_ut_tid is not None:
+                    node["Node ID"] = _new_imp_ut_tid
+                    if _imp_ut_sid:
+                        node["Name String ID"] = _imp_ut_sid
+                        node["Help String ID"] = _imp_ut_sid + 100000
+                    if _imp_ut_name:
+                        node["Name"] = _imp_ut_name
+                    node["Node Status"] = STATUS_OK
+                    changed += 1
+                    continue
+
             if use_type == "Building":
                 ok = node_id in building_ids
             elif use_type == "Tech":
                 ok = node_id in tech_ids
-            else:  # Unit
+            else:
                 ok = node_id in unit_ids
-            # Buildings that are structurally required (e.g. Town Center) use
-            # "ResearchRequired" not "ResearchedCompleted" — preserve that status.
             current = node.get("Node Status", "")
             if not ok:
                 if current != STATUS_OFF:
@@ -393,9 +603,9 @@ _DAT_TO_TECHTREE_ID: dict[str, str] = {
     "british":     "BRITONS",
     "french":      "FRANKS",
     "byzantine":   "BYZANTINES",
-    "mayan":       "MAYANS",
-    "hindustanis": "INDIANS",
-    "magyars":     "MAGYAR",   # civTechTrees.json uses singular
+    "mayan":       "MAYA",
+    "magyars":     "MAGYAR",      # KM_TECHTREE_ORDER uses plural; lookup key is singular
+    "hindustanis": "INDIANS",     # DAT renamed civ; file is still INDIANS.json + indians.png
 }
 
 
@@ -411,21 +621,13 @@ def _civ_techtree_index(civ_name: str) -> int | None:
     The KM name-string formula is: 10271 + civTechTrees_index.
     civ_name should be the vanilla civ name (e.g. 'Saracens').
     """
-    # KM-style ordering — matches techtreeNames in constants.js
-    KM_TECHTREE_ORDER = [
-        "britons", "franks", "goths", "teutons", "japanese", "chinese",
-        "byzantines", "persians", "saracens", "turks", "vikings", "mongols",
-        "celts", "spanish", "aztecs", "mayans", "huns", "koreans", "italians",
-        "indians", "inca", "magyars", "slavs", "portuguese", "ethiopians",
-        "malians", "berbers", "khmer", "malay", "burmese", "vietnamese",
-        "bulgarians", "tatars", "cumans", "lithuanians", "burgundians",
-        "sicilians", "poles", "bohemians", "dravidians", "bengalis",
-        "gurjaras", "romans", "armenians", "georgians",
-    ]
-    # Build lookup by canonical civTechTrees ID → KM index.
+    # Build lookup by canonical civTechTrees ID → index.
     lookup: dict[str, int] = {name.upper(): i for i, name in enumerate(KM_TECHTREE_ORDER)}
-    lookup["INCAS"]  = lookup["INCA"]    # civTechTrees uses INCAS; KM uses "inca"
-    lookup["MAGYAR"] = lookup["MAGYARS"] # civTechTrees uses MAGYAR; KM uses "magyars"
+    # Extra aliases for names that differ between dat, user input, and KM_TECHTREE_ORDER.
+    lookup["INCAS"]    = lookup["INCA"]    # dat uses "Incas"; list uses "Inca"
+    lookup["MAGYAR"]   = lookup["MAGYARS"] # dat uses "Magyars"; civTechTrees uses "Magyar"
+    lookup["MAYANS"]   = lookup["MAYA"]    # historical alias; also matches old KM naming
+    lookup["INDIANS"]  = lookup["HINDUSTANIS"]  # historical alias pre-rename
     return lookup.get(_canonical_techtree_id(civ_name))
 
 
@@ -530,7 +732,7 @@ def main() -> None:
                   f"name string ID defaulting to {name_string_id}")
 
     # ── Apply civ ─────────────────────────────────────────────────────────────
-    civ_index = apply_civ(dat, civ_def, target_slot=target_slot)
+    civ_index = apply_civ(dat, civ_def, target_slot=target_slot)["civ_index"]
     total     = len(dat.civs)
     print(f"  Output: {total} civs total (custom civ at index {civ_index})")
 

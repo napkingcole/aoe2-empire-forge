@@ -42,3 +42,15 @@ def team_bonus_tech(team_bonus_id: int) -> int | None:
     """Return the vanilla tech ID for team bonus `team_bonus_id`, or None."""
     val = _load()["team"].get(str(team_bonus_id))
     return val if isinstance(val, int) else None
+
+
+def civ_bonus_ec_list(bonus_id: int) -> list[dict]:
+    """Return ec_list entries for civ bonus `bonus_id`, or [] if none.
+
+    Each entry is a dict:
+      {
+        "requires": [tech_id, ...],  # prerequisite tech IDs (empty = always fires)
+        "ecs":      [{type, A, B, C, D}, ...]
+      }
+    """
+    return _load()["ec_list"].get(str(bonus_id), [])

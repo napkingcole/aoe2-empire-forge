@@ -15,6 +15,7 @@ STEAM_DAT_CANDIDATES = [
     Path.home() / "Library/Application Support/Steam/steamapps/common/AoE2DE"
     / "resources/_common/dat/empires2_x2_p1.dat",
     # dev reference copy (sibling aoe2/ directory — convenient for local testing)
+    Path(__file__).parent.parent / "aoe2/dat-file-6-2-26/empires2_x2_p1.dat",  # VER 8.9 Jun 6
     Path(__file__).parent.parent / "aoe2/base/empires2_x2_p1.dat",
     Path(__file__).parent.parent / "aoe2/base-dat/empires2_x2_p1.dat",
     # Windows — Steam (32-bit Program Files)

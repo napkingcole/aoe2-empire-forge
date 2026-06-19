@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Upload Civs — AoE2 Civ Builder{% endblock %}
+
+{% block content %}
+<div class="text-center mb-4">
+  <h1 class="display-6 fw-bold">Age of Empires II Civ Builder</h1>
+  <p class="text-secondary">Convert your KrakenMeister civ JSONs into a playable AoE2:DE mod.</p>
+</div>
+
+<form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+
+  {# ── Step 1: Civ JSON files ─────────────────────────────────────────────── #}
+  <div class="card mb-4">
+    <div class="card-header">
+      <span class="step-badge">1</span> Select Civ Files
+    </div>
+    <div class="card-body">
+      <div id="drop-zone" class="drop-zone mb-3">
+        <div class="drop-zone-inner">
+          <div class="fs-1 mb-2">📂</div>
+          <p class="mb-1 fw-semibold body-text">Drop KM civ JSON files here</p>
+          <p class="text-secondary small mb-3">or click to browse</p>
+          <input type="file" id="civ_files" name="civ_files"
+                 accept=".json" multiple class="d-none">
+          <button type="button" class="btn btn-outline-primary btn-sm"
+                  onclick="document.getElementById('civ_files').click()">
+            Browse files
+          </button>
+        </div>
+      </div>
+      <div id="file-list" class="small text-secondary"></div>
+    </div>
+  </div>
+
+  {# ── Step 2: DAT file path ──────────────────────────────────────────────── #}
+  <div class="card mb-4">
+    <div class="card-header">
+      <span class="step-badge">2</span> Game DAT File
+    </div>
+    <div class="card-body">
+      <label for="dat_path" class="form-label small text-secondary">
+        Path to <code>empires2_x2_p1.dat</code>
+        {% if dat_path %}
+          <span class="badge bg-success-subtle text-success-emphasis ms-1">Auto-detected</span>
+        {% endif %}
+      </label>
+      <input type="text" id="dat_path" name="dat_path"
+             class="form-control font-monospace"
+             value="{{ dat_path }}"
+             placeholder="/path/to/empires2_x2_p1.dat"
+             required>
+      <div class="form-text">
+        Usually found in your AoE2:DE installation under
+        <code>resources/_common/dat/</code>.
+      </div>
+    </div>
+  </div>
+
+  <div class="d-grid">
+    <button type="submit" id="submit-btn" class="btn btn-primary btn-lg">
+      Continue to Configure →
+    </button>
+  </div>
+
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const dropZone = document.getElementById("drop-zone");
+  const fileInput = document.getElementById("civ_files");
+  const fileList  = document.getElementById("file-list");
+
+  function updateFileList(files) {
+    if (!files.length) { fileList.textContent = ""; return; }
+    fileList.innerHTML = `<strong>${files.length} file${files.length > 1 ? "s" : ""} selected:</strong> `
+      + Array.from(files).map(f => f.name).join(", ");
+  }
+
+  fileInput.addEventListener("change", () => updateFileList(fileInput.files));
+
+  dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    const dt = new DataTransfer();
+    Array.from(e.dataTransfer.files)
+         .filter(f => f.name.endsWith(".json"))
+         .forEach(f => dt.items.add(f));
+    fileInput.files = dt.files;
+    updateFileList(fileInput.files);
+  });
+  dropZone.addEventListener("click", () => fileInput.click());
+
+  // Show loading state on submit so users know the DAT is being read.
+  document.querySelector("form").addEventListener("submit", () => {
+    const btn = document.getElementById("submit-btn");
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Reading DAT file…`;
+  });
+</script>
+{% endblock %}

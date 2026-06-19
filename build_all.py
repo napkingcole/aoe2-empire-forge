@@ -22,28 +22,224 @@ import argparse
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
-from civ_appender import apply_civ
+from civ_appender import (apply_civ,
+    DLL_CREATION_OFFSET, DLL_HELP_OFFSET)
 from build_civ import (
-    AI_PER_STUB, LANGUAGES,
+    AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
     _decode_flag,
-    _find_techtree_json, _find_civ_techtrees_folder, _find_adjacent_json,
-    _patch_techtree_entry, _patch_per_civ_techtree,
-    _canonical_techtree_id,
+    _find_civ_techtrees_folder,
+    _patch_per_civ_techtree,
+    _canonical_techtree_id, _resolve_uu_info,
 )
+from civ_appender import _KM_UU_NAMES
+
+# ── Lookup tables from KM modStrings.js ──────────────────────────────────────
+_UNIQUE_CASTLE_STRINGS = [
+    "Atlatl (Skirmishers +1 attack, +1 range)",
+    "Kasbah (team Castles work 25% faster)",
+    "Yeomen (+1 foot archer and skirmisher range, +2 tower attack)",
+    "Stirrups (Cavalry attack 33% faster)",
+    "Burgundian Vineyards (Farmers slowly generate gold)",
+    "Manipur Cavalry (Cavalry +4 attack vs. Ranged Soldiers)",
+    "Greek Fire (Fire ships +1 range, Bombard Towers and Dromons increased blast radius)",
+    "Stronghold (Castles, Kreposts and Towers fire 33% faster, heal allied infantry)",
+    "Great Wall (Walls and towers +30% HP)",
+    "Steppe Husbandry (Light Cavalry, Steppe Lancers and Cavalry Archers trained 100% faster)",
+    "Royal Heirs (Unique Unit and Camels receive -3 damage from Mounted Units)",
+    "Bearded Axe (Unique Unit +1 range)",
+    "Anarchy (create Unique Unit at Barracks)",
+    "Marauders (create Unique Unit at Stables)",
+    "Andean Sling (Skirmishers and Slingers no minimum range, Slingers +1 attack)",
+    "Grand Trunk Road (All gold income 10% faster, Market trading fee 10%)",
+    "Pavise (Archer-line, Condottiero, and Unique Unit +1/+1 armor)",
+    "Yasama (Towers shoot extra arrows)",
+    "Tusk Swords (Melee elephant units +3 attack)",
+    "Eupseong (Watch Towers, Guard Towers, and Keeps +2 range)",
+    "Hill Forts (Town Centers +3 range)",
+    "Corvinian Army (Unique Unit gold cost converted to food/wood cost)",
+    "Thalassocracy (upgrades Docks to Harbors, which fire arrows)",
+    "Tigui (Town Centers fire arrows when ungarrisoned)",
+    "Hul'che Javelineers (Skirmishers throw a second projectile)",
+    "Nomads (lost houses do not decrease population headroom)",
+    "Kamandaran (Archer-line gold cost replaced by wood cost)",
+    "Carrack (Ships +1/+1 armor)",
+    "Madrasah (Monks return 50 gold when killed)",
+    "First Crusade (Town Centers spawn Unique Units; units resist conversion)",
+    "Orthodoxy (Monk units +3/+3P armor)",
+    "Inquisition (Monks and Missionaries convert faster; Missionaries +1 range)",
+    "Silk Armor (Light Cavalry, Steppe Lancers and Cavalry Archers +1/+1P armor)",
+    "Ironclad (Siege units extra melee armor)",
+    "Sipahi (Cavalry Archers +20 HP)",
+    "Chatras (Elephant units +100 HP)",
+    "Chieftains (Infantry deal bonus damage to cavalry, generate gold from kills)",
+    "Szlachta Privileges (Knight-line costs -60% gold)",
+    "Wagenburg Tactics (Gunpowder units move 15% faster)",
+    "Deconstruction (Siege units fire 33% faster)",
+    "Obsidian Arrows (Archer-line +6 attack vs. buildings)",
+    "Tortoise Engineers (Rams train 100% faster)",
+    "Panoply (Infantry +1/+1P armor, +1 attack)",
+    "Clout Archery (Archery Ranges work 50% faster)",
+    "Medical Corps (Elephant units regenerate 30 HP per minute)",
+    "Paiks (Unique Unit and elephant units attack 20% faster)",
+    "Kshatriyas (Military units cost -25% food)",
+    "Detinets (40% of Castle/Tower stone cost replaced with wood)",
+    "Zealotry (Camel units +20 hit points)",
+    "Ballistas (Scorpions and Ballista Elephants fire 33% faster, Galleys +2 attack)",
+    "Bimaristan (Monk units automatically heal multiple nearby units)",
+    "Cilician Fleet (Demolition Ships +20% blast radius; Galley-line and Dromons +1 range)",
+    "Svan Towers (Defensive buildings +2 attack; towers fire piercing arrows)",
+    "Replaceable Parts (Siege units +1/+1P armor, repairing siege is free)",
+    "Silk Road (Trade units cost -50%)",
+    "Coiled Serpent Array (Spearman-line and Unique Unit gain HP when near each other)",
+]
+
+_UNIQUE_IMP_STRINGS = [
+    "Garland Wars (Infantry +4 attack)",
+    "Maghrebi Camels (Camel units regenerate)",
+    "Warwolf (Trebuchet units do blast damage)",
+    "Bagains (Militia-line gains +5 armor)",
+    "Flemish Revolution (Upgrades all existing Villagers to Flemish Militia)",
+    "Howdah (Elephant units +1/+1P armor)",
+    "Logistica (Unique Unit causes trample damage)",
+    "Furor Celtica (Siege Workshop units +40% HP)",
+    "Rocketry (Scorpions, Rocket Carts and Lou Chuans +25% attack)",
+    "Elite Mercenaries (team receives 5 free Elite Unique Units per castle)",
+    "Torsion Engines (increases blast radius of Siege Workshop units)",
+    "Chivalry (Stables work 40% faster)",
+    "Perfusion (Barracks work 100% faster)",
+    "Atheism (+100 years for Relic, Wonder victories; enemy relics -50% resources)",
+    "Fabric Shields (Shock Infantry, Slingers, Unique Unit +1/+2 armor)",
+    "Shatagni (Hand Cannoneers +2 range)",
+    "Pirotechnia (Hand Cannoneers deal +15% pass through damage and are more accurate)",
+    "Kataparuto (Trebuchet units fire and pack faster)",
+    "Double Crossbow (Scorpion and Ballista units fire two projectiles)",
+    "Shinkichon (Rocket Carts and Turtle Ships +1 range, fire additional rockets)",
+    "Tower Shields (Spearmen and Skirmishers +2P armor)",
+    "Recurve Bow (Cavalry Archers +1 range, +1 attack)",
+    "Forced Levy (Militia-line gold cost replaced by food cost)",
+    "Farimba (Cavalry +5 attack)",
+    "El Dorado (Shock Infantry have +40 hit points)",
+    "Drill (Siege Workshop units move 50% faster)",
+    "Citadels (Castles and Kreposts fire Bullets, receive -25% bonus damage)",
+    "Arquebus (Gunpowder units more accurate)",
+    "Counterweights (Trebuchet units and Mangonel-line +15% attack)",
+    "Hauberk (Knights +1/+2P armor)",
+    "Druzhina (Infantry damage adjacent units)",
+    "Supremacy (Villagers stronger in combat)",
+    "Timurid Siegecraft (Trebuchet units +2 range, enables Flaming Camels)",
+    "Crenellations (+3 range Castles garrisoned infantry fire arrows)",
+    "Artillery (+2 range Bombard Towers, Bombard Cannons, Cannon Galleons)",
+    "Paper Money (Lumberjacks slowly generate gold in addition to wood)",
+    "Bogsveigar (Foot Archers and Unique ships +1 attack)",
+    "Lechitic Legacy (Light Cavalry deals trample damage)",
+    "Hussite Reforms (Monks and Monastery upgrades gold replaced by food)",
+    "Brigandine Armor (Camels and Cavalry Archers +2/+1P armor)",
+    "Field Repairmen (Rams regain HP)",
+    "Golden Age (All buildings work 10% faster)",
+    "Villager's Revenge (Dead villagers become Halberdiers)",
+    "Gate Crashing (Ram gold cost replaced by wood cost)",
+    "Wootz Steel (Infantry and cavalry attacks ignore armor)",
+    "Mahayana (Villagers and monk units take 10% less population space)",
+    "Frontier Guards (Camel units and Elephant Archers +4 melee armor)",
+    "Comitatenses (Militia-line, Knight-line, and Unique Unit train 50% faster with charge attack)",
+    "Fereters (Infantry except Spearmen +30 HP, Warrior Priests +100% heal speed)",
+    "Aznauri Cavalry (Cavalry units take 15% less population space)",
+    "Pila (Skirmisher attacks strip armour)",
+    "Enlistment (Infantry take 15% less population space)",
+    "Marshalled Hunters (Foot archers and skirmishers take 15% less population space)",
+    "Shigeto Yumi (Unique Unit, Mounted Archers, and Towers attack 15% faster)",
+    "Bolt Magazine (Archer-line, Lou Chuans, and War Chariots fire additional projectiles)",
+    "Sitting Tiger (Trebuchet units fire additional projectiles)",
+    "Ming Guang Armor (Mounted units +4 melee armor)",
+    "Thunderclap Bombs (Rocket Carts, Grenadiers detonate when defeated)",
+    "Ordo Cavalry (Cavalry regenerates HP in combat)",
+]
+
+_BONUS_NAMES: dict[str, str] = json.loads(
+    (Path(__file__).parent / "bonus_names.json").read_text(encoding="utf-8"))
+
+
+def _load_vanilla_civ_descriptions() -> dict[int, str]:
+    """Extract vanilla civ descriptions (sids 120150-120194) from the bundled
+    aoe2techtree locale JSON, converting <br> → literal \\n for the modded-strings
+    format that AoE2 DE expects.
+
+    Why this exists: the engine silently ignores 120150+i overrides unless ALL
+    45 vanilla civ description IDs are present in the modded-strings file (the
+    KM/NKC pattern). Writing only the modified slots was not enough; we have to
+    re-emit vanilla content for the unchanged slots too.
+    """
+    src = Path(__file__).parent / "AoE2-Civbuilder-main" / "public" / \
+          "aoe2techtree" / "data" / "locales" / "en" / "strings.json"
+    if not src.exists():
+        return {}
+    raw = json.loads(src.read_text(encoding="utf-8"))
+    out: dict[int, str] = {}
+    for sid in range(120150, 120195):
+        text = raw.get(str(sid))
+        if text is None:
+            continue
+        # Normalise to AoE2 DE modded-strings markup:
+        #   <br>      → \n     (DE uses \n for line breaks in this file)
+        #   </b>      → <b>    (DE uses <b>...<b> toggle, not HTML-style close)
+        #   real LF   → strip  (the source JSON has both <br> and a following LF;
+        #                       we only want the literal \n that replaced <br>)
+        #   "         → '      (avoid breaking the surrounding "..." quotes)
+        # Leaving </b> in place crashes the picker once the engine actually
+        # reads the description (e.g., once entries become contiguous).
+        text = text.replace("<br>", "\\n")
+        text = text.replace("</b>", "<b>")
+        text = text.replace("\n", "")
+        text = text.replace('"', "'")
+        out[sid] = text
+    return out
+
+
+_VANILLA_CIV_DESCRIPTIONS: dict[int, str] = _load_vanilla_civ_descriptions()
+
+
+def _ut_name(bonus_id: int | None, castle: bool) -> str:
+    """Resolve a UT name from its KM bonus ID."""
+    if bonus_id is None:
+        return "Castle Unique Technology" if castle else "Imperial Unique Technology"
+    table = _UNIQUE_CASTLE_STRINGS if castle else _UNIQUE_IMP_STRINGS
+    if 0 <= bonus_id < len(table):
+        return table[bonus_id]
+    return "Castle Unique Technology" if castle else "Imperial Unique Technology"
+
+
+def _ut_bonus_id(civ_def: dict, group: int) -> int | None:
+    """Extract bonus ID from bonuses[group][0][0], or None if absent."""
+    bonuses = civ_def.get("bonuses", [])
+    if len(bonuses) <= group:
+        return None
+    grp = bonuses[group]
+    if not grp or not isinstance(grp[0], list):
+        return None
+    return int(grp[0][0])
 
 
 def _build_combined_data_zip(dat,
-                              tt_bytes: bytes | None,
                               button_pngs: dict[str, bytes],
-                              per_civ_tt: dict[str, bytes]) -> bytes:
-    """Serialize the modified DAT + all supporting data-side assets."""
+                              per_civ_tt: dict[str, bytes],
+                              mod_name: str = "Custom Civs",
+                              civs_json_bytes: bytes | None = None) -> bytes:
+    """Serialize the modified DAT + all supporting data-side assets.
+
+    Ships the game's default 60-entry civilizations.json so the civ picker
+    honours modded-strings overrides for descriptions and UU display. After
+    the June 6 2026 patch, AoE2 DE validates civilizations.json entry count
+    against DAT civ count and silently ignores modded-strings 120150+i for
+    the picker UI unless this file is present in the mod.
+    """
     with tempfile.NamedTemporaryFile(suffix=".dat", delete=False) as tmp:
         tmp_path = tmp.name
     try:
@@ -52,11 +248,28 @@ def _build_combined_data_zip(dat,
     finally:
         os.unlink(tmp_path)
 
+    info_json = json.dumps(
+        {"Title": mod_name, "CacheStatus": 0, "Description": "", "Author": ""},
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    futura_path = Path(__file__).parent / "futuravailableunits.json"
+    futura_bytes = (futura_path.read_bytes() if futura_path.exists() else None)
+
+    # NKC's stored zips have a top-level wrapper folder, but those wrappers
+    # appear to be NKC's local-backup convention — installing our build with
+    # wrappers inside the zip triggers "Failed to load dataset / .gpv" errors
+    # and the mod browser flags the mod with an exclamation mark. Files at
+    # the zip root is what AoE2 DE actually expects.
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("info.json", info_json)
         zf.writestr("resources/_common/dat/empires2_x2_p1.dat", dat_bytes)
-        if tt_bytes is not None:
-            zf.writestr("resources/_common/dat/civTechTrees.json", tt_bytes)
+        if civs_json_bytes is not None:
+            zf.writestr("resources/_common/dat/civilizations.json", civs_json_bytes)
+        if futura_bytes is not None:
+            zf.writestr("resources/_common/dat/futuravailableunits.json",
+                        futura_bytes)
         for name, data in per_civ_tt.items():
             zf.writestr(f"resources/_common/dat/CivTechTrees/{name}", data)
         for fname, png in button_pngs.items():
@@ -67,24 +280,52 @@ def _build_combined_data_zip(dat,
 
 def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                             button_pngs: dict[str, bytes],
-                            combined_strings: dict[str, str]) -> bytes:
+                            combined_strings: dict[str, str],
+                            mod_name: str = "Custom Civs") -> bytes:
     """Package all UI assets for every civ into one ui zip."""
+    info_json = json.dumps(
+        {"Title": f"{mod_name} (UI)", "CacheStatus": 0, "Description": "", "Author": ""},
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    # Reverted wrapper folders (see data-zip comment).
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("info.json", info_json)
         for path, data in ai_stubs.items():
             zf.writestr(path, data)
+        aiconfig_path = Path(__file__).parent / "aiconfig.json"
+        if aiconfig_path.exists():
+            zf.writestr("resources/_common/ai/aiconfig.json",
+                        aiconfig_path.read_bytes())
+        ai_stubs_folder = Path(__file__).parent / "ai_stubs"
+        if ai_stubs_folder.exists():
+            written_paths = set(ai_stubs.keys())
+            for stub_file in sorted(ai_stubs_folder.iterdir()):
+                if stub_file.suffix not in (".ai", ".per"):
+                    continue
+                dest = f"resources/_common/ai/{stub_file.name}"
+                if dest in written_paths:
+                    continue
+                zf.writestr(dest, stub_file.read_bytes())
         for fname, png in button_pngs.items():
             zf.writestr(
                 f"resources/_common/wpfg/resources/civ_techtree/{fname}", png)
             zf.writestr(
                 f"widgetui/textures/ingame/icons/civ_techtree_buttons/{fname}",
                 png)
-            # Civ selection screen portrait + lobby preview icon.
-            # Both use widgetui/textures/menu/civs/{civname}.png (same 104x104 emblem,
-            # matching KM's convention). Only the base variant, no hover/pressed.
             if "_hover" not in fname and "_pressed" not in fname:
                 civ_fn = fname.removeprefix("menu_techtree_")
                 zf.writestr(f"widgetui/textures/menu/civs/{civ_fn}", png)
+        uniticons_folder = Path(__file__).parent / "uniticons"
+        if uniticons_folder.exists():
+            for icon_file in sorted(uniticons_folder.glob("*.png")):
+                if not re.match(r"^\d+_\d+\.png$", icon_file.name):
+                    continue
+                zf.writestr(
+                    f"resources/_common/wpfg/resources/uniticons/{icon_file.name}",
+                    icon_file.read_bytes(),
+                )
         for lang, content in combined_strings.items():
             zf.writestr(
                 f"resources/{lang}/strings/key-value/"
@@ -92,6 +333,7 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                 content.encode("utf-8"),
             )
     return buf.getvalue()
+
 
 
 def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
@@ -106,23 +348,43 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     print(f"  {info['num_civs']} civs, {info['num_units_per_civ']} units/civ, "
           f"{info['num_techs']} techs, {info['num_effects']} effects")
 
-    # Load civTechTrees.json once; patch all civ entries into it.
-    tt_path = _find_techtree_json(dat_path)
-    tt_data: dict | None = None
-    if tt_path and tt_path.exists():
-        try:
-            with open(tt_path, encoding="utf-8") as f:
-                tt_data = json.load(f)
-        except Exception as e:
-            print(f"  WARNING: Could not load civTechTrees.json: {e}")
-
     ct_folder = _find_civ_techtrees_folder(dat_path)
+
+    # Locate base civilizations.json next to the DAT (or fall back to project root).
+    from build_civ import _find_adjacent_json
+    base_civs_json = _find_adjacent_json(dat_path, "civilizations.json")
+    if base_civs_json is None or not base_civs_json.exists():
+        base_civs_json = Path(__file__).parent / "civilizations.json"
 
     # Accumulated UI assets across all civs.
     ai_stubs:   dict[str, bytes] = {}
     button_pngs: dict[str, bytes] = {}
     per_civ_tt: dict[str, bytes] = {}
     string_lines: dict[str, list[str]] = {lang: [] for lang in LANGUAGES}
+    # Maps DAT slot → (name_string_id, uu_icon_id) for civilizations.json patching.
+    civs_overrides: dict[int, tuple[int, int | None]] = {}
+
+    # Pre-compute which techtree positions will be replaced by custom civs so
+    # we can skip writing vanilla names for those positions.  AoE2 DE key-value
+    # string files are first-definition-wins, so writing "Britons" first then
+    # "Horsey Boys" second would leave the vanilla name in place.
+    replaced_tt_positions: set[int] = set()
+    for entry in civ_defs:
+        _jp = Path(entry["json"])
+        if not _jp.exists():
+            continue
+        _slot = _find_civ_slot(dat, entry["replace"])
+        if _slot is None:
+            continue
+        _tti = _civ_techtree_index(dat.civs[_slot].name)
+        if _tti is not None:
+            replaced_tt_positions.add(_tti)
+
+    # NOTE: Custom civ strings are written FIRST (in the loop below), and
+    # vanilla civ name fallbacks are written LAST (after the loop). This
+    # mirrors NapKingCole's Unhinged Empires structure, which is known to
+    # render civ-picker descriptions correctly in-game. Our earlier output
+    # (vanilla-first, custom-last) did not — even with no duplicate IDs.
 
     for entry in civ_defs:
         json_path    = Path(entry["json"])
@@ -147,23 +409,160 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         print(f"\n  [{slot}] {replace_name!r} → {alias!r}  (string ID {name_sid})")
 
         # Apply civ to DAT (modifies dat in place).
-        apply_civ(dat, civ_def, target_slot=slot)
+        civ_result = apply_civ(dat, civ_def, target_slot=slot)
+
+        # Resolve UT names from bonus IDs.
+        castle_ut_bid = _ut_bonus_id(civ_def, 2)
+        imp_ut_bid    = _ut_bonus_id(civ_def, 3)
+        castle_ut_name = _ut_name(castle_ut_bid, castle=True)
+        imp_ut_name    = _ut_name(imp_ut_bid, castle=False)
+        # Enrich civ_result with UT names so _patch_per_civ_techtree can update node labels.
+        civ_result["castle_ut_name"] = castle_ut_name
+        civ_result["imp_ut_name"]    = imp_ut_name
+
+        # UT string IDs: high-range bases (75010 + civ_index*10 + slot) that
+        # don't collide with vanilla. The DAT tech's language_dll_name now
+        # points here, so the in-game Castle UT button label resolves to our
+        # custom name instead of falling back to the vanilla tech text.
+        castle_ut_sid = civ_result["castle_ut_sid"]
+        imp_ut_sid    = civ_result["imp_ut_sid"]
+
+        # Resolve the custom UU info for description + string writes + techtree.
+        uu_info = _resolve_uu_info(civ_def, dat, slot)
+        civs_overrides[slot] = (name_sid, uu_info["icon_id"] if uu_info else None)
+        # Display name: prefer resolved (vanilla) UU; fall back to the KM UU
+        # name table so KM-custom UUs (39-77, 88+) still surface in the
+        # picker's bulleted block even though we don't create the unit.
+        _uu_refs = civ_def.get("bonuses", [None]*2)
+        _km_uu_idx = (_uu_refs[1][0]
+                      if len(_uu_refs) > 1 and isinstance(_uu_refs[1], list) and _uu_refs[1]
+                      else None)
+        uu_display = (uu_info["name"] if uu_info
+                      else _KM_UU_NAMES.get(_km_uu_idx, "Unique Unit"))
+        # Also look up the elite unit's dll_name for string writes.
+        uu_elite_dll: int | None = None
+        uu_elite_name: str | None = None
+        if uu_info:
+            elite_uid = uu_info.get("elite_id")
+            if elite_uid is not None and elite_uid != uu_info["unit_id"]:
+                try:
+                    eu2 = dat.civs[slot].units[elite_uid]
+                    uu_elite_dll  = eu2.language_dll_name
+                    uu_elite_name = f"Elite {uu_display}"
+                except (IndexError, AttributeError):
+                    pass
+
+        # Build civ selection screen description.
+        description = civ_def.get("description", "")
+        bonuses_raw  = civ_def.get("bonuses", [])
+        civ_bonuses  = bonuses_raw[0] if bonuses_raw and isinstance(bonuses_raw[0], list) else []
+        team_bonus_entries = (bonuses_raw[4]
+                              if len(bonuses_raw) > 4 and isinstance(bonuses_raw[4], list)
+                              else [])
+
+        # Strict vanilla format (verified against game's key-value-strings-utf8.txt
+        # 2026-06-12): spaces appear ONLY after `<b>Section:<b>` tags before \n.
+        # No trailing space before any other \n. No trailing \n before closing ".
+        # Example: `civilization\n\n• Bonus 1\n• Bonus 2\n\n<b>Unique Unit:<b> \nUU
+        # name\n\n<b>Unique Techs:<b> \n• UT 1\n• UT 2\n\n<b>Team Bonus:<b> \nTB"`.
+        desc_parts = [f'{description} civilization' if description else f'{alias} civilization']
+        desc_parts.append("\\n\\n")
+        bullet_lines = []
+        for entry in civ_bonuses:
+            if not isinstance(entry, list):
+                continue
+            bid  = str(entry[0])
+            mult = entry[1] if len(entry) > 1 else 1
+            txt  = _BONUS_NAMES.get(bid, "")
+            if not txt:
+                continue
+            suffix = f" [x{mult}]" if mult > 1 else ""
+            bullet_lines.append(f"• {txt}{suffix}")
+        desc_parts.append("\\n".join(bullet_lines))
+        # Section break + UU
+        desc_parts.append(f"\\n\\n<b>Unique Unit:<b> \\n{uu_display}")
+        # Section break + UTs
+        desc_parts.append(
+            "\\n\\n<b>Unique Techs:<b> \\n"
+            f"• {castle_ut_name}\\n• {imp_ut_name}"
+        )
+        if team_bonus_entries:
+            tb_lines = []
+            for entry in team_bonus_entries:
+                if not isinstance(entry, list):
+                    continue
+                bid = str(entry[0])
+                txt = _BONUS_NAMES.get(bid, "")
+                if txt:
+                    tb_lines.append(txt)
+            if tb_lines:
+                # Vanilla format: no bullets in Team Bonus; multiple bonuses
+                # are joined by "; " into one line of plain text.
+                desc_parts.append("\\n\\n<b>Team Bonus:<b> \\n")
+                desc_parts.append("; ".join(tb_lines))
+        full_desc = "".join(desc_parts)
+        # Strip trailing escape sequences and whitespace before the closing
+        # quote. AoE2 DE's modded-strings parser rejects entries ending in a
+        # dangling \n (literal backslash-n), silently falling back to the base
+        # game string — confirmed via Discord community report 2026-06-12.
+        # NKC's working strings end cleanly with the last bullet's content;
+        # ours used to end with ` \n"` which broke the override for the
+        # picker description specifically.
+        while full_desc.endswith("\\n") or full_desc.endswith(" "):
+            if full_desc.endswith("\\n"):
+                full_desc = full_desc[:-2]
+            else:
+                full_desc = full_desc.rstrip()
 
         # Strings: one line per civ per language (all langs get same English text).
         # Description string ID follows KM's offset: 120150 - 10271 = 109879 above name_sid.
-        description = civ_def.get("description", "")
         for lang in LANGUAGES:
             string_lines[lang].append(f'{name_sid} "{alias}"')
             string_lines[lang].append(
                 f'{name_sid + 80000} "Click to play as {alias}."')
-            if description:
-                string_lines[lang].append(
-                    f'{name_sid + 109879} "{description} Civilization"')
+            string_lines[lang].append(
+                f'{name_sid + 109879} "{full_desc}"')
+            # 4-string UT block per NapKingCole's pattern. Maps to the four
+            # tech.language_dll_* fields civ_appender now sets on the DAT tech:
+            #   sid          → name (button label) — short, just "Stirrups"
+            #   sid+1000     → description (button hover summary)
+            #   sid+100000   → help (full <cost> tooltip — matches vanilla style)
+            #   sid+150000   → tech_tree (F1 / help-context)
+            # The KM catalog packs "Name (description)" into one string; split
+            # so the button label matches vanilla style (just the name) and the
+            # tooltips show the description after the cost token.
+            for sid, full in ((castle_ut_sid, castle_ut_name),
+                              (imp_ut_sid, imp_ut_name)):
+                short, _, paren = full.partition(" (")
+                desc = paren.rstrip(")") if paren else ""
+                string_lines[lang].append(f'{sid} "{short}"')
+                # Button hover ("Research X — description"): one-liner with em dash.
+                hover = f"Research {short}" + (f" — {desc}" if desc else "")
+                string_lines[lang].append(f'{sid + DLL_CREATION_OFFSET} "{hover}"')
+                # Full <cost> tooltip — vanilla pattern: name+cost on first line,
+                # description on second. Avoids duplicating the name as we did before.
+                help_body = f"Research <b>{short}<b> (<cost>)"
+                if desc:
+                    help_body += f"\\n{desc}"
+                string_lines[lang].append(f'{sid + DLL_HELP_OFFSET} "{help_body}"')
+                # F1 / help-context block.
+                tree_body = short + (f"\\n{desc}" if desc else "")
+                string_lines[lang].append(f'{sid + 150000} "{tree_body}"')
+            # UU name strings for civ selection tech tree display.
+            if uu_info:
+                uu_dll = uu_info["dll_name"]
+                string_lines[lang].append(f'{uu_dll + 10000} "{uu_display}"')
+                string_lines[lang].append(f'{uu_dll + DLL_HELP_OFFSET} "{uu_display}"')
+            if uu_elite_dll and uu_elite_name:
+                string_lines[lang].append(f'{uu_elite_dll + 10000} "{uu_elite_name}"')
+                string_lines[lang].append(f'{uu_elite_dll + DLL_HELP_OFFSET} "{uu_elite_name}"')
 
         # Button PNGs (104×104 civ picker emblem).
+        # Use the canonical civTechTrees name (e.g. "britons"), not the DAT
+        # internal name (e.g. "british") — the game loads icons by canonical name.
         flag_png = _decode_flag(civ_def)
         if flag_png:
-            fn = _civ_file_name(ui_civ_name)
+            fn = _canonical_techtree_id(ui_civ_name).lower()
             for variant in ("", "_hover", "_pressed"):
                 button_pngs[f"menu_techtree_{fn}{variant}.png"] = flag_png
 
@@ -172,38 +571,89 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         ai_stubs[f"resources/_common/ai/{ai_name}.ai"]  = b""
         ai_stubs[f"resources/_common/ai/{ai_name}.per"] = AI_PER_STUB
 
-        # civTechTrees.json — patch in place.
-        if tt_data is not None:
-            changed = _patch_techtree_entry(tt_data, ui_civ_name, civ_def)
-            if changed == -1:
-                print(f"    WARNING: {ui_civ_name!r} not found in civTechTrees.json")
-            else:
-                print(f"    civTechTrees.json: {changed} nodes updated")
-
         # Per-civ CivTechTrees JSON.
         if ct_folder:
             vanilla_tt_name = _canonical_techtree_id(ui_civ_name)
             per_civ_path = ct_folder / f"{vanilla_tt_name}.json"
             if per_civ_path.exists():
-                patched = _patch_per_civ_techtree(per_civ_path, civ_def)
+                patched = _patch_per_civ_techtree(per_civ_path, civ_def, dat, slot,
+                                                    civ_result=civ_result)
                 if patched is not None:
                     per_civ_tt[f"{vanilla_tt_name}.json"] = patched
 
-    # Serialize civTechTrees.json after all patches.
-    tt_bytes = (json.dumps(tt_data, separators=(",", ":")).encode("utf-8")
-                if tt_data is not None else None)
+    # Fill in vanilla (unpatched) per-civ CivTechTrees JSONs for every civ not
+    # already overridden.
+    if ct_folder:
+        for json_file in sorted(ct_folder.glob("*.json")):
+            if json_file.name not in per_civ_tt:
+                per_civ_tt[json_file.name] = json_file.read_bytes()
 
-    # Combine string lines per language.
+    # Vanilla civ-name fallbacks: AFTER all custom civ entries, fill in the
+    # remaining slots so the picker still shows correct names for unmodified
+    # civs. First-definition-wins keeps custom entries above untouched.
+    for i, vanilla_name in enumerate(KM_TECHTREE_ORDER):
+        if i in replaced_tt_positions:
+            continue
+        sid = 10271 + i
+        for lang in LANGUAGES:
+            string_lines[lang].append(f'{sid} "{vanilla_name}"')
+            string_lines[lang].append(f'{sid + 80000} "Click to play as {vanilla_name}."')
+
+    # Vanilla civ-description fallbacks: re-emit 120150+i for positions 0-44
+    # so the full block is present (KM/NKC ship this — see project memory).
+    # (Previously suspected of crashing the lobby; turned out to be a corrupted
+    # Steam game-file install masquerading as a mod bug. See feedback memory.)
+    for i in range(min(len(KM_TECHTREE_ORDER), 45)):
+        if i in replaced_tt_positions:
+            continue
+        sid = 120150 + i
+        text = _VANILLA_CIV_DESCRIPTIONS.get(sid)
+        if text is None:
+            continue
+        for lang in LANGUAGES:
+            string_lines[lang].append(f'{sid} "{text}"')
+
+    # Combine string lines per language, sorted by numeric ID into contiguous
+    # blocks (matches NKC's known-good mod's structure). Insertion order also
+    # works in-game but leaves the picker description ignored by the engine;
+    # NKC's contiguous-block layout is the only known pattern where 120150+i
+    # overrides actually render in the picker UI.
+    def _sort_key(line: str) -> tuple[int, str]:
+        try:
+            return (int(line.split(" ", 1)[0]), line)
+        except ValueError:
+            return (10**9, line)
+
     combined_strings = {
-        lang: "\n".join(lines) + "\n"
+        lang: "\n".join(sorted(lines, key=_sort_key)) + "\n"
         for lang, lines in string_lines.items()
         if lines
     }
 
+    # Generate civilizations.json with updated UU icon paths for replaced civs.
+    civs_json_bytes: bytes | None = None
+    if base_civs_json and base_civs_json.exists() and civs_overrides:
+        try:
+            with open(base_civs_json, encoding="utf-8") as f:
+                civ_list = json.load(f).get("civilization_list", [])
+            for slot_idx, (name_sid, icon_id) in civs_overrides.items():
+                if slot_idx < len(civ_list):
+                    civ_list[slot_idx]["name_string_id"] = name_sid
+                    if icon_id is not None:
+                        civ_list[slot_idx]["unique_unit_image_paths"] = [
+                            f"/resources/uniticons/{icon_id:03d}_50730.png"
+                        ]
+            civs_json_bytes = json.dumps(
+                {"civilization_list": civ_list}, separators=(",", ":")
+            ).encode("utf-8")
+        except Exception as e:
+            print(f"  WARNING: Could not generate civilizations.json: {e}")
+
     print(f"\nBuilding combined mod zip → {out_path}")
     prefix = config.get("prefix", mod_name.lower().replace(" ", "_"))
-    data_zip = _build_combined_data_zip(dat, tt_bytes, button_pngs, per_civ_tt)
-    ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings)
+    data_zip = _build_combined_data_zip(dat, button_pngs, per_civ_tt, mod_name=mod_name,
+                                         civs_json_bytes=civs_json_bytes)
+    ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings, mod_name=mod_name)
 
     with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as outer:
         outer.writestr(f"{prefix}-data.zip", data_zip)
