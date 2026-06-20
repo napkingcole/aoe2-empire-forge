@@ -548,6 +548,17 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 # F1 / help-context block.
                 tree_body = short + (f"\\n{desc}" if desc else "")
                 string_lines[lang].append(f'{sid + 150000} "{tree_body}"')
+            # Bonus-specific research buttons (e.g. Imperial Scorpion, Royal
+            # Battle Elephant, Royal Lancer — bonuses 308/309/310). civ_appender
+            # surfaces these via bonus_results["extra_tech_strings"] since they
+            # aren't part of the castle_ut/imp_ut slots.
+            for ext in civ_result["bonus_results"].get("extra_tech_strings", []):
+                sid, name = ext["sid"], ext["name"]
+                string_lines[lang].append(f'{sid} "{name}"')
+                string_lines[lang].append(f'{sid + DLL_CREATION_OFFSET} "Research {name}"')
+                string_lines[lang].append(
+                    f'{sid + DLL_HELP_OFFSET} "Research <b>{name}<b> (<cost>)"')
+                string_lines[lang].append(f'{sid + 150000} "{name}"')
             # UU name strings for civ selection tech tree display.
             if uu_info:
                 uu_dll = uu_info["dll_name"]

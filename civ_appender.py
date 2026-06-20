@@ -202,7 +202,9 @@ DLL_HELP_OFFSET     = 100000
 # correct UT name). Avoid 79000–79999 — that's the range NapKingCole uses, so
 # this offset keeps us conflict-free if both mods ever load together.
 STR_UT_BASE       = 75000
-STR_UT_PER_CIV    = 10  # 0=Castle UT, 1=Imperial UT, remaining slots reserved
+STR_UT_PER_CIV    = 10  # 0=Castle UT, 1=Imperial UT, 2=Imperial Scorpion (308),
+                        # 3=Royal Battle Elephant (309), 4=Royal Lancer (310),
+                        # remaining slots reserved
 
 # Vanilla AoE2 DE (all DLC) ships with 60 civs. Community testing suggests
 # crashes occur around 64+; keep a small buffer.
@@ -546,6 +548,170 @@ _KNIGHT         = 38
 # Farm unit IDs and their variants (for 2×2 farm resizing)
 _FARM_UNITS = [50, 357, 1187, 1188, 1193, 1194, 1195]
 
+# ── Elite-tier "next step" units (bonuses 308/309/310) ───────────────────────
+# KM repurposes unused/spare vanilla unit slots for these rather than growing
+# every civ's unit array. Verified present (non-None) in the DE dat via
+# inspection: 1179/1180/1181 are disguised camel-scout leftovers
+# (HLELAIDISGUISED/HLELAI/HLETRIEN); 1113/1114 are an unused duplicate pair of
+# the Heavy Scorpion projectile. Source: fritz-net/AoE2-Civbuilder
+# civbuilder.cpp "Create Royal Lancer/Royal Battle Elephant/Imperial Scorpion".
+_SCORPION                     = 279
+_HEAVY_SCORPION               = 542
+_IMP_SCORPION                 = 1179   # spare slot HLELAIDISGUISED
+_IMP_SCORPION_PROJECTILE      = 1113   # spare slot "Projectile Heavy Scorpion"
+_IMP_SCORPION_PROJECTILE_FIRE = 1114   # spare slot "Projectile Heavy Scorpion (Fire)"
+
+_BATTLE_ELEPHANT       = 1132
+_ELITE_BATTLE_ELEPHANT = 1134
+_ROYAL_ELEPHANT        = 1180   # spare slot HLELAI
+
+_STEPPE_LANCER       = 1370
+_ELITE_STEPPE_LANCER = 1372
+_ROYAL_LANCER        = 1181   # spare slot HLETRIEN
+
+# Vanilla hotkey IDs for the predecessor tech at the same building/button slot.
+# AoE2 DE's hotkey binding is keyed per-tech (not per button position), so the
+# "next tier" research must reuse its predecessor's hot_key_id for the S/D
+# shortcuts to keep working once the button is occupied by our new tech.
+_HEAVY_SCORPION_HOTKEY       = 18244
+_ELITE_BATTLE_ELEPHANT_HOTKEY = 18299
+_ELITE_STEPPE_LANCER_HOTKEY  = 18402
+
+
+def _setup_imperial_scorpion_unit(dat: DatFile) -> None:
+    """Write Imperial Scorpion unit data into slot 1179 for every civ.
+
+    Matches civ.Units[UNIT_IMP_SCORPION] = civ.Units[542] in KM's civbuilder.cpp,
+    plus the buffed projectile pair (1113/1114). Identical for every civ — only
+    the upgrade tech (civ-specific, added by the caller) decides who can
+    actually research their way into fielding one.
+    """
+    for civ in dat.civs:
+        src = civ.units[_HEAVY_SCORPION]
+        if src is None:
+            continue
+        u = deepcopy(src)
+        u.id = _IMP_SCORPION
+        u.name = "IMPBAL"
+        u.hit_points = 60
+        if u.type_50:
+            u.type_50.displayed_attack = 18
+            for atk in u.type_50.attacks:
+                if atk.class_ == 3:   # ranged/pierce damage class
+                    atk.amount = 18
+            u.type_50.projectile_unit_id = _IMP_SCORPION_PROJECTILE
+        if u.creatable:
+            u.creatable.secondary_projectile_unit = _IMP_SCORPION_PROJECTILE
+        u.enabled = 0
+        civ.units[_IMP_SCORPION] = u
+
+        for proj_id, label in ((_IMP_SCORPION_PROJECTILE, "Projectile Imperial Scorpion"),
+                                (_IMP_SCORPION_PROJECTILE_FIRE, "Projectile Imperial Scorpion (Fire)")):
+            p = civ.units[proj_id]
+            if p is None or p.type_50 is None:
+                continue
+            p.name = label
+            p.type_50.displayed_attack = 14
+            for atk in p.type_50.attacks:
+                if atk.class_ == 3:
+                    atk.amount = 14
+
+
+def _setup_royal_battle_elephant_unit(dat: DatFile) -> None:
+    """Write Royal Battle Elephant unit data into slot 1180 for every civ.
+
+    Matches civ.Units[UNIT_ROYAL_ELEPHANT] = civ.Units[1134] in KM's source.
+    KM left the cosmetic graphic overrides commented out ("seem wrong"), so we
+    keep Elite Battle Elephant's graphics as-is, same as upstream.
+    """
+    for civ in dat.civs:
+        src = civ.units[_ELITE_BATTLE_ELEPHANT]
+        if src is None:
+            continue
+        u = deepcopy(src)
+        u.id = _ROYAL_ELEPHANT
+        u.name = "RBATELE"
+        u.hit_points = 330
+        if u.type_50:
+            u.type_50.displayed_attack = 15
+            for atk in u.type_50.attacks:
+                if atk.class_ == 4:   # melee damage class
+                    atk.amount = 15
+            for arm in u.type_50.armours:
+                if arm.class_ == 3:   # pierce armour class
+                    arm.amount = 4
+        if u.creatable:
+            u.creatable.displayed_pierce_armour = 4
+        u.enabled = 0
+        civ.units[_ROYAL_ELEPHANT] = u
+
+
+def _setup_royal_lancer_unit(dat: DatFile) -> None:
+    """Write Royal Lancer unit data into slot 1181 for every civ.
+
+    Matches civ.Units[UNIT_ROYAL_LANCER] = civ.Units[1372] in KM's source,
+    including the Cuman Chief graphic reskin (graphic IDs 10508-10513 are
+    vanilla DE assets, verified present in the dat).
+    """
+    for civ in dat.civs:
+        src = civ.units[_ELITE_STEPPE_LANCER]
+        if src is None:
+            continue
+        u = deepcopy(src)
+        u.id = _ROYAL_LANCER
+        u.name = "RSLANCER"
+        u.hit_points = 100
+        u.standing_graphic = (10510, 10511)
+        u.dying_graphic = 10509
+        if u.type_50:
+            u.type_50.displayed_attack = 13
+            u.type_50.attack_graphic = 10508
+            for atk in u.type_50.attacks:
+                if atk.class_ == 4:   # melee damage class
+                    atk.amount = 13
+        if u.dead_fish:
+            u.dead_fish.walking_graphic = 10513
+        u.enabled = 0
+        civ.units[_ROYAL_LANCER] = u
+
+
+def _add_upgrade_tier_tech(dat: DatFile, civ_index: int, *, name: str,
+                           from_units: list[int], to_unit: int,
+                           prereq_tech: int, location: int, button: int,
+                           research_time: int, icon_id: int,
+                           costs: list[tuple[int, int]],
+                           hot_key_id: int, str_sid: int) -> int:
+    """Create a civ-owned "next tier" unit-upgrade tech (KM Royal/Imperial pattern).
+
+    Upgrades both from_units (e.g. base + elite tier) into to_unit, gated on
+    prereq_tech (the elite/make-avail tech), reusing the predecessor's
+    building/button slot — exactly one of the unit-line techs sharing that
+    button is ever active for a given civ, so this never collides in-game.
+    Returns the new tech ID.
+    """
+    eff = Effect(
+        name=name,
+        effect_commands=[
+            EffectCommand(type=EC_UPGRADE, a=fu, b=to_unit, c=-1, d=0.0)
+            for fu in from_units
+        ],
+    )
+    eff_id = _append_effect(dat, eff)
+    tech = _make_tech(
+        name=name, effect_id=eff_id, civ_index=civ_index,
+        age_req=prereq_tech, location=location, button=button,
+        research_time=research_time, icon_id=icon_id,
+        lang_name=str_sid, lang_desc=str_sid + DLL_CREATION_OFFSET,
+        lang_help=str_sid + DLL_HELP_OFFSET, lang_tech_tree=str_sid + 150000,
+        hot_key_id=hot_key_id,
+    )
+    n = min(len(costs), 3)
+    tech.resource_costs = tuple(
+        ResearchResourceCost(type=t, amount=a, flag=1) for t, a in costs[:n]
+    ) + tuple(ResearchResourceCost(type=-1, amount=0, flag=0) for _ in range(3 - n))
+    _append_tech(dat, tech)
+    return len(dat.techs) - 1
+
 
 def _free_tech_cmds(tech_ids: list[int]) -> list[EffectCommand]:
     """EffectCommands to zero all costs and research time for given tech IDs."""
@@ -599,14 +765,53 @@ def _siege_workshop_tech_ids(dat: DatFile) -> list[int]:
     return out
 
 
+def _market_tech_ids(dat: DatFile) -> list[int]:
+    """Return IDs of all techs whose primary research location is the Market."""
+    BUILDING_MARKET = 84
+    out = []
+    for i, t in enumerate(dat.techs):
+        locs = getattr(t, 'research_locations', [])
+        if locs and locs[0].location_id == BUILDING_MARKET:
+            out.append(i)
+    return out
+
+
+def _barracks_tech_ids(dat: DatFile) -> list[int]:
+    """Return IDs of all techs whose primary research location is the Barracks."""
+    BUILDING_BARRACKS = 12
+    out = []
+    for i, t in enumerate(dat.techs):
+        locs = getattr(t, 'research_locations', [])
+        if locs and locs[0].location_id == BUILDING_BARRACKS:
+            out.append(i)
+    return out
+
+
+def _find_upgrade_tech(dat: DatFile, from_unit: int, to_unit: int) -> int | None:
+    """Return the tech ID whose effect upgrades from_unit → to_unit, or None."""
+    for i, tech in enumerate(dat.techs):
+        eid = tech.effect_id
+        if eid < 0 or eid >= len(dat.effects):
+            continue
+        for ec in dat.effects[eid].effect_commands:
+            if ec.type == EC_UPGRADE and int(ec.a) == from_unit and int(ec.b) == to_unit:
+                return i
+    return None
+
+
 def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
-                          multiplier: int) -> bool:
+                          multiplier: int, extra_strings: list[dict]) -> bool:
     """
     Handle a single createCivBonus-style bonus.  Returns True if handled.
 
     Source: fritz-net/AoE2-Civbuilder modding/civbuilder.cpp createCivBonuses().
     Only implements bonuses that have a direct effect mapping; complex structural
     bonuses (farm layouts, mill requirements) are still skipped.
+
+    extra_strings collects {"sid", "name"} entries for any new player-visible
+    research button this call creates, so the caller can write matching
+    key-value string text (button label / hover / help / tech-tree) — mirrors
+    how _append_unique_tech_stubs' castle/imperial UT strings are surfaced.
     """
     mult = multiplier
 
@@ -633,6 +838,14 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _add_auto_fire_tech(dat, civ_index,
                             _free_tech_cmds([_REDEMPTION]),
                             name="C-Bonus, free Redemption")
+        return True
+
+    if bonus_id == 261:          # Elite Steppe Lancer upgrade free
+        tid = _find_upgrade_tech(dat, _STEPPE_LANCER, _ELITE_STEPPE_LANCER)
+        if tid is not None:
+            _add_auto_fire_tech(dat, civ_index,
+                                _free_tech_cmds([tid]),
+                                name="C-Bonus, Elite Steppe Lancer free")
         return True
 
     # ── Economic resource bonuses ─────────────────────────────────────────────
@@ -679,6 +892,15 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                                 name="C-Bonus, blacksmith no gold")
         return True
 
+    if bonus_id == 234:          # Market techs cost no gold
+        mkt_ids = _market_tech_ids(dat)
+        cmds = [EffectCommand(type=EC_TECH_COST, a=tid, b=3, c=0, d=0.0)
+                for tid in mkt_ids]
+        if cmds:
+            _add_auto_fire_tech(dat, civ_index, cmds,
+                                name="C-Bonus, market no gold")
+        return True
+
     if bonus_id == 137:          # -50% food cost on Blacksmith + Siege Workshop techs
         factor = 0.5 ** mult
         tids = _blacksmith_tech_ids(dat) + _siege_workshop_tech_ids(dat)
@@ -706,6 +928,19 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                                 name="C-Bonus, -50% cost stable techs")
         return True
 
+    if bonus_id == 290:          # Barracks technologies cost -50%
+        factor = 0.5 ** mult
+        cmds = [
+            EffectCommand(type=EC_TECH_COST, a=tid, b=rc.type, c=0, d=rc.amount * factor)
+            for tid in _barracks_tech_ids(dat)
+            for rc in dat.techs[tid].resource_costs
+            if rc.flag == 1
+        ]
+        if cmds:
+            _add_auto_fire_tech(dat, civ_index, cmds,
+                                name="C-Bonus, -50% barracks tech cost")
+        return True
+
     # ── Cavalier in Castle Age ────────────────────────────────────────────────
     if bonus_id == 103:          # Cavalier upgrade available in Castle Age
         _TECH_CAVALIER = 209
@@ -730,6 +965,61 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         dat.effects[tt_eff_id].effect_commands.append(
             EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(_TECH_CAVALIER))
         )
+        return True
+
+    if bonus_id == 247:          # Parthian Tactics available in Castle Age
+        # Find all Imperial Age techs at the Archery Range (= Parthian Tactics).
+        # We scan rather than hardcode because tech IDs can drift across versions.
+        _ARCHERY_RANGE = 87
+        tt_eff_id = dat.civs[civ_index].tech_tree_id
+        for orig_tid, t in enumerate(dat.techs):
+            locs = getattr(t, 'research_locations', [])
+            if not locs or locs[0].location_id != _ARCHERY_RANGE:
+                continue
+            if 103 not in t.required_techs:   # must be gated on Imperial Age
+                continue
+            new_tech = deepcopy(t)
+            new_tech.civ = civ_index
+            reqs = list(new_tech.required_techs)
+            reqs[reqs.index(103)] = 102        # shift: Imperial → Castle Age
+            new_tech.required_techs = tuple(reqs)
+            eid = t.effect_id
+            if 0 <= eid < len(dat.effects):
+                new_eff = deepcopy(dat.effects[eid])
+                dat.effects.append(new_eff)
+                new_tech.effect_id = len(dat.effects) - 1
+            dat.techs.append(new_tech)
+            dat.effects[tt_eff_id].effect_commands.append(
+                EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(orig_tid))
+            )
+        return True
+
+    if bonus_id == 221:          # Spearman/Militia upgrades one age earlier (except Man-at-Arms)
+        # Shift Castle Age (102) Barracks techs to Feudal Age (101), and
+        # Imperial Age (103) Barracks techs to Castle Age (102).
+        # Man-at-Arms (gated on Feudal Age 101) is intentionally excluded.
+        _SHIFT = {103: 102, 102: 101}
+        tt_eff_id = dat.civs[civ_index].tech_tree_id
+        for orig_tid in _barracks_tech_ids(dat):
+            t = dat.techs[orig_tid]
+            reqs = list(t.required_techs)
+            shift_idx = next((j for j, r in enumerate(reqs) if r in _SHIFT), None)
+            if shift_idx is None:
+                continue   # no age gate to shift (or Feudal Age gate = Man-at-Arms)
+            new_tech = deepcopy(t)
+            new_tech.civ = civ_index
+            new_reqs = list(new_tech.required_techs)
+            new_reqs[shift_idx] = _SHIFT[reqs[shift_idx]]
+            new_tech.required_techs = tuple(new_reqs)
+            eid = t.effect_id
+            if 0 <= eid < len(dat.effects):
+                new_eff = deepcopy(dat.effects[eid])
+                dat.effects.append(new_eff)
+                new_tech.effect_id = len(dat.effects) - 1
+            dat.techs.append(new_tech)
+            dat.effects[tt_eff_id].effect_commands.append(
+                EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(orig_tid))
+            )
         return True
 
     # ── Archer cost reductions ────────────────────────────────────────────────
@@ -825,6 +1115,56 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         dat.techs.append(upgrade_tech)
         return True
 
+    # ── Elite-tier "next step" upgrades ───────────────────────────────────────
+    if bonus_id == 308:          # Heavy Scorpion → Imperial Scorpion
+        _setup_imperial_scorpion_unit(dat)
+        str_sid = STR_UT_BASE + civ_index * STR_UT_PER_CIV + 2
+        _add_upgrade_tier_tech(
+            dat, civ_index, name="Imperial Scorpion",
+            from_units=[_SCORPION, _HEAVY_SCORPION], to_unit=_IMP_SCORPION,
+            prereq_tech=239, location=49, button=8, research_time=150,
+            icon_id=38, costs=[(0, 1200), (1, 1000)],
+            hot_key_id=_HEAVY_SCORPION_HOTKEY, str_sid=str_sid,
+        )
+        extra_strings.append({"sid": str_sid, "name": "Imperial Scorpion"})
+        # Cosmetic fire-arrow reskin once the civ researches Chemistry (47).
+        # KM appends this to the global Chemistry effect; we scope it to a
+        # civ-owned auto-fire tech instead so a civ=-1 effect shared by every
+        # other civ in the DAT is never mutated.
+        _add_auto_fire_tech(
+            dat, civ_index,
+            [EffectCommand(type=EC_UPGRADE, a=_IMP_SCORPION_PROJECTILE,
+                           b=_IMP_SCORPION_PROJECTILE_FIRE, c=-1, d=0.0)],
+            age_req=47, name="Imperial Scorpion fire arrow (Chemistry)",
+        )
+        return True
+
+    if bonus_id == 309:          # Elite Battle Elephant → Royal Battle Elephant
+        _setup_royal_battle_elephant_unit(dat)
+        str_sid = STR_UT_BASE + civ_index * STR_UT_PER_CIV + 3
+        _add_upgrade_tier_tech(
+            dat, civ_index, name="Royal Battle Elephant",
+            from_units=[_BATTLE_ELEPHANT, _ELITE_BATTLE_ELEPHANT], to_unit=_ROYAL_ELEPHANT,
+            prereq_tech=631, location=101, button=9, research_time=200,
+            icon_id=121, costs=[(0, 1200), (3, 1000)],
+            hot_key_id=_ELITE_BATTLE_ELEPHANT_HOTKEY, str_sid=str_sid,
+        )
+        extra_strings.append({"sid": str_sid, "name": "Royal Battle Elephant"})
+        return True
+
+    if bonus_id == 310:          # Elite Steppe Lancer → Royal Lancer
+        _setup_royal_lancer_unit(dat)
+        str_sid = STR_UT_BASE + civ_index * STR_UT_PER_CIV + 4
+        _add_upgrade_tier_tech(
+            dat, civ_index, name="Royal Lancer",
+            from_units=[_STEPPE_LANCER, _ELITE_STEPPE_LANCER], to_unit=_ROYAL_LANCER,
+            prereq_tech=715, location=101, button=9, research_time=100,
+            icon_id=123, costs=[(0, 1200), (3, 900)],
+            hot_key_id=_ELITE_STEPPE_LANCER_HOTKEY, str_sid=str_sid,
+        )
+        extra_strings.append({"sid": str_sid, "name": "Royal Lancer"})
+        return True
+
     return False  # not handled
 
 
@@ -852,6 +1192,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     civ_bonuses = raw[0] if len(raw) > 0 and isinstance(raw[0], list) else []
     skipped = []
     applied = 0
+    extra_strings: list[dict] = []
     for entry in civ_bonuses:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
             continue
@@ -903,7 +1244,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             applied += len(ec_entries)
             continue
 
-        if _create_bonus_handler(dat, bonus_id, civ_index, multiplier):
+        if _create_bonus_handler(dat, bonus_id, civ_index, multiplier, extra_strings):
             applied += 1
         else:
             skipped.append(bonus_id)
@@ -912,7 +1253,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
           f"{len(skipped)} bonus IDs skipped (not in catalog): {skipped[:8]}"
           + ("…" if len(skipped) > 8 else ""))
 
-    bonus_result = {"applied": applied, "skipped": skipped}
+    bonus_result = {"applied": applied, "skipped": skipped, "extra_tech_strings": extra_strings}
 
     # ── Team bonus (index 4) ──────────────────────────────────────────────────
     team_entries = raw[4] if len(raw) > 4 and isinstance(raw[4], list) else []
@@ -1194,7 +1535,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         warnings.append(msg)
 
     # 7. Apply bonuses from catalog.
-    bonus_results: dict = {"applied": 0, "skipped": [], "team_applied": 0, "team_total": 0}
+    bonus_results: dict = {"applied": 0, "skipped": [], "team_applied": 0, "team_total": 0,
+                           "extra_tech_strings": []}
     if "bonuses" in civ_def:
         bonus_results = _apply_bonuses(dat, civ_index, civ_def, tb_eff_id)
 
