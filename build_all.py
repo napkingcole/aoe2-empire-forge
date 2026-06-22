@@ -177,8 +177,10 @@ def _load_vanilla_civ_descriptions() -> dict[int, str]:
     KM/NKC pattern). Writing only the modified slots was not enough; we have to
     re-emit vanilla content for the unchanged slots too.
     """
-    src = Path(__file__).parent / "AoE2-Civbuilder-main" / "public" / \
-          "aoe2techtree" / "data" / "locales" / "en" / "strings.json"
+    src = Path(__file__).parent / "vanilla" / "aoe2techtree_strings" / "en_strings.json"
+    if not src.exists():
+        src = Path(__file__).parent / "AoE2-Civbuilder-main" / "public" / \
+              "aoe2techtree" / "data" / "locales" / "en" / "strings.json"
     if not src.exists():
         return {}
     raw = json.loads(src.read_text(encoding="utf-8"))

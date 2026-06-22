@@ -3,5 +3,7 @@
 /AoE2-Civbuilder-main/
 /venv/
 /my_civs/
+/build/
+/dist/
 .claude
 .DS_Store
