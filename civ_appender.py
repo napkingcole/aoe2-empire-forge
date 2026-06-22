@@ -11,6 +11,7 @@ from genieutils.tech import Tech, ResearchLocation, ResearchResourceCost
 from genieutils.unitheaders import UnitHeaders
 
 from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list
+import km_custom_uu
 
 # ── EffectCommand types ───────────────────────────────────────────────────────
 EC_SET       = 0
@@ -28,8 +29,11 @@ BUILDING_BLACKSMITH  = 103
 
 # ── KM UU index → (make_avail_tech_id, elite_upgrade_tech_id) ────────────────
 # Source: fritz-net/AoE2-Civbuilder modding/civbuilder.cpp uuTechIDs[] init +
-#         modding/enums/tech_ids.h.  Indices 0-38 and 78-87 are vanilla UUs;
-#         39-77 and 88+ are KM-custom units (not supported here).
+#         modding/enums/tech_ids.h.  Indices 0-38, 45, and 78-87 are real
+#         vanilla DE units. The rest of 39-77 (there is no 88+ — KM's
+#         uu_ids.h tops out at 77) are from-scratch KM creations with no
+#         vanilla unit to point to; those are handled by km_custom_uu.py
+#         instead of this dict (see apply_civ's km_uu_is_custom branch).
 _KM_UU_TECHS: dict[int, tuple[int, int]] = {
     0:  (263, 360),   # Longbowman
     1:  (275, 363),   # Throwing Axeman
@@ -80,6 +84,9 @@ _KM_UU_TECHS: dict[int, tuple[int, int]] = {
     85: (1035, 1036), # Tiger Cavalry
     86: (990, 991),   # Iron Pagoda
     87: (1001, 1002), # Liao Dao
+    45: (881, 882),   # Centurion — real vanilla DE unit (Romans, civ 43),
+                      # not a KM-custom creation despite sitting inside the
+                      # 39-77 custom-UU index range.
 }
 
 # Display names for KM UU indices. Vanilla indices (0-38, 78-87) are creatable
@@ -178,9 +185,21 @@ _KM_UU_NAMES: dict[int, str] = {
 }
 
 # ── String ID allocation ──────────────────────────────────────────────────────
-# Vanilla strings are in the 0–26xxx range; we start well above that.
+# Confirmed by scanning the actual shipped key-value-strings-utf8.txt (a real
+# extract, not a guess): vanilla content is NOT confined to a low range like
+# "0-26xxx" — campaign dialogue, scenario strings, and UI text are scattered
+# as high as ~590000, including dense clusters throughout 40000-47000 and
+# 75000-76000+ (e.g. 75001 = "Alexios Komnenos", a campaign character name).
+# Our previous bases (40000, 75000) collided with real, currently-shipped
+# vanilla strings — not a future risk, an active one. 600000+ is the first
+# verified-clear range (checked 600000-900000 plus every offset we actually
+# compute from these bases: +0, +1000, +100000, +150000). No range is
+# permanently guaranteed against a future DLC ever reaching this high, but
+# at ~300k IDs of headroom past anything currently shipped, that's about as
+# future-proof as a shared, vendor-controlled namespace allows — and if it
+# ever does need to move again, it's a one-line constant change.
 # Each custom civ gets a block of STRING_BLOCK_SIZE IDs.
-STRING_BASE       = 40000
+STRING_BASE       = 620000
 STRING_BLOCK_SIZE = 100
 
 # Offsets within each civ's string block
@@ -190,8 +209,9 @@ STR_CASTLE_UT   = 2
 STR_IMPERIAL_UT = 3
 
 # AoE2 DLL offset conventions: name+0, creation tooltip = name+1000, help = name+100000
-DLL_CREATION_OFFSET = 1000
-DLL_HELP_OFFSET     = 100000
+DLL_CREATION_OFFSET  = 1000
+DLL_HELP_OFFSET      = 100000
+DLL_TECH_TREE_OFFSET = 150000
 
 # UT name strings live in their own high-range block so the engine treats them as
 # brand-new strings rather than overrides of vanilla 7xxx tech names. Overriding
@@ -199,16 +219,339 @@ DLL_HELP_OFFSET     = 100000
 # Castle UT button label — confirmed in-game by comparing our mod (which reused
 # vanilla 7419 for Britons' Yeomen slot and showed "Yeomen" on the button) to
 # NapKingCole's Unhinged Empires mod (which uses 79xxx-range IDs and shows the
-# correct UT name). Avoid 79000–79999 — that's the range NapKingCole uses, so
-# this offset keeps us conflict-free if both mods ever load together.
-STR_UT_BASE       = 75000
+# correct UT name). Moved off the original 75000 base (see STRING_BASE comment
+# above — that range is live vanilla campaign content) to a verified-clear
+# range; still conflict-free with NapKingCole's 79xxx since we're nowhere near it.
+STR_UT_BASE       = 650000
 STR_UT_PER_CIV    = 10  # 0=Castle UT, 1=Imperial UT, 2=Imperial Scorpion (308),
                         # 3=Royal Battle Elephant (309), 4=Royal Lancer (310),
-                        # remaining slots reserved
+                        # 5=KM-custom UU elite TECH name (km_custom_uu.py),
+                        # 6=KM-custom UU unit name, 7=KM-custom UU elite unit
+                        # name — all 10 slots now spoken for; bump this
+                        # constant if a future feature needs an 11th.
+
+# llm/advanced_techniques.md (empirically tested, not a DAT-format limit —
+# the unit/tech struct fields are full 32-bit ints) found that the engine's
+# in-game "currently training" hover tooltip silently shows nothing if
+# language_dll_creation exceeds 65535. Needs its own low, verified-clear
+# range distinct from STRING_BASE/STR_UT_BASE above (those are deliberately
+# high specifically to dodge vanilla content, which would be wrong here).
+# Confirmed clear via the same extracted-strings scan: only 9 vanilla IDs
+# exist in 50000-60000 (all in 50001-50013, scenario-editor UI text) —
+# starting at 50100 stays clear with room to spare under the 65536 ceiling.
+LOW_STR_BASE    = 50100
+LOW_STR_PER_CIV = 4   # 0=KM-custom UU creation tooltip, 1=KM-custom Elite
+                      # unit creation tooltip, 2-3 reserved.
+
+# ── Campaign-string override pool (the ONLY working string mechanism) ──────
+# *** CONFIRMED: AoE2 DE's modded-strings overlay can ONLY override IDs that
+# already exist in the base game's string table. *** A brand-new id (the
+# old STRING_BASE/STR_UT_BASE/LOW_STR_BASE scheme, and the fixed
+# 660001+/50090+ ids this section used to hardcode) is silently ignored, no
+# matter how correctly it's written to the DAT or the strings file — verified
+# live, including via an actual Steam Workshop publish, not just a local
+# install. Overriding an EXISTING vanilla id worked immediately. See memory
+# project_string_id_engine_limit.md for the full incident writeup.
+#
+# Pool of 1813 real, currently-defined vanilla string IDs, harvested from
+# two groups of historically-themed campaigns/scenario packs (Bayinnaung 1-5
+# + Le Loi 1-6 + Palermo/Prague/Porto/Plymouth/Philadelphia/Peru campaigns;
+# and separately Wallace 1-7 + Joan 1-6 + Barbarossa 1-6 + Saladin 1-6 +
+# Genghis Khan 1-6 + Attila 1-6 + El Cid 1-6 + Montezuma 1-6 + the single
+# historical-battle scenarios Tours/Vinlandsaga/Hastings/Manzikert/
+# Agincourt/Lepanto/Kyoto/Noryang Point). Deliberately restricted to IDs
+# ACTUALLY DEFINED in the vanilla file (not just numerically in-range) —
+# undefined-but-nearby IDs are unverified and might behave like brand-new
+# ones. One known dangerous gap was found and excluded while building this:
+# ids 50001-50013 sit physically between two campaign sections in the
+# shipped file but are GENERIC scenario-difficulty-selector UI text used by
+# every campaign, not scoped to one — confirmed by content ("Standard --
+# Choose this if you have played the William Wallace campaign...") and
+# excluded from the pool.
+#
+# Cost of using this pool: any player who has this mod's UI half active AND
+# specifically plays one of the campaigns/scenarios above will see our
+# override text instead of that mission's real dialogue/player names.
+# Skirmish, multiplayer, and every other campaign are unaffected. Document
+# this trade-off for end users (e.g. "disable the UI mod before playing
+# campaigns").
+CAMPAIGN_STRING_POOL: list[int] = [
+    69800, 69801, 69802, 69803, 69804, 69805, 69808, 69809, 69810, 69811,
+    69812, 69813, 69814, 69815, 69816, 69817, 69818, 69819, 69820, 69821,
+    69822, 69823, 69824, 69825, 69826, 69827, 69828, 69829, 69830, 69831,
+    69832, 69833, 69834, 69835, 69836, 69837, 69838, 69900, 69901, 69902,
+    69903, 69904, 69905, 69908, 69909, 69910, 69911, 69912, 69913, 69914,
+    69915, 69916, 69917, 69918, 69919, 69920, 69921, 69922, 69923, 69924,
+    69925, 69926, 69927, 69928, 70000, 70001, 70002, 70003, 70004, 70005,
+    70008, 70009, 70010, 70011, 70012, 70013, 70014, 70015, 70016, 70017,
+    70018, 70019, 70020, 70021, 70022, 70023, 70024, 70025, 70026, 70027,
+    70028, 70029, 70030, 70031, 70032, 70033, 70034, 70035, 70036, 70037,
+    70038, 70100, 70101, 70102, 70103, 70104, 70105, 70106, 70108, 70109,
+    70110, 70111, 70112, 70113, 70114, 70115, 70116, 70117, 70118, 70119,
+    70120, 70121, 70122, 70123, 70124, 70125, 70126, 70127, 70128, 70129,
+    70130, 70131, 70132, 70133, 70134, 70135, 70136, 70200, 70201, 70202,
+    70203, 70204, 70205, 70206, 70208, 70209, 70210, 70211, 70212, 70213,
+    70214, 70215, 70216, 70217, 70218, 70219, 70220, 70221, 70222, 70223,
+    70224, 70225, 70226, 70227, 70228, 70229, 70230, 70231, 70232, 70233,
+    70234, 70235, 70236, 70237, 70238, 70300, 70301, 70302, 70303, 70304,
+    70305, 70306, 70307, 70308, 70309, 70310, 70311, 70312, 70313, 70314,
+    70315, 70316, 70317, 70318, 70319, 70320, 70321, 70322, 70323, 70324,
+    70325, 70326, 70331, 70332, 70333, 70338, 70339, 70400, 70401, 70402,
+    70403, 70404, 70408, 70409, 70410, 70411, 70412, 70413, 70414, 70415,
+    70416, 70417, 70418, 70419, 70420, 70421, 70422, 70423, 70424, 70425,
+    70426, 70427, 70428, 70429, 70430, 70431, 70432, 70500, 70501, 70502,
+    70503, 70504, 70508, 70509, 70510, 70511, 70512, 70513, 70514, 70515,
+    70516, 70517, 70518, 70519, 70520, 70521, 70522, 70523, 70524, 70525,
+    70526, 70527, 70528, 70529, 70530, 70531, 70532, 70533, 70534, 70535,
+    70536, 70537, 70538, 70539, 70540, 70541, 70542, 70543, 70544, 70600,
+    70601, 70602, 70603, 70604, 70605, 70608, 70609, 70610, 70611, 70612,
+    70613, 70614, 70615, 70616, 70617, 70618, 70619, 70620, 70621, 70622,
+    70623, 70624, 70700, 70701, 70702, 70703, 70704, 70705, 70708, 70709,
+    70710, 70711, 70712, 70713, 70714, 70715, 70716, 70717, 70718, 70719,
+    70720, 70721, 70722, 70723, 70724, 70725, 70726, 70727, 70728, 70729,
+    70730, 70731, 70732, 70733, 70734,
+    44000, 44001, 44008, 44009, 44010, 44011, 44012, 44013, 44014, 44015, 44016,
+    44017, 44018, 44019, 44020, 44021, 44022, 44023, 44024, 44025, 44026, 44027,
+    44028, 44029, 44030, 44031, 44100, 44108, 44109, 44110, 44111, 44112, 44113,
+    44114, 44115, 44116, 44117, 44118, 44119, 44120, 44121, 44122, 44123, 44124,
+    44125, 44126, 44200, 44208, 44209, 44210, 44211, 44212, 44213, 44214, 44215,
+    44216, 44217, 44218, 44219, 44220, 44221, 44222, 44223, 44224, 44225, 44226,
+    44227, 44228, 44229, 44230, 44231, 44300, 44301, 44308, 44309, 44310, 44311,
+    44312, 44313, 44314, 44315, 44316, 44317, 44318, 44319, 44320, 44321, 44322,
+    44323, 44324, 44325, 44326, 44327, 44328, 44329, 44330, 44331, 44400, 44401,
+    44408, 44409, 44410, 44411, 44412, 44413, 44414, 44415, 44416, 44417, 44418,
+    44419, 44420, 44421, 44422, 44423, 44424, 44425, 44426, 44427, 44428, 44429,
+    44430, 44431, 44432, 44433, 44434, 44435, 44436, 44437, 44438, 44439, 44500,
+    44501, 44502, 44508, 44509, 44510, 44511, 44512, 44513, 44514, 44515, 44516,
+    44517, 44518, 44519, 44520, 44521, 44522, 44523, 44524, 44525, 44526, 44527,
+    44528, 44529, 44530, 44531, 44532, 44533, 44534, 44535, 44536, 44537, 44600,
+    44601, 44602, 44608, 44609, 44610, 44611, 44612, 44613, 44614, 44615, 44616,
+    44617, 44618, 44619, 44620, 44621, 44622, 44623, 44624, 44625, 44626, 44627,
+    44628, 44629, 44630, 44700, 44701, 44702, 44703, 44704, 44705, 44708, 44709,
+    44710, 44711, 44712, 44713, 44714, 44715, 44716, 44717, 44718, 44719, 44720,
+    44721, 44722, 44723, 44724, 44725, 44726, 44727, 44728, 44729, 44730, 44731,
+    44732, 44733, 44734, 44735, 44736, 44737, 44738, 44800, 44801, 44802, 44803,
+    44804, 44805, 44806, 44808, 44809, 44810, 44811, 44812, 44813, 44814, 44815,
+    44816, 44817, 44818, 44819, 44820, 44821, 44822, 44823, 44824, 44825, 44826,
+    44827, 44828, 44829, 44830, 44831, 44832, 44833, 44834, 44835, 44836, 44900,
+    44901, 44902, 44903, 44908, 44909, 44910, 44911, 44912, 44913, 44914, 44915,
+    44916, 44917, 44918, 44919, 44920, 44921, 44922, 44923, 44924, 44925, 44926,
+    44927, 44928, 44929, 45000, 45001, 45002, 45003, 45004, 45008, 45009, 45010,
+    45011, 45012, 45013, 45014, 45015, 45016, 45017, 45018, 45019, 45020, 45021,
+    45022, 45023, 45024, 45025, 45026, 45027, 45028, 45029, 45100, 45101, 45102,
+    45103, 45104, 45108, 45109, 45110, 45111, 45112, 45113, 45114, 45115, 45116,
+    45117, 45118, 45119, 45120, 45121, 45122, 45123, 45124, 45125, 45126, 45127,
+    45128, 45129, 45130, 45131, 45200, 45201, 45202, 45203, 45208, 45209, 45210,
+    45211, 45212, 45213, 45214, 45215, 45216, 45217, 45218, 45219, 45220, 45221,
+    45222, 45223, 45224, 45225, 45226, 45227, 45228, 45229, 45230, 45231, 45232,
+    45233, 45234, 45235, 45236, 45300, 45301, 45302, 45303, 45304, 45305, 45306,
+    45307, 45308, 45309, 45310, 45311, 45312, 45313, 45314, 45315, 45316, 45317,
+    45400, 45401, 45402, 45403, 45404, 45408, 45409, 45410, 45411, 45412, 45413,
+    45414, 45415, 45416, 45417, 45418, 45500, 45501, 45502, 45503, 45504, 45508,
+    45509, 45510, 45511, 45512, 45513, 45514, 45515, 45516, 45517, 45518, 45519,
+    45600, 45601, 45602, 45603, 45604, 45608, 45609, 45610, 45611, 45612, 45613,
+    45614, 45615, 45616, 45700, 45701, 45702, 45703, 45704, 45705, 45708, 45709,
+    45710, 45711, 45712, 45713, 45714, 45715, 45716, 45717, 45718, 45719, 45720,
+    45721, 45722, 45723, 45724, 45725, 45726, 45727, 45728, 45729, 45730, 45800,
+    45801, 45802, 45803, 45804, 45808, 45809, 45810, 45811, 45812, 45813, 45814,
+    45815, 45816, 45817, 45818, 45819, 45820, 45821, 45822, 45823, 45824, 45825,
+    45826, 45827, 45828, 45829, 45830, 45900, 45901, 45902, 45903, 45908, 45909,
+    45910, 45911, 45912, 45913, 45914, 45915, 45916, 45917, 45918, 45919, 45920,
+    45921, 45922, 45923, 45924, 45925, 45926, 46001, 46002, 46003, 46004, 46005,
+    46008, 46009, 46010, 46011, 46012, 46013, 46014, 46015, 46016, 46017, 46018,
+    46019, 46020, 46021, 46022, 46023, 46024, 46025, 46101, 46102, 46103, 46104,
+    46108, 46109, 46110, 46111, 46112, 46113, 46114, 46115, 46116, 46117, 46201,
+    46202, 46203, 46208, 46209, 46210, 46211, 46212, 46213, 46214, 46215, 46216,
+    46217, 46218, 46219, 46220, 46221, 46222, 46223, 46224, 46225, 46226, 46301,
+    46302, 46303, 46304, 46305, 46308, 46309, 46310, 46311, 46312, 46313, 46314,
+    46318, 46319, 46320, 46321, 46322, 46323, 46401, 46402, 46403, 46404, 46405,
+    46406, 46408, 46409, 46410, 46411, 46412, 46413, 46414, 46415, 46416, 46417,
+    46418, 46419, 46420, 46500, 46501, 46502, 46503, 46504, 46505, 46506, 46507,
+    46508, 46509, 46510, 46511, 46512, 46513, 46514, 46515, 46516, 46517, 46518,
+    46519, 46520, 46521, 46522, 46523, 46524, 46525, 46526, 46527, 46528, 46529,
+    46530, 46531, 46532, 46533, 46534, 46535, 46536, 46537, 46538, 46600, 46601,
+    46602, 46603, 46608, 46609, 46610, 46611, 46612, 46613, 46614, 46615, 46616,
+    46617, 46618, 46619, 46620, 46621, 46701, 46702, 46703, 46704, 46705, 46708,
+    46709, 46710, 46711, 46712, 46713, 46714, 46715, 46716, 46801, 46802, 46803,
+    46808, 46809, 46810, 46811, 46812, 46813, 46814, 46815, 46816, 46817, 46818,
+    46819, 46820, 46821, 46822, 46823, 46824, 46825, 46826, 46827, 46900, 46901,
+    46902, 46903, 46908, 46909, 46910, 46911, 46912, 46913, 46914, 46915, 46916,
+    46917, 46918, 46919, 46920, 46921, 46922, 46923, 46924, 46925, 46926, 46927,
+    46928, 47001, 47008, 47009, 47010, 47011, 47012, 47013, 47014, 47015, 47016,
+    47017, 47018, 47019, 47020, 47021, 47022, 47023, 60000, 60001, 60002, 60003,
+    60004, 60008, 60009, 60010, 60011, 60012, 60013, 60014, 60015, 60016, 60017,
+    60018, 60019, 60020, 60021, 60022, 60023, 60024, 60025, 60026, 60027, 60028,
+    60029, 60030, 60031, 60032, 60033, 60034, 60035, 60036, 60037, 60038, 60039,
+    60040, 60041, 60042, 60043, 60044, 60045, 60046, 60047, 60048, 60049, 60050,
+    60051, 60052, 60053, 60054, 60055, 60056, 60057, 60058, 60059, 60060, 60061,
+    60100, 60101, 60102, 60103, 60104, 60105, 60106, 60107, 60108, 60109, 60110,
+    60111, 60112, 60113, 60114, 60115, 60116, 60117, 60118, 60119, 60120, 60121,
+    60122, 60123, 60124, 60125, 60126, 60127, 60128, 60129, 60130, 60131, 60132,
+    60133, 60134, 60200, 60201, 60202, 60203, 60208, 60209, 60210, 60211, 60212,
+    60213, 60214, 60215, 60216, 60217, 60218, 60219, 60220, 60221, 60222, 60223,
+    60224, 60225, 60226, 60227, 60300, 60301, 60302, 60303, 60304, 60308, 60309,
+    60310, 60311, 60312, 60313, 60314, 60315, 60316, 60317, 60318, 60319, 60320,
+    60321, 60322, 60323, 60324, 60325, 60326, 60327, 60328, 60400, 60401, 60402,
+    60403, 60404, 60405, 60408, 60409, 60410, 60411, 60412, 60413, 60414, 60415,
+    60416, 60417, 60418, 60419, 60500, 60501, 60502, 60503, 60504, 60505, 60508,
+    60509, 60510, 60511, 60512, 60513, 60514, 60515, 60516, 60517, 60518, 60519,
+    60521, 60522, 60523, 60524, 60525, 60700, 60701, 60702, 60703, 60704, 60705,
+    60708, 60709, 60710, 60711, 60712, 60713, 60714, 60715, 60716, 60717, 60718,
+    60719, 60720, 60721, 60722, 60723, 60724, 60725, 60726, 60727, 60728, 60729,
+    60730, 60731, 60732, 60733, 60734, 60735, 60736, 60737, 60738, 60739, 60740,
+    60741, 60742, 60743, 60744, 60745, 60746, 60800, 60801, 60802, 60803, 60804,
+    60805, 60808, 60809, 60810, 60811, 60812, 60813, 60814, 60815, 60816, 60817,
+    60818, 60819, 60820, 60821, 60822, 60823, 60824, 60825, 60826, 60827, 60828,
+    60900, 60901, 60902, 60903, 60908, 60909, 60910, 60911, 60912, 60913, 60914,
+    60915, 60916, 60917, 60918, 60919, 60920, 60921, 60922, 60923, 60924, 60925,
+    60926, 60927, 60928, 60929, 60930, 60931, 60932, 60933, 61000, 61001, 61002,
+    61003, 61004, 61008, 61009, 61010, 61011, 61012, 61013, 61014, 61015, 61016,
+    61017, 61018, 61019, 61020, 61021, 61022, 61023, 61024, 61025, 61026, 61027,
+    61028, 61029, 61030, 61031, 61032, 61033, 61034, 61035, 61036, 61037, 61038,
+    61039, 61040, 61041, 61042, 61043, 61044, 61045, 61046, 61047, 61048, 61049,
+    61050, 61051, 61052, 61053, 61054, 61055, 61056, 61057, 61100, 61101, 61102,
+    61103, 61104, 61108, 61109, 61110, 61111, 61112, 61113, 61114, 61115, 61116,
+    61117, 61118, 61119, 61120, 61121, 61122, 61123, 61124, 61125, 61126, 61127,
+    61128, 61129, 61130, 61200, 61201, 61202, 61203, 61204, 61208, 61209, 61210,
+    61211, 61212, 61213, 61214, 61215, 61216, 61217, 61218, 61300, 61301, 61302,
+    61303, 61308, 61309, 61310, 61311, 61312, 61313, 61314, 61315, 61316, 61400,
+    61401, 61402, 61403, 61404, 61408, 61409, 61410, 61411, 61412, 61413, 61414,
+    61415, 61416, 61417, 61418, 61419, 61420, 61421, 61422, 61423, 61424, 61425,
+    61426, 61427, 61428, 61429, 61430, 61431, 61432, 61433, 61434, 61435, 61436,
+    61437, 61438, 61439, 61500, 61501, 61502, 61503, 61508, 61509, 61510, 61511,
+    61512, 61513, 61514, 61515, 61516, 61517, 61518, 61519, 61520, 61521, 61522,
+    61523, 61524, 61525, 61600, 61601, 61602, 61603, 61608, 61609, 61610, 61611,
+    61612, 61613, 61614, 61615, 61616, 61617, 61618, 61619, 61620, 61621, 61622,
+    61623, 61624, 61625, 61626, 61627, 61628, 61629, 61700, 61701, 61702, 61708,
+    61709, 61710, 61711, 61712, 61713, 61714, 61715, 61716, 61717, 61718, 61719,
+    61720, 61721, 61800, 61801, 61802, 61803, 61808, 61809, 61810, 61811, 61812,
+    61813, 61814, 61815, 61816, 61817, 61818, 61819, 61900, 61901, 61902, 61903,
+    61908, 61909, 61910, 61911, 61912, 61913, 61914, 61915, 61916, 61917, 61918,
+    61919, 61920, 61921, 61922, 61923, 61924, 61925, 61926, 61927, 62000, 62001,
+    62002, 62003, 62008, 62009, 62010, 62011, 62012, 62013, 62014, 62015, 62016,
+    62017, 62018, 62019, 62020, 62021, 62022, 62023, 62024, 62025, 62026, 62027,
+    62028, 62029, 62100, 62101, 62102, 62103, 62104, 62108, 62109, 62110, 62111,
+    62112, 62113, 62114, 62115, 62116, 62117, 62118, 62119, 62120, 62121, 62122,
+    62123, 62200, 62201, 62202, 62203, 62204, 62205, 62208, 62209, 62210, 62211,
+    62212, 62213, 62214, 62215, 62216, 62217, 62218, 62219, 62220, 62221, 62222,
+    62223, 62224, 62225, 62226, 62227, 62228, 62229, 62230, 62231, 62232, 62300,
+    62301, 62302, 62303, 62304, 62305, 62308, 62309, 62310, 62311, 62312, 62313,
+    62314, 62315, 62316, 62317, 62318, 62319, 62320, 62321, 62322, 62323, 62324,
+    62325, 62326, 62327, 62328, 62329, 62330, 62331, 62332, 62333, 62334, 62335,
+    62336, 62337, 62338, 62339, 62340, 62341, 62342, 62343, 62400, 62401, 62402,
+    62408, 62409, 62410, 62411, 62412, 62413, 62414, 62415, 62416, 62417, 62418,
+    62419, 62420, 62421, 62422, 62500, 62501, 62502, 62503, 62504, 62508, 62509,
+    62510, 62511, 62512, 62513, 62514, 62515, 62516, 62517, 62518, 62519, 62520,
+    62521, 62522, 62523, 62524, 62600, 62601, 62602, 62603, 62604, 62608, 62609,
+    62610, 62611, 62612, 62613, 62614, 62615, 62616, 62617, 62618, 62619, 62620,
+    62621, 62622, 62623, 62624,
+]
+
+
+def _campaign_sid(slot_index: int) -> int:
+    """Look up a campaign-override string id by absolute slot index.
+
+    Raises if the pool is exhausted — fail loudly rather than silently
+    reusing an id across two unrelated allocations.
+    """
+    if slot_index >= len(CAMPAIGN_STRING_POOL):
+        raise ValueError(
+            f"CAMPAIGN_STRING_POOL exhausted: need slot {slot_index}, "
+            f"only have {len(CAMPAIGN_STRING_POOL)} entries."
+        )
+    return CAMPAIGN_STRING_POOL[slot_index]
+
+
+# Vanilla's own units/techs aren't independently-numbered per field — every
+# unit/tech's secondary strings sit at a FIXED arithmetic offset from its own
+# "name" string id (confirmed by surveying the live dat: 593-1129 units/techs
+# matching each pattern, plus matching build.py's own Budget Knight line
+# `language_dll_help = BUDGET_KNIGHT_NAME_ID + 100000`). The in-game Castle
+# "create unit" hover tooltip apparently relies on this offset (not on the
+# unit's `language_dll_help` field having ANY value, but on it specifically
+# equaling name+100000) — using an unrelated pool id for help/desc, as we did
+# previously, produced a blank tooltip even though the id itself was a real,
+# pre-existing one. One pool slot (the name id) is now sufficient per
+# unit/tech; creation/description/help/tech-tree are all DERIVED from it.
+def _creation_sid(name_sid: int) -> int:
+    """Unit creation-button / tech description string: name + DLL_CREATION_OFFSET."""
+    return name_sid + DLL_CREATION_OFFSET
+
+
+def _help_sid(name_sid: int) -> int:
+    """Unit/tech tooltip help string: name + DLL_HELP_OFFSET."""
+    return name_sid + DLL_HELP_OFFSET
+
+
+def _extended_tooltip_sid(name_sid: int) -> int:
+    """Unit Castle-train-button EXTENDED hover tooltip: name + DLL_CREATION_OFFSET + 20000.
+
+    Confirmed live (2026-06-22): the Castle "create unit" button's hover
+    tooltip for a custom unit is NOT read from language_dll_help (name+
+    100000) — that convention is correct for TECH research-button tooltips
+    (Castle/Imperial UT, confirmed working) but not for a UNIT's train
+    button. build.py writes real text at name+21000 for every custom unit
+    WITHOUT ever assigning any unit field to that id (confirmed via grep) —
+    the engine appears to derive this id automatically from
+    language_dll_creation (+20000), purely a strings-file addition, no DAT
+    field needed. User confirmed seeing exactly this text in-game for Elite
+    Budget Knight ("Create <b>Elite Budget Knight<b> (<cost>) \\n95 HP | 12
+    attack | 1/2 armor. [Budget Bois unique unit]", plus an engine-appended
+    "(Hotkey: Q)" line) while the same unit's name+100000 entry never showed.
+    """
+    return name_sid + DLL_CREATION_OFFSET + 20000
+
+
+def _tech_tree_sid(name_sid: int) -> int:
+    """Tech-tree-viewer string (techs only): name + DLL_TECH_TREE_OFFSET."""
+    return name_sid + DLL_TECH_TREE_OFFSET
+
 
 # Vanilla AoE2 DE (all DLC) ships with 60 civs. Community testing suggests
 # crashes occur around 64+; keep a small buffer.
 MAX_TOTAL_CIVS = 63
+
+# ── Pool allocation map ─────────────────────────────────────────────────────
+# Three independent consumers, each given a non-overlapping block. Each unit
+# or tech now needs only ONE pool slot (the "name" id) — creation/help/
+# tech-tree are all derived from it via _creation_sid/_help_sid/_tech_tree_sid.
+#   1. KM-custom UU strings (km_custom_uu.py): 2 slots/civ — indices
+#      [civ_index*2, civ_index*2+1] (UU name, Elite name).
+#   2. Castle/Imperial UT button names (_append_unique_tech_stubs): 2 more
+#      slots/civ, offset to start right after block 1's full reservation.
+#   3. Bonus 308/309/310 unit strings (Imperial Scorpion/Royal Battle
+#      Elephant/Royal Lancer): FIXED, non-per-civ (these are SHARED/universal
+#      unit slots — same physical data in every civ's array, text never
+#      varies by civ) — 3 fixed slots, offset past block 2's full reservation.
+# Worst case (all 3 features, all MAX_TOTAL_CIVS civs) needs
+# 63*2 + 63*2 + 3 = 255 slots; the pool has 1813, comfortable headroom.
+KM_UU_POOL_SLOTS_PER_CIV = 2   # 0=UU name, 1=Elite name.
+UT_POOL_OFFSET = MAX_TOTAL_CIVS * KM_UU_POOL_SLOTS_PER_CIV   # 126
+UT_POOL_SLOTS_PER_CIV = 2      # 0=Castle UT name, 1=Imperial UT name.
+BONUS_FIXED_POOL_OFFSET = UT_POOL_OFFSET + MAX_TOTAL_CIVS * UT_POOL_SLOTS_PER_CIV  # 252
+
+# Fixed (non-per-civ) sids for bonus 308/309/310 — computed once at import
+# time since CAMPAIGN_STRING_POOL is a plain list, not dependent on any
+# build-time state. Creation/help text ids are DERIVED (_creation_sid/
+# _help_sid), not separate pool slots — see the offset-convention note above
+# _creation_sid's definition.
+IMP_SCORPION_NAME_SID      = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 0)
+ROYAL_ELEPHANT_NAME_SID    = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 1)
+ROYAL_LANCER_NAME_SID      = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 2)
+
+# (sid, text) pairs callers should write UNCONDITIONALLY, once per build —
+# not per-civ-looped, since these are the fixed/shared strings above.
+# Harmless to write even if no civ in this build uses bonus 308/309/310.
+# Deliberately NO desc/help entries here — the richer, stat-aware help text
+# (built by format_unit_tooltip_help, which needs the actual unit object) is
+# written per-civ by _create_bonus_handler's 308/309/310 blocks via
+# bonus_results["extra_unit_strings"] instead, using _help_sid(NAME_SID) as
+# the target id.
+FIXED_UNIT_NAME_STRINGS: list[tuple[int, str]] = [
+    (IMP_SCORPION_NAME_SID, "Imperial Scorpion"),
+    (ROYAL_ELEPHANT_NAME_SID, "Royal Battle Elephant"),
+    (ROYAL_LANCER_NAME_SID, "Royal Lancer"),
+]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -577,6 +920,82 @@ _HEAVY_SCORPION_HOTKEY       = 18244
 _ELITE_BATTLE_ELEPHANT_HOTKEY = 18299
 _ELITE_STEPPE_LANCER_HOTKEY  = 18402
 
+_RES_NAMES = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+
+
+def _format_cost_text(unit) -> str:
+    """'55 gold' / '95 food, 85 gold' — for the manual flavor-text cost line.
+
+    Distinct from the engine-substituted <cost> token (which AoE2 fills in
+    automatically inside <b>...<b> (<cost>) lines) — this is the SECOND,
+    human-readable line vanilla-style tooltips also carry. Pattern source:
+    ~/Sites/aoe2/build.py's Elite Budget Knight tooltip — confirmed working
+    in-game — "Train <b>Elite Budget Knight<b> (<cost>) \\n95 HP | 12 attack
+    | 1/2 armor. Cost: 55 gold. Trainable at Castle and Krepost."
+    """
+    if not unit.creatable:
+        return ""
+    parts = [f"{rc.amount} {_RES_NAMES.get(rc.type, '?')}"
+             for rc in unit.creatable.resource_costs if rc.flag == 1 and rc.amount > 0]
+    return ", ".join(parts)
+
+
+def format_unit_tooltip_help(unit, name: str, verb: str = "Train",
+                             extra: str = "") -> str:
+    """Build a unit tooltip for language_dll_help.
+
+    Format verified byte-for-byte against the user's own CONFIRMED-WORKING
+    build.py output (Elite Budget Knight, actually shipped and playtested
+    "dozens of times" — id 105821 in the real built mod):
+        'Train <b>Elite Budget Knight<b> (<cost>) \\n95 HP | 12 attack | 1/2
+        armor. Cost: 55 gold. Trainable at Castle and Krepost.'
+
+    An earlier revision of this function instead matched a real VANILLA
+    unit's tooltip (Mameluke, id 26103) — verb "Create", no space before
+    "\\n", plus a trailing "<hp> <attack> <armor> <piercearmor> <range>"
+    token line. That change did NOT fix the blank Gendarme tooltip it was
+    meant to address, and turned out to directly contradict the actual
+    confirmed-working reference for CUSTOM (non-vanilla) units — vanilla's
+    own tooltip format is evidently not the right thing to copy here.
+    Reverted to match build.py exactly: verb "Train", space kept before
+    "\\n", no trailing token line.
+
+    `extra` appends free-form text (e.g. "Trainable at Castle and Krepost.").
+    <cost> is an engine token, auto-substituted by AoE2 itself.
+    """
+    melee = getattr(unit.type_50, "displayed_melee_armour", None) if unit.type_50 else None
+    pierce = getattr(unit.creatable, "displayed_pierce_armour", None) if unit.creatable else None
+    attack = getattr(unit.type_50, "displayed_attack", None) if unit.type_50 else None
+    armor_text = f"{melee if melee is not None else 0}/{pierce if pierce is not None else 0}"
+    cost_text = _format_cost_text(unit)
+    line2 = f"{unit.hit_points} HP | {attack if attack is not None else 0} attack | {armor_text} armor."
+    if cost_text:
+        line2 += f" Cost: {cost_text}."
+    if extra:
+        line2 += f" {extra}"
+    return f"{verb} <b>{name}<b> (<cost>) \\n{line2}"
+
+
+def format_unit_extended_tooltip(unit, name: str, tag: str = "") -> str:
+    """Build the Castle train-button EXTENDED hover tooltip (name+21000).
+
+    This is a SEPARATE string slot from format_unit_tooltip_help's name+
+    100000 entry — see _extended_tooltip_sid's docstring for how this was
+    discovered (the user's confirmed-working Elite Budget Knight showed
+    EXACTLY this text in-game, not the name+100000 one). Matches build.py's
+    own format precisely: verb "Create" (not "Train" — different from
+    format_unit_tooltip_help), no "Cost:" breakdown line, ends with a
+    bracketed tag instead (e.g. "[Budget Bois unique unit]").
+    """
+    melee = getattr(unit.type_50, "displayed_melee_armour", None) if unit.type_50 else None
+    pierce = getattr(unit.creatable, "displayed_pierce_armour", None) if unit.creatable else None
+    attack = getattr(unit.type_50, "displayed_attack", None) if unit.type_50 else None
+    armor_text = f"{melee if melee is not None else 0}/{pierce if pierce is not None else 0}"
+    line2 = f"{unit.hit_points} HP | {attack if attack is not None else 0} attack | {armor_text} armor."
+    if tag:
+        line2 += f" [{tag}]"
+    return f"Create <b>{name}<b> (<cost>) \\n{line2}"
+
 
 def _setup_imperial_scorpion_unit(dat: DatFile) -> None:
     """Write Imperial Scorpion unit data into slot 1179 for every civ.
@@ -592,7 +1011,24 @@ def _setup_imperial_scorpion_unit(dat: DatFile) -> None:
             continue
         u = deepcopy(src)
         u.id = _IMP_SCORPION
+        # See km_custom_uu.py's identical fix — base_id/copy_id aren't reset
+        # by deepcopy and would otherwise keep pointing at the predecessor
+        # unit (Heavy Scorpion, 542). Not known to be hero/campaign-linked
+        # like Gendarme's base, but reset for consistency/correctness.
+        u.base_id = _IMP_SCORPION
+        u.copy_id = _IMP_SCORPION
         u.name = "IMPBAL"
+        # Without these, the unit keeps showing "Heavy Scorpion" (the
+        # predecessor's inherited dll fields) everywhere in the UI even
+        # after a successful upgrade — same bug class as km_custom_uu's
+        # units, fixed there first.
+        # creation/help MUST sit at name+1000/name+100000 — this is the
+        # vanilla engine convention the Castle hover-tooltip actually keys
+        # off (see _creation_sid/_help_sid docstring). language_dll_hotkey_text
+        # deliberately left untouched — same reasoning as km_custom_uu.py.
+        u.language_dll_name     = IMP_SCORPION_NAME_SID
+        u.language_dll_help     = _help_sid(IMP_SCORPION_NAME_SID)
+        u.language_dll_creation = _creation_sid(IMP_SCORPION_NAME_SID)
         u.hit_points = 60
         if u.type_50:
             u.type_50.displayed_attack = 18
@@ -630,7 +1066,12 @@ def _setup_royal_battle_elephant_unit(dat: DatFile) -> None:
             continue
         u = deepcopy(src)
         u.id = _ROYAL_ELEPHANT
+        u.base_id = _ROYAL_ELEPHANT
+        u.copy_id = _ROYAL_ELEPHANT
         u.name = "RBATELE"
+        u.language_dll_name     = ROYAL_ELEPHANT_NAME_SID
+        u.language_dll_help     = _help_sid(ROYAL_ELEPHANT_NAME_SID)
+        u.language_dll_creation = _creation_sid(ROYAL_ELEPHANT_NAME_SID)
         u.hit_points = 330
         if u.type_50:
             u.type_50.displayed_attack = 15
@@ -659,7 +1100,12 @@ def _setup_royal_lancer_unit(dat: DatFile) -> None:
             continue
         u = deepcopy(src)
         u.id = _ROYAL_LANCER
+        u.base_id = _ROYAL_LANCER
+        u.copy_id = _ROYAL_LANCER
         u.name = "RSLANCER"
+        u.language_dll_name     = ROYAL_LANCER_NAME_SID
+        u.language_dll_help     = _help_sid(ROYAL_LANCER_NAME_SID)
+        u.language_dll_creation = _creation_sid(ROYAL_LANCER_NAME_SID)
         u.hit_points = 100
         u.standing_graphic = (10510, 10511)
         u.dying_graphic = 10509
@@ -680,7 +1126,7 @@ def _add_upgrade_tier_tech(dat: DatFile, civ_index: int, *, name: str,
                            prereq_tech: int, location: int, button: int,
                            research_time: int, icon_id: int,
                            costs: list[tuple[int, int]],
-                           hot_key_id: int, str_sid: int) -> int:
+                           hot_key_id: int, name_sid: int) -> int:
     """Create a civ-owned "next tier" unit-upgrade tech (KM Royal/Imperial pattern).
 
     Upgrades both from_units (e.g. base + elite tier) into to_unit, gated on
@@ -688,6 +1134,13 @@ def _add_upgrade_tier_tech(dat: DatFile, civ_index: int, *, name: str,
     building/button slot — exactly one of the unit-line techs sharing that
     button is ever active for a given civ, so this never collides in-game.
     Returns the new tech ID.
+
+    name_sid is an EXISTING vanilla id from CAMPAIGN_STRING_POOL; description/
+    help/tech-tree ids are all DERIVED from it via the fixed vanilla offset
+    convention (_creation_sid/_help_sid/_tech_tree_sid) — NOT independent pool
+    slots. The Castle hover tooltip turned out to key off this exact
+    arithmetic relationship, not just "any pre-existing id" (see those
+    helpers' docstring for how this was confirmed).
     """
     eff = Effect(
         name=name,
@@ -701,14 +1154,23 @@ def _add_upgrade_tier_tech(dat: DatFile, civ_index: int, *, name: str,
         name=name, effect_id=eff_id, civ_index=civ_index,
         age_req=prereq_tech, location=location, button=button,
         research_time=research_time, icon_id=icon_id,
-        lang_name=str_sid, lang_desc=str_sid + DLL_CREATION_OFFSET,
-        lang_help=str_sid + DLL_HELP_OFFSET, lang_tech_tree=str_sid + 150000,
+        lang_name=name_sid, lang_desc=_creation_sid(name_sid),
+        lang_help=_help_sid(name_sid), lang_tech_tree=_tech_tree_sid(name_sid),
         hot_key_id=hot_key_id,
     )
     n = min(len(costs), 3)
     tech.resource_costs = tuple(
         ResearchResourceCost(type=t, amount=a, flag=1) for t, a in costs[:n]
     ) + tuple(ResearchResourceCost(type=-1, amount=0, flag=0) for _ in range(3 - n))
+    # _make_tech defaults repeatable=0, but every comparable vanilla "next
+    # tier" upgrade tech (Paladin, Elite Battle Elephant, Elite Steppe
+    # Lancer) has repeatable=1. Without it the engine appears to evaluate
+    # this tech's eligibility once and never reconsider it — exactly the
+    # bug behind Royal Battle Elephant never showing a button even after
+    # its prerequisite (Elite Battle Elephant) completes via a free-tech
+    # bonus fired well after this tech was created. Same class of fix as
+    # _append_unique_tech_stubs' repeatable=1 override below.
+    tech.repeatable = 1
     _append_tech(dat, tech)
     return len(dat.techs) - 1
 
@@ -729,8 +1191,14 @@ def _add_auto_fire_tech(dat: DatFile, civ_index: int, cmds: list[EffectCommand],
     eff = Effect(name=name, effect_commands=cmds)
     dat.effects.append(eff)
     eff_id = len(dat.effects) - 1
-    dat.techs.append(_make_tech(name=name, effect_id=eff_id,
-                                civ_index=civ_index, age_req=age_req))
+    tech = _make_tech(name=name, effect_id=eff_id,
+                      civ_index=civ_index, age_req=age_req)
+    # _make_tech defaults repeatable=0, but vanilla's own free-tech auto-fire
+    # wrappers (e.g. Bulgarians' tech 693, Lithuanians'/Poles' 790/791) are
+    # all repeatable=1 — matches the same fix applied to the "next tier"
+    # upgrade techs themselves in _add_upgrade_tier_tech.
+    tech.repeatable = 1
+    dat.techs.append(tech)
 
 
 def _blacksmith_tech_ids(dat: DatFile) -> list[int]:
@@ -787,9 +1255,18 @@ def _barracks_tech_ids(dat: DatFile) -> list[int]:
     return out
 
 
-def _find_upgrade_tech(dat: DatFile, from_unit: int, to_unit: int) -> int | None:
-    """Return the tech ID whose effect upgrades from_unit → to_unit, or None."""
+def _find_upgrade_tech(dat: DatFile, from_unit: int, to_unit: int,
+                       civ_filter: int | None = None) -> int | None:
+    """Return the tech ID whose effect upgrades from_unit → to_unit, or None.
+
+    civ_filter restricts the search to a specific civ's tech. Required for
+    upgrade techs that are civ-specific (e.g. the Royal Battle Elephant tech
+    created per-civ by bonus 309) rather than global — without it, a
+    multi-civ build could match a DIFFERENT civ's copy of the tech.
+    """
     for i, tech in enumerate(dat.techs):
+        if civ_filter is not None and tech.civ != civ_filter:
+            continue
         eid = tech.effect_id
         if eid < 0 or eid >= len(dat.effects):
             continue
@@ -800,7 +1277,8 @@ def _find_upgrade_tech(dat: DatFile, from_unit: int, to_unit: int) -> int | None
 
 
 def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
-                          multiplier: int, extra_strings: list[dict]) -> bool:
+                          multiplier: int, extra_strings: list[dict],
+                          extra_unit_strings: list[dict] | None = None) -> bool:
     """
     Handle a single createCivBonus-style bonus.  Returns True if handled.
 
@@ -812,6 +1290,12 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
     research button this call creates, so the caller can write matching
     key-value string text (button label / hover / help / tech-tree) — mirrors
     how _append_unique_tech_stubs' castle/imperial UT strings are surfaced.
+
+    extra_unit_strings (optional) collects {"sid", "name", "help_text"}
+    entries for any new player-visible UNIT this call creates (distinct from
+    extra_strings, which is research-button text) — used by bonuses
+    308/309/310 to attach a proper "Train <b>Name<b> (<cost>) \\nstats"
+    tooltip instead of the bare-name fallback in FIXED_UNIT_NAME_STRINGS.
     """
     mult = multiplier
 
@@ -840,12 +1324,64 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                             name="C-Bonus, free Redemption")
         return True
 
-    if bonus_id == 261:          # Elite Steppe Lancer upgrade free
+    if bonus_id == 155:          # {ELITE_BATTLE_ELEPHANT, Royal Battle Elephant} free
+        # Royal Battle Elephant is a civ-specific tech created by bonus 309 —
+        # only meaningful (and only present in the DAT) if 309 is also on
+        # this civ's bonus list and was applied first. civ_def bonus order
+        # matters here: 309 must come before 155 in bonuses[0].
+        #
+        # Staged on purpose (two auto-fire techs, not one): vanilla's
+        # telescoping free-tech chains (e.g. Bulgarians' free Man-at-Arms ->
+        # Long Swordsman -> Two-Handed Swordsman, tech 693) work because each
+        # tier has its OWN age gate strictly higher than the previous tier's,
+        # so each tier's "now eligible" moment always lands on a fresh age
+        # transition — the engine's natural recheck point. Royal Battle
+        # Elephant has no age gate of its own (only "Elite Battle Elephant
+        # done"), so zeroing both techs' cost unconditionally from turn 0
+        # gives the engine no later event to notice Royal became eligible
+        # once Elite finishes mid-Imperial-Age. Gating the second wrapper on
+        # tech 631 itself makes ITS firing (and therefore its EC_TECH_COST/
+        # TIME application to Royal) a discrete event correlated with
+        # Elite's actual completion, instead of speculative turn-0 state.
+        _ELITE_BATTLE_ELEPHANT_TECH = 631
+        _add_auto_fire_tech(dat, civ_index,
+                            _free_tech_cmds([_ELITE_BATTLE_ELEPHANT_TECH]),
+                            name="C-Bonus, free Elite Battle Elephant")
+        royal_tid = _find_upgrade_tech(dat, _BATTLE_ELEPHANT, _ROYAL_ELEPHANT,
+                                       civ_filter=civ_index)
+        if royal_tid is not None:
+            _add_auto_fire_tech(dat, civ_index,
+                                _free_tech_cmds([royal_tid]),
+                                age_req=_ELITE_BATTLE_ELEPHANT_TECH,
+                                name="C-Bonus, free Royal Battle Elephant")
+        else:
+            print("       WARNING: bonus 155 fired without a Royal Battle Elephant "
+                  "tech for this civ (bonus 309 missing or applied after 155) — "
+                  "only Elite Battle Elephant made free")
+        return True
+
+    if bonus_id == 261:          # Elite Steppe Lancer (+ Royal Lancer) upgrade free
+        # KM's original source frees BOTH Elite Steppe Lancer and Royal
+        # Lancer from one combined effect (mirrors bonus 155's
+        # ELITE_BATTLE_ELEPHANT+royalElephantTech pairing). Royal Lancer
+        # didn't exist in this codebase when 261 was first implemented here,
+        # so it only freed the elite tier — same gap 155 had, same staged
+        # fix: the second wrapper is gated on tid itself, not unconditional,
+        # so its cost-zeroing lands as a fresh event correlated with the
+        # elite tier's completion (see _add_upgrade_tier_tech's repeatable
+        # comment for the other half of this fix).
         tid = _find_upgrade_tech(dat, _STEPPE_LANCER, _ELITE_STEPPE_LANCER)
         if tid is not None:
             _add_auto_fire_tech(dat, civ_index,
                                 _free_tech_cmds([tid]),
                                 name="C-Bonus, Elite Steppe Lancer free")
+            royal_tid = _find_upgrade_tech(dat, _STEPPE_LANCER, _ROYAL_LANCER,
+                                           civ_filter=civ_index)
+            if royal_tid is not None:
+                _add_auto_fire_tech(dat, civ_index,
+                                    _free_tech_cmds([royal_tid]),
+                                    age_req=tid,
+                                    name="C-Bonus, Royal Lancer free")
         return True
 
     # ── Economic resource bonuses ─────────────────────────────────────────────
@@ -1108,7 +1644,12 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             icon_id=-1,
             language_dll_help=-1,
             language_dll_tech_tree=-1,
-            repeatable=0,
+            # See _add_upgrade_tier_tech's comment — vanilla's comparable
+            # tech-gated-on-another-tech upgrades (Paladin, Elite Battle
+            # Elephant) all use repeatable=1, not the repeatable=0 default.
+            # Applied here defensively for the same dependency shape (gated
+            # on avail_tech_id completing, not just an age).
+            repeatable=1,
             research_locations=[ResearchLocation(location_id=-1, research_time=0,
                                                  button_id=0, hot_key_id=-1)],
         )
@@ -1118,15 +1659,30 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
     # ── Elite-tier "next step" upgrades ───────────────────────────────────────
     if bonus_id == 308:          # Heavy Scorpion → Imperial Scorpion
         _setup_imperial_scorpion_unit(dat)
-        str_sid = STR_UT_BASE + civ_index * STR_UT_PER_CIV + 2
+        # name_sid/desc_sid reused from the unit's own fixed pool sids — the
+        # tech conceptually represents "Imperial Scorpion" too, same pattern
+        # as km_custom_uu.py's elite tech reusing the elite unit's strings.
+        # No separate extra_strings entry needed: the extra_unit_strings
+        # entry below already writes both ids.
         _add_upgrade_tier_tech(
             dat, civ_index, name="Imperial Scorpion",
             from_units=[_SCORPION, _HEAVY_SCORPION], to_unit=_IMP_SCORPION,
             prereq_tech=239, location=49, button=8, research_time=150,
             icon_id=38, costs=[(0, 1200), (1, 1000)],
-            hot_key_id=_HEAVY_SCORPION_HOTKEY, str_sid=str_sid,
+            hot_key_id=_HEAVY_SCORPION_HOTKEY,
+            name_sid=IMP_SCORPION_NAME_SID,
         )
-        extra_strings.append({"sid": str_sid, "name": "Imperial Scorpion"})
+        if extra_unit_strings is not None:
+            unit_obj = dat.civs[civ_index].units[_IMP_SCORPION]
+            extra_unit_strings.append({
+                "sid": IMP_SCORPION_NAME_SID, "name": "Imperial Scorpion",
+                "desc_sid": _help_sid(IMP_SCORPION_NAME_SID),
+                "help_text": format_unit_tooltip_help(
+                    unit_obj, "Imperial Scorpion", extra="Trainable at Siege Workshop."),
+                "ext_sid": _extended_tooltip_sid(IMP_SCORPION_NAME_SID),
+                "ext_text": format_unit_extended_tooltip(
+                    unit_obj, "Imperial Scorpion", tag="unique unit"),
+            })
         # Cosmetic fire-arrow reskin once the civ researches Chemistry (47).
         # KM appends this to the global Chemistry effect; we scope it to a
         # civ-owned auto-fire tech instead so a civ=-1 effect shared by every
@@ -1141,28 +1697,48 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
 
     if bonus_id == 309:          # Elite Battle Elephant → Royal Battle Elephant
         _setup_royal_battle_elephant_unit(dat)
-        str_sid = STR_UT_BASE + civ_index * STR_UT_PER_CIV + 3
         _add_upgrade_tier_tech(
             dat, civ_index, name="Royal Battle Elephant",
             from_units=[_BATTLE_ELEPHANT, _ELITE_BATTLE_ELEPHANT], to_unit=_ROYAL_ELEPHANT,
             prereq_tech=631, location=101, button=9, research_time=200,
             icon_id=121, costs=[(0, 1200), (3, 1000)],
-            hot_key_id=_ELITE_BATTLE_ELEPHANT_HOTKEY, str_sid=str_sid,
+            hot_key_id=_ELITE_BATTLE_ELEPHANT_HOTKEY,
+            name_sid=ROYAL_ELEPHANT_NAME_SID,
         )
-        extra_strings.append({"sid": str_sid, "name": "Royal Battle Elephant"})
+        if extra_unit_strings is not None:
+            unit_obj = dat.civs[civ_index].units[_ROYAL_ELEPHANT]
+            extra_unit_strings.append({
+                "sid": ROYAL_ELEPHANT_NAME_SID, "name": "Royal Battle Elephant",
+                "desc_sid": _help_sid(ROYAL_ELEPHANT_NAME_SID),
+                "help_text": format_unit_tooltip_help(
+                    unit_obj, "Royal Battle Elephant", extra="Trainable at Stable."),
+                "ext_sid": _extended_tooltip_sid(ROYAL_ELEPHANT_NAME_SID),
+                "ext_text": format_unit_extended_tooltip(
+                    unit_obj, "Royal Battle Elephant", tag="unique unit"),
+            })
         return True
 
     if bonus_id == 310:          # Elite Steppe Lancer → Royal Lancer
         _setup_royal_lancer_unit(dat)
-        str_sid = STR_UT_BASE + civ_index * STR_UT_PER_CIV + 4
         _add_upgrade_tier_tech(
             dat, civ_index, name="Royal Lancer",
             from_units=[_STEPPE_LANCER, _ELITE_STEPPE_LANCER], to_unit=_ROYAL_LANCER,
             prereq_tech=715, location=101, button=9, research_time=100,
             icon_id=123, costs=[(0, 1200), (3, 900)],
-            hot_key_id=_ELITE_STEPPE_LANCER_HOTKEY, str_sid=str_sid,
+            hot_key_id=_ELITE_STEPPE_LANCER_HOTKEY,
+            name_sid=ROYAL_LANCER_NAME_SID,
         )
-        extra_strings.append({"sid": str_sid, "name": "Royal Lancer"})
+        if extra_unit_strings is not None:
+            unit_obj = dat.civs[civ_index].units[_ROYAL_LANCER]
+            extra_unit_strings.append({
+                "sid": ROYAL_LANCER_NAME_SID, "name": "Royal Lancer",
+                "desc_sid": _help_sid(ROYAL_LANCER_NAME_SID),
+                "help_text": format_unit_tooltip_help(
+                    unit_obj, "Royal Lancer", extra="Trainable at Stable."),
+                "ext_sid": _extended_tooltip_sid(ROYAL_LANCER_NAME_SID),
+                "ext_text": format_unit_extended_tooltip(
+                    unit_obj, "Royal Lancer", tag="unique unit"),
+            })
         return True
 
     return False  # not handled
@@ -1193,6 +1769,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     skipped = []
     applied = 0
     extra_strings: list[dict] = []
+    extra_unit_strings: list[dict] = []
     for entry in civ_bonuses:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
             continue
@@ -1244,7 +1821,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             applied += len(ec_entries)
             continue
 
-        if _create_bonus_handler(dat, bonus_id, civ_index, multiplier, extra_strings):
+        if _create_bonus_handler(dat, bonus_id, civ_index, multiplier, extra_strings, extra_unit_strings):
             applied += 1
         else:
             skipped.append(bonus_id)
@@ -1253,7 +1830,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
           f"{len(skipped)} bonus IDs skipped (not in catalog): {skipped[:8]}"
           + ("…" if len(skipped) > 8 else ""))
 
-    bonus_result = {"applied": applied, "skipped": skipped, "extra_tech_strings": extra_strings}
+    bonus_result = {"applied": applied, "skipped": skipped, "extra_tech_strings": extra_strings,
+                    "extra_unit_strings": extra_unit_strings}
 
     # ── Team bonus (index 4) ──────────────────────────────────────────────────
     team_entries = raw[4] if len(raw) > 4 and isinstance(raw[4], list) else []
@@ -1363,10 +1941,12 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                else [])
     km_uu_index = _uu_ref[0] if _uu_ref and isinstance(_uu_ref[0], int) else None
     km_uu_is_vanilla = km_uu_index is not None and km_uu_index in _KM_UU_TECHS
+    km_uu_is_custom = km_uu_index is not None and km_uu_index in km_custom_uu.PRESETS
 
-    # For nullification: treat a recognised vanilla KM UU the same as a custom UU —
-    # don't preserve the original civ's UU techs (the desired UU will be allocated later).
-    suppress_preserve = has_custom_uu or km_uu_is_vanilla
+    # For nullification: treat a recognised vanilla/custom KM UU the same as a
+    # custom UU — don't preserve the original civ's UU techs (the desired UU
+    # will be allocated later).
+    suppress_preserve = has_custom_uu or km_uu_is_vanilla or km_uu_is_custom
 
     # Capture the original civ's UT tech IDs BEFORE nullification so the
     # CivTechTrees JSON patcher can find the vanilla Yeomen / Warwolf nodes
@@ -1498,12 +2078,16 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     imperial_ut_entries = (_bonuses_raw[3]
                            if len(_bonuses_raw) > 3 and isinstance(_bonuses_raw[3], list)
                            else [])
-    castle_ut_sid = STR_UT_BASE + civ_index * STR_UT_PER_CIV + 0
-    imp_ut_sid    = STR_UT_BASE + civ_index * STR_UT_PER_CIV + 1
+    _ut_pool_base = UT_POOL_OFFSET + civ_index * UT_POOL_SLOTS_PER_CIV
+    castle_ut_sid = _campaign_sid(_ut_pool_base + 0)
+    imp_ut_sid    = _campaign_sid(_ut_pool_base + 1)
+    castle_ut_desc_sid = _help_sid(castle_ut_sid)
+    imp_ut_desc_sid    = _help_sid(imp_ut_sid)
     castle_ut_tech_id: int | None = None
     imp_ut_tech_id:    int | None = None
     if castle_ut_entries or imperial_ut_entries:
-        castle_ut_sid, imp_ut_sid, castle_ut_tech_id, imp_ut_tech_id = (
+        (castle_ut_sid, imp_ut_sid, castle_ut_tech_id, imp_ut_tech_id,
+         castle_ut_desc_sid, imp_ut_desc_sid) = (
             _append_unique_tech_stubs(
                 dat, civ_index, alias,
                 castle_ut_entries, imperial_ut_entries)
@@ -1526,8 +2110,64 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     #     the freshly-appended techs aren't in all_disableable and won't be disabled.
     km_uu_make_avail_tech_id: int = -1
     km_uu_elite_tech_id:      int = -1
+    km_uu_custom_unit_strings: list[dict] = []
     if km_uu_is_vanilla:
         km_uu_make_avail_tech_id, km_uu_elite_tech_id = _apply_km_uu(dat, civ_index, km_uu_index)
+    elif km_uu_is_custom:
+        # Pool-based allocation (see CAMPAIGN_STRING_POOL docstring) for the
+        # two "name" ids; desc/help ids are DERIVED via _help_sid (name+
+        # 100000) — the vanilla engine convention the Castle hover tooltip
+        # actually keys off, not an independent pool slot (confirmed live —
+        # see _help_sid's docstring for how this was tracked down).
+        pool_base = civ_index * KM_UU_POOL_SLOTS_PER_CIV
+        uu_name_sid    = _campaign_sid(pool_base + 0)
+        elite_name_sid = _campaign_sid(pool_base + 1)
+        uu_desc_sid    = _help_sid(uu_name_sid)
+        elite_desc_sid = _help_sid(elite_name_sid)
+        # Krepost-trainability is conditional on the civ already having
+        # Krepost available — we only ADD the train slot here, we don't
+        # grant Krepost itself (see km_custom_uu.append_km_custom_uu's
+        # has_krepost docstring for what's and isn't covered).
+        # Krepost-presence signal: bonus 93 ("Can build Krepost") is the
+        # actual mechanism (maps to vanilla tech 695, generically deepcopied
+        # per-civ by _apply_bonuses' civ_bonus_techs path below) — confirmed
+        # against a real civ_def (ignore/barracks_enjoyers.json) that grants
+        # Krepost via bonus 93 WITHOUT listing building 1251 in tree[1] at
+        # all. tree[1] membership is checked too as a defensive secondary
+        # signal, but bonus 93 is the one that's actually load-bearing.
+        _bonuses_pre = civ_def.get("bonuses", [[]])
+        _civ_bonuses_pre = _bonuses_pre[0] if _bonuses_pre and isinstance(_bonuses_pre[0], list) else []
+        has_krepost_bonus = any(isinstance(e, (list, tuple)) and e and e[0] == 93
+                                for e in _civ_bonuses_pre)
+        _tree_pre = civ_def.get("tree", [[], [], []])
+        has_krepost_tree = (len(_tree_pre) > 1 and isinstance(_tree_pre[1], list)
+                            and 1251 in _tree_pre[1])
+        has_krepost = has_krepost_bonus or has_krepost_tree
+        result = km_custom_uu.append_km_custom_uu(
+            dat, civ_index, km_uu_index, uu_name_sid, uu_desc_sid,
+            elite_name_sid, elite_desc_sid, has_krepost=has_krepost)
+        uu_unit_id, elite_unit_id, km_uu_make_avail_tech_id, km_uu_elite_tech_id = result
+        preset_name = km_custom_uu.PRESETS[km_uu_index]["name"]
+        # No separate extra_tech_strings entry for the elite tech — it
+        # reuses elite_name_sid/elite_desc_sid directly (same ids as the
+        # elite unit's own strings below), so writing the unit strings
+        # already covers the tech's button text too.
+        _trainable_extra = "Trainable at Castle and Krepost." if has_krepost else "Trainable at Castle."
+        uu_obj    = dat.civs[civ_index].units[uu_unit_id]
+        elite_obj = dat.civs[civ_index].units[elite_unit_id]
+        km_uu_custom_unit_strings = [
+            {"sid": uu_name_sid, "name": preset_name, "desc_sid": uu_desc_sid,
+             "help_text": format_unit_tooltip_help(uu_obj, preset_name, extra=_trainable_extra),
+             "ext_sid": _extended_tooltip_sid(uu_name_sid),
+             "ext_text": format_unit_extended_tooltip(uu_obj, preset_name, tag=f"{alias} unique unit")},
+            {"sid": elite_name_sid, "name": f"Elite {preset_name}", "desc_sid": elite_desc_sid,
+             "help_text": format_unit_tooltip_help(elite_obj, f"Elite {preset_name}", extra=_trainable_extra),
+             "ext_sid": _extended_tooltip_sid(elite_name_sid),
+             "ext_text": format_unit_extended_tooltip(elite_obj, f"Elite {preset_name}", tag=f"{alias} unique unit")},
+        ]
+        print(f"       KM-custom UU index {km_uu_index} ({preset_name}): "
+              f"make-avail tech {km_uu_make_avail_tech_id}, elite tech {km_uu_elite_tech_id}"
+              + (", Krepost-trainable" if has_krepost else ""))
     elif km_uu_index is not None:
         msg = (f"KM UU index {km_uu_index} is a KM-custom unit "
                f"— not supported in standalone builder; vanilla UU preserved")
@@ -1536,9 +2176,11 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
 
     # 7. Apply bonuses from catalog.
     bonus_results: dict = {"applied": 0, "skipped": [], "team_applied": 0, "team_total": 0,
-                           "extra_tech_strings": []}
+                           "extra_tech_strings": [], "extra_unit_strings": []}
     if "bonuses" in civ_def:
         bonus_results = _apply_bonuses(dat, civ_index, civ_def, tb_eff_id)
+        bonus_results.setdefault("extra_unit_strings", [])
+    bonus_results["extra_unit_strings"].extend(km_uu_custom_unit_strings)
 
     # 8. Assign language audio: remap sound items from source civ → civ_index.
     lang_val = civ_def.get("language", 0)
@@ -1552,6 +2194,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         "warnings":              warnings,
         "castle_ut_sid":         castle_ut_sid,
         "imp_ut_sid":            imp_ut_sid,
+        "castle_ut_desc_sid":    castle_ut_desc_sid,
+        "imp_ut_desc_sid":       imp_ut_desc_sid,
         "castle_ut_tech_id":     castle_ut_tech_id,
         "imp_ut_tech_id":        imp_ut_tech_id,
         "orig_castle_ut_tech_id":  orig_castle_ut_tech_id,
@@ -1764,25 +2408,32 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
 def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
                                castle_ut_entries: list,
                                imperial_ut_entries: list,
-                               ) -> tuple[int, int, int | None, int | None]:
+                               ) -> tuple[int, int, int | None, int | None, int, int]:
     """Create Castle UT (btn7) and Imperial UT (btn8) from bonus catalog entries.
 
-    Returns (castle_sid, imp_sid, castle_tech_id, imp_tech_id).
-    Always allocates fresh high-range string IDs (STR_UT_BASE + civ_index*10 + slot)
-    so the engine's in-game UT button label honors our mod strings instead of
-    falling back to the vanilla tech name baked into the base game.
+    Returns (castle_name_sid, imp_name_sid, castle_tech_id, imp_tech_id,
+    castle_desc_sid, imp_desc_sid). name_sid comes from CAMPAIGN_STRING_POOL
+    (UT_POOL_OFFSET block) — an EXISTING vanilla id; desc_sid is DERIVED via
+    _help_sid(name_sid) (name+100000), matching the vanilla engine convention
+    the Castle hover tooltip actually keys off (see _help_sid's docstring).
     """
     # Default costs: Castle UT = 300 food + 300 gold; Imperial UT = 450 food + 225 stone
     # icon_id 33 = vanilla Castle UT icon; 107 = vanilla Imperial UT icon
+    pool_base = UT_POOL_OFFSET + civ_index * UT_POOL_SLOTS_PER_CIV
     ut_configs = [
-        (7,  "Castle UT",   102, castle_ut_entries,   300, 3, 300,  33, 0, _KM_CASTLE_UT_TECHS),
-        (8,  "Imperial UT", 103, imperial_ut_entries, 450, 2, 225, 107, 1, _KM_IMP_UT_TECHS),
+        (7,  "Castle UT",   102, castle_ut_entries,   300, 3, 300,  33,
+         _campaign_sid(pool_base + 0), _KM_CASTLE_UT_TECHS),
+        (8,  "Imperial UT", 103, imperial_ut_entries, 450, 2, 225, 107,
+         _campaign_sid(pool_base + 1), _KM_IMP_UT_TECHS),
     ]
-    used_sids: list[int] = []
+    used_name_sids: list[int] = []
+    used_desc_sids: list[int] = []
     used_tech_ids: list[int | None] = []
-    for i, (btn, label, age_req, entries, cost_food, cost_b_type, cost_b, icon, ut_slot, ut_lookup) in enumerate(ut_configs):
-        name_sid = STR_UT_BASE + civ_index * STR_UT_PER_CIV + ut_slot
-        used_sids.append(name_sid)
+    for (btn, label, age_req, entries, cost_food, cost_b_type, cost_b, icon,
+         name_sid, ut_lookup) in ut_configs:
+        desc_sid = _help_sid(name_sid)
+        used_name_sids.append(name_sid)
+        used_desc_sids.append(desc_sid)
         if not entries:
             used_tech_ids.append(None)
             continue
@@ -1797,9 +2448,6 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
                 src_locs = getattr(dat.techs[src_tid], 'research_locations', [])
                 if src_locs:
                     hotkey = src_locs[0].hot_key_id
-        # 4-string DAT wiring mirrors NapKingCole's Unhinged Empires pattern:
-        # name (button label), description (button hover), help (full tooltip),
-        # tech_tree (F1/help-context). Strings file must emit all four IDs.
         tech = _make_tech(
             name=f"{alias} {label}",
             effect_id=eff_id,
@@ -1810,9 +2458,9 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
             research_time=60,
             icon_id=icon,
             lang_name=name_sid,
-            lang_desc=name_sid + DLL_CREATION_OFFSET,
-            lang_help=name_sid + DLL_HELP_OFFSET,
-            lang_tech_tree=name_sid + 150000,
+            lang_desc=_creation_sid(name_sid),
+            lang_help=desc_sid,
+            lang_tech_tree=_tech_tree_sid(name_sid),
             hot_key_id=hotkey,
         )
         # Apply costs (food + gold for castle UT; food + stone for imperial UT).
@@ -1829,8 +2477,8 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         used_tech_ids.append(len(dat.techs) - 1)
         print(f"       {label}: {len(cmds)} effect commands (sid={name_sid})")
     return (
-        used_sids[0] if len(used_sids) > 0 else _str_id(civ_index, STR_CASTLE_UT),
-        used_sids[1] if len(used_sids) > 1 else _str_id(civ_index, STR_IMPERIAL_UT),
+        used_name_sids[0], used_name_sids[1],
         used_tech_ids[0] if len(used_tech_ids) > 0 else None,
         used_tech_ids[1] if len(used_tech_ids) > 1 else None,
+        used_desc_sids[0], used_desc_sids[1],
     )

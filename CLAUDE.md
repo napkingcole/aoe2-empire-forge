@@ -44,7 +44,7 @@ The `llm/` directory contains comprehensive AoE2 DE dat modding documentation. R
 
 6. **Empty research_locations crashes silently.** Always provide at least one `ResearchLocation(location_id=-1, research_time=0)` for auto-fire techs.
 
-7. **String IDs: use 79xxx+ range** for custom button labels. Overriding vanilla 7xxx IDs affects the "research complete" toast but not in-game panel buttons.
+7. **String IDs must be EXISTING vanilla ids — brand-new ids are silently ignored, no matter the range.** Allocate one id per unit/tech from `civ_appender.CAMPAIGN_STRING_POOL`; every other field is a fixed offset from it: `+1000`=creation/description, `+100000`=help (tech research-button tooltips only), `+150000`=tech_tree (techs only). A UNIT's Castle train-button hover tooltip needs a separate `+21000` write with NO corresponding DAT field at all — `language_dll_help`/`+100000` does not drive it. See `llm/advanced_techniques.md`'s "Language String Pitfalls" and [[project_string_id_engine_limit]] in memory for the full story.
 
 ### Key Files
 - `civ_appender.py` — main dat-writing logic; bonus handlers, TT effect building, tech allocation

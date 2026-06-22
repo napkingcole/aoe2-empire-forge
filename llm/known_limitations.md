@@ -113,3 +113,13 @@ Documented constraints in the AoE2 DE dat engine that affect what's achievable v
 **Root cause:** Overriding a vanilla string ID (e.g. 7419 for Britons' Yeomen) replaces the string globally. The toast picks up the override but the in-game button label may cache or re-derive from vanilla sources.
 
 **Workaround:** Use 79xxx+ range IDs for all custom button labels (new strings, not overrides of vanilla IDs). NapKingCole's Unhinged Empires mod convention.
+
+---
+
+## Duplicate Same-ID String Writes Resolve Alphabetically, Not by Write Order — Silently Breaking "First Definition Wins"
+
+**Symptom:** Two different code paths legitimately write different text to the same string ID (e.g. a generic "bare unit name" block alongside a newer, richer "name + cost + stats" tooltip block for the same unit). The SHORTER/alphabetically-earlier text wins in-game, regardless of which block actually ran first or is "more correct" — confirmed live: a bare `"Gendarme"` line beat a fuller `"Train <b>Gendarme<b> (<cost>) \n..."` line for the exact same ID, purely because `'G' < 'T'`.
+
+**Root cause:** `build_all.py`'s final string-combining step re-sorts all lines by `(numeric_id, full_line_text)` to group them into contiguous blocks (a requirement for some picker-description overrides to render — see the "120150+i" note elsewhere in that file). The documented assumption was "AoE2 DE key-value files are first-definition-wins," but resorting by the line's OWN TEXT as the tie-breaker does not preserve original write order — it makes the outcome depend on which string sorts alphabetically first. (`app.py`'s build path doesn't re-sort at all, so it was never affected by this specific bug — but also can't rely on contiguous-block grouping for the cases that need it.)
+
+**Workaround:** Tie-break on the line's original insertion index, not its text — `sorted(enumerate(lines), key=lambda x: (extracted_id, x[0]))`, then re-emit `line for _, line in ...`. This makes "first write wins" actually true again. When adding any NEW string-writing block, check whether it might double-write an ID some OTHER block already covers (e.g. via a shared `dll_name`/sid) — if so, order your appends deliberately (richer/more-specific text first) and don't rely on alphabetical luck.

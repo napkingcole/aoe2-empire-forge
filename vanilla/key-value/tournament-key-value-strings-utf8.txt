@@ -1,0 +1,9 @@
+170114 "1v1 (Red Bull Wololo: Londinium)"
+30024101 "Play a 1v1 Red Bull Wololo: Londinium game. Ranked results will count toward the Red Bull Wololo: Londinium Leaderboard."
+
+IDS_MACTHMAKING_MAP_TAB_ONEVONE_DEATH_EW "1v1 RBW: Londinium"
+IDS_MATCHMAKING_MAP_TAB_ONEVONE_DEATH_HELP_TEXT_EW "Shows the list of 1v1 Red Bull Wololo: Londinium Maps."
+IDS_MATCHMAKING_RED_BULL "RBW: Londinium"
+IDS_MATCHMAKING_RED_BULL_CO "[GAMEPAD] RBW: Londinium"
+IDS_LEADERBOARD_RANKED_WARNING_RED_BULL_WOLOLO "Not Yet Ranked!\n\nPlay %d more Ranked 1v1 Red Bull Wololo: Londinium games to earn a rank on the Red Bull Wololo: Londinium Leaderboard."
+IDS_MATCHMAKING_SPONSORED_TOURNAMENT "RBW: Londinium"

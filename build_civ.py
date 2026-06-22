@@ -28,6 +28,7 @@ from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
 from civ_appender import apply_civ, _KM_UU_TECHS, _KM_UU_NAMES
+import km_custom_uu
 
 # Languages KM ships string files for.
 LANGUAGES = ["br", "de", "en", "es", "fr", "hi", "it", "jp",
@@ -302,19 +303,40 @@ def _uu_actual_elite_id(dat, elite_tech_id: int, base_unit_id: int) -> int:
     return base_unit_id
 
 
-def _resolve_uu_info(civ_def: dict, dat, slot: int) -> dict | None:
-    """Return {unit_id, elite_id, icon_id, dll_name, name} for the civ's KM UU, or None."""
+def _resolve_uu_info(civ_def: dict, dat, slot: int,
+                     civ_result: dict | None = None) -> dict | None:
+    """Return {unit_id, elite_id, icon_id, dll_name, name} for the civ's KM UU, or None.
+
+    Two paths depending on which KM UU index this civ picked (bonuses[1][0]):
+      - Vanilla DE unit (0-38, 45, 78-87): looked up via the fixed _KM_UU_TECHS
+        (make_avail_tech_id, elite_tech_id) pair.
+      - KM-custom unit (39-77, minus 45/47/75): no fixed tech IDs exist — the
+        make-avail/elite techs are allocated fresh per civ by km_custom_uu.py
+        and returned in civ_result (km_uu_make_avail_tech_id/km_uu_elite_tech_id).
+        Without civ_result, custom UUs can't be resolved here at all — caller
+        must pass it through (apply_civ's return value).
+    """
     bonuses = civ_def.get("bonuses", [])
     uu_refs = bonuses[1] if len(bonuses) > 1 else []
     km_uu_idx = uu_refs[0] if uu_refs and isinstance(uu_refs[0], int) else None
     if km_uu_idx is None:
         return None
+
     pair = _KM_UU_TECHS.get(km_uu_idx)
-    if not pair:
+    if pair:
+        # pair[0]/pair[1] are TECH indices; extract actual unit IDs from the techs' EC commands.
+        unit_id  = _uu_actual_unit_id(dat, pair[0])
+        elite_id = _uu_actual_elite_id(dat, pair[1], unit_id)
+    elif civ_result and km_uu_idx in km_custom_uu.PRESETS:
+        make_avail_id = civ_result.get("km_uu_make_avail_tech_id", -1)
+        elite_tech_id = civ_result.get("km_uu_elite_tech_id", -1)
+        if make_avail_id is None or make_avail_id < 0:
+            return None
+        unit_id  = _uu_actual_unit_id(dat, make_avail_id)
+        elite_id = _uu_actual_elite_id(dat, elite_tech_id, unit_id)
+    else:
         return None
-    # pair[0]/pair[1] are TECH indices; extract actual unit IDs from the techs' EC commands.
-    unit_id  = _uu_actual_unit_id(dat, pair[0])
-    elite_id = _uu_actual_elite_id(dat, pair[1], unit_id)
+
     try:
         u = dat.civs[slot].units[unit_id]
         return {
@@ -322,6 +344,15 @@ def _resolve_uu_info(civ_def: dict, dat, slot: int) -> dict | None:
             "elite_id": elite_id,
             "icon_id":  u.icon_id,
             "dll_name": u.language_dll_name,
+            # For KM-custom UUs this is the EXACT id km_custom_uu.py wrote
+            # the rich tooltip to (a pool-allocated existing id — see
+            # civ_appender.CAMPAIGN_STRING_POOL). For vanilla UUs it's
+            # whatever vanilla's own language_dll_help already is. Either
+            # way it's a real, valid id — unlike "dll_name+100000", which is
+            # only safe to assume for the vanilla path (coincidentally
+            # matches vanilla's own offset convention) and silently breaks
+            # for KM-custom ones (pool ids aren't offset-related at all).
+            "dll_help": u.language_dll_help,
             "name":     _KM_UU_NAMES.get(km_uu_idx, "Unique Unit"),
         }
     except (IndexError, AttributeError):
@@ -355,7 +386,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
 
     uu_unit_info: dict | None = None
     if dat is not None and slot is not None:
-        uu_unit_info = _resolve_uu_info(civ_def, dat, slot)
+        uu_unit_info = _resolve_uu_info(civ_def, dat, slot, civ_result)
 
     STATUS_OK  = "ResearchedCompleted"
     STATUS_OFF = "NotAvailable"
@@ -442,6 +473,8 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
     _new_imp_ut_tid     = (civ_result or {}).get("imp_ut_tech_id")
     _castle_ut_sid      = (civ_result or {}).get("castle_ut_sid")
     _imp_ut_sid         = (civ_result or {}).get("imp_ut_sid")
+    _castle_ut_desc_sid = (civ_result or {}).get("castle_ut_desc_sid")
+    _imp_ut_desc_sid    = (civ_result or {}).get("imp_ut_desc_sid")
     _castle_ut_name     = (civ_result or {}).get("castle_ut_name", "")
     _imp_ut_name        = (civ_result or {}).get("imp_ut_name", "")
 
@@ -458,16 +491,18 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                 continue  # status already set inside _patch_uu_node
 
             # Retarget vanilla Castle/Imperial UT Research nodes to our new UT techs.
-            # Point Name/Help string IDs directly at the UT's base sid and
-            # base+100000 (matches what build_all.py writes to the strings file
-            # under the high-range UT block).
+            # Point Name/Help string IDs directly at the UT's explicit name/
+            # desc sids (civ_appender.CAMPAIGN_STRING_POOL) — NOT
+            # sid+100000, an arithmetic offset that lands on an unverified,
+            # almost certainly brand-new id (confirmed never working
+            # in-game; see CAMPAIGN_STRING_POOL's docstring).
             if (use_type == "Tech" and node_type == "Research"
                     and node.get("Building ID") == 82):
                 if node_id == _orig_castle_ut_tid and _new_castle_ut_tid is not None:
                     node["Node ID"] = _new_castle_ut_tid
                     if _castle_ut_sid:
                         node["Name String ID"] = _castle_ut_sid
-                        node["Help String ID"] = _castle_ut_sid + 100000
+                        node["Help String ID"] = _castle_ut_desc_sid or _castle_ut_sid
                     if _castle_ut_name:
                         node["Name"] = _castle_ut_name
                     node["Node Status"] = STATUS_OK
@@ -477,7 +512,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                     node["Node ID"] = _new_imp_ut_tid
                     if _imp_ut_sid:
                         node["Name String ID"] = _imp_ut_sid
-                        node["Help String ID"] = _imp_ut_sid + 100000
+                        node["Help String ID"] = _imp_ut_desc_sid or _imp_ut_sid
                     if _imp_ut_name:
                         node["Name"] = _imp_ut_name
                     node["Node Status"] = STATUS_OK

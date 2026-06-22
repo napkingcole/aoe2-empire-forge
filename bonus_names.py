@@ -10,7 +10,6 @@ SKIP_REASONS: dict[int, str] = {
     133: "Not implemented in KM source",
     140: "Requires direct unit data modification",
     218: "Requires direct unit data modification",
-    155: "Requires dynamic tech reference (Royal Battle Elephant)",
     362: "Requires dynamic tech reference (Dragon Ship)",
     329: "Complex tech duplication not supported",
     279: "Requires prerequisite chain modification",

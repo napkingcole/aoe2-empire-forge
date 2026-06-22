@@ -215,10 +215,45 @@ For slots with no vanilla analogue (Castle btn10, etc.), use a building construc
 
 ## Language String Pitfalls
 
-- `language_dll_creation` must be in the **6xxx range** (`dll_name + 1000` where name is ~5xxx). Values >65535 overflow the 16-bit field and the training button tooltip shows nothing.
-- `language_dll_help` can use >65535 (vanilla uses `5xxx + 100000`).
+- **MAJOR — the modded-strings overlay can ONLY override IDs that already exist in the base game's string table.** A brand-new ID outside that range is silently ignored by the engine, no matter which `language_dll_*` field points at it, no matter how correctly it's written to the DAT and the strings file, and regardless of whether the mod is installed locally or published to Steam Workshop. Confirmed via a controlled live test: rich tooltip text at a brand-new high-range id (e.g. 750016) never appeared in-game despite being independently verified correct at every layer; the SAME text at an *existing* vanilla id (70104) worked immediately. This is NOT a DAT-struct width issue — the relevant struct fields are full 32-bit ints (verified against genieutils' actual format), so the field can numerically hold any id; the limitation is in how the engine resolves the overlay file. See [[project_string_id_engine_limit]] in memory for the full incident writeup. **Practical implication: any high "verified-clear" range is a false sense of safety — collision-free is not the same as working.** Use `civ_appender.CAMPAIGN_STRING_POOL` (real, currently-defined campaign IDs) instead of inventing a new range.
 - **KM units with 405xxx/505xxx dll values** must be patched in BOTH the target civ AND `dat.civs[0]` (civ0 template). If only the target civ is patched, the game may fall back to civ0's broken value for UI display.
-- **Override vanilla IDs for repurposed units**: pointing `language_dll_name` to a custom string ID that doesn't exist in the game's base string table causes blank training buttons. Override the original vanilla string (e.g. 5114 for Condottiero) in the language file instead.
+- **Override vanilla IDs for repurposed units**: pointing `language_dll_name` to a custom string ID that doesn't exist in the game's base string table causes blank training buttons — consistent with the finding above; this was the same symptom, just first noticed for the simpler "name" field years before the full scope was understood.
+
+### String-ID Sourcing — Use Existing IDs, Not "Clear" Ranges
+
+Don't allocate a brand-new numeric range and verify it's merely *collision-free* — that doesn't mean it works (see above). Instead, harvest a pool of IDs that are **actually defined** in the shipped `key-value-strings-utf8.txt` (request the full file from the user if you only have a partial extract — campaign content lives in separate per-campaign sections, e.g. `// Bayinnaung 4`). Locate campaign-mission boundaries via `grep -n "^// [A-Za-z].* [0-9]$"`, then extract real IDs per mission via `grep -E "^[0-9]+\s"`. Prefer adjacent missions of the SAME campaign so the "disable the UI mod before playing campaign X" caveat stays scoped to as few campaigns as possible. `civ_appender.CAMPAIGN_STRING_POOL` is the reference implementation (1813 ids) — fully migrated across `km_custom_uu.py`, bonus 308/309/310, and the Castle/Imperial UT button-name block.
+
+**You only need ONE pool id per unit/tech** (the "name" id) — every other field is a fixed arithmetic offset from it, matching vanilla's own internal convention (confirmed by surveying the live dat and by the user's own confirmed-working `~/Sites/aoe2/build.py`, whose `_sids(base)` helper returns exactly these offsets):
+- `name` → `language_dll_name`
+- `name+1000` (`DLL_CREATION_OFFSET`) → `language_dll_creation` (units) / `language_dll_description` (techs)
+- `name+100000` (`DLL_HELP_OFFSET`) → `language_dll_help` — works for TECH research-button tooltips, NOT a unit's train-button tooltip (see below)
+- `name+150000` (`DLL_TECH_TREE_OFFSET`) → `language_dll_tech_tree` (techs only)
+- `name+21000` — units only, no DAT field, see below
+
+Setting a field to a derived offset id is not enough on its own — you must ALSO write override text at that exact id in the strings file, or the engine falls back to whatever real (possibly very visible, colored) vanilla content already happens to live at that numeric slot instead of leaving it blank. This caused a real regression once: a Castle UT button started showing an unrelated campaign dialogue line because the `+1000` write was missing.
+
+**The accepted cost:** overriding an existing id changes that text everywhere the game reads it, including inside the campaign mission that originally owned it. This only affects players who have the mod's UI half active AND specifically play that exact mission — skirmish, multiplayer, and every other campaign are unaffected.
+
+### Unit Tooltip Text — TWO separate slots, only one has a DAT field
+
+A custom unit's Castle "create unit" train-button hover tooltip is **not** read from `language_dll_help` (`name+100000`) — that's the wrong slot for units (it IS correct for tech research buttons). It's read from **`name+21000`, a string id with no corresponding DAT field at all** — confirmed live by diffing the user's own shipped, playtested `build.py` mod (Elite Budget Knight) against its actual in-game text. The engine appears to derive this id internally from `language_dll_creation+20000`; you just need to write the text, no field to set.
+
+```python
+# name+21000 — the one that actually shows in the Castle train-button tooltip.
+# Verb "Create", no "Cost:" breakdown, ends with a bracketed tag.
+civ_appender.format_unit_extended_tooltip(unit, name, tag="Civname unique unit")
+# -> "Create <b>{name}<b> (<cost>) \n{HP} HP | {attack} attack | {melee}/{pierce} armor. [{tag}]"
+
+# name+100000 — also write this; it's read by OTHER UI surfaces (research-style
+# tooltips elsewhere) even though it's not what the Castle train button shows.
+# Verb "Train", keeps a space before \n, ends with a Cost:/Trainable-at line.
+civ_appender.format_unit_tooltip_help(unit, name, extra="Trainable at Castle.")
+# -> "Train <b>{name}<b> (<cost>) \n{HP} HP | {attack} attack | {melee}/{pierce} armor. Cost: {cost}. {extra}"
+```
+
+- `<cost>` in both is an **engine token** — AoE2 substitutes the real formatted cost automatically. Do not pre-format it yourself.
+- For an upgrade-TECH's own research button (not a unit), use only the `+100000`/`Research` convention — techs don't need the `+21000` slot, since the research-button widget correctly reads `language_dll_help`.
+- Reference implementations: `civ_appender.format_unit_tooltip_help()` (the `+100000` text) and `civ_appender.format_unit_extended_tooltip()` (the `+21000` text, `_extended_tooltip_sid()` computes the id).
 
 ---
 

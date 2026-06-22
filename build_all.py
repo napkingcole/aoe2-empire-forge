@@ -30,7 +30,7 @@ from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
 from civ_appender import (apply_civ,
-    DLL_CREATION_OFFSET, DLL_HELP_OFFSET)
+    DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
@@ -362,7 +362,15 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     per_civ_tt: dict[str, bytes] = {}
     string_lines: dict[str, list[str]] = {lang: [] for lang in LANGUAGES}
     # Maps DAT slot → (name_string_id, uu_icon_id) for civilizations.json patching.
-    civs_overrides: dict[int, tuple[int, int | None]] = {}
+    civs_overrides: dict[int, dict] = {}
+
+    # Fixed, non-per-civ strings for bonus 308/309/310's shared unit slots.
+    # Written once, unconditionally — harmless if this build has no civ
+    # using those bonuses.
+    from civ_appender import FIXED_UNIT_NAME_STRINGS
+    for lang in LANGUAGES:
+        for sid, text in FIXED_UNIT_NAME_STRINGS:
+            string_lines[lang].append(f'{sid} "{text}"')
 
     # Pre-compute which techtree positions will be replaced by custom civs so
     # we can skip writing vanilla names for those positions.  AoE2 DE key-value
@@ -420,19 +428,46 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         civ_result["castle_ut_name"] = castle_ut_name
         civ_result["imp_ut_name"]    = imp_ut_name
 
-        # UT string IDs: high-range bases (75010 + civ_index*10 + slot) that
-        # don't collide with vanilla. The DAT tech's language_dll_name now
-        # points here, so the in-game Castle UT button label resolves to our
-        # custom name instead of falling back to the vanilla tech text.
+        # UT string IDs: real existing vanilla ids from
+        # civ_appender.CAMPAIGN_STRING_POOL (see that module's docstring —
+        # brand-new high-range ids never worked in-game). The DAT tech's
+        # language_dll_name now points here, so the in-game Castle UT button
+        # label resolves to our custom name instead of falling back to the
+        # vanilla tech text.
         castle_ut_sid = civ_result["castle_ut_sid"]
         imp_ut_sid    = civ_result["imp_ut_sid"]
+        castle_ut_desc_sid = civ_result["castle_ut_desc_sid"]
+        imp_ut_desc_sid    = civ_result["imp_ut_desc_sid"]
 
         # Resolve the custom UU info for description + string writes + techtree.
-        uu_info = _resolve_uu_info(civ_def, dat, slot)
-        civs_overrides[slot] = (name_sid, uu_info["icon_id"] if uu_info else None)
-        # Display name: prefer resolved (vanilla) UU; fall back to the KM UU
-        # name table so KM-custom UUs (39-77, 88+) still surface in the
-        # picker's bulleted block even though we don't create the unit.
+        uu_info = _resolve_uu_info(civ_def, dat, slot, civ_result)
+        civs_overrides[slot] = {
+            "name_sid": name_sid,
+            "icon_id": uu_info["icon_id"] if uu_info else None,
+            # civilizations.json carries its OWN separate UU metadata block
+            # (unique_unit_id/elite_unique_unit_id/unique_unit_string_ids/
+            # unique_unit_upgrade_id) — confirmed via a live build that this
+            # is NEVER touched otherwise, so an overwritten civ keeps
+            # pointing at the ORIGINAL vanilla civ's UU here (e.g. Britons
+            # stayed on Longbowman/unit 8/string 5107 even after a custom
+            # Gendarme UU was correctly wired into the DAT itself). Whatever
+            # in-game UI surface reads this block (separate from the per-unit
+            # language_dll_help tooltip, which IS correctly written) would
+            # keep showing stale/unrelated content. KM's own civbuilder
+            # (createCivilizationsJson.js) sidesteps this by never setting
+            # these fields at all when generating a FRESH file; since we
+            # instead PRESERVE the vanilla civ's original block by carrying
+            # the whole entry forward, we must explicitly overwrite it here.
+            "uu_unit_id":    uu_info["unit_id"]  if uu_info else None,
+            "uu_elite_id":   uu_info["elite_id"] if uu_info else None,
+            "uu_upgrade_tech_id": civ_result.get("km_uu_elite_tech_id"),
+            "uu_name_sid":   uu_info["dll_name"] if uu_info else None,
+            "uu_desc_sid":   uu_info["dll_help"] if uu_info else None,
+        }
+        # Display name: prefer the resolved UU (vanilla or KM-custom, both
+        # handled by _resolve_uu_info above); fall back to the KM UU name
+        # table only for the two still-unimplemented custom indices (Monkey
+        # Boy 47, Warrior Monk 75).
         _uu_refs = civ_def.get("bonuses", [None]*2)
         _km_uu_idx = (_uu_refs[1][0]
                       if len(_uu_refs) > 1 and isinstance(_uu_refs[1], list) and _uu_refs[1]
@@ -522,32 +557,45 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 f'{name_sid + 80000} "Click to play as {alias}."')
             string_lines[lang].append(
                 f'{name_sid + 109879} "{full_desc}"')
-            # 4-string UT block per NapKingCole's pattern. Maps to the four
-            # tech.language_dll_* fields civ_appender now sets on the DAT tech:
-            #   sid          → name (button label) — short, just "Stirrups"
-            #   sid+1000     → description (button hover summary)
-            #   sid+100000   → help (full <cost> tooltip — matches vanilla style)
-            #   sid+150000   → tech_tree (F1 / help-context)
-            # The KM catalog packs "Name (description)" into one string; split
-            # so the button label matches vanilla style (just the name) and the
-            # tooltips show the description after the cost token.
-            for sid, full in ((castle_ut_sid, castle_ut_name),
-                              (imp_ut_sid, imp_ut_name)):
+            # name_sid/desc_sid are two SEPARATE real existing-id pool slots
+            # (civ_appender.CAMPAIGN_STRING_POOL) — NOT arithmetic offsets of
+            # one base id, which never worked in-game. name_sid covers BOTH
+            # the button label (language_dll_name) AND the hover
+            # (language_dll_description) — both point at the same id on the
+            # DAT tech, so the hover shows the same short text as the
+            # button rather than a distinct "Research X — description"
+            # line; that's an accepted simplification (matches the
+            # convention already used for km_custom_uu.py and bonus
+            # 308/309/310). desc_sid covers both the full tooltip and the
+            # F1 tech-tree text. The KM catalog packs "Name (description)"
+            # into one string; split so the button label matches vanilla
+            # style (just the name) and the tooltip shows the description
+            # after the cost token.
+            for name_sid_ut, desc_sid_ut, full in (
+                (castle_ut_sid, castle_ut_desc_sid, castle_ut_name),
+                (imp_ut_sid, imp_ut_desc_sid, imp_ut_name),
+            ):
                 short, _, paren = full.partition(" (")
                 desc = paren.rstrip(")") if paren else ""
-                string_lines[lang].append(f'{sid} "{short}"')
-                # Button hover ("Research X — description"): one-liner with em dash.
-                hover = f"Research {short}" + (f" — {desc}" if desc else "")
-                string_lines[lang].append(f'{sid + DLL_CREATION_OFFSET} "{hover}"')
+                string_lines[lang].append(f'{name_sid_ut} "{short}"')
+                # The tech's language_dll_description/tech_tree fields point
+                # at name_sid_ut+1000/+150000 (vanilla offset convention —
+                # see civ_appender._creation_sid/_tech_tree_sid). Without a
+                # written override at THOSE exact ids too, the engine falls
+                # back to whatever vanilla content already lives there
+                # instead of leaving it blank — confirmed live (a Castle UT
+                # button showed an unrelated campaign dialogue line at
+                # name+1000 until this was added).
+                string_lines[lang].append(
+                    f'{name_sid_ut + DLL_CREATION_OFFSET} "Research {short}"')
                 # Full <cost> tooltip — vanilla pattern: name+cost on first line,
                 # description on second. Avoids duplicating the name as we did before.
                 help_body = f"Research <b>{short}<b> (<cost>)"
                 if desc:
                     help_body += f"\\n{desc}"
-                string_lines[lang].append(f'{sid + DLL_HELP_OFFSET} "{help_body}"')
-                # F1 / help-context block.
-                tree_body = short + (f"\\n{desc}" if desc else "")
-                string_lines[lang].append(f'{sid + 150000} "{tree_body}"')
+                string_lines[lang].append(f'{desc_sid_ut} "{help_body}"')
+                string_lines[lang].append(
+                    f'{name_sid_ut + DLL_TECH_TREE_OFFSET} "{short}"')
             # Bonus-specific research buttons (e.g. Imperial Scorpion, Royal
             # Battle Elephant, Royal Lancer — bonuses 308/309/310). civ_appender
             # surfaces these via bonus_results["extra_tech_strings"] since they
@@ -559,7 +607,46 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 string_lines[lang].append(
                     f'{sid + DLL_HELP_OFFSET} "Research <b>{name}<b> (<cost>)"')
                 string_lines[lang].append(f'{sid + 150000} "{name}"')
-            # UU name strings for civ selection tech tree display.
+            # KM-custom UU units' OWN name/help strings (the actual in-game
+            # selection-panel/training-queue text, distinct from the
+            # dll_name+10000/+100000 tech-tree-viewer block below). Without
+            # this, a custom UU keeps showing its cloned base unit's
+            # original name (e.g. a campaign hero's name for Gendarme).
+            for ext in civ_result["bonus_results"].get("extra_unit_strings", []):
+                # sid+DLL_CREATION_OFFSET (name+1000) is what the engine
+                # actually reads for the Castle "create unit" button/elite
+                # tech description (km_custom_uu.py and the bonus 308/309/310
+                # upgrade tech both set their creation/description field to
+                # exactly this id) — must be written explicitly, same
+                # reasoning as the Castle/Imperial UT block above.
+                # desc_sid (=sid+DLL_HELP_OFFSET, computed by civ_appender)
+                # is the full tooltip.
+                sid, name = ext["sid"], ext["name"]
+                string_lines[lang].append(f'{sid} "{name}"')
+                string_lines[lang].append(
+                    f'{sid + DLL_CREATION_OFFSET} "Create {name}"')
+                help_text = ext.get("help_text", name)
+                desc_sid = ext.get("desc_sid", sid)
+                string_lines[lang].append(f'{desc_sid} "{help_text}"')
+                # The Castle "create unit" button's EXTENDED hover tooltip
+                # for a UNIT (as opposed to a tech's research-button
+                # tooltip) is read from name+21000, NOT name+100000 — a
+                # separate string slot the engine derives from
+                # language_dll_creation+20000 with no corresponding DAT
+                # field of its own. Confirmed live: the user saw exactly
+                # this text in-game for Elite Budget Knight while the
+                # name+100000 entry never showed. See
+                # civ_appender._extended_tooltip_sid's docstring.
+                if "ext_sid" in ext:
+                    string_lines[lang].append(
+                        f'{ext["ext_sid"]} "{ext.get("ext_text", name)}"')
+            # UU name strings for civ selection tech tree display. For
+            # KM-custom UUs, uu_dll == the extra_unit_strings sid above (both
+            # ultimately read the unit's own language_dll_name) — the
+            # `+DLL_HELP_OFFSET` line here is then a harmless duplicate
+            # (same id, weaker bare-name text) that the now-fixed insertion-
+            # order tie-break correctly lets the richer one win. Left as-is
+            # rather than cross-wiring the two independently-evolved paths.
             if uu_info:
                 uu_dll = uu_info["dll_name"]
                 string_lines[lang].append(f'{uu_dll + 10000} "{uu_display}"')
@@ -629,14 +716,24 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     # works in-game but leaves the picker description ignored by the engine;
     # NKC's contiguous-block layout is the only known pattern where 120150+i
     # overrides actually render in the picker UI.
-    def _sort_key(line: str) -> tuple[int, str]:
+    #
+    # Tie-break MUST be insertion order, not the line's own text — sorting
+    # ties alphabetically silently breaks "first-definition-wins" whenever
+    # two DIFFERENT call sites legitimately write different text to the SAME
+    # id (e.g. a bare unit name from one block + a richer formatted tooltip
+    # from another — alphabetical comparison picked the bare text every
+    # time, purely because its first letter sorted earlier, discarding the
+    # richer one regardless of which was actually written first). Confirmed
+    # via a live build: Gendarme's help text was silently shadowed this way.
+    def _sort_key(indexed_line: tuple[int, str]) -> tuple[int, int]:
+        idx, line = indexed_line
         try:
-            return (int(line.split(" ", 1)[0]), line)
+            return (int(line.split(" ", 1)[0]), idx)
         except ValueError:
-            return (10**9, line)
+            return (10**9, idx)
 
     combined_strings = {
-        lang: "\n".join(sorted(lines, key=_sort_key)) + "\n"
+        lang: "\n".join(line for _, line in sorted(enumerate(lines), key=_sort_key)) + "\n"
         for lang, lines in string_lines.items()
         if lines
     }
@@ -647,12 +744,40 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         try:
             with open(base_civs_json, encoding="utf-8") as f:
                 civ_list = json.load(f).get("civilization_list", [])
-            for slot_idx, (name_sid, icon_id) in civs_overrides.items():
-                if slot_idx < len(civ_list):
-                    civ_list[slot_idx]["name_string_id"] = name_sid
-                    if icon_id is not None:
-                        civ_list[slot_idx]["unique_unit_image_paths"] = [
-                            f"/resources/uniticons/{icon_id:03d}_50730.png"
+            for slot_idx, ov in civs_overrides.items():
+                if slot_idx >= len(civ_list):
+                    continue
+                entry = civ_list[slot_idx]
+                entry["name_string_id"] = ov["name_sid"]
+                icon_id = ov.get("icon_id")
+                if icon_id is not None:
+                    entry["unique_unit_image_paths"] = [
+                        f"/resources/uniticons/{icon_id:03d}_50730.png"
+                    ]
+                # Retarget the civ-level UU metadata block (see civs_overrides
+                # assignment above for why this is necessary) so any in-game
+                # UI surface keyed off civilizations.json's own UU fields
+                # — not just the per-unit DAT strings — shows the custom UU.
+                uu_unit_id = ov.get("uu_unit_id")
+                if uu_unit_id is not None:
+                    entry["unique_unit_id"] = uu_unit_id
+                    if ov.get("uu_elite_id") is not None:
+                        entry["elite_unique_unit_id"] = ov["uu_elite_id"]
+                    if ov.get("uu_upgrade_tech_id") is not None:
+                        entry["unique_unit_upgrade_id"] = ov["uu_upgrade_tech_id"]
+                    if ov.get("uu_name_sid") is not None:
+                        name_sid_uu = ov["uu_name_sid"]
+                        # Prefer the EXPLICIT desc sid (always a real id —
+                        # for KM-custom UUs it's a CAMPAIGN_STRING_POOL id,
+                        # nothing to do with name_sid+offset). Fall back to
+                        # the +DLL_HELP_OFFSET computation only when desc_sid
+                        # is unavailable — true for vanilla UUs, where it
+                        # coincidentally still lands on a real vanilla id
+                        # (vanilla's own language_dll_help convention also
+                        # happens to be name+100000).
+                        desc_sid_uu = ov.get("uu_desc_sid") or (name_sid_uu + DLL_HELP_OFFSET)
+                        entry["unique_unit_string_ids"] = [
+                            {"name": name_sid_uu, "description": desc_sid_uu}
                         ]
             civs_json_bytes = json.dumps(
                 {"civilization_list": civ_list}, separators=(",", ":")

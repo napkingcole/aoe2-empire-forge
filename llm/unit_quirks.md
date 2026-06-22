@@ -55,3 +55,19 @@ This is the general pattern for any bonus that depends on a civ-gate tech that b
 ## Architecture Sets
 
 Architecture set is set via `dat.civs[civ_index].graphics_set`. Common values mirror vanilla civs. The custom civ JSON specifies this in the `architectureSet` field (KM convention). When not specified, defaults to 0 (Western European).
+
+## Shared Train-Button Swap Requires Mirrored train_location, Not EC_ENABLE
+
+When two units (base tier + elite tier) are meant to share one training-button slot — e.g. Longbowman → Elite Longbowman both occupying Castle btn1 — the mechanism is NOT `EC_ENABLE` on the elite unit. Checked all 39 vanilla elite-UU upgrade techs (the full `civ_appender._KM_UU_TECHS` table): zero of them use `EC_ENABLE`. Every single one is `EC_UPGRADE(base, elite)` alone.
+
+**What actually makes the swap work:** both units' `creatable.train_locations[0]` must point at the IDENTICAL `(unit_id, button_id)` — confirmed directly: Longbowman and Elite Longbowman both have `train_location=(82, 1, ...)`. The engine appears to use this shared-slot + `EC_UPGRADE` pairing to decide which unit a button offers; it does not need an explicit enable.
+
+**The bug this causes if missed:** when cloning a brand-new "elite" unit from an unrelated base (e.g. a campaign-hero unit, as in `km_custom_uu.py`'s custom-UU presets), the clone inherits whatever `train_location` its source unit originally had — frequently `unit_id=-1` or some unrelated building/button. If you only fix up the BASE tier's `train_location` (pointing it at Castle btn1) and forget the ELITE tier, the unit trains fine until the elite upgrade researches — at which point nothing is offered at that button anymore, since the elite clone's `train_location` never pointed there to begin with. Fix: explicitly mirror `(building, button, hot_key)` from the base tier onto the elite tier's `train_location[0]` before finishing.
+
+## Elite-UU Upgrade Tech Icon Is Always 105 ("Gold Medal"), Never Unit-Specific
+
+Scanned every elite-UU upgrade tech's `icon_id` across all 39 `_KM_UU_TECHS` entries (Elite Longbow, Elite Cataphract, Elite Teutonic Knight, etc.) — all 39 use `icon_id=105`. This is the universal "gold medal" elite-upgrade icon players expect; it is NOT meant to reflect the specific unit. Do not substitute the unit's own icon here — that breaks the established convention even though it might look more "related" at a glance.
+
+## Krepost (and Similarly Building-Gated) Availability May Not Show Up in tree[1]
+
+Don't assume "civ has building X" is fully captured by `tree[1]` containing that building's ID. Some buildings are gated behind a dedicated **bonus ID** instead — confirmed for Krepost: bonus 93 ("Can build Krepost") maps to vanilla tech 695 (`EC_ENABLE(1251, 1)`, fires at Castle Age), applied via the generic `civ_bonus_techs` catalog path, which already deepcopies and retargets it correctly for ANY civ — no civ-specific handler code needed. A real production civ_def (`ignore/barracks_enjoyers.json`) uses bonus 93 without ever listing building 1251 in `tree[1]`. If a feature needs to know "does this civ have building X," check the actual bonus IDs that grant it (cross-reference `bonus_catalog_raw.json`'s `civ` map) in addition to — not instead of — `tree[1]` membership.

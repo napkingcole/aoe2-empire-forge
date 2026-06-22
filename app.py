@@ -32,12 +32,12 @@ from build_civ import (
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
     _decode_flag, _find_civ_techtrees_folder,
     _patch_per_civ_techtree, _canonical_techtree_id,
-    _resolve_uu_info,
+    _resolve_uu_info, _find_adjacent_json,
 )
 from civ_appender import (apply_civ,
                           _str_id, STRING_BASE, STRING_BLOCK_SIZE,
                           STR_CASTLE_UT, STR_IMPERIAL_UT,
-                          DLL_CREATION_OFFSET, DLL_HELP_OFFSET)
+                          DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET)
 from dat_reader import find_game_dat, load_dat
 
 app = Flask(__name__)
@@ -174,6 +174,16 @@ def build():
     per_civ_tt:  dict[str, bytes] = {}
     string_lines: dict[str, list[str]] = {lang: [] for lang in LANGUAGES}
     build_results = []
+    # Maps DAT slot -> (name_string_id, uu_icon_id) for civilizations.json
+    # patching (civ-picker name + unique-unit thumbnail). Mirrors build_all.py.
+    civs_overrides: dict[int, dict] = {}
+
+    # Fixed, non-per-civ strings for bonus 308/309/310's shared unit slots.
+    # Mirrors build_all.py's identical block.
+    from civ_appender import FIXED_UNIT_NAME_STRINGS
+    for lang in LANGUAGES:
+        for sid, text in FIXED_UNIT_NAME_STRINGS:
+            string_lines[lang].append(f'{sid} "{text}"')
 
     # Pre-compute which techtree positions will be replaced so we can skip
     # writing vanilla names for them.  AoE2 DE key-value files are
@@ -244,12 +254,29 @@ def build():
         result["castle_ut_name"] = castle_ut_name
         result["imp_ut_name"]    = imp_ut_name
 
-        # Use the actual lang_name IDs written into the DAT (vanilla 7xxx range, not 40xxx).
+        # Real existing-id pool slots (civ_appender.CAMPAIGN_STRING_POOL) —
+        # NOT the old high-range _str_id fallback, which never worked in-game.
         castle_ut_sid = result.get("castle_ut_sid") or _str_id(slot, STR_CASTLE_UT)
         imp_ut_sid    = result.get("imp_ut_sid")    or _str_id(slot, STR_IMPERIAL_UT)
+        castle_ut_desc_sid = result.get("castle_ut_desc_sid") or castle_ut_sid
+        imp_ut_desc_sid    = result.get("imp_ut_desc_sid")    or imp_ut_sid
 
         # Resolve the custom UU info (unit ID, icon, name) for string writes + techtree.
-        uu_info = _resolve_uu_info(civ_def, dat, slot)
+        uu_info = _resolve_uu_info(civ_def, dat, slot, result)
+        # See build_all.py's identical block for why civilizations.json's own
+        # UU metadata block (unique_unit_id/elite_unique_unit_id/
+        # unique_unit_string_ids/unique_unit_upgrade_id) needs explicit
+        # retargeting — it's a separate block from the per-unit DAT strings
+        # and is otherwise left pointing at the overwritten civ's original UU.
+        civs_overrides[slot] = {
+            "name_sid": name_sid,
+            "icon_id": uu_info["icon_id"] if uu_info else None,
+            "uu_unit_id":    uu_info["unit_id"]  if uu_info else None,
+            "uu_elite_id":   uu_info["elite_id"] if uu_info else None,
+            "uu_upgrade_tech_id": result.get("km_uu_elite_tech_id"),
+            "uu_name_sid":   uu_info["dll_name"] if uu_info else None,
+            "uu_desc_sid":   uu_info["dll_help"] if uu_info else None,
+        }
         # Also look up the elite unit's dll_name for string writes.
         uu_elite_dll: int | None = None
         uu_elite_name: str | None = None
@@ -306,21 +333,68 @@ def build():
                 f'{name_sid + 80000} "Click to play as {alias}."')
             string_lines[lang].append(
                 f'{name_sid + 109879} "{full_desc}"')
-            # In-game Castle UT button: lang_name (7xxx) and lang_desc (8xxx)
+            # In-game Castle UT button: name_sid covers the label;
+            # name_sid+DLL_CREATION_OFFSET/+DLL_TECH_TREE_OFFSET are what the
+            # tech's language_dll_description/tech_tree fields actually point
+            # at (vanilla offset convention — see
+            # civ_appender._creation_sid/_tech_tree_sid) and MUST be written
+            # explicitly, or the engine falls back to whatever vanilla
+            # content already lives at that id instead of leaving it blank
+            # (confirmed live — a Castle UT button showed an unrelated
+            # campaign dialogue line at name+1000 until this was added).
             string_lines[lang].append(f'{castle_ut_sid} "{castle_ut_name}"')
             string_lines[lang].append(
-                f'{castle_ut_sid + DLL_CREATION_OFFSET} '
+                f'{castle_ut_sid + DLL_CREATION_OFFSET} "Research {castle_ut_name}"')
+            string_lines[lang].append(
+                f'{castle_ut_desc_sid} '
                 f'"Research <b>{castle_ut_name}<b> (<cost>)\\n{castle_ut_name}"')
-            # Civ selection screen tech tree name (+10000) and help/tooltip (+100000)
-            string_lines[lang].append(f'{castle_ut_sid + 10000} "{castle_ut_name}"')
-            string_lines[lang].append(f'{castle_ut_sid + DLL_HELP_OFFSET} "{castle_ut_name}"')
+            string_lines[lang].append(
+                f'{castle_ut_sid + DLL_TECH_TREE_OFFSET} "{castle_ut_name}"')
             # In-game Imperial UT button
             string_lines[lang].append(f'{imp_ut_sid} "{imp_ut_name}"')
             string_lines[lang].append(
-                f'{imp_ut_sid + DLL_CREATION_OFFSET} '
+                f'{imp_ut_sid + DLL_CREATION_OFFSET} "Research {imp_ut_name}"')
+            string_lines[lang].append(
+                f'{imp_ut_desc_sid} '
                 f'"Research <b>{imp_ut_name}<b> (<cost>)\\n{imp_ut_name}"')
-            string_lines[lang].append(f'{imp_ut_sid + 10000} "{imp_ut_name}"')
-            string_lines[lang].append(f'{imp_ut_sid + DLL_HELP_OFFSET} "{imp_ut_name}"')
+            string_lines[lang].append(
+                f'{imp_ut_sid + DLL_TECH_TREE_OFFSET} "{imp_ut_name}"')
+            # Bonus-specific research buttons (Imperial Scorpion, Royal Battle
+            # Elephant, Royal Lancer — bonuses 308/309/310). Mirrors
+            # build_all.py's identical block — this was previously missing
+            # here entirely, leaving these buttons blank when built via the
+            # web app.
+            for ext in result["bonus_results"].get("extra_tech_strings", []):
+                sid, name = ext["sid"], ext["name"]
+                string_lines[lang].append(f'{sid} "{name}"')
+                string_lines[lang].append(f'{sid + DLL_CREATION_OFFSET} "Research {name}"')
+                string_lines[lang].append(
+                    f'{sid + DLL_HELP_OFFSET} "Research <b>{name}<b> (<cost>)"')
+                string_lines[lang].append(f'{sid + 150000} "{name}"')
+            # KM-custom UU units' OWN name/help strings — see build_all.py's
+            # identical block for why this is separate from the dll_name+10000
+            # tech-tree-viewer block right below.
+            for ext in result["bonus_results"].get("extra_unit_strings", []):
+                # sid+DLL_CREATION_OFFSET (name+1000) is what the engine
+                # actually reads for the Castle "create unit" button/elite
+                # tech description — must be written explicitly, same
+                # reasoning as the Castle/Imperial UT block above. desc_sid
+                # (=sid+DLL_HELP_OFFSET, computed by civ_appender) is the
+                # full tooltip.
+                sid, name = ext["sid"], ext["name"]
+                string_lines[lang].append(f'{sid} "{name}"')
+                string_lines[lang].append(
+                    f'{sid + DLL_CREATION_OFFSET} "Create {name}"')
+                help_text = ext.get("help_text", name)
+                desc_sid = ext.get("desc_sid", sid)
+                string_lines[lang].append(f'{desc_sid} "{help_text}"')
+                # The Castle "create unit" button's EXTENDED hover tooltip
+                # for a UNIT is read from name+21000, NOT name+100000 — see
+                # build_all.py's identical block / civ_appender.
+                # _extended_tooltip_sid's docstring for how this was found.
+                if "ext_sid" in ext:
+                    string_lines[lang].append(
+                        f'{ext["ext_sid"]} "{ext.get("ext_text", name)}"')
             # UU name strings for civ selection tech tree display.
             if uu_info:
                 uu_dll = uu_info["dll_name"]
@@ -359,14 +433,78 @@ def build():
             if json_file.name not in per_civ_tt:
                 per_civ_tt[json_file.name] = json_file.read_bytes()
 
+    # Tie-break MUST be insertion order, not the line's own text — see
+    # build_all.py's identical sort (which has this fix already; app.py was
+    # missing it). Sorting ties alphabetically silently breaks "first-
+    # definition-wins" whenever two different call sites write different
+    # text to the SAME id (e.g. a bare unit name from the tech-tree-viewer
+    # block + a richer formatted tooltip from extra_unit_strings) — confirmed
+    # via a live build that this exact collision can shadow Gendarme's help
+    # text. In the current code the richer line happens to be appended
+    # first, so this is currently a latent-risk fix rather than the active
+    # cause of any reported symptom, but matching build_all.py's safety net
+    # costs nothing and removes the dependency on append-order staying lucky.
+    def _sort_key(indexed_line: tuple[int, str]) -> tuple[int, int]:
+        idx, line = indexed_line
+        try:
+            return (int(line.split(" ", 1)[0]), idx)
+        except ValueError:
+            return (10**9, idx)
+
     combined_strings = {
-        lang: "\n".join(lines) + "\n"
+        lang: "\n".join(line for _, line in sorted(enumerate(lines), key=_sort_key)) + "\n"
         for lang, lines in string_lines.items()
         if lines
     }
 
+    # Generate civilizations.json with updated names + UU icon paths for
+    # replaced civs. Required since the 2026-06-06 patch — AoE2 DE now
+    # validates this file's entry count against the DAT civ count and
+    # silently drops modded-strings civ-picker overrides without it.
+    civs_json_bytes: bytes | None = None
+    base_civs_json = _find_adjacent_json(dat_path_obj, "civilizations.json")
+    if base_civs_json is None or not base_civs_json.exists():
+        base_civs_json = Path(__file__).parent / "civilizations.json"
+    if base_civs_json.exists() and civs_overrides:
+        try:
+            with open(base_civs_json, encoding="utf-8") as f:
+                civ_list = json.load(f).get("civilization_list", [])
+            for slot_idx, ov in civs_overrides.items():
+                if slot_idx >= len(civ_list):
+                    continue
+                entry = civ_list[slot_idx]
+                entry["name_string_id"] = ov["name_sid"]
+                icon_id = ov.get("icon_id")
+                if icon_id is not None:
+                    entry["unique_unit_image_paths"] = [
+                        f"/resources/uniticons/{icon_id:03d}_50730.png"
+                    ]
+                uu_unit_id = ov.get("uu_unit_id")
+                if uu_unit_id is not None:
+                    entry["unique_unit_id"] = uu_unit_id
+                    if ov.get("uu_elite_id") is not None:
+                        entry["elite_unique_unit_id"] = ov["uu_elite_id"]
+                    if ov.get("uu_upgrade_tech_id") is not None:
+                        entry["unique_unit_upgrade_id"] = ov["uu_upgrade_tech_id"]
+                    if ov.get("uu_name_sid") is not None:
+                        name_sid_uu = ov["uu_name_sid"]
+                        # See build_all.py's identical block — prefer the
+                        # explicit desc sid (real id for both vanilla and
+                        # KM-custom UUs); the +DLL_HELP_OFFSET fallback only
+                        # reliably works for the vanilla path.
+                        desc_sid_uu = ov.get("uu_desc_sid") or (name_sid_uu + DLL_HELP_OFFSET)
+                        entry["unique_unit_string_ids"] = [
+                            {"name": name_sid_uu, "description": desc_sid_uu}
+                        ]
+            civs_json_bytes = json.dumps(
+                {"civilization_list": civ_list}, separators=(",", ":")
+            ).encode("utf-8")
+        except Exception as e:
+            print(f"WARNING: Could not generate civilizations.json: {e}")
+
     prefix   = mod_name.lower().replace(" ", "_")
-    data_zip = _build_combined_data_zip(dat, button_pngs, per_civ_tt, mod_name=mod_name)
+    data_zip = _build_combined_data_zip(dat, button_pngs, per_civ_tt, mod_name=mod_name,
+                                        civs_json_bytes=civs_json_bytes)
     ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings, mod_name=mod_name)
 
     out_path = sd / f"{prefix}.zip"
