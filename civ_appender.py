@@ -8,6 +8,7 @@ from genieutils.datfile import DatFile
 from genieutils.civ import Civ
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import Tech, ResearchLocation, ResearchResourceCost
+from genieutils.unit import TrainLocation, ResourceCost
 from genieutils.unitheaders import UnitHeaders
 
 from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list
@@ -2193,11 +2194,21 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # 6c. Patch deferred UU-substitution effect commands (see
     #     UU_SUBSTITUTION_TYPES / _build_ut_effect_cmds) now that this civ's
     #     own elite UU id is fully resolved across all 3 possible paths above.
+    mercenary_slot_ready = False
     for pending in (castle_ut_pending_uu_subs, imp_ut_pending_uu_subs):
         for eff_id, ec in pending:
             if elite_uu_id < 0:
                 continue
-            ec.a = elite_uu_id
+            if ec.type == 12:
+                # Castle-btn4 "free train" mechanic needs the dedicated
+                # _MERCENARY_UU_SLOT clone, not the civ's real elite UU
+                # directly (see _setup_mercenary_uu_unit's docstring).
+                if not mercenary_slot_ready:
+                    _setup_mercenary_uu_unit(dat, civ_index, elite_uu_id)
+                    mercenary_slot_ready = True
+                ec.a = _MERCENARY_UU_SLOT
+            else:
+                ec.a = elite_uu_id
             dat.effects[eff_id].effect_commands.append(ec)
     if (castle_ut_pending_uu_subs or imp_ut_pending_uu_subs) and elite_uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own elite unique "
@@ -2415,6 +2426,50 @@ _KM_IMP_UT_TECHS: dict[int, int] = {
 # (e.g. b=109 = Town Center, the same unit id for every civ) and are safe to
 # keep as-is once `a` is substituted with the CURRENT civ's own elite UU id.
 UU_SUBSTITUTION_TYPES = (7, 12)
+
+# type=12 (Cuman Mercenaries-style "team gets free trains at the Castle")
+# specifically needs a DEDICATED unit slot, not just a substituted unit id —
+# Cumans' own MKIPCHAK (1260) is a SEPARATE unit from the normally-trained
+# Elite Kipchak (1233), because resource_costs/train_locations live on the
+# unit object itself: reusing the civ's real elite UU directly would make its
+# NORMAL training (e.g. at the Stable) also require resource 214, breaking it
+# for everyone who hasn't researched this UT. _MERCENARY_UU_SLOT (1261,
+# "CUMANDISABLED" in the base dat) is an unused-everywhere spare slot already
+# shaped for exactly this purpose — confirmed via a full 60-civ scan that no
+# civ currently wires its train_locations to a real building. We overwrite
+# its resource_costs/train_locations with MKIPCHAK's own EXACT, confirmed-
+# shipping values (not this slot's pre-existing ones, which differ slightly —
+# e.g. reference resource 215 — and were likely an abandoned dev iteration,
+# given the slot's own name). type=7 (First Crusade) does NOT need this: it
+# makes Town Centers passively spawn the unit (a separate production path
+# from training/resource_costs entirely), so direct substitution is correct
+# and sufficient — confirmed Sicilians' own Serjeant (1658) is literally the
+# SAME unit used for normal training, no dedicated duplicate exists for it.
+_MERCENARY_UU_SLOT = 1261
+
+
+def _setup_mercenary_uu_unit(dat: DatFile, civ_index: int, elite_uu_id: int) -> None:
+    """Clone this civ's own elite UU into _MERCENARY_UU_SLOT for the Castle
+    btn4 "free unit" mechanic (Cuman Mercenaries/bonus 9), preserving its
+    name/graphics/combat stats but giving it MKIPCHAK's own train_location
+    (Castle, btn4) and resource_costs (1 unit of resource 214 — the "free
+    token" tech 707 sets to 5 per Castle, copied verbatim/unmodified).
+    """
+    elite = dat.civs[civ_index].units[elite_uu_id]
+    clone = deepcopy(elite)
+    clone.id = _MERCENARY_UU_SLOT
+    # Stay hidden until the type=12 "team enable" command fires at research
+    # time — matches MKIPCHAK's own baseline (enabled=0 in the vanilla dat).
+    clone.enabled = 0
+    clone.creatable.train_locations = [
+        TrainLocation(train_time=12, unit_id=BUILDING_CASTLE, button_id=4, hot_key_id=16730),
+    ]
+    clone.creatable.resource_costs = (
+        ResourceCost(type=214, amount=1, flag=1),
+        ResourceCost(type=-1, amount=0, flag=0),
+        ResourceCost(type=4, amount=1, flag=0),
+    )
+    dat.civs[civ_index].units[_MERCENARY_UU_SLOT] = clone
 
 
 def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
