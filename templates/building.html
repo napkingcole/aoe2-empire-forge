@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Building — AoE2 Civ Builder{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h2 class="mb-0">
+    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+    Building Your Mod…
+  </h2>
+  <p class="text-secondary small mb-0">This usually takes a few seconds — feel free to watch it work.</p>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <pre id="build-feed" class="build-log mb-0" style="max-height: 60vh; overflow-y: auto;"></pre>
+  </div>
+</div>
+
+<div id="build-error-box" class="alert alert-danger mt-3 d-none">
+  <strong>Build failed:</strong> <span id="build-error-text"></span>
+  <div class="mt-2">
+    <a href="{{ url_for('configure') }}" class="btn btn-sm btn-outline-danger">← Back to Configure</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let since = 0;
+  const feed = document.getElementById("build-feed");
+  const errBox = document.getElementById("build-error-box");
+  const errText = document.getElementById("build-error-text");
+
+  function poll() {
+    fetch(`{{ url_for('build_progress') }}?since=${since}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.lines && data.lines.length) {
+          feed.textContent += data.lines.join("\n") + "\n";
+          feed.scrollTop = feed.scrollHeight;
+        }
+        since = data.total;
+
+        if (data.error) {
+          errText.textContent = data.error;
+          errBox.classList.remove("d-none");
+          return;
+        }
+        if (data.done) {
+          window.location = "{{ url_for('results') }}";
+          return;
+        }
+        setTimeout(poll, 400);
+      })
+      .catch(() => setTimeout(poll, 800));
+  }
+  poll();
+</script>
+{% endblock %}

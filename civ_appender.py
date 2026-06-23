@@ -2064,7 +2064,13 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     if civ_def.get("unique_unit", {}).get("base_unit_id") is not None:
         uu_id, elite_uu_id = _append_unique_units(dat, civ_index, civ_def)
         print(f"       UU: {uu_id}  Elite UU: {elite_uu_id}")
-    else:
+    elif not (km_uu_is_vanilla or km_uu_is_custom):
+        # Only truly "skipped" when no UU is being set at all. A vanilla KM
+        # UU reuse (km_uu_is_vanilla, e.g. bonuses[1]=[0] → Longbowman) or a
+        # from-scratch KM-custom UU (km_uu_is_custom) is handled later by
+        # _apply_km_uu / km_custom_uu.append_km_custom_uu, which print their
+        # own accurate line — printing "skipped" here as well was misleading
+        # since the UU does in fact get applied via that other path.
         print("       UU: skipped (no base_unit_id)")
 
     # 3. Elite upgrade tech (Castle, btn10).

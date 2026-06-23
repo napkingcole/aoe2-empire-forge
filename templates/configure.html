@@ -51,7 +51,7 @@
               {% for vc in vanilla_civs %}
               <option value="{{ vc }}"
                       {{ 'selected' if defaults.get(civ.filename) == vc else '' }}>
-                {{ vc }}
+                {{ vanilla_display_names.get(vc, vc) }}
               </option>
               {% endfor %}
             </select>
@@ -67,8 +67,10 @@
   {# Hidden inputs for civ order — populated by JS on submit #}
   <div id="order-inputs"></div>
 
+  <div id="duplicate-alert" class="alert alert-danger d-none" role="alert"></div>
+
   <div class="d-grid">
-    <button type="submit" id="build-btn" class="btn btn-success btn-lg">Build Mod ⚙️</button>
+    <button type="submit" id="build-btn" class="btn btn-success btn-lg">Build Mod <i class="fa-solid fa-hammer"></i></button>
   </div>
 </form>
 {% endblock %}
@@ -88,7 +90,31 @@
     });
   });
 
-  document.getElementById("build-form").addEventListener("submit", function () {
+  document.getElementById("build-form").addEventListener("submit", function (e) {
+    // Block the build if two or more civs are pointed at the same vanilla
+    // slot — they'd silently clobber each other in the DAT.
+    const dupAlert = document.getElementById("duplicate-alert");
+    const seen = new Set();
+    let dupe = null;
+    document.querySelectorAll(".replace-select").forEach(sel => {
+      if (!sel.value) return;
+      if (seen.has(sel.value)) {
+        dupe = sel.value;
+      } else {
+        seen.add(sel.value);
+      }
+    });
+
+    if (dupe) {
+      e.preventDefault();
+      dupAlert.textContent =
+        `Please select a unique civilization override for all civs — "${dupe}" is selected more than once.`;
+      dupAlert.classList.remove("d-none");
+      dupAlert.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    dupAlert.classList.add("d-none");
+
     // Populate hidden order inputs first.
     const container = document.getElementById("order-inputs");
     container.innerHTML = "";
