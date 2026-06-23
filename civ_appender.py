@@ -2085,9 +2085,12 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     imp_ut_desc_sid    = _help_sid(imp_ut_sid)
     castle_ut_tech_id: int | None = None
     imp_ut_tech_id:    int | None = None
+    castle_ut_pending_uu_subs: list = []
+    imp_ut_pending_uu_subs:    list = []
     if castle_ut_entries or imperial_ut_entries:
         (castle_ut_sid, imp_ut_sid, castle_ut_tech_id, imp_ut_tech_id,
-         castle_ut_desc_sid, imp_ut_desc_sid) = (
+         castle_ut_desc_sid, imp_ut_desc_sid,
+         castle_ut_pending_uu_subs, imp_ut_pending_uu_subs) = (
             _append_unique_tech_stubs(
                 dat, civ_index, alias,
                 castle_ut_entries, imperial_ut_entries)
@@ -2113,6 +2116,18 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     km_uu_custom_unit_strings: list[dict] = []
     if km_uu_is_vanilla:
         km_uu_make_avail_tech_id, km_uu_elite_tech_id = _apply_km_uu(dat, civ_index, km_uu_index)
+        # Extract the actual elite UNIT id (not just the tech id) from the
+        # elite-upgrade tech's own EC_UPGRADE command (a=base, b=elite) — the
+        # standard vanilla elite-upgrade convention — so deferred UU
+        # substitutions (see UU_SUBSTITUTION_TYPES) can use this civ's real
+        # elite UU rather than the catalog source civ's hardcoded one.
+        if 0 <= km_uu_elite_tech_id < len(dat.techs):
+            elite_eff_id = dat.techs[km_uu_elite_tech_id].effect_id
+            if 0 <= elite_eff_id < len(dat.effects):
+                for ec in dat.effects[elite_eff_id].effect_commands:
+                    if ec.type == EC_UPGRADE:
+                        elite_uu_id = ec.b
+                        break
     elif km_uu_is_custom:
         # Pool-based allocation (see CAMPAIGN_STRING_POOL docstring) for the
         # two "name" ids; desc/help ids are DERIVED via _help_sid (name+
@@ -2147,6 +2162,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             dat, civ_index, km_uu_index, uu_name_sid, uu_desc_sid,
             elite_name_sid, elite_desc_sid, has_krepost=has_krepost)
         uu_unit_id, elite_unit_id, km_uu_make_avail_tech_id, km_uu_elite_tech_id = result
+        elite_uu_id = elite_unit_id
         preset_name = km_custom_uu.PRESETS[km_uu_index]["name"]
         # No separate extra_tech_strings entry for the elite tech — it
         # reuses elite_name_sid/elite_desc_sid directly (same ids as the
@@ -2171,6 +2187,21 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     elif km_uu_index is not None:
         msg = (f"KM UU index {km_uu_index} is a KM-custom unit "
                f"— not supported in standalone builder; vanilla UU preserved")
+        print(f"       WARNING: {msg}")
+        warnings.append(msg)
+
+    # 6c. Patch deferred UU-substitution effect commands (see
+    #     UU_SUBSTITUTION_TYPES / _build_ut_effect_cmds) now that this civ's
+    #     own elite UU id is fully resolved across all 3 possible paths above.
+    for pending in (castle_ut_pending_uu_subs, imp_ut_pending_uu_subs):
+        for eff_id, ec in pending:
+            if elite_uu_id < 0:
+                continue
+            ec.a = elite_uu_id
+            dat.effects[eff_id].effect_commands.append(ec)
+    if (castle_ut_pending_uu_subs or imp_ut_pending_uu_subs) and elite_uu_id < 0:
+        msg = ("Castle/Imperial UT references this civ's own elite unique "
+               "unit, but this civ has no UU defined — effect left as a no-op.")
         print(f"       WARNING: {msg}")
         warnings.append(msg)
 
@@ -2370,8 +2401,24 @@ _KM_IMP_UT_TECHS: dict[int, int] = {
 }
 
 
+# Effect types that hardcode a reference to the SOURCE civ's own unique unit
+# rather than a generic/universal unit or attribute — team-scoped variants of
+# EC_ENABLE (type 7, used by First Crusade/bonus 29 castle UT) and (type 12,
+# used by Cuman Mercenaries/bonus 9 imperial UT). Confirmed by inspecting the
+# vanilla DAT: tech 690 (Cuman Mercenaries) type=12 command's `a` is unit 1260
+# = Cumans' own Elite Kipchak; tech 756 (First Crusade) type=7 command's `a`
+# is unit 1658 = Sicilians' own Serjeant. Blindly copying these to another
+# civ references the WRONG unit and was confirmed live to also corrupt the
+# Castle research-button tooltip (falls back to a vanilla Scenario Editor
+# placeholder string, "Click to enter a filename..."). In both cases only the
+# `a` field is civ-specific — `b`/`c`/`d` reference universal infrastructure
+# (e.g. b=109 = Town Center, the same unit id for every civ) and are safe to
+# keep as-is once `a` is substituted with the CURRENT civ's own elite UU id.
+UU_SUBSTITUTION_TYPES = (7, 12)
+
+
 def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
-                          lookup: dict[int, int]) -> list:
+                          lookup: dict[int, int]) -> tuple[list, list]:
     """Collect effect commands for a UT's bonus entries.
 
     `entries` is bonuses[2] (castle) or bonuses[3] (imperial) from the KM JSON.
@@ -2381,8 +2428,17 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
     the right behavior. Previously this called civ_bonus_techs() which uses an
     entirely different bonus-ID namespace and produced wrong effects (e.g.
     Stirrups would research Britons' "Castle 15% cheaper" tech).
+
+    Returns (cmds, pending_uu_subs). `pending_uu_subs` holds EffectCommand
+    templates (see UU_SUBSTITUTION_TYPES) whose `.a` still needs to be set to
+    THIS civ's own elite UU unit id once it's known — the UU is sometimes
+    resolved later than the UT stub (e.g. KM-custom UU presets), so the caller
+    must patch `.a` in and append these to the tech's effect afterward. Until
+    patched, the UT silently has no functional effect for that specific entry
+    (better than referencing another civ's unit).
     """
-    cmds = []
+    cmds: list = []
+    pending_uu_subs: list = []
     for entry in entries:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
             continue
@@ -2397,25 +2453,38 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         eid = dat.techs[tech_id].effect_id
         if eid < 0 or eid >= len(dat.effects):
             continue
-        src = [ec for ec in dat.effects[eid].effect_commands
-               if ec.type not in (EC_ENABLE, EC_UPGRADE)]
-        for ec in src:
+        all_cmds = dat.effects[eid].effect_commands
+        for ec in all_cmds:
+            if ec.type in (EC_ENABLE, EC_UPGRADE):
+                continue
+            if ec.type in UU_SUBSTITUTION_TYPES:
+                print(f"       {label} bonus {bonus_id}: deferring unit "
+                      f"substitution for type={ec.type} command (needs this "
+                      f"civ's own elite UU)")
+                for _ in range(multiplier):
+                    pending_uu_subs.append(deepcopy(ec))
+                continue
             for _ in range(multiplier):
                 cmds.append(deepcopy(ec))
-    return cmds
+    return cmds, pending_uu_subs
 
 
 def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
                                castle_ut_entries: list,
                                imperial_ut_entries: list,
-                               ) -> tuple[int, int, int | None, int | None, int, int]:
+                               ) -> tuple[int, int, int | None, int | None, int, int,
+                                          list, list]:
     """Create Castle UT (btn7) and Imperial UT (btn8) from bonus catalog entries.
 
     Returns (castle_name_sid, imp_name_sid, castle_tech_id, imp_tech_id,
-    castle_desc_sid, imp_desc_sid). name_sid comes from CAMPAIGN_STRING_POOL
-    (UT_POOL_OFFSET block) — an EXISTING vanilla id; desc_sid is DERIVED via
-    _help_sid(name_sid) (name+100000), matching the vanilla engine convention
-    the Castle hover tooltip actually keys off (see _help_sid's docstring).
+    castle_desc_sid, imp_desc_sid, castle_pending_uu_subs, imp_pending_uu_subs).
+    name_sid comes from CAMPAIGN_STRING_POOL (UT_POOL_OFFSET block) — an
+    EXISTING vanilla id; desc_sid is DERIVED via _help_sid(name_sid) (name+
+    100000), matching the vanilla engine convention the Castle hover tooltip
+    actually keys off (see _help_sid's docstring). The pending_uu_subs lists
+    (see _build_ut_effect_cmds/UU_SUBSTITUTION_TYPES) must be patched in by
+    the caller once this civ's own elite UU id is resolved — apply_civ may
+    not know it yet at this point (e.g. KM-custom UU presets resolve later).
     """
     # Default costs: Castle UT = 300 food + 300 gold; Imperial UT = 450 food + 225 stone
     # icon_id 33 = vanilla Castle UT icon; 107 = vanilla Imperial UT icon
@@ -2429,6 +2498,7 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
     used_name_sids: list[int] = []
     used_desc_sids: list[int] = []
     used_tech_ids: list[int | None] = []
+    pending_subs_per_slot: list[list] = []
     for (btn, label, age_req, entries, cost_food, cost_b_type, cost_b, icon,
          name_sid, ut_lookup) in ut_configs:
         desc_sid = _help_sid(name_sid)
@@ -2436,9 +2506,11 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         used_desc_sids.append(desc_sid)
         if not entries:
             used_tech_ids.append(None)
+            pending_subs_per_slot.append([])
             continue
-        cmds = _build_ut_effect_cmds(dat, entries, label, ut_lookup)
+        cmds, pending_uu_subs = _build_ut_effect_cmds(dat, entries, label, ut_lookup)
         eff_id = _append_effect(dat, Effect(name=f"{alias} {label}", effect_commands=cmds))
+        pending_subs_per_slot.append([(eff_id, ec) for ec in pending_uu_subs])
         # Copy hotkey from first entry's vanilla tech so S/D keys work in-game.
         hotkey = -1
         if entries and isinstance(entries[0], (list, tuple)) and entries[0]:
@@ -2481,4 +2553,6 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         used_tech_ids[0] if len(used_tech_ids) > 0 else None,
         used_tech_ids[1] if len(used_tech_ids) > 1 else None,
         used_desc_sids[0], used_desc_sids[1],
+        pending_subs_per_slot[0] if len(pending_subs_per_slot) > 0 else [],
+        pending_subs_per_slot[1] if len(pending_subs_per_slot) > 1 else [],
     )
