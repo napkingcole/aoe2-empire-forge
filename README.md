@@ -8,6 +8,8 @@ A local desktop tool for building custom civilizations for **Age of Empires II: 
 
 Grab the latest build from the [Releases page](https://github.com/napkingcole/aoe2-empire-forge/releases). Download the `.exe` (Windows) — no Python or other installation required.
 
+<img width="993" height="1045" alt="Screenshot 2026-06-23 at 5 07 57 PM" src="https://github.com/user-attachments/assets/17206a9a-4fbb-4ff7-8763-38dbbd05906f" />
+
 ## How to use it
 
 1. **Launch the app.** Double-click the `.exe`. It starts a local server and opens your browser automatically — nothing leaves your machine.
