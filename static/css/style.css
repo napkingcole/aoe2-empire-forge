@@ -76,8 +76,14 @@
 body {
   background-color: var(--body-bg);
   color: var(--body-text);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
+main {
+  flex-grow: 1;
+}
 /* ── Navbar ──────────────────────────────────────────────────────────────── */
 .navbar {
   background-color: var(--accent-1);
@@ -92,6 +98,13 @@ body {
 }
 .nav-link:hover {
   color: var(--accent-2) !important;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+footer {
+  background-color: var(--accent-1);
+  border-top: 1px solid var(--accent-2);
 }
 
 /* ── Cards ───────────────────────────────────────────────────────────────── */

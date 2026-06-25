@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Known Limitations — AOE2: Empire Forge{% endblock %}
+
+{% block content %}
+<h2 class="mb-2">Known Limitations</h2>
+<p>
+  Most KrakenMeister civ content converts cleanly into a working mod. The items below don't yet —
+  if a civ you're building relies on one of these, it will be silently skipped rather than applied
+  (civ bonuses are also called out on the Results page after a build).
+</p>
+
+<h4 class="mt-4">Civ Bonuses</h4>
+
+<h6 class="mt-3 text-danger">Never worked — empty stubs in KM's source</h6>
+<p class="small text-muted">These bonus IDs existed in KM's tool but were never implemented. They have always silently done nothing.</p>
+{% if never_worked_bonuses %}
+<table class="table table-sm table-dark mt-2">
+  <thead><tr><th style="width:60px">ID</th><th>Bonus</th><th>Notes</th></tr></thead>
+  <tbody>
+    {% for b in never_worked_bonuses %}
+    <tr>
+      <td class="font-monospace">{{ b.id }}</td>
+      <td>{{ b.name }}</td>
+      <td class="small">{{ b.reason }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-success small">None.</p>
+{% endif %}
+
+<h6 class="mt-3 text-warning">Unlikely to implement</h6>
+<p class="small text-muted">These are real bonuses but are being deprioritised due to complexity or architectural constraints.</p>
+{% if unlikely_bonuses %}
+<table class="table table-sm table-dark mt-2">
+  <thead><tr><th style="width:60px">ID</th><th>Bonus</th><th>Notes</th></tr></thead>
+  <tbody>
+    {% for b in unlikely_bonuses %}
+    <tr>
+      <td class="font-monospace">{{ b.id }}</td>
+      <td>{{ b.name }}</td>
+      <td class="small">{{ b.reason }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-success small">None.</p>
+{% endif %}
+
+<h6 class="mt-3 text-info">Upcoming / TBD</h6>
+<p class="small text-muted">Planned for a future update.</p>
+{% if upcoming_bonuses %}
+<table class="table table-sm table-dark mt-2">
+  <thead><tr><th style="width:60px">ID</th><th>Bonus</th></tr></thead>
+  <tbody>
+    {% for b in upcoming_bonuses %}
+    <tr>
+      <td class="font-monospace">{{ b.id }}</td>
+      <td>{{ b.name }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-success small">None.</p>
+{% endif %}
+
+<h4 class="mt-4">Unique Units ({{ unsupported_units | length }})</h4>
+{% if unsupported_units %}
+<table class="table table-sm table-dark mt-2">
+  <thead>
+    <tr>
+      <th style="width:60px">ID</th>
+      <th>Unit</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in unsupported_units %}
+    <tr>
+      <td class="font-monospace">{{ u.id }}</td>
+      <td>{{ u.name }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-success">Every known unique unit is currently supported.</p>
+{% endif %}
+
+<h4 class="mt-4">Castle Unique Techs ({{ unsupported_castle_uts | length }})</h4>
+{% if unsupported_castle_uts %}
+<table class="table table-sm table-dark mt-2">
+  <thead>
+    <tr>
+      <th style="width:60px">ID</th>
+      <th>Tech</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in unsupported_castle_uts %}
+    <tr>
+      <td class="font-monospace">{{ t.id }}</td>
+      <td>{{ t.name }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-success">Every known castle unique tech is currently supported.</p>
+{% endif %}
+
+<h4 class="mt-4">Imperial Unique Techs ({{ unsupported_imp_uts | length }})</h4>
+{% if unsupported_imp_uts %}
+<table class="table table-sm table-dark mt-2">
+  <thead>
+    <tr>
+      <th style="width:60px">ID</th>
+      <th>Tech</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in unsupported_imp_uts %}
+    <tr>
+      <td class="font-monospace">{{ t.id }}</td>
+      <td>{{ t.name }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-success">Every known imperial unique tech is currently supported.</p>
+{% endif %}
+
+<h4 class="mt-4">Team Bonuses ({{ unsupported_team | length }})</h4>
+<p class="small">
+  KM never recorded descriptions for team bonuses, so only IDs are listed here.
+</p>
+{% if unsupported_team %}
+<table class="table table-sm table-dark mt-2">
+  <thead>
+    <tr>
+      <th style="width:60px">ID</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in unsupported_team %}
+    <tr>
+      <td class="font-monospace">{{ t.id }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-success">Every known team bonus is currently supported.</p>
+{% endif %}
+{% endblock %}
