@@ -1245,6 +1245,20 @@ def _market_tech_ids(dat: DatFile) -> list[int]:
     return out
 
 
+def _dock_and_univ_tech_ids(dat: DatFile) -> list[int]:
+    """Return IDs of all global techs at the Dock or University."""
+    BUILDING_DOCK = 45
+    BUILDING_UNIV = 209
+    out = []
+    for i, t in enumerate(dat.techs):
+        if t.civ != -1:
+            continue
+        locs = getattr(t, 'research_locations', [])
+        if locs and locs[0].location_id in (BUILDING_DOCK, BUILDING_UNIV):
+            out.append(i)
+    return out
+
+
 def _barracks_tech_ids(dat: DatFile) -> list[int]:
     """Return IDs of all techs whose primary research location is the Barracks."""
     BUILDING_BARRACKS = 12
@@ -1275,6 +1289,18 @@ def _find_upgrade_tech(dat: DatFile, from_unit: int, to_unit: int,
             if ec.type == EC_UPGRADE and int(ec.a) == from_unit and int(ec.b) == to_unit:
                 return i
     return None
+
+
+# Bonus IDs dispatched by _create_bonus_handler below. Keep in sync with the
+# `if bonus_id == ...` blocks — used by the "Known Limitations" page to know
+# which createCivBonus-style bonuses are actually covered.
+HANDLED_BONUS_IDS = {
+    156, 157, 158, 152, 155, 261, 189, 210, 208, 120, 125, 234, 137, 138,
+    290, 103, 247, 221, 133, 330, 332, 308, 309, 310,
+    123, 209, 325,
+    195, 258, 277, 278, 279,
+    239, 400,
+}
 
 
 def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
@@ -1740,6 +1766,190 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                 "ext_text": format_unit_extended_tooltip(
                     unit_obj, "Royal Lancer", tag="unique unit"),
             })
+        return True
+
+    if bonus_id == 400:          # City Walls — researchable Imperial Age upgrade for Fortified Walls/Gates
+        _FORTIFIED_WALL_TECH = 194  # cloned for button/hotkey/icon/location inheritance
+        _CITY_WALL_NAME_SID  = 5754  # vanilla string "City Wall"
+        cmds = [
+            EffectCommand(type=EC_MULTIPLY, a=155, b=-1, c=0, d=1.5),  # Fortified Wall ×1.5 HP
+            EffectCommand(type=EC_MULTIPLY, a=-1,  b=39, c=0, d=1.5),  # Gates (class 39) ×1.5 HP
+        ]
+        eff = Effect(name="City Walls", effect_commands=cmds)
+        dat.effects.append(eff)
+        eff_id = len(dat.effects) - 1
+
+        src = dat.techs[_FORTIFIED_WALL_TECH]
+        new_tech = deepcopy(src)
+        new_tech.name                     = "City Walls"
+        new_tech.civ                      = civ_index
+        new_tech.effect_id                = eff_id
+        new_tech.required_techs           = (103, 194, -1, -1, -1, -1)  # Imperial Age + Fortified Wall
+        new_tech.required_tech_count      = 2
+        new_tech.resource_costs           = (
+            ResearchResourceCost(type=2, amount=350, flag=1),   # 350 stone
+            ResearchResourceCost(type=-1, amount=0, flag=0),
+            ResearchResourceCost(type=-1, amount=0, flag=0),
+        )
+        new_tech.language_dll_name        = _CITY_WALL_NAME_SID
+        new_tech.language_dll_description = -1
+        new_tech.language_dll_help        = -1
+        new_tech.language_dll_tech_tree   = -1
+        dat.techs.append(new_tech)
+        return True
+
+    if bonus_id == 195:          # Blacksmith upgrades free one age after they're available
+        # Feudal-age Blacksmith techs → free in Castle Age; Castle-age → free in Imperial Age.
+        _FEUDAL, _CASTLE, _IMPERIAL = 101, 102, 103
+        feudal_bs, castle_bs = [], []
+        for i, t in enumerate(dat.techs):
+            if t.civ != -1 or not t.name:
+                continue
+            locs = getattr(t, 'research_locations', [])
+            if not locs or locs[0].location_id != BUILDING_BLACKSMITH:
+                continue
+            reqs = list(t.required_techs)
+            if _FEUDAL in reqs:
+                feudal_bs.append(i)
+            elif _CASTLE in reqs:
+                castle_bs.append(i)
+        if feudal_bs:
+            _add_auto_fire_tech(dat, civ_index, _free_tech_cmds(feudal_bs),
+                                age_req=_CASTLE, name="C-Bonus 195, Feudal BS free at Castle")
+        if castle_bs:
+            _add_auto_fire_tech(dat, civ_index, _free_tech_cmds(castle_bs),
+                                age_req=_IMPERIAL, name="C-Bonus 195, Castle BS free at Imperial")
+        return True
+
+    if bonus_id == 239:          # "Upgrade Fortified Walls to City Walls" — superseded by bonus 400
+        return True             # silently accept; users use bonus 400 for the HP upgrade instead
+
+    if bonus_id == 258:          # Villagers +1 carry capacity per Town Center tech
+        _BUILDING_TC    = 109
+        _VILLAGER_CLASS = 4
+        _CARRY_CAP_ATTR = 14
+        for i, t in enumerate(dat.techs):
+            if t.civ != -1:
+                continue
+            locs = getattr(t, 'research_locations', [])
+            if locs and locs[0].location_id == _BUILDING_TC:
+                _add_auto_fire_tech(
+                    dat, civ_index,
+                    [EffectCommand(type=EC_ADD, a=-1, b=_VILLAGER_CLASS,
+                                   c=_CARRY_CAP_ATTR, d=1.0)],
+                    age_req=i, name=f"C-Bonus 258, carry cap {t.name}")
+        return True
+
+    if bonus_id == 277:          # Gunpowder units +1 base attack per University tech
+        _BUILDING_UNIV = 209
+        _GUNPOWDER = [5, 36, 420, 691, 46, 557, 1001, 1003,
+                      771, 773, 1709, 1704, 1706, 1911, 831, 832, 1904, 1907]
+        cmds = []
+        for uid in _GUNPOWDER:
+            if uid >= len(dat.civs[0].units):
+                continue
+            t50 = getattr(dat.civs[0].units[uid], 'type_50', None)
+            if t50 is None:
+                continue
+            for atk in getattr(t50, 'attacks', []):
+                if atk.class_ in (3, 4) and atk.amount != 0:
+                    d = float(atk.class_ * 256 + 1)  # +1 bonus vs base attack class
+                    cmds.append(EffectCommand(type=EC_ADD, a=uid, b=-1, c=9, d=d))
+                    break
+        if cmds:
+            for i, t in enumerate(dat.techs):
+                if t.civ != -1:
+                    continue
+                locs = getattr(t, 'research_locations', [])
+                if locs and locs[0].location_id == _BUILDING_UNIV:
+                    _add_auto_fire_tech(dat, civ_index,
+                                        [deepcopy(c) for c in cmds],
+                                        age_req=i, name=f"C-Bonus 277, GP atk {t.name}")
+        return True
+
+    if bonus_id == 278:          # Buildings +3% HP per University tech (cumulative)
+        _BUILDING_UNIV   = 209
+        _BUILDING_CLASSES = [3, 27, 39, 49, 52]
+        cmds = [EffectCommand(type=EC_MULTIPLY, a=-1, b=cls, c=0, d=1.03)
+                for cls in _BUILDING_CLASSES]
+        for i, t in enumerate(dat.techs):
+            if t.civ != -1:
+                continue
+            locs = getattr(t, 'research_locations', [])
+            if locs and locs[0].location_id == _BUILDING_UNIV:
+                _add_auto_fire_tech(dat, civ_index,
+                                    [deepcopy(c) for c in cmds],
+                                    age_req=i, name=f"C-Bonus 278, bldg HP {t.name}")
+        return True
+
+    if bonus_id == 279:          # Each Monastery tech researched spawns a free Monk
+        _MONASTERY          = 104   # CRCH
+        _FORTIFIED_MONASTERY = 1806  # FORTCRCH
+        _MONK               = 125   # MONKX
+        _SPAWN_RES          = 234   # flag resource used by the spawn mechanism
+        cmds = [
+            EffectCommand(type=EC_RESOURCE, a=_SPAWN_RES, b=0, c=-1, d=1.0),
+            EffectCommand(type=7, a=_MONK, b=_MONASTERY,          c=1, d=0.0),
+            EffectCommand(type=7, a=_MONK, b=_FORTIFIED_MONASTERY, c=1, d=0.0),
+        ]
+        for i, t in enumerate(dat.techs):
+            if t.civ != -1:
+                continue
+            locs = getattr(t, 'research_locations', [])
+            if locs and locs[0].location_id == _MONASTERY:
+                _add_auto_fire_tech(dat, civ_index,
+                                    [deepcopy(c) for c in cmds],
+                                    age_req=i, name=f"C-Bonus 279, monk on {t.name}")
+        return True
+
+    if bonus_id == 123:          # Dock and University techs cost -33%
+        cmds = []
+        for tid in _dock_and_univ_tech_ids(dat):
+            t = dat.techs[tid]
+            for rc in t.resource_costs:
+                if rc.flag and rc.amount > 0:
+                    discount = -round(rc.amount / 3)
+                    cmds.append(EffectCommand(type=EC_TECH_COST,
+                                             a=tid, b=rc.type, c=1, d=float(discount)))
+        if cmds:
+            _add_auto_fire_tech(dat, civ_index, cmds,
+                                name="C-Bonus, Dock+Univ techs -33%")
+        return True
+
+    if bonus_id == 209:          # Stone Walls available in Dark Age
+        _STONE_WALL_TECH = 189  # "Wall 2 (make avail)", global, requires Feudal Age (101)
+        src = dat.techs[_STONE_WALL_TECH]
+        new_tech = deepcopy(src)
+        new_tech.civ = civ_index
+        reqs = list(new_tech.required_techs)
+        for j, r in enumerate(reqs):
+            if r == 101:        # remove Feudal Age prereq so it fires from Dark Age
+                reqs[j] = -1
+                break
+        new_tech.required_techs = tuple(reqs)
+        new_tech.required_tech_count = max(0, new_tech.required_tech_count - 1)
+        eid = src.effect_id
+        if 0 <= eid < len(dat.effects):
+            new_eff = deepcopy(dat.effects[eid])
+            dat.effects.append(new_eff)
+            new_tech.effect_id = len(dat.effects) - 1
+        dat.techs.append(new_tech)
+        return True
+
+    if bonus_id == 325:          # Husbandry (tech 39) also boosts attack reload time
+        _HUSBANDRY = 39
+        husb_eff = dat.effects[dat.techs[_HUSBANDRY].effect_id]
+        cmds = []
+        for ec in husb_eff.effect_commands:
+            if ec.type == EC_MULTIPLY and ec.c == 5:  # c=5 is move speed
+                new_ec = deepcopy(ec)
+                new_ec.c = 10                          # c=10 is attack reload time
+                new_ec.d = round(1.0 / ec.d, 7)       # invert: faster attack = lower reload
+                cmds.append(new_ec)
+        if cmds:
+            _add_auto_fire_tech(dat, civ_index, cmds,
+                                age_req=_HUSBANDRY,
+                                name="C-Bonus, Husbandry attack speed")
         return True
 
     return False  # not handled

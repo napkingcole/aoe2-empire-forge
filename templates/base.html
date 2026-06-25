@@ -26,12 +26,23 @@
       {% if session.get('results') %}
       <a href="{{ url_for('results') }}" class="nav-link text-light">Results</a>
       {% endif %}
+      <a href="{{ url_for('limitations') }}" class="nav-link text-light">Known Limitations</a>
       <a href="{{ url_for('reset') }}" class="nav-link text-secondary">Start Over</a>
+      <span class="text-secondary">v{{ app_version }}</span>
     </div>
   </div>
 </nav>
 
 <main class="container py-4" style="max-width: 860px;">
+
+  {% if update_info %}
+  <div class="alert alert-success alert-dismissible fade show" role="alert">
+    A newer version is available: <strong>v{{ update_info.latest }}</strong>
+    (you're on v{{ update_info.current }}).
+    <a href="{{ update_info.url }}" target="_blank" rel="noopener">Download the update</a>.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endif %}
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, message in messages %}
@@ -44,6 +55,19 @@
 
   {% block content %}{% endblock %}
 </main>
+
+<footer class="text-center text-secondary small py-4">
+  <h6 class="text-secondary mb-2">Contact Me</h6>
+  <a href="https://discord.com/users/napkingcole84" target="_blank" rel="noopener" class="text-secondary me-3">
+    <i class="fa-brands fa-discord"></i> Discord
+  </a>
+  <a href="mailto:aoenapkingcole@gmail.com" class="text-secondary me-3">
+    <i class="fa-solid fa-envelope"></i> aoenapkingcole@gmail.com
+  </a>
+  <a href="https://github.com/napkingcole/aoe2-empire-forge" target="_blank" rel="noopener" class="text-secondary">
+    <i class="fa-brands fa-github"></i> GitHub
+  </a>
+</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {% block scripts %}{% endblock %}

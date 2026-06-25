@@ -24,7 +24,9 @@ from pathlib import Path
 from flask import (Flask, flash, jsonify, redirect, render_template,
                    request, send_file, session, url_for)
 
-from bonus_names import bonus_name, skip_reason
+from bonus_names import (bonus_name, skip_reason, unsupported_bonuses,
+                         unsupported_unique_units, unsupported_unique_techs,
+                         unsupported_team_bonuses)
 from build_all import (_build_combined_data_zip, _build_combined_ui_zip,
                        _ut_name, _ut_bonus_id, _BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS)
@@ -40,12 +42,28 @@ from civ_appender import (apply_civ,
                           STR_CASTLE_UT, STR_IMPERIAL_UT,
                           DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET)
 from dat_reader import find_game_dat, load_dat
+from update_check import check_for_update
+from version import __version__
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
 
 SESSIONS_DIR = Path(tempfile.gettempdir()) / "aoe2civbuilder"
 SESSIONS_DIR.mkdir(exist_ok=True)
+
+# Populated once by a background thread shortly after startup; stays None if
+# the check hasn't finished yet, is offline, or no update is available.
+_update_info: dict | None = None
+
+
+def _run_update_check():
+    global _update_info
+    _update_info = check_for_update()
+
+
+@app.context_processor
+def _inject_globals():
+    return {"app_version": __version__, "update_info": _update_info}
 
 
 # ── Session helpers ───────────────────────────────────────────────────────────
@@ -60,10 +78,17 @@ def _session_dir() -> Path:
     return d
 
 
+# Chronicles/Antiquity DLC civs — these belong to AoE2 DE's alternate
+# "Antiquity Empires" civ pool, not the standard roster. We don't support
+# modding them: dropped from the replace-target dropdown entirely.
+EXCLUDED_VANILLA_CIVS = {"Achaemenids", "Athenians", "Spartans",
+                         "Macedonians", "Thracians", "Puru"}
+
+
 def _get_vanilla_civs(dat_path: str) -> list[str]:
     """Load the list of playable vanilla civ names from the DAT (excludes Gaia)."""
     dat = load_dat(dat_path)
-    return [c.name for c in dat.civs[1:]]
+    return [c.name for c in dat.civs[1:] if c.name not in EXCLUDED_VANILLA_CIVS]
 
 
 # The DAT's internal civ.name field still uses old/pre-DE naming for a
@@ -675,6 +700,29 @@ def results():
                            bonus_name=bonus_name, skip_reason=skip_reason)
 
 
+_BONUS_NEVER_WORKED = {211, 218}
+_BONUS_UNLIKELY     = {327}
+_BONUS_UPCOMING     = {222, 229, 270, 323, 356}
+
+
+@app.route("/limitations")
+def limitations():
+    all_unsupported = unsupported_bonuses()
+    never_worked = [b for b in all_unsupported if b["id"] in _BONUS_NEVER_WORKED]
+    unlikely     = [b for b in all_unsupported if b["id"] in _BONUS_UNLIKELY]
+    upcoming     = [b for b in all_unsupported if b["id"] in _BONUS_UPCOMING]
+    return render_template(
+        "limitations.html",
+        never_worked_bonuses=never_worked,
+        unlikely_bonuses=unlikely,
+        upcoming_bonuses=upcoming,
+        unsupported_units=unsupported_unique_units(),
+        unsupported_castle_uts=unsupported_unique_techs(castle=True),
+        unsupported_imp_uts=unsupported_unique_techs(castle=False),
+        unsupported_team=unsupported_team_bonuses(),
+    )
+
+
 @app.route("/download")
 def download():
     out_file = session.get("out_file")
@@ -714,4 +762,5 @@ if __name__ == "__main__":
         webbrowser.open("http://127.0.0.1:8080")
 
     threading.Timer(1.0, _open_browser).start()
+    threading.Thread(target=_run_update_check, daemon=True).start()
     app.run(debug=False, port=8080, threaded=True)
