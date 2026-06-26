@@ -66,12 +66,20 @@
              class="form-control font-monospace"
              value="{{ civtechtrees_path }}"
              placeholder="/path/to/resources/_common/dat/CivTechTrees">
-      <div class="form-text">
+      <div class="form-text mb-3">
         Sits next to the DAT file. Used to automatically detect and exclude
-        non-standard DLC civs (Chronicles / Antiquity) from the replace-target list
+        non-standard DLC civs (Chronicles / Antiquity) from the target list
         — so new DLC releases don't require an app update to stay correct.
       </div>
-
+      <div class="alert alert-success p-2 fs d-flex gap-1">
+        <div>
+          <span class="step-badge" style="background-color: #a3cfbc">
+            <i class="fa-solid fa-exclamation"></i>
+          </span>
+        </div>
+        <div>
+          <strong>NOTE:</strong> No game files get overwritten, only read by this app.</div>
+        </div>
     </div>
   </div>
 
