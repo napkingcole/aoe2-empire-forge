@@ -134,20 +134,19 @@
 {% endif %}
 
 <h4 class="mt-4">Team Bonuses ({{ unsupported_team | length }})</h4>
-<p class="small">
-  KM never recorded descriptions for team bonuses, so only IDs are listed here.
-</p>
 {% if unsupported_team %}
 <table class="table table-sm table-dark mt-2">
   <thead>
     <tr>
       <th style="width:60px">ID</th>
+      <th>Description</th>
     </tr>
   </thead>
   <tbody>
     {% for t in unsupported_team %}
     <tr>
       <td class="font-monospace">{{ t.id }}</td>
+      <td>{{ t.name }}</td>
     </tr>
     {% endfor %}
   </tbody>
