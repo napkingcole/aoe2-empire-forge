@@ -41,7 +41,7 @@ from civ_appender import (apply_civ,
                           _str_id, STRING_BASE, STRING_BLOCK_SIZE,
                           STR_CASTLE_UT, STR_IMPERIAL_UT,
                           DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET)
-from dat_reader import find_game_dat, load_dat
+from dat_reader import find_game_dat, find_civtechtrees, load_civ_era_exclusions, load_dat
 from update_check import check_for_update
 from version import __version__
 
@@ -61,9 +61,39 @@ def _run_update_check():
     _update_info = check_for_update()
 
 
+# Maps version string → list of change descriptions for the changelog page and
+# the one-time "what's new" modal. Add the newest version at the top.
+CHANGELOG: dict[str, list[str]] = {
+    "1.6": [
+        "All 30 missing team bonuses implemented — full vanilla team bonus coverage achieved (0 unsupported)",
+        "New civ bonus #222: Cows trainable from Mills",
+        "New civ bonus #356: Pastures replace Farms — clones the Khitan mechanic",
+        "Brand New civ bonus #401: Blacksmith attack upgrades also affect building damage (+1 vs buildings per Forging/Iron Casting, +2 per Blast Furnace)",
+        "Bonus #327 ('Blacksmith upgrades scale bonus damage') this would require changing multiple attack values manually for every unit in the game. Marked as 'Unlikely to implement' in Known Limitations",
+        "Team bonus #60 added (Resources last 5% longer)",
+        "Fix: Imperial Skirmisher team bonus (#41) implemented",
+        "Fix: Empty Trade Carts 20% faster implemented",
+    ],
+    "1.4": [
+        "Added bonus handlers for unique unit upgrades: Imperial Scorpion (#308), Royal Battle Elephant (#309), Royal Lancer (#310)",
+        "Added bonus #9 (Elite Mercenaries) and #29 (First Crusade) castle/imperial UT support with correct UU substitution",
+        "Added bonus #400: City Walls (researchable Fortified Wall HP upgrade)",
+        "Added bonus #279: Each Monastery tech spawns a free Monk",
+        "Added bonuses #277/#278: Gunpowder units and buildings gain attack/HP from University techs",
+        "Version tracking and auto-update notifications introduced",
+    ],
+}
+
+
 @app.context_processor
 def _inject_globals():
-    return {"app_version": __version__, "update_info": _update_info}
+    latest_version = next(iter(CHANGELOG))
+    return {
+        "app_version": __version__,
+        "update_info": _update_info,
+        "changelog": CHANGELOG,
+        "latest_changes": CHANGELOG.get(latest_version, []),
+    }
 
 
 # ── Session helpers ───────────────────────────────────────────────────────────
@@ -78,17 +108,23 @@ def _session_dir() -> Path:
     return d
 
 
-# Chronicles/Antiquity DLC civs — these belong to AoE2 DE's alternate
-# "Antiquity Empires" civ pool, not the standard roster. We don't support
-# modding them: dropped from the replace-target dropdown entirely.
-EXCLUDED_VANILLA_CIVS = {"Achaemenids", "Athenians", "Spartans",
-                         "Macedonians", "Thracians", "Puru"}
+# Fallback exclusion set used when civilizations.json is unavailable.
+# Lists DAT internal names of civs that belong to non-standard pools
+# (e.g. the Chronicles / Antiquity Empires DLC roster).  Keep in sync
+# with whatever DLC ships if civilizations.json auto-detection is broken.
+_EXCLUDED_VANILLA_CIVS_FALLBACK = {
+    "Achaemenids", "Athenians", "Spartans", "Macedonians", "Thracians", "Puru",
+}
 
 
 def _get_vanilla_civs(dat_path: str) -> list[str]:
-    """Load the list of playable vanilla civ names from the DAT (excludes Gaia)."""
+    """Load playable vanilla civ names from the DAT, excluding Gaia and any
+    non-base-era civs detected via civilizations.json (falls back to a
+    hardcoded set if the JSON is absent)."""
+    exclusions = (load_civ_era_exclusions(dat_path)
+                  or _EXCLUDED_VANILLA_CIVS_FALLBACK)
     dat = load_dat(dat_path)
-    return [c.name for c in dat.civs[1:] if c.name not in EXCLUDED_VANILLA_CIVS]
+    return [c.name for c in dat.civs[1:] if c.name not in exclusions]
 
 
 # The DAT's internal civ.name field still uses old/pre-DE naming for a
@@ -156,8 +192,11 @@ class _LiveLogWriter(io.TextIOBase):
 
 @app.route("/")
 def index():
-    dat_path = str(find_game_dat() or "")
-    return render_template("index.html", dat_path=dat_path)
+    dat_path = find_game_dat()
+    civtechtrees_path = str(find_civtechtrees(dat_path) or "") if dat_path else ""
+    return render_template("index.html",
+                           dat_path=str(dat_path or ""),
+                           civtechtrees_path=civtechtrees_path)
 
 
 @app.route("/upload", methods=["POST"])
@@ -176,6 +215,12 @@ def upload():
     if not dat_path_obj.exists():
         flash(f"DAT file not found: {dat_path}", "error")
         return redirect(url_for("index"))
+
+    # CivTechTrees path — optional; fall back to auto-detection from dat location.
+    civtechtrees_path = request.form.get("civtechtrees_path", "").strip()
+    if not civtechtrees_path:
+        detected = find_civtechtrees(dat_path)
+        civtechtrees_path = str(detected) if detected else ""
 
     files = request.files.getlist("civ_files")
     if not files or all(f.filename == "" for f in files):
@@ -216,8 +261,9 @@ def upload():
         flash(f"Could not read DAT file — check the path. ({e})", "error")
         return redirect(url_for("index"))
 
-    session["civs"]         = civs
-    session["vanilla_civs"] = vanilla_civs
+    session["civs"]              = civs
+    session["vanilla_civs"]      = vanilla_civs
+    session["civtechtrees_path"] = civtechtrees_path
     return redirect(url_for("configure"))
 
 
@@ -721,6 +767,19 @@ def limitations():
         unsupported_imp_uts=unsupported_unique_techs(castle=False),
         unsupported_team=unsupported_team_bonuses(),
     )
+
+
+@app.route("/how-it-works")
+def how_it_works():
+    return render_template("how_it_works.html")
+
+@app.route("/why")
+def why():
+    return render_template("why.html")
+
+@app.route("/changelog")
+def changelog():
+    return render_template("changelog.html", changelog=CHANGELOG)
 
 
 @app.route("/download")

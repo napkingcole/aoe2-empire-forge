@@ -38,6 +38,30 @@ def find_game_dat() -> Path | None:
     return None
 
 
+def find_civtechtrees(dat_path: str | Path) -> Path | None:
+    """Return the CivTechTrees folder next to the DAT file, or None if not found."""
+    p = Path(dat_path).parent / "CivTechTrees"
+    return p if p.is_dir() else None
+
+
+def load_civ_era_exclusions(dat_path: str | Path) -> set[str] | None:
+    """Read civilizations.json adjacent to the DAT and return internal_names of
+    non-base (e.g. antiquity) civs to exclude from the replace-target list.
+    Returns None if the file is absent or unparseable — caller should fall back
+    to a hardcoded exclusion set."""
+    import json
+    civs_json = Path(dat_path).parent / "civilizations.json"
+    try:
+        data = json.loads(civs_json.read_text(encoding="utf-8"))
+        return {
+            c["internal_name"]
+            for c in data.get("civilization_list", [])
+            if c.get("era", "base") != "base"
+        }
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError):
+        return None
+
+
 def load_dat(path: str | Path) -> DatFile:
     """Parse and return a DatFile from the given path."""
     path = Path(path)

@@ -11,7 +11,7 @@ from genieutils.tech import Tech, ResearchLocation, ResearchResourceCost
 from genieutils.unit import TrainLocation, ResourceCost
 from genieutils.unitheaders import UnitHeaders
 
-from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list
+from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list, team_bonus_ec_list
 import km_custom_uu
 
 # ── EffectCommand types ───────────────────────────────────────────────────────
@@ -1300,6 +1300,7 @@ HANDLED_BONUS_IDS = {
     123, 209, 325,
     195, 258, 277, 278, 279,
     239, 400,
+    222, 356, 401,
 }
 
 
@@ -1952,6 +1953,54 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                                 name="C-Bonus, Husbandry attack speed")
         return True
 
+    if bonus_id == 222:          # Cows trainable from Mills
+        _COW_A = 705
+        _MILL  = 68
+        civ_cow = dat.civs[civ_index].units[_COW_A]
+        if not (civ_cow and civ_cow.creatable and civ_cow.creatable.train_locations):
+            return False
+        civ_cow.creatable.train_locations[0].unit_id  = _MILL
+        civ_cow.creatable.train_locations[0].button_id = 3
+        tt_eff_id = dat.civs[civ_index].tech_tree_id
+        dat.effects[tt_eff_id].effect_commands.append(
+            EffectCommand(type=EC_ENABLE, a=_COW_A, b=1, c=-1, d=0.0)
+        )
+        return True
+
+    if bonus_id == 401:          # Blacksmith attack upgrades also add +1/+2 vs buildings
+        _FORGING      = 67
+        _IRON_CASTING = 68
+        _BLAST_FURN   = 75
+        _BL_CLASSES   = [6, 12, 45, 46, 47, 50]
+        _VS_BUILDINGS = 21
+        for src_tid, delta in [(_FORGING, 1), (_IRON_CASTING, 1), (_BLAST_FURN, 2)]:
+            d_bonus = float(_VS_BUILDINGS * 256 + delta)
+            cmds = [
+                EffectCommand(type=EC_ADD, a=-1, b=cls, c=9, d=d_bonus)
+                for cls in _BL_CLASSES
+            ]
+            _add_auto_fire_tech(dat, civ_index, cmds,
+                                age_req=src_tid,
+                                name=f"C-Bonus, Blacksmith Bonus Dmg {dat.techs[src_tid].name}")
+        return True
+
+    if bonus_id == 356:          # Pastures replace Farms
+        _PASTURE         = 1889
+        _FARM_MAKE_AVAIL = 216   # "Farms (make avail)"
+        _HORSE_COLLAR    = 14
+        _HEAVY_PLOW      = 13
+        _CROP_ROTATION   = 12
+        tt_eff_id = dat.civs[civ_index].tech_tree_id
+        tt_eff = dat.effects[tt_eff_id]
+        tt_eff.effect_commands.append(
+            EffectCommand(type=EC_ENABLE, a=_PASTURE, b=1, c=-1, d=0.0)
+        )
+        for tid in [_FARM_MAKE_AVAIL, _HORSE_COLLAR, _HEAVY_PLOW, _CROP_ROTATION]:
+            tt_eff.effect_commands.append(
+                EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(tid))
+            )
+        return True
+
     return False  # not handled
 
 
@@ -2057,6 +2106,15 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         #   tbEffect.EffectCommands += df->Effects[teamBonuses[teamBonusIndex]]
         eff_idx = team_bonus_tech(tb_id)
         if eff_idx is None or not (0 <= eff_idx < len(dat.effects)):
+            ec_dicts = team_bonus_ec_list(tb_id)
+            if not ec_dicts:
+                continue
+            for ec_dict in ec_dicts:
+                cmd = EffectCommand(type=ec_dict["type"], a=ec_dict["A"],
+                                    b=ec_dict["B"], c=ec_dict["C"], d=float(ec_dict["D"]))
+                for _ in range(multiplier):
+                    dat.effects[tb_eff_id].effect_commands.append(deepcopy(cmd))
+            team_applied += 1
             continue
 
         safe_cmds = list(dat.effects[eff_idx].effect_commands)

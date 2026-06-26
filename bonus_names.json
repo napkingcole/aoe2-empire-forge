@@ -328,5 +328,6 @@
   "360": "Heavy Cavalry Archer upgrade available in Castle Age and costs -50%",
   "361": "Can train Mounted Trebuchets",
   "362": "BONUS_362",
-  "400": "City Walls: Fortified Walls and Gates +50% HP (requires Fortified Wall + Imperial Age)"
+  "400": "City Walls: Fortified Walls and Gates +50% HP (requires Fortified Wall + Imperial Age)",
+  "401": "Infantry and Cavalry blacksmith upgrades also affect building damage"
 }

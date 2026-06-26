@@ -189,10 +189,14 @@ def _find_techtree_json(dat_path: Path) -> Path | None:
 
 
 def _find_civ_techtrees_folder(dat_path: Path) -> Path | None:
-    """Locate the CivTechTrees/ folder (per-civ tech tree JSON files)."""
+    """Locate the CivTechTrees/ folder (per-civ tech tree JSON files).
+
+    Prefers the live copy from the game installation (always up to date with
+    DLC) over the bundled copy shipped with this app (frozen at build time).
+    """
     candidates = [
-        Path(__file__).parent / "CivTechTrees",  # bundled copy alongside script
-        dat_path.parent / "CivTechTrees",
+        dat_path.parent / "CivTechTrees",         # game install — preferred
+        Path(__file__).parent / "CivTechTrees",   # bundled fallback
     ]
     p = dat_path.parent
     for _ in range(4):

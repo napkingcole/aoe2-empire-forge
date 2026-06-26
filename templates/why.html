@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Why Build It? — AOE2: Empire Forge{% endblock %}
+
+{% block content %}
+<h2 class="fw-bold mb-1" style="color: var(--accent-2);">Why Does This Exist? How We Got Here</h2>
+
+<!-- Why -->
+<div class="card mb-4">
+  <div class="card-header">Background</div>
+  <div class="card-body">
+
+    <h6 class="fw-bold mb-2" style="color: var(--accent-2);">KrakenMeister's civ builder stopped working</h6>
+    <p class="mb-3">
+      KrakenMeister's civ builder is an awesome tool, but it was built against a frozen snapshot of an older version of the game's data file. Every unit, tech, building, and string in AoE2:DE lives inside a binary file called <code>empires2_x2_p1.dat</code>. KrakenMeister's system baked in assumptions about that file — which ID slots were empty, which ranges of string IDs were safe to use — based on the game as it existed when KrakenMeister was written. DLC updates kept shipping after that, and those assumptions stopped being true.
+    </p>
+
+    <h6 class="fw-bold mb-2" style="color: var(--accent-2);">The South American biome collision</h6>
+    <p class="mb-3">
+      The most visible breakage came from the South American DLC. That update added new environmental units — herdable animals, huntable animals, predators, berry varieties, terrain objects — and the game engine assigned them fresh unit IDs in ranges that happened to overlap with the "spare" slots KrakenMeister relied on for custom unique units. The result: maps that were working fine before the DLC would suddenly spawn the wrong thing entirely. Instead of berries, herdable animals, huntable animals, and predators, you'd get patches of neutral (Gaia) unique units — because that slot now meant something completely different. This isn't a bug in KrakenMeister's logic; it's a structural consequence of working from a static snapshot of the dat that was never updated.
+    </p>
+
+    <h6 class="fw-bold mb-2" style="color: var(--accent-2);">The Solution Presents Itself</h6>
+    <p class="mb-3">
+      I used KrakenMeister's civ builder to build all of my custom civs. My brother and I would use these OP civs to beat up on as many extreme AIs as we could stand. Eventually, I started direct dat file editing. When I wanted to create more elaborate and crazy civs, I employed AI: new unique units, aura effects, multiple technologies and bonuses. After all of this editing I realized - I was already part of the way there.
+    </p>
+    <p class="mb-3">
+      While it has been 10 months since the last KrakenMeister civ update, the <a href="https://github.com/fritz-net/AoE2-Civbuilder" target="_blank">Fritz' fork</a> has been serving the community well, until the previously mentioned South American biome collisions.
+    </p>
+
+    <!-- <h6 class="fw-bold mb-2" style="color: var(--accent-2);">String ID drift</h6>
+    <p class="mb-3">
+      A similar problem affected the text strings that drive unit names, tooltips, and research buttons.
+      AoE2:DE stores all in-game text in a large key-value file. KrakenMeister wrote custom strings into high ID ranges
+      on the assumption those were safely empty. Later DLC content — campaign dialogue, new UI strings, DLC
+      unit names — moved into those same ranges, silently overwriting the mod's custom text or replacing it
+      with unrelated strings. In one case the research button for a custom imperial unique tech was showing
+      a line of Scenario Editor placeholder text instead of its name.
+    </p> -->
+
+    <h6 class="fw-bold mb-2" style="color: var(--accent-2);">What Empire Forge does differently</h6>
+    <p class="mb-2">
+      Empire Forge reads <strong>your actual installed copy of the game</strong> every time you build. Rather than relying on a frozen snapshot, it loads the real dat file from your machine, scans it live, and uses only what is confirmed empty or safe in <em>your current version</em> of the game. Specifically:
+    </p>
+    <h6 class="fw-bold mb-2" style="color: var(--accent-2);">Future-Proof</h6>
+    <ul class="mb-3" style="line-height: 2;">
+      <li>
+        <strong>Unit slots</strong> are verified by scanning all ~60 vanilla civs in the live dat before
+        anything is written — if a slot isn't actually spare, we don't use it.
+      </li>
+      <li>
+        <strong>String IDs</strong> are allocated from a pool extracted from your installed game's string file, checked at build time against what's actually occupied, not assumed safe from an old snapshot.
+      </li>
+      <li>
+        <strong>Civilizations</strong> All civs get read from your local game files; there will never be a civilization mismatch error.
+      </li>
+      <li>
+        <strong>Chronicles / Antiquity DLC civs</strong> (Achaemenids, Athenians, Spartans, Macedonians, Thracians, Puru) are detected and excluded automatically — they occupy civ slots in a separate pool that would corrupt if overwritten.
+      </li>
+    </ul>
+  </div>
+</div>
+
+
+{% endblock %}

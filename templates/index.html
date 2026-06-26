@@ -35,9 +35,10 @@
   {# ── Step 2: DAT file path ──────────────────────────────────────────────── #}
   <div class="card mb-4">
     <div class="card-header">
-      <span class="step-badge">2</span> Game DAT File
+      <span class="step-badge">2</span> Game Data Files
     </div>
     <div class="card-body">
+
       <label for="dat_path" class="form-label small text-secondary">
         Path to <code>empires2_x2_p1.dat</code>
         {% if dat_path %}
@@ -45,14 +46,32 @@
         {% endif %}
       </label>
       <input type="text" id="dat_path" name="dat_path"
-             class="form-control font-monospace"
+             class="form-control font-monospace mb-1"
              value="{{ dat_path }}"
              placeholder="/path/to/empires2_x2_p1.dat"
              required>
-      <div class="form-text">
-        Usually found in your AoE2:DE installation under
-        <code>resources/_common/dat/</code>.
+      <div class="form-text mb-3">
+        Found in your AoE2:DE installation under <code>resources/_common/dat/</code>.
       </div>
+
+      <label for="civtechtrees_path" class="form-label small text-secondary">
+        Path to <code>CivTechTrees</code> folder
+        {% if civtechtrees_path %}
+          <span class="badge bg-success-subtle text-success-emphasis ms-1">Auto-detected</span>
+        {% else %}
+          <span class="text-muted">(optional)</span>
+        {% endif %}
+      </label>
+      <input type="text" id="civtechtrees_path" name="civtechtrees_path"
+             class="form-control font-monospace"
+             value="{{ civtechtrees_path }}"
+             placeholder="/path/to/resources/_common/dat/CivTechTrees">
+      <div class="form-text">
+        Sits next to the DAT file. Used to automatically detect and exclude
+        non-standard DLC civs (Chronicles / Antiquity) from the replace-target list
+        — so new DLC releases don't require an app update to stay correct.
+      </div>
+
     </div>
   </div>
 

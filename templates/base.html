@@ -19,6 +19,8 @@
   <div class="container-fluid px-4">
     <a class="navbar-brand fw-bold" href="{{ url_for('index') }}">⚔️ AOE2: Empire Forge</a>
     <div class="d-flex gap-3 align-items-center small">
+      <a href="{{ url_for('how_it_works') }}" class="nav-link text-light">How It Works</a>
+      <a href="{{ url_for('why') }}" class="nav-link text-light">Why</a>
       <a href="{{ url_for('index') }}" class="nav-link text-light">Upload</a>
       {% if session.get('civs') %}
       <a href="{{ url_for('configure') }}" class="nav-link text-light">Configure</a>
@@ -27,6 +29,7 @@
       <a href="{{ url_for('results') }}" class="nav-link text-light">Results</a>
       {% endif %}
       <a href="{{ url_for('limitations') }}" class="nav-link text-light">Known Limitations</a>
+      <a href="{{ url_for('changelog') }}" class="nav-link text-light">Changelog</a>
       <a href="{{ url_for('reset') }}" class="nav-link text-secondary">Start Over</a>
       <span class="text-secondary">v{{ app_version }}</span>
     </div>
@@ -71,5 +74,46 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {% block scripts %}{% endblock %}
+
+<!-- What's New modal — fires once per version via localStorage -->
+{% if latest_changes %}
+<div class="modal fade" id="changelogModal" tabindex="-1" aria-labelledby="changelogModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background-color: oklch(from var(--body-bg) calc(l + 0.06) c h); border: 1px solid var(--accent-2);">
+      <div class="modal-header" style="background-color: var(--accent-1); border-bottom: 2px solid var(--accent-2);">
+        <h5 class="modal-title fw-bold" id="changelogModalLabel">
+          <span style="color: var(--accent-2);">⚔️</span> What's New in v{{ app_version }}
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body py-3">
+        <ul class="mb-0" style="padding-left: 1.25rem; line-height: 1.75;">
+          {% for change in latest_changes %}
+          <li class="mb-1">{{ change }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="modal-footer" style="border-top: 1px solid oklch(from var(--body-bg) calc(l + 0.16) c h);">
+        <a href="{{ url_for('changelog') }}" class="btn btn-outline-primary btn-sm">Full Changelog</a>
+        <button type="button" class="btn btn-success btn-sm" data-bs-dismiss="modal">Got it</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    var VERSION = {{ app_version | tojson }};
+    var KEY = "ef_changelog_seen";
+    var force = new URLSearchParams(window.location.search).get("modal") === "true";
+    if (force || localStorage.getItem(KEY) !== VERSION) {
+      document.addEventListener("DOMContentLoaded", function () {
+        new bootstrap.Modal(document.getElementById("changelogModal")).show();
+        if (!force) localStorage.setItem(KEY, VERSION);
+      });
+    }
+  })();
+</script>
+{% endif %}
+
 </body>
 </html>

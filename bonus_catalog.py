@@ -54,3 +54,11 @@ def civ_bonus_ec_list(bonus_id: int) -> list[dict]:
       }
     """
     return _load()["ec_list"].get(str(bonus_id), [])
+
+
+def team_bonus_ec_list(team_bonus_id: int) -> list[dict]:
+    """Return EC dicts for a KM team bonus with no vanilla effect, or [].
+
+    Each dict: {"type": T, "A": A, "B": B, "C": C, "D": D}
+    """
+    return _load().get("team_ec_list", {}).get(str(team_bonus_id), [])
