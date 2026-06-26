@@ -65,6 +65,7 @@ def _run_update_check():
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
     "1.6": [
+        "Future-Proofing: The app now reads your games' DAT file *and* civ files, preventing future DLC from breaking it.",
         "All 30 missing team bonuses implemented — full vanilla team bonus coverage achieved (0 unsupported)",
         "New civ bonus #222: Cows trainable from Mills",
         "New civ bonus #356: Pastures replace Farms — clones the Khitan mechanic",
