@@ -42,7 +42,7 @@
   <div class="alert alert-success alert-dismissible fade show" role="alert">
     A newer version is available: <strong>v{{ update_info.latest }}</strong>
     (you're on v{{ update_info.current }}).
-    <a href="{{ update_info.url }}" target="_blank" rel="noopener">Download the update</a>.
+    <a class="alert-link" href="{{ update_info.url }}" target="_blank" rel="noopener">Download the update</a>.
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
   </div>
   {% endif %}
@@ -89,7 +89,7 @@
       <div class="modal-body py-3">
         <ul class="mb-0" style="padding-left: 1.25rem; line-height: 1.75;">
           {% for change in latest_changes %}
-          <li class="mb-1">{{ change }}</li>
+          <li class="mb-1">{{ change | safe }}</li>
           {% endfor %}
         </ul>
       </div>

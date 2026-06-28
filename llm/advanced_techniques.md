@@ -257,11 +257,62 @@ civ_appender.format_unit_tooltip_help(unit, name, extra="Trainable at Castle.")
 
 ---
 
+## Unit Voice Assignment — DAT + .wem Files Both Required
+
+Unit voices in AoE2:DE do **not** respond to DAT SoundItem changes alone. Two things must happen:
+
+### 1. DAT SoundItem remapping (KM 3-phase algorithm)
+
+`assign_all_languages(dat, assignments)` in `civ_appender.py` runs after all civs are processed:
+
+- **Phase 1:** For each `(civ_index, lang_val)`, copy every SoundItem where `item.civilization == lang_val + 1` into a temporary slot at `civ_index + 100`
+- **Phase 2:** Delete all items where `0 < civilization < 100` (removes all vanilla per-civ sound bindings)
+- **Phase 3:** Subtract 100 from all remaining `>= 100` items, landing them at their final civ slots
+
+This is exactly KM's `assignLanguages()` algorithm (`civOffset=100`, `civbuilder.cpp` line 564).
+
+### 2. Physical .wem files in the UI mod
+
+The engine resolves the SoundItem `filename` (e.g. `jvmb.wav`) and looks for a matching `.wem` file at `resources/_common/drs/sounds/jvmb.wem` inside the UI mod zip. Without the file, it falls back to Wwise audio bank routing, which plays the slot's vanilla civ's voices (typically Aztec for a new slot).
+
+**Source:** `voice_files/<lang_val>/` in the project root — 43 folders (0–42, one per KM language index), ~58 .wem files each. Pre-extracted from the game by KM's build server. `_build_combined_ui_zip` in `build_all.py` takes `lang_values: set[int]` and writes the matching .wems into the UI zip.
+
+**KM language index → civ voice prefix mapping (confirmed):**
+
+| lang_val | prefix | Civ |
+|----------|--------|-----|
+| 0 | b | Britons |
+| 1 | ff | Franks |
+| 2 | g | Goths |
+| 3 | te | Teutons |
+| 4 | j | Japanese |
+| 5 | c | Chinese |
+
+Read `Japanese.json` (or any KM civ JSON) — the `language` field is the 0-based KM civ index = the subfolder number.
+
+---
+
+## Architecture Copy — Castle and Wonder Are Both class_=3
+
+`_copy_architecture(dat, src_idx, dst_idx)` copies building graphics for all units whose `class_` is in `_ARCH_BUILDING_CLASSES = {3, 52, 27, 39}`. Both Castle (unit 82) and Wonder (unit 276) have `class_=3`, so both would be overwritten by an architecture copy.
+
+**Critical:** `_copy_architecture` is called AFTER the castle and wonder are assigned in `apply_civ`. Without an explicit exclusion, the architecture pass silently overwrites the user's castle/wonder choice with the architecture set's graphics.
+
+**Fix (already in code):** The guard in `_copy_architecture` excludes both:
+```python
+if cls in _ARCH_BUILDING_CLASSES and i != BUILDING_CASTLE and i != BUILDING_WONDER:
+```
+
+`BUILDING_CASTLE = 82`, `BUILDING_WONDER = 276` are defined at the top of `civ_appender.py`. If you ever add additional per-civ building choices that have `class_` in `_ARCH_BUILDING_CLASSES`, add them to this exclusion list.
+
+---
+
 ## Building/Unit IDs Quick Reference
 
 | Constant | ID |
 |----------|----|
 | BUILDING_CASTLE | 82 |
+| BUILDING_WONDER | 276 |
 | BUILDING_KREPOST | 1251 |
 | BUILDING_BARRACKS | 12 |
 | BUILDING_STABLE | 101 |

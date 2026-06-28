@@ -37,10 +37,11 @@ from build_civ import (
     _patch_per_civ_techtree, _canonical_techtree_id,
     _resolve_uu_info, _find_adjacent_json,
 )
-from civ_appender import (apply_civ,
+from civ_appender import (apply_civ, assign_all_languages,
                           _str_id, STRING_BASE, STRING_BLOCK_SIZE,
                           STR_CASTLE_UT, STR_IMPERIAL_UT,
-                          DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET)
+                          DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET,
+                          _ARCH_REP_CIVS)
 from dat_reader import find_game_dat, find_civtechtrees, load_civ_era_exclusions, load_dat
 from update_check import check_for_update
 from version import __version__
@@ -64,6 +65,14 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "1.67": [
+        "<strong class=\"color-accent-2\">VOICE LINES:</strong> Your selected civs voice lines will now be properly set in-game",
+        "<strong class=\"color-accent-2\">Castle/Wonder Skins:</strong> Your selected castle and wonder skins will be properly set in-game",
+        "After loading the latest version, a popup will show you the most recent changes",
+        "'What's New' page added, reading the latest changelog",
+        "'How it Works' and 'Why' pages added",
+        "Updated Install Instructions",
+    ],
     "1.6": [
         "Future-Proofing: The app now reads your games' DAT file *and* civ files, preventing future DLC from breaking it.",
         "All 30 missing team bonuses implemented — full vanilla team bonus coverage achieved (0 unsupported)",
@@ -136,6 +145,31 @@ VANILLA_DISPLAY_NAMES: dict[str, str] = {
     "British": "Britons",
     "French":  "Franks",
 }
+
+# Index 0 = Gaia, 1 = Britons, … matches DAT civ order.
+_CIV_NAMES_BY_DAT_INDEX: list[str] = []
+try:
+    _civ_list = json.loads(
+        (Path(__file__).parent / "civilizations.json").read_text()
+    ).get("civilization_list", [])
+    _CIV_NAMES_BY_DAT_INDEX = [c.get("internal_name", "") for c in _civ_list]
+except Exception:
+    pass
+
+def _km_civ_name(km_index: int) -> str:
+    """Friendly name for a 0-based KM civ index (castle/wonder/language style)."""
+    dat_idx = km_index + 1
+    if 0 < dat_idx < len(_CIV_NAMES_BY_DAT_INDEX):
+        return _CIV_NAMES_BY_DAT_INDEX[dat_idx]
+    return str(km_index)
+
+def _arch_name(arch_val: int) -> str:
+    """Friendly name for a 1-based KM architecture value."""
+    if 1 <= arch_val <= len(_ARCH_REP_CIVS):
+        dat_idx = _ARCH_REP_CIVS[arch_val - 1]
+        if dat_idx < len(_CIV_NAMES_BY_DAT_INDEX):
+            return _CIV_NAMES_BY_DAT_INDEX[dat_idx]
+    return str(arch_val)
 
 
 # ── Build progress (live feed) ────────────────────────────────────────────────
@@ -246,6 +280,9 @@ def upload():
                 "name": (data.get("alias") or data.get("name")
                          or Path(f.filename).stem),
                 "bonus_count": len(bonus_list),
+                "castle_name":  _km_civ_name(data["castle"])  if "castle"       in data else None,
+                "wonder_name":  _km_civ_name(data["wonder"])  if "wonder"       in data else None,
+                "arch_name":    _arch_name(data["architecture"]) if "architecture" in data else None,
             })
         except Exception as e:
             flash(f"Could not parse {f.filename}: {e}", "warning")
@@ -707,11 +744,19 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             except Exception as e:
                 print(f"WARNING: Could not generate civilizations.json: {e}")
 
+        # Batch language/voice assignment using KM's 3-phase algorithm.
+        lang_assignments = [(r["civ_index"], r["lang_val"]) for r in build_results]
+        log_buf = _LiveLogWriter(job_id)
+        with contextlib.redirect_stdout(log_buf):
+            assign_all_languages(dat, lang_assignments)
+
         _progress_push(job_id, "Packaging mod files…")
         prefix   = mod_name.lower().replace(" ", "_")
         data_zip = _build_combined_data_zip(dat, button_pngs, per_civ_tt, mod_name=mod_name,
                                             civs_json_bytes=civs_json_bytes)
-        ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings, mod_name=mod_name)
+        unique_lang_values = {lang_val for _, lang_val in lang_assignments}
+        ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings, mod_name=mod_name,
+                                          lang_values=unique_lang_values)
 
         out_path = sd / f"{prefix}.zip"
         with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as outer:

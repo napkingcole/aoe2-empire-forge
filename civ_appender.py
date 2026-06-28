@@ -26,7 +26,16 @@ EC_TECH_TIME = 103   # Modify tech research time: a=tech_id, c=0(set), d=val
 
 # ── Building IDs ──────────────────────────────────────────────────────────────
 BUILDING_CASTLE      = 82
+BUILDING_WONDER      = 276
 BUILDING_BLACKSMITH  = 103
+
+# ── Architecture ──────────────────────────────────────────────────────────────
+# KM architecture value is 1-based; maps to a representative vanilla DAT civ
+# whose building graphics are copied to the custom civ.
+# Source: KM civbuilder.cpp repArch[] = {3,1,5,8,15,7,20,22,25,28,33}
+_ARCH_REP_CIVS = [3, 1, 5, 8, 15, 7, 20, 22, 25, 28, 33]
+_ARCH_BUILDING_CLASSES = frozenset({3, 52, 27, 39})   # Building, Wall, Gate, Tower
+_ARCH_MOBILE_CLASSES   = frozenset({59, 18, 43, 19, 22})
 
 # ── KM UU index → (make_avail_tech_id, elite_upgrade_tech_id) ────────────────
 # Source: fritz-net/AoE2-Civbuilder modding/civbuilder.cpp uuTechIDs[] init +
@@ -2153,21 +2162,97 @@ def _apply_km_uu(dat: DatFile, civ_index: int, km_uu_index: int) -> tuple[int, i
     return new_ma, new_el
 
 
-def _assign_language(dat: DatFile, civ_index: int, language_value: int) -> None:
-    """Remap DAT sound items from the chosen vanilla civ to civ_index.
+def assign_all_languages(dat: DatFile, assignments: list[tuple[int, int]]) -> None:
+    """Remap DAT sound items for all custom civs using KM's 3-phase algorithm.
 
-    language_value is the 0-based KM civ index (0 = Britons, 1 = Franks, …).
-    Maps to DAT civ index = language_value + 1 (civ 0 is Gaia).
+    assignments: list of (civ_index, language_value) pairs, one per custom civ.
+      language_value is the 0-based KM civ index (0 = Britons, 1 = Franks, …).
+
+    Phase 1: Copy source-language items to a temp slot (civ_index + CIV_OFFSET)
+             to avoid re-matching them in subsequent passes.
+    Phase 2: Delete every vanilla sound item (0 < civilization < CIV_OFFSET).
+    Phase 3: Subtract CIV_OFFSET from all temp items so they land at civ_index.
+
+    This mirrors KM's civbuilder.cpp assignLanguages() exactly, adapted so each
+    civ can occupy any user-chosen slot instead of always starting at slot 1.
     """
-    src_civ = language_value + 1
+    CIV_OFFSET = 100
+
+    # Phase 1: copy source sounds to temporary high-range slots
+    for civ_index, language_value in assignments:
+        src_civ = language_value + 1
+        temp_civ = civ_index + CIV_OFFSET
+        for sound in dat.sounds:
+            size = len(sound.items)
+            new_items = []
+            for k in range(size):
+                if sound.items[k].civilization == src_civ:
+                    copy = deepcopy(sound.items[k])
+                    copy.civilization = temp_civ
+                    new_items.append(copy)
+            sound.items.extend(new_items)
+
+    # Phase 2: delete all original vanilla civ sound items (0 < civ < CIV_OFFSET)
     for sound in dat.sounds:
-        new_items = [deepcopy(item) for item in sound.items
-                     if item.civilization == src_civ]
-        for item in new_items:
-            item.civilization = civ_index
         sound.items = [item for item in sound.items
-                       if item.civilization != civ_index]
-        sound.items.extend(new_items)
+                       if not (0 < item.civilization < CIV_OFFSET)]
+
+    # Phase 3: move temp items back to their final civ_index slots
+    for sound in dat.sounds:
+        for item in sound.items:
+            if item.civilization >= CIV_OFFSET:
+                item.civilization -= CIV_OFFSET
+
+    # Diagnostic spot-check
+    snd295 = next((s for s in dat.sounds if s.id == 295), None)
+    if snd295:
+        print(f"  [lang] Sound 295 after remap: {len(snd295.items)} items")
+        for item in snd295.items:
+            if item.civilization > 0:
+                print(f"         civ={item.civilization:>3}  res={item.resource_id}  file={item.filename!r}")
+
+
+def _copy_architecture(dat: DatFile, src_idx: int, dst_idx: int) -> None:
+    """Copy building and regional-unit graphics from one civ slot to another.
+
+    Mirrors KM's copyArchitecture() from helpers.cpp.  Castle (unit slot 82)
+    and Wonder (unit slot 276) are intentionally skipped so the castle/wonder
+    graphic choices stay independent of the architecture set.
+    """
+    src_units = dat.civs[src_idx].units
+    dst_units = dat.civs[dst_idx].units
+
+    for i, (src, dst) in enumerate(zip(src_units, dst_units)):
+        if src is None or dst is None:
+            continue
+        cls = src.class_
+
+        if cls in _ARCH_BUILDING_CLASSES and i != BUILDING_CASTLE and i != BUILDING_WONDER:
+            dst.standing_graphic = src.standing_graphic
+            dst.dying_graphic    = src.dying_graphic
+            dst.undead_graphic   = src.undead_graphic
+            dst.damage_graphics  = deepcopy(src.damage_graphics)
+            dst.building         = deepcopy(src.building)
+            if src.creatable is not None and dst.creatable is not None:
+                dst.creatable.garrison_graphic = src.creatable.garrison_graphic
+
+        elif cls in _ARCH_MOBILE_CLASSES:
+            dst.standing_graphic = src.standing_graphic
+            dst.dying_graphic    = src.dying_graphic
+            dst.undead_graphic   = src.undead_graphic
+            if src.dead_fish is not None and dst.dead_fish is not None:
+                dst.dead_fish.walking_graphic = src.dead_fish.walking_graphic
+            if src.type_50 is not None and dst.type_50 is not None:
+                dst.type_50.attack_graphic = src.type_50.attack_graphic
+            if src.bird is not None and dst.bird is not None:
+                if cls == 19:
+                    for st, dt in zip(src.bird.tasks, dst.bird.tasks):
+                        dt.carrying_graphic_id = st.carrying_graphic_id
+                elif cls == 18:
+                    for st, dt in zip(src.bird.tasks, dst.bird.tasks):
+                        dt.proceeding_graphic_id = st.proceeding_graphic_id
+
+    dat.civs[dst_idx].icon_set = dat.civs[src_idx].icon_set
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -2301,8 +2386,6 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         new_civ.name = dat.civs[civ_index].name
     else:
         new_civ.name = alias
-    new_civ.icon_set = civ_def.get("architecture", 1)
-
     # Castle graphic: copy units[82] from the chosen source civ (0-indexed KM value → DAT civ N+1).
     castle_src = civ_def.get("castle", 0) + 1
     if castle_src != 1 and castle_src < len(dat.civs):
@@ -2321,6 +2404,16 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         dat.civs[civ_index] = new_civ
     else:
         dat.civs.append(new_civ)
+
+    # Architecture: copy building graphics from the representative vanilla civ.
+    # KM architecture value is 1-based into _ARCH_REP_CIVS; default 2 = Britons
+    # (Western European), matching the deepcopy base above.
+    arch_val = civ_def.get("architecture", 2)
+    if isinstance(arch_val, int) and 1 <= arch_val <= len(_ARCH_REP_CIVS):
+        arch_src = _ARCH_REP_CIVS[arch_val - 1]
+        if arch_src < len(dat.civs):
+            _copy_architecture(dat, arch_src, civ_index)
+            print(f"       Architecture: style {arch_val} (from DAT civ {arch_src})")
 
     # Snapshot the unit count before we append UU slots so _apply_tree_wiring
     # can skip our custom units (they're managed by the elite upgrade tech, not tree[]).
@@ -2498,13 +2591,14 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         bonus_results.setdefault("extra_unit_strings", [])
     bonus_results["extra_unit_strings"].extend(km_uu_custom_unit_strings)
 
-    # 8. Assign language audio: remap sound items from source civ → civ_index.
+    # 8. Language audio is handled in a single batch call to assign_all_languages()
+    #    after all civs are processed — see app.py / build_all.py.
     lang_val = civ_def.get("language", 0)
-    _assign_language(dat, civ_index, lang_val)
 
     print(f"       tech_tree_id(eff)={tt_eff_id}  team_bonus_id(eff)={tb_eff_id}")
     return {
         "civ_index":             civ_index,
+        "lang_val":              lang_val,
         "alias":                 alias,
         "bonus_results":         bonus_results,
         "warnings":              warnings,

@@ -29,7 +29,7 @@ import zipfile
 from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
-from civ_appender import (apply_civ,
+from civ_appender import (apply_civ, assign_all_languages,
     DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
@@ -283,7 +283,8 @@ def _build_combined_data_zip(dat,
 def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                             button_pngs: dict[str, bytes],
                             combined_strings: dict[str, str],
-                            mod_name: str = "Custom Civs") -> bytes:
+                            mod_name: str = "Custom Civs",
+                            lang_values: set[int] | None = None) -> bytes:
     """Package all UI assets for every civ into one ui zip."""
     info_json = json.dumps(
         {"Title": f"{mod_name} (UI)", "CacheStatus": 0, "Description": "", "Author": ""},
@@ -334,6 +335,17 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                 f"key-value-modded-strings-utf8.txt",
                 content.encode("utf-8"),
             )
+        if lang_values:
+            voice_root = Path(__file__).parent / "voice_files"
+            for lang_val in lang_values:
+                lang_dir = voice_root / str(lang_val)
+                if lang_dir.is_dir():
+                    for wem in sorted(lang_dir.iterdir()):
+                        if wem.suffix == ".wem":
+                            zf.writestr(
+                                f"resources/_common/drs/sounds/{wem.name}",
+                                wem.read_bytes(),
+                            )
     return buf.getvalue()
 
 
@@ -396,6 +408,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     # render civ-picker descriptions correctly in-game. Our earlier output
     # (vanilla-first, custom-last) did not — even with no duplicate IDs.
 
+    lang_assignments: list[tuple[int, int]] = []
+
     for entry in civ_defs:
         json_path    = Path(entry["json"])
         replace_name = entry["replace"]
@@ -420,6 +434,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
 
         # Apply civ to DAT (modifies dat in place).
         civ_result = apply_civ(dat, civ_def, target_slot=slot)
+        lang_assignments.append((civ_result["civ_index"], civ_result["lang_val"]))
 
         # Resolve UT names from bonus IDs.
         castle_ut_bid = _ut_bonus_id(civ_def, 2)
@@ -787,11 +802,17 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         except Exception as e:
             print(f"  WARNING: Could not generate civilizations.json: {e}")
 
+    # Batch language/voice assignment using KM's 3-phase algorithm.
+    print("\nAssigning languages (KM 3-phase)…")
+    assign_all_languages(dat, lang_assignments)
+
     print(f"\nBuilding combined mod zip → {out_path}")
     prefix = config.get("prefix", mod_name.lower().replace(" ", "_"))
     data_zip = _build_combined_data_zip(dat, button_pngs, per_civ_tt, mod_name=mod_name,
                                          civs_json_bytes=civs_json_bytes)
-    ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings, mod_name=mod_name)
+    unique_lang_values = {lang_val for _, lang_val in lang_assignments}
+    ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings, mod_name=mod_name,
+                                      lang_values=unique_lang_values)
 
     with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as outer:
         outer.writestr(f"{prefix}-data.zip", data_zip)

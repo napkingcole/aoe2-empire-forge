@@ -5,6 +5,7 @@
 <div class="text-center mb-4">
   <h1 class="display-6 fw-bold">AOE2: Empire Forge</h1>
   <p class="text-secondary">Convert your KrakenMeister civ JSONs into a playable AoE2:DE mod.</p>
+  <p class="text-secondary">For now, you can use Fritz' working forked version <a href="https://civbuilder.velarix.space/" target="_blank" rel="noopener">here</a>.</p>
 </div>
 
 <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
@@ -17,8 +18,12 @@
     <div class="card-body">
       <div id="drop-zone" class="drop-zone mb-3">
         <div class="drop-zone-inner">
-          <div class="fs-1 mb-2">📂</div>
-          <p class="mb-1 fw-semibold body-text">Drop KM civ JSON files here</p>
+          <div class="upload-icon-wrap mb-2" id="upload-icon-wrap">
+            <i class="fa-solid fa-folder icon-default"></i>
+            <i class="fa-solid fa-folder-open icon-hover"></i>
+            <i class="fa-solid fa-folder-closed icon-closed"></i>
+          </div>
+          <p class="mb-1 fw-semibold body-text">Drop All Your KrakenMeister civ JSON files here</p>
           <p class="text-secondary small mb-3">or click to browse</p>
           <input type="file" id="civ_files" name="civ_files"
                  accept=".json" multiple class="d-none">
@@ -97,8 +102,10 @@
   const dropZone = document.getElementById("drop-zone");
   const fileInput = document.getElementById("civ_files");
   const fileList  = document.getElementById("file-list");
+  const uploadIconWrap = document.getElementById("upload-icon-wrap");
 
   function updateFileList(files) {
+    uploadIconWrap.classList.toggle("has-files", files.length > 0);
     if (!files.length) { fileList.textContent = ""; return; }
     fileList.innerHTML = `<strong>${files.length} file${files.length > 1 ? "s" : ""} selected:</strong> `
       + Array.from(files).map(f => f.name).join(", ");
@@ -106,11 +113,17 @@
 
   fileInput.addEventListener("change", () => updateFileList(fileInput.files));
 
-  dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
-  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  function openIcon() { uploadIconWrap.classList.add("open"); }
+  function closeIcon() { uploadIconWrap.classList.remove("open"); }
+
+  dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); openIcon(); });
+  dropZone.addEventListener("dragleave", () => { dropZone.classList.remove("drag-over"); closeIcon(); });
+  dropZone.addEventListener("mouseenter", openIcon);
+  dropZone.addEventListener("mouseleave", closeIcon);
   dropZone.addEventListener("drop", e => {
     e.preventDefault();
     dropZone.classList.remove("drag-over");
+    //uploadIconWrap.classList.remove("open");
     const dt = new DataTransfer();
     Array.from(e.dataTransfer.files)
          .filter(f => f.name.endsWith(".json"))

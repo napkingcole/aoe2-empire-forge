@@ -19,6 +19,13 @@
   --red-1: #DF2935;
   --red-2: #D81159;
 }
+a {
+  color: #fff;
+}
+a:hover,
+a:focus {
+  color: var(--accent-3);
+}
 .body-text {
   color: var(--body-text);
 }
@@ -111,7 +118,7 @@ footer {
 }
 footer a:hover,
 footer a:focus {
-  color: #fff;
+  color: #fff !important;
 }
 
 /* ── Cards ───────────────────────────────────────────────────────────────── */
@@ -163,6 +170,21 @@ footer a:focus {
   text-align: center;
   pointer-events: none;
 }
+
+.upload-icon-wrap {
+  font-size: 3rem;
+  color: color-mix(in hsl, var(--accent-2) 80%, white);
+}
+.upload-icon-wrap .icon-hover  { display: none; }
+.upload-icon-wrap .icon-closed { display: none; }
+
+.upload-icon-wrap.has-files .icon-default { display: none; }
+.upload-icon-wrap.has-files .icon-closed  { display: inline-block; }
+
+.upload-icon-wrap.open .icon-default,
+.upload-icon-wrap.open .icon-closed { display: none; }
+.upload-icon-wrap.open .icon-hover  { display: inline-block; }
+
 
 /* ── Civ cards (configure page) ──────────────────────────────────────────── */
 #civ-list {
