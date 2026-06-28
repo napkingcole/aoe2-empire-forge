@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Build a Civilization — AOE2: Empire Forge{% endblock %}
+
+{% block content %}
+<div class="text-center mb-5">
+  <h1 class="display-6 fw-bold">Build a Civilization</h1>
+  <p class="text-muted">Design your custom civ from scratch and generate a working mod.</p>
+</div>
+
+<div class="row g-4 justify-content-center">
+
+  <div class="col-md-4">
+    <a href="{{ url_for('builder_new') }}" class="text-decoration-none">
+      <div class="card h-100 builder-option-card">
+        <div class="card-body text-center py-5">
+          <div class="builder-option-icon mb-3">
+            <i class="fa-solid fa-plus-circle"></i>
+          </div>
+          <h4 class="fw-bold mb-2">New Civ</h4>
+          <p class="text-muted small mb-0">Start from a blank slate. Name your civilization, choose an architecture, pick a tech tree, and configure bonuses.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card h-100 builder-option-card disabled" title="Coming soon">
+      <div class="card-body text-center py-5">
+        <div class="builder-option-icon mb-3" style="opacity: 0.35;">
+          <i class="fa-solid fa-pen-to-square"></i>
+        </div>
+        <h4 class="fw-bold mb-2" style="opacity: 0.45;">Edit Civ</h4>
+        <p class="text-muted small mb-0" style="opacity: 0.45;">Load a saved civ draft and continue editing it.</p>
+        <span class="badge mt-3" style="background-color: var(--accent-1); color: var(--accent-3); border: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);">Coming Soon</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card h-100 builder-option-card disabled" title="Coming soon">
+      <div class="card-body text-center py-5">
+        <div class="builder-option-icon mb-3" style="opacity: 0.35;">
+          <i class="fa-solid fa-eye"></i>
+        </div>
+        <h4 class="fw-bold mb-2" style="opacity: 0.45;">View Civ</h4>
+        <p class="text-muted small mb-0" style="opacity: 0.45;">Browse and review saved civilizations before building.</p>
+        <span class="badge mt-3" style="background-color: var(--accent-1); color: var(--accent-3); border: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);">Coming Soon</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="text-center text-muted small mt-5">
+  Looking to convert existing <strong>KrakenMeister</strong> civ JSONs?
+  <a href="{{ url_for('index') }}">Use the Upload tool instead.</a>
+</p>
+{% endblock %}

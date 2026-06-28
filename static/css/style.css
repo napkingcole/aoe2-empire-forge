@@ -336,3 +336,121 @@ details[open] > summary::before {
     background-color: var(--accent-3);
   }
 }
+
+/* ── Builder landing ─────────────────────────────────────────────────────────── */
+.builder-option-card {
+  transition: border-color 0.15s, transform 0.1s;
+  cursor: pointer;
+}
+.builder-option-card:not(.disabled):hover {
+  border-color: var(--accent-2);
+  transform: translateY(-2px);
+}
+.builder-option-card.disabled {
+  cursor: default;
+}
+.builder-option-icon {
+  font-size: 2.5rem;
+  color: var(--accent-2);
+}
+
+/* ── Wizard step bar ─────────────────────────────────────────────────────────── */
+.wizard-step-bar {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.wizard-step-track {
+  display: flex;
+  align-items: center;
+  min-width: 560px;
+}
+.wizard-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+  flex-shrink: 0;
+}
+.wizard-step.completed {
+  cursor: pointer;
+}
+.wizard-step-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 2px solid oklch(from var(--body-bg) calc(l + 0.2) c h);
+  background: oklch(from var(--body-bg) calc(l + 0.06) c h);
+  color: var(--accent-3);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.wizard-step.active .wizard-step-dot {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: var(--accent-1);
+}
+.wizard-step.completed .wizard-step-dot {
+  background: oklch(from var(--accent-2) calc(l - 0.15) c h / 0.5);
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+.wizard-step-label {
+  font-size: 0.7rem;
+  color: var(--accent-3);
+  white-space: nowrap;
+}
+.wizard-step.active .wizard-step-label {
+  color: var(--accent-2);
+  font-weight: 600;
+}
+.wizard-step.completed .wizard-step-label {
+  color: oklch(from var(--accent-2) calc(l - 0.05) c h);
+}
+.wizard-step-connector {
+  flex: 1;
+  height: 2px;
+  background: oklch(from var(--body-bg) calc(l + 0.2) c h);
+  margin: 0 4px;
+  margin-bottom: 20px; /* offset for label height */
+}
+
+/* ── Architecture grid ───────────────────────────────────────────────────────── */
+.arch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+.arch-card {
+  border: 2px solid oklch(from var(--body-bg) calc(l + 0.18) c h);
+  border-radius: 6px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  background: oklch(from var(--body-bg) calc(l + 0.04) c h);
+}
+.arch-card:hover {
+  border-color: oklch(from var(--accent-2) l c h / 0.6);
+  background: oklch(from var(--body-bg) calc(l + 0.07) c h);
+}
+.arch-card.selected {
+  border-color: var(--accent-2);
+  background: oklch(from var(--accent-2) l c h / 0.08);
+}
+.arch-card-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--body-text);
+  margin-bottom: 2px;
+}
+.arch-card.selected .arch-card-label {
+  color: var(--accent-2);
+}
+.arch-card-example {
+  font-size: 0.7rem;
+  color: var(--accent-3);
+}

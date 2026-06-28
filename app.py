@@ -844,6 +844,60 @@ def reset():
     return redirect(url_for("index"))
 
 
+# ── Civ Builder ───────────────────────────────────────────────────────────────
+
+_ARCH_OPTIONS = [
+    {"value": 1,  "label": "Central European",       "example": "Goths, Teutons, Vikings"},
+    {"value": 2,  "label": "Western European",        "example": "Britons, Franks, Celts"},
+    {"value": 3,  "label": "East Asian",              "example": "Japanese, Chinese, Koreans"},
+    {"value": 4,  "label": "Middle Eastern",          "example": "Persians, Saracens, Turks"},
+    {"value": 5,  "label": "Mesoamerican",            "example": "Aztecs, Mayans, Incas"},
+    {"value": 6,  "label": "Mediterranean",           "example": "Byzantines, Italians, Spanish"},
+    {"value": 7,  "label": "South Asian",             "example": "Hindustanis, Dravidians"},
+    {"value": 8,  "label": "Eastern European",        "example": "Magyars, Slavs, Bulgarians"},
+    {"value": 9,  "label": "African",                 "example": "Ethiopians, Malians"},
+    {"value": 10, "label": "Southeast Asian",         "example": "Khmer, Malay, Burmese"},
+    {"value": 11, "label": "Central Asian / Nomadic", "example": "Tatars, Cumans, Mongols"},
+]
+
+
+@app.route("/builder")
+def builder_landing():
+    return render_template("builder_landing.html")
+
+
+@app.route("/builder/new")
+def builder_new():
+    return render_template("builder_wizard.html")
+
+
+@app.route("/api/builder/meta")
+def api_builder_meta():
+    # value = dat_index - 1 (KM 0-based convention; 0 = Britons)
+    civ_options = [
+        {"value": i - 1, "label": c.get("internal_name", "")}
+        for i, c in enumerate(_civ_list)
+        if i > 0
+    ]
+    # Only the 43 voice folders that exist on disk (0-42)
+    voice_options = [
+        {"value": i - 1, "label": c.get("internal_name", "")}
+        for i, c in enumerate(_civ_list)
+        if 0 < i <= 43
+    ]
+    return jsonify({
+        "architectures": _ARCH_OPTIONS,
+        "civs": civ_options,
+        "voices": voice_options,
+    })
+
+
+@app.route("/builder/build", methods=["POST"])
+def builder_build():
+    # TODO: wire to the existing build pipeline
+    return jsonify({"error": "Build pipeline not yet implemented."}), 501
+
+
 # ── Dev server entry point ────────────────────────────────────────────────────
 
 if __name__ == "__main__":

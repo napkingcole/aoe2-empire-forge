@@ -21,6 +21,7 @@
     <div class="d-flex gap-3 align-items-center small">
       <a href="{{ url_for('how_it_works') }}" class="nav-link text-light">How It Works</a>
       <a href="{{ url_for('why') }}" class="nav-link text-light">Why</a>
+      <a href="{{ url_for('builder_landing') }}" class="nav-link text-light" style="color: var(--accent-2) !important; font-weight: 600;">Build Civ</a>
       <a href="{{ url_for('index') }}" class="nav-link text-light">Upload</a>
       {% if session.get('civs') %}
       <a href="{{ url_for('configure') }}" class="nav-link text-light">Configure</a>

@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}New Civilization — AOE2: Empire Forge{% endblock %}
+
+{% block content %}
+
+{# ── Step indicator ─────────────────────────────────────────────────────────── #}
+<div class="wizard-step-bar mb-4">
+  <div class="wizard-step-track">
+    {% set steps = [
+      (1, "Identity"),
+      (2, "Tech Tree"),
+      (3, "Bonuses"),
+      (4, "Unique Unit"),
+      (5, "Castle UT"),
+      (6, "Imperial UT"),
+      (7, "Team Bonus"),
+      (8, "Review"),
+    ] %}
+    {% for num, label in steps %}
+    <div class="wizard-step" id="wstep-{{ num }}" data-step="{{ num }}">
+      <div class="wizard-step-dot">{{ num }}</div>
+      <div class="wizard-step-label">{{ label }}</div>
+    </div>
+    {% if not loop.last %}
+    <div class="wizard-step-connector"></div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+{# ── Step panels ────────────────────────────────────────────────────────────── #}
+
+{# Step 1 — Identity #}
+<div class="wizard-panel" id="panel-1">
+  <div class="card mb-3">
+    <div class="card-header">
+      <span class="step-badge">1</span> Civilization Identity
+    </div>
+    <div class="card-body">
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold" for="civ-name">Civilization Name <span class="text-danger">*</span></label>
+          <input type="text" id="civ-name" class="form-control" placeholder="e.g. Jurchens" maxlength="40" autocomplete="off">
+          <div class="form-text">The name shown in-game on the civ selection screen.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold" for="civ-tagline">Civ Type / Tagline</label>
+          <div class="input-group">
+            <span class="input-group-text text-muted" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h); color: var(--accent-3);">A</span>
+            <input type="text" id="civ-tagline" class="form-control" placeholder="Infantry" maxlength="30" autocomplete="off">
+            <span class="input-group-text text-muted" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h); color: var(--accent-3);">Civilization</span>
+          </div>
+          <div class="form-text">Shown on the civ selection screen as "A <em>X</em> Civilization".</div>
+        </div>
+      </div>
+
+      {# Architecture #}
+      <label class="form-label fw-semibold">Architecture Set <span class="text-danger">*</span></label>
+      <div class="form-text mb-2">Determines your buildings' visual style.</div>
+      <div id="arch-grid" class="arch-grid mb-4">
+        <div class="text-muted small">Loading…</div>
+      </div>
+
+      {# Wonder + Castle #}
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold" for="wonder-select">Wonder Skin</label>
+          <select id="wonder-select" class="form-select">
+            <option value="-1">— Architecture Default —</option>
+          </select>
+          <div class="form-text">Which civ's Wonder graphic to use.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold" for="castle-select">Castle Skin</label>
+          <select id="castle-select" class="form-select">
+            <option value="-1">— Architecture Default —</option>
+          </select>
+          <div class="form-text">Which civ's Castle graphic to use.</div>
+        </div>
+      </div>
+
+      {# Voice #}
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold" for="voice-select">Voice Set</label>
+          <select id="voice-select" class="form-select">
+            <option value="0">Loading…</option>
+          </select>
+          <div class="form-text">Which vanilla civ's unit voice lines your units will use.</div>
+        </div>
+      </div>
+
+      {# Emblem #}
+      <label class="form-label fw-semibold">Civ Emblem</label>
+      <div class="form-text mb-2">Shown on the civ selection screen and in-game HUD. PNG or JPG, ideally square.</div>
+      <div class="d-flex align-items-start gap-3">
+        <div id="emblem-preview-wrap" class="d-none">
+          <img id="emblem-preview" src="" alt="Emblem preview"
+               style="width: 80px; height: 80px; object-fit: contain; border-radius: 6px;
+                      background: oklch(from var(--body-bg) calc(l + 0.08) c h);
+                      border: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);">
+        </div>
+        <div>
+          <input type="file" id="emblem-file" accept="image/png,image/jpeg,image/webp" class="d-none">
+          <button type="button" class="btn btn-outline-primary btn-sm" onclick="document.getElementById('emblem-file').click()">
+            <i class="fa-solid fa-image me-1"></i> Choose image…
+          </button>
+          <button type="button" id="emblem-clear" class="btn btn-outline-secondary btn-sm d-none" onclick="clearEmblem()">
+            Remove
+          </button>
+          <div class="form-text mt-1">Optional — skip to use a solid colour placeholder.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+{# Step 2 — Tech Tree #}
+<div class="wizard-panel d-none" id="panel-2">
+  <div class="card mb-3">
+    <div class="card-header"><span class="step-badge">2</span> Tech Tree</div>
+    <div class="card-body py-5 text-center">
+      <i class="fa-solid fa-diagram-project fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
+      <h5 class="fw-semibold mb-2">Tech Tree Selection</h5>
+      <p class="text-muted mb-0">Interactive tech tree coming next — you'll toggle each unit, building, and upgrade on or off for your civ.</p>
+    </div>
+  </div>
+</div>
+
+{# Step 3 — Bonuses #}
+<div class="wizard-panel d-none" id="panel-3">
+  <div class="card mb-3">
+    <div class="card-header"><span class="step-badge">3</span> Civilization Bonuses</div>
+    <div class="card-body py-5 text-center">
+      <i class="fa-solid fa-bolt fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
+      <h5 class="fw-semibold mb-2">Civ Bonuses</h5>
+      <p class="text-muted mb-0">Bonus picker coming soon — choose up to 6 preset bonuses from the catalog and set multipliers.</p>
+    </div>
+  </div>
+</div>
+
+{# Step 4 — Unique Unit #}
+<div class="wizard-panel d-none" id="panel-4">
+  <div class="card mb-3">
+    <div class="card-header"><span class="step-badge">4</span> Unique Unit</div>
+    <div class="card-body py-5 text-center">
+      <i class="fa-solid fa-person-rifle fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
+      <h5 class="fw-semibold mb-2">Unique Unit</h5>
+      <p class="text-muted mb-0">Unit editor coming soon — pick a base unit, give it a name, and adjust its stats.</p>
+    </div>
+  </div>
+</div>
+
+{# Step 5 — Castle UT #}
+<div class="wizard-panel d-none" id="panel-5">
+  <div class="card mb-3">
+    <div class="card-header"><span class="step-badge">5</span> Castle Unique Tech</div>
+    <div class="card-body py-5 text-center">
+      <i class="fa-solid fa-chess-rook fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
+      <h5 class="fw-semibold mb-2">Castle Unique Tech</h5>
+      <p class="text-muted mb-0">Tech editor coming soon — name your Castle Age unique tech, set cost and time, pick effects.</p>
+    </div>
+  </div>
+</div>
+
+{# Step 6 — Imperial UT #}
+<div class="wizard-panel d-none" id="panel-6">
+  <div class="card mb-3">
+    <div class="card-header"><span class="step-badge">6</span> Imperial Unique Tech</div>
+    <div class="card-body py-5 text-center">
+      <i class="fa-solid fa-crown fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
+      <h5 class="fw-semibold mb-2">Imperial Unique Tech</h5>
+      <p class="text-muted mb-0">Tech editor coming soon — name your Imperial Age unique tech, set cost and time, pick effects.</p>
+    </div>
+  </div>
+</div>
+
+{# Step 7 — Team Bonus #}
+<div class="wizard-panel d-none" id="panel-7">
+  <div class="card mb-3">
+    <div class="card-header"><span class="step-badge">7</span> Team Bonus</div>
+    <div class="card-body py-5 text-center">
+      <i class="fa-solid fa-people-group fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
+      <h5 class="fw-semibold mb-2">Team Bonus</h5>
+      <p class="text-muted mb-0">Team bonus picker coming soon — choose one bonus from the catalog that applies to all allies.</p>
+    </div>
+  </div>
+</div>
+
+{# Step 8 — Review #}
+<div class="wizard-panel d-none" id="panel-8">
+  <div class="card mb-3">
+    <div class="card-header"><span class="step-badge">8</span> Review &amp; Build</div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">Review your civilization before generating the mod file.</p>
+      <div id="review-content">
+        <div class="text-muted">Loading summary…</div>
+      </div>
+      <hr style="border-color: oklch(from var(--body-bg) calc(l + 0.15) c h);">
+      <div class="alert alert-warning p-2 small mb-3">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>
+        The build pipeline is not yet connected. This will generate your mod once all steps are implemented.
+      </div>
+      <div class="d-grid">
+        <button class="btn btn-primary btn-lg" disabled>
+          <i class="fa-solid fa-download me-2"></i>Generate Mod
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Navigation ─────────────────────────────────────────────────────────────── #}
+<div class="d-flex justify-content-between align-items-center mt-3">
+  <button id="btn-prev" class="btn btn-outline-primary" disabled>
+    <i class="fa-solid fa-arrow-left me-1"></i> Previous
+  </button>
+  <div class="text-muted small" id="step-counter">Step 1 of 8</div>
+  <button id="btn-next" class="btn btn-primary">
+    Next <i class="fa-solid fa-arrow-right ms-1"></i>
+  </button>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/builder.js') }}"></script>
+{% endblock %}
