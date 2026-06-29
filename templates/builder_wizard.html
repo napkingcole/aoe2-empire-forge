@@ -91,7 +91,35 @@
         </div>
       </div>
 
+      {# Game Files #}
+      <hr style="border-color: oklch(from var(--body-bg) calc(l + 0.12) c h);">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <i class="fa-solid fa-folder-open" style="color:var(--accent-2)"></i>
+        <span class="fw-semibold">Game Files</span>
+        <span id="dat-status-badge" class="badge rounded-pill ms-1" style="display:none!important;"></span>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-12">
+          <label class="form-label fw-semibold small" for="dat-path-input">DAT File Path <span class="text-danger">*</span></label>
+          <div class="d-flex gap-2">
+            <input type="text" id="dat-path-input" class="form-control form-control-sm font-monospace"
+                   placeholder="Detecting…" autocomplete="off" spellcheck="false">
+            <button id="btn-detect-dat" type="button" class="btn btn-sm btn-outline-secondary text-nowrap">
+              <i class="fa-solid fa-rotate me-1"></i>Re-detect
+            </button>
+          </div>
+          <div id="dat-detect-status" class="form-text mt-1"></div>
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold small" for="civtechtrees-path-input">CivTechTrees Folder <span class="text-muted fw-normal">(auto-detected)</span></label>
+          <input type="text" id="civtechtrees-path-input" class="form-control form-control-sm font-monospace"
+                 placeholder="Detected automatically from DAT location" autocomplete="off" spellcheck="false">
+          <div class="form-text">Folder containing per-civ tech tree JSON files.</div>
+        </div>
+      </div>
+
       {# Emblem #}
+      <hr style="border-color: oklch(from var(--body-bg) calc(l + 0.12) c h);">
       <label class="form-label fw-semibold">Civ Emblem</label>
       <div class="form-text mb-2">Shown on the civ selection screen and in-game HUD. PNG or JPG, ideally square.</div>
       <div class="d-flex align-items-start gap-3">
@@ -222,37 +250,187 @@
 <div class="wizard-panel d-none" id="panel-4">
   <div class="card mb-3">
     <div class="card-header"><span class="step-badge">4</span> Unique Unit</div>
-    <div class="card-body py-5 text-center">
-      <i class="fa-solid fa-person-rifle fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
-      <h5 class="fw-semibold mb-2">Unique Unit</h5>
-      <p class="text-muted mb-0">Unit editor coming soon — pick a base unit, give it a name, and adjust its stats.</p>
+    <div class="card-body">
+
+      <p class="text-muted small mb-3">
+        Choose a base unit for your Unique Unit — vanilla units keep their in-game stats,
+        custom units use preset values. You can override the name shown in-game.
+      </p>
+
+      {# Search + type filter #}
+      <div class="row g-2 mb-3">
+        <div class="col">
+          <div class="input-group">
+            <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
+              <i class="fa-solid fa-magnifying-glass text-muted"></i>
+            </span>
+            <input type="text" id="uu-search" class="form-control" placeholder="Search units… e.g. knight, archer, cataphract" autocomplete="off">
+          </div>
+        </div>
+        <div class="col-auto">
+          <select id="uu-filter-type" class="form-select">
+            <option value="all">All units</option>
+            <option value="vanilla">Vanilla only</option>
+            <option value="custom">Custom only</option>
+          </select>
+        </div>
+      </div>
+
+      {# Unit grid #}
+      <div id="uu-grid" class="uu-grid mb-3">
+        <div class="text-muted small fst-italic">Loading…</div>
+      </div>
+      <div class="form-text mb-3">
+        <span class="uu-badge uu-badge-vanilla">V</span> Vanilla — uses the original game unit as a base.
+        <span class="uu-badge uu-badge-custom ms-2">C</span> Custom — a new unit built from scratch.
+      </div>
+
+      {# Selected unit details (hidden until a unit is picked) #}
+      <div id="uu-selected-panel" class="d-none">
+        <hr style="border-color: oklch(from var(--body-bg) calc(l + 0.15) c h);">
+        <h6 class="fw-semibold mb-3">Customize your Unique Unit</h6>
+
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <img id="uu-selected-icon" src="" alt=""
+               style="width:64px; height:64px; object-fit:contain; flex-shrink:0;
+                      background: oklch(from var(--body-bg) calc(l + 0.06) c h);
+                      border-radius: 8px; border: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);">
+          <div>
+            <div class="fw-semibold" id="uu-selected-name">—</div>
+            <div class="text-muted small" id="uu-selected-type">—</div>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="clearUU()">
+            <i class="fa-solid fa-xmark me-1"></i>Change unit
+          </button>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" for="uu-name-override">In-game Name <span class="text-muted fw-normal small">(optional override)</span></label>
+            <input type="text" id="uu-name-override" class="form-control"
+                   placeholder="Leave blank to use the base unit name" maxlength="40" autocomplete="off">
+            <div class="form-text">The name your UU will display in-game.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" for="uu-description">Description <span class="text-muted fw-normal small">(optional)</span></label>
+            <textarea id="uu-description" class="form-control" rows="2" maxlength="200"
+                      placeholder="Short description shown on the civ selection screen."></textarea>
+          </div>
+        </div>
+      </div>
+
+      {# Prompt when no unit selected #}
+      <div id="uu-no-selection" class="text-center py-3">
+        <i class="fa-solid fa-person-rifle fa-2x mb-2" style="color: var(--accent-2); opacity:.5;"></i>
+        <div class="text-muted small">Select a unit above to continue.</div>
+      </div>
+
     </div>
   </div>
 </div>
+
+{# Macro: reusable UT panel body #}
+{% macro ut_panel(step, prefix, icon_class, age_label) %}
+<div class="wizard-panel d-none" id="panel-{{ step }}">
+  <div class="card mb-3">
+    <div class="card-header">
+      <span class="step-badge">{{ step }}</span>
+      <i class="{{ icon_class }} me-1" style="color: var(--accent-2);"></i> {{ age_label }} Unique Technology
+    </div>
+    <div class="card-body">
+
+      <p class="text-muted small mb-3">
+        Name your unique technology, set its cost and research time, then add up to 3 effects from the catalog.
+      </p>
+
+      {# Name + description #}
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold" for="{{ prefix }}-name">
+            Tech Name <span class="text-danger">*</span>
+          </label>
+          <input type="text" id="{{ prefix }}-name" class="form-control"
+                 placeholder="e.g. Steel Stirrups" maxlength="40" autocomplete="off">
+          <div class="form-text">Displayed on the tech button in-game.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold" for="{{ prefix }}-desc">
+            Description <span class="text-muted fw-normal small">(optional)</span>
+          </label>
+          <textarea id="{{ prefix }}-desc" class="form-control" rows="2" maxlength="200"
+                    placeholder="Short description shown on the civ selection screen."></textarea>
+        </div>
+      </div>
+
+      {# Resource costs + time #}
+      <label class="form-label fw-semibold">Cost &amp; Research Time</label>
+      <div class="row g-2 mb-4">
+        <div class="col-6 col-sm-4 col-md-auto">
+          <label class="form-label small mb-1" style="color:#e07b54;">
+            <i class="fa-solid fa-drumstick-bite me-1"></i>Food
+          </label>
+          <input type="number" id="{{ prefix }}-food" class="form-control form-control-sm ut-cost-input"
+                 min="0" max="9999" value="0" style="width:80px;">
+        </div>
+        <div class="col-6 col-sm-4 col-md-auto">
+          <label class="form-label small mb-1" style="color:#8a6c3e;">
+            <i class="fa-solid fa-tree me-1"></i>Wood
+          </label>
+          <input type="number" id="{{ prefix }}-wood" class="form-control form-control-sm ut-cost-input"
+                 min="0" max="9999" value="0" style="width:80px;">
+        </div>
+        <div class="col-6 col-sm-4 col-md-auto">
+          <label class="form-label small mb-1" style="color:#9ca3af;">
+            <i class="fa-solid fa-mountain me-1"></i>Stone
+          </label>
+          <input type="number" id="{{ prefix }}-stone" class="form-control form-control-sm ut-cost-input"
+                 min="0" max="9999" value="0" style="width:80px;">
+        </div>
+        <div class="col-6 col-sm-4 col-md-auto">
+          <label class="form-label small mb-1" style="color:#fca311;">
+            <i class="fa-solid fa-coins me-1"></i>Gold
+          </label>
+          <input type="number" id="{{ prefix }}-gold" class="form-control form-control-sm ut-cost-input"
+                 min="0" max="9999" value="0" style="width:80px;">
+        </div>
+        <div class="col-6 col-sm-4 col-md-auto">
+          <label class="form-label small mb-1" style="color:#60a5fa;">
+            <i class="fa-solid fa-clock me-1"></i>Time (s)
+          </label>
+          <input type="number" id="{{ prefix }}-time" class="form-control form-control-sm ut-cost-input"
+                 min="0" max="9999" value="60" style="width:80px;">
+        </div>
+      </div>
+
+      {# Effects picker #}
+      <label class="form-label fw-semibold">Tech Effects</label>
+      <p class="text-muted small mb-2">Add up to 3 effects applied when this tech is researched. Search the same catalog as civ bonuses.</p>
+
+      <div class="bonus-search-wrap mb-3">
+        <div class="input-group">
+          <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
+            <i class="fa-solid fa-magnifying-glass text-muted"></i>
+          </span>
+          <input type="text" id="{{ prefix }}-effect-search" class="form-control"
+                 placeholder="Search effects… e.g. infantry, cavalry, archer" autocomplete="off">
+        </div>
+        <div id="{{ prefix }}-effect-results" class="bonus-results d-none"></div>
+      </div>
+
+      <div id="{{ prefix }}-effect-slots" class="d-flex flex-column gap-2">
+        <div class="text-muted small fst-italic" id="{{ prefix }}-effect-empty">No effects added yet.</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endmacro %}
 
 {# Step 5 — Castle UT #}
-<div class="wizard-panel d-none" id="panel-5">
-  <div class="card mb-3">
-    <div class="card-header"><span class="step-badge">5</span> Castle Unique Tech</div>
-    <div class="card-body py-5 text-center">
-      <i class="fa-solid fa-chess-rook fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
-      <h5 class="fw-semibold mb-2">Castle Unique Tech</h5>
-      <p class="text-muted mb-0">Tech editor coming soon — name your Castle Age unique tech, set cost and time, pick effects.</p>
-    </div>
-  </div>
-</div>
+{{ ut_panel(5, "cut", "fa-solid fa-chess-rook", "Castle Age") }}
 
 {# Step 6 — Imperial UT #}
-<div class="wizard-panel d-none" id="panel-6">
-  <div class="card mb-3">
-    <div class="card-header"><span class="step-badge">6</span> Imperial Unique Tech</div>
-    <div class="card-body py-5 text-center">
-      <i class="fa-solid fa-crown fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
-      <h5 class="fw-semibold mb-2">Imperial Unique Tech</h5>
-      <p class="text-muted mb-0">Tech editor coming soon — name your Imperial Age unique tech, set cost and time, pick effects.</p>
-    </div>
-  </div>
-</div>
+{{ ut_panel(6, "iut", "fa-solid fa-crown", "Imperial Age") }}
 
 {# Step 7 — Team Bonus (included in step 3) #}
 <div class="wizard-panel d-none" id="panel-7">
@@ -271,25 +449,71 @@
 
 {# Step 8 — Review #}
 <div class="wizard-panel d-none" id="panel-8">
+
+  {# Summary sections (populated by JS) #}
+  <div id="review-content" class="mb-3">
+    <div class="text-muted small">Loading summary…</div>
+  </div>
+
+  {# Replace slot #}
   <div class="card mb-3">
-    <div class="card-header"><span class="step-badge">8</span> Review &amp; Build</div>
+    <div class="card-header">
+      <i class="fa-solid fa-arrows-rotate me-1" style="color: var(--accent-2);"></i>
+      Replace Vanilla Slot
+    </div>
     <div class="card-body">
-      <p class="text-muted small mb-3">Review your civilization before generating the mod file.</p>
-      <div id="review-content">
-        <div class="text-muted">Loading summary…</div>
-      </div>
-      <hr style="border-color: oklch(from var(--body-bg) calc(l + 0.15) c h);">
-      <div class="alert alert-warning p-2 small mb-3">
-        <i class="fa-solid fa-triangle-exclamation me-1"></i>
-        The build pipeline is not yet connected. This will generate your mod once all steps are implemented.
-      </div>
-      <div class="d-grid">
-        <button class="btn btn-primary btn-lg" disabled>
-          <i class="fa-solid fa-download me-2"></i>Generate Mod
-        </button>
+      <p class="text-muted small mb-2">
+        Your custom civ will overwrite this vanilla civ's DAT slot.
+        The original civ's name, art, and bonuses are replaced — only the game assets remain.
+      </p>
+      <div class="row g-2 align-items-center">
+        <div class="col-md-5">
+          <select id="replace-civ-select" class="form-select">
+            <option value="Goths">Goths (default)</option>
+          </select>
+        </div>
+        <div class="col text-muted small">
+          Pick a vanilla civ you don't mind overwriting in this save.
+        </div>
       </div>
     </div>
   </div>
+
+  {# Generate button #}
+  <div class="card mb-3">
+    <div class="card-header">
+      <span class="step-badge">8</span> Generate Mod
+    </div>
+    <div class="card-body">
+      <div id="build-error" class="alert alert-danger d-none mb-3 small"></div>
+      <div id="build-success" class="d-none">
+        <div class="alert alert-success small mb-3">
+          <i class="fa-solid fa-circle-check me-1"></i>
+          Mod built successfully!
+        </div>
+        <p class="text-muted small mb-3">
+          Your download contains two zip files — install both as AoE2 DE mods:
+          <br><strong>-data.zip</strong> contains the DAT changes.
+          <br><strong>-ui.zip</strong> contains strings, emblems, and voice files.
+        </p>
+        <a id="build-download-link" href="#" class="btn btn-primary">
+          <i class="fa-solid fa-download me-1"></i>
+          <span id="build-download-name">Download Mod</span>
+        </a>
+      </div>
+      <div id="build-form" class="">
+        <div class="d-grid">
+          <button id="btn-generate" class="btn btn-primary btn-lg">
+            <i class="fa-solid fa-hammer me-2"></i>Generate Mod
+          </button>
+        </div>
+        <div class="form-text mt-2 text-center">
+          Requires the DAT file path set in Step 1.
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 {# ── Navigation ─────────────────────────────────────────────────────────────── #}

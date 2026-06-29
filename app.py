@@ -587,6 +587,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 string_lines[lang].append(f'{castle_ut_sid} "{castle_ut_name}"')
                 string_lines[lang].append(
                     f'{castle_ut_sid + DLL_CREATION_OFFSET} "Research {castle_ut_name}"')
+                string_lines[lang].append(f'{castle_ut_sid + 21000} "{castle_ut_name}"')
                 string_lines[lang].append(
                     f'{castle_ut_desc_sid} '
                     f'"Research <b>{castle_ut_name}<b> (<cost>)\\n{castle_ut_name}"')
@@ -596,6 +597,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 string_lines[lang].append(f'{imp_ut_sid} "{imp_ut_name}"')
                 string_lines[lang].append(
                     f'{imp_ut_sid + DLL_CREATION_OFFSET} "Research {imp_ut_name}"')
+                string_lines[lang].append(f'{imp_ut_sid + 21000} "{imp_ut_name}"')
                 string_lines[lang].append(
                     f'{imp_ut_desc_sid} '
                     f'"Research <b>{imp_ut_name}<b> (<cost>)\\n{imp_ut_name}"')
@@ -871,6 +873,15 @@ def builder_new():
     return render_template("builder_wizard.html")
 
 
+@app.route("/api/builder/detect-dat")
+def api_builder_detect_dat():
+    """Return auto-detected DAT and CivTechTrees paths (may be empty strings if not found)."""
+    dat = find_game_dat()
+    dat_path = str(dat) if dat else ""
+    ct_path  = str(find_civtechtrees(dat) or "") if dat else ""
+    return jsonify({"dat_path": dat_path, "civtechtrees_path": ct_path, "found": bool(dat_path)})
+
+
 @app.route("/api/builder/meta")
 def api_builder_meta():
     # value = dat_index - 1 (KM 0-based convention; 0 = Britons)
@@ -955,10 +966,136 @@ def api_builder_bonuses_catalog():
     return jsonify({"civ": civ_bonuses, "team": team_bonuses})
 
 
+@app.route("/api/builder/uu/catalog")
+def api_builder_uu_catalog():
+    import civ_appender as ca
+    import km_custom_uu as kcu
+
+    # km_idx → icon filename (only confirmed-present entries)
+    _ICON_MAP: dict[int, str] = {
+        0:  "041_50730.png",   # Longbowman
+        1:  "046_50730.png",   # Throwing Axeman
+        2:  "050_50730.png",   # Huskarl
+        4:  "044_50730.png",   # Samurai
+        5:  "036_50730.png",   # Chu Ko Nu
+        6:  "035_50730.png",   # Cataphract
+        7:  "037_50730.png",   # Mameluke
+        8:  "043_50730.png",   # War Elephant
+        11: "042_50730.png",   # Mangudai
+        12: "047_50730.png",   # Woad Raider
+        13: "106_50730.png",   # Conquistador
+        14: "110_50730.png",   # Jaguar Warrior
+        16: "105_50730.png",   # Tarkan
+        17: "117_50730.png",   # War Wagon
+        18: "133_50730.png",   # Genoese Crossbowman
+        19: "385_50730.png",   # Ghulam
+        21: "099_50730.png",   # Magyar Huszar
+        22: "114_50730.png",   # Boyar
+        23: "190_50730.png",   # Organ Gun
+        24: "195_50730.png",   # Shotel Warrior
+        26: "191_50730.png",   # Camel Archer
+        27: "231_50730.png",   # Ballista Elephant
+        29: "230_50730.png",   # Arambai
+        30: "232_50730.png",   # Rattan Archer
+        32: "251_50730.png",   # Keshik
+        33: "252_50730.png",   # Kipchak
+        34: "253_50730.png",   # Leitis
+        35: "355_50730.png",   # Coustillier
+        36: "356_50730.png",   # Serjeant
+        37: "369_50730.png",   # Obuch
+        38: "370_50730.png",   # Hussite Wagon
+        45: "405_50730.png",   # Centurion
+        82: "408_50730.png",   # Monaspa
+        85: "436_50730.png",   # Tiger Cavalry
+        87: "461_50730.png",   # Liao Dao
+    }
+
+    unsupported = {47, 75}
+    vanilla_keys = set(ca._KM_UU_TECHS.keys())
+    catalog = []
+    for km_idx, name in ca._KM_UU_NAMES.items():
+        if km_idx in unsupported:
+            continue
+        icon_file = _ICON_MAP.get(km_idx)
+        catalog.append({
+            "km_idx": km_idx,
+            "name":   name,
+            "vanilla": km_idx in vanilla_keys,
+            "icon":  f"/resources/uniticons/{icon_file}" if icon_file else None,
+        })
+    catalog.sort(key=lambda x: x["name"])
+    return jsonify(catalog)
+
+
+@app.route("/api/builder/ut/catalog")
+def api_builder_ut_catalog():
+    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
+
+    castle = [
+        {"id": i, "label": label}
+        for i, label in enumerate(_UNIQUE_CASTLE_STRINGS)
+        if i in _KM_CASTLE_UT_TECHS
+    ]
+    imperial = [
+        {"id": i, "label": label}
+        for i, label in enumerate(_UNIQUE_IMP_STRINGS)
+        if i in _KM_IMP_UT_TECHS
+    ]
+    return jsonify({"castle": castle, "imperial": imperial})
+
+
 @app.route("/builder/build", methods=["POST"])
 def builder_build():
-    # TODO: wire to the existing build pipeline
-    return jsonify({"error": "Build pipeline not yet implemented."}), 501
+    import re
+    from wizard_build import build_wizard_mod
+
+    data        = request.get_json(silent=True) or {}
+    draft       = data.get("draft", {})
+    replace_civ = data.get("replace_civ", "Goths")
+
+    if not draft.get("alias"):
+        return jsonify({"error": "Draft is missing a civilization name."}), 400
+    if not draft.get("architecture"):
+        return jsonify({"error": "Draft is missing an architecture selection."}), 400
+
+    # Accept dat_path from POST body (wizard self-contained), fall back to session
+    dat_path = data.get("dat_path") or session.get("dat_path")
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({
+            "error": (
+                "No game DAT file found. "
+                "Please enter the path to your empires2_x2_p1.dat file in Step 1."
+            )
+        }), 400
+
+    try:
+        zip_bytes = build_wizard_mod(draft, dat_path, replace_civ)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Build failed: {e}"}), 500
+
+    sd       = _session_dir()
+    alias    = draft.get("alias", "custom_civ")
+    prefix   = re.sub(r"[^A-Za-z0-9_-]", "_", alias).lower() or "custom_civ"
+    out_name = f"{prefix}_wizard_mod.zip"
+    out_path = sd / out_name
+    out_path.write_bytes(zip_bytes)
+    session["wizard_out_file"] = str(out_path)
+    session["wizard_out_name"] = out_name
+
+    return jsonify({"url": url_for("builder_download"), "filename": out_name})
+
+
+@app.route("/builder/download")
+def builder_download():
+    out_file = session.get("wizard_out_file")
+    out_name = session.get("wizard_out_name", "wizard_mod.zip")
+    if not out_file or not Path(out_file).exists():
+        return "No wizard mod file available — please build first.", 404
+    return send_file(out_file, as_attachment=True, download_name=out_name)
 
 
 # ── Dev server entry point ────────────────────────────────────────────────────

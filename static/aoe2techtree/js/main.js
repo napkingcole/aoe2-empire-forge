@@ -410,7 +410,7 @@ function displayData(relativepath = ".") {
 			downloadTextFile(JSON.stringify(civ), civ["alias"] + ".json");
 			return;
 		}
-		if (techtree_points >= 0) {
+		if (canEdit === 3 || techtree_points >= 0) {
 			document.getElementById("container").remove();
 			document.getElementById("toolbar").remove();
 			document.getElementById("tech_styles").remove();
@@ -855,8 +855,11 @@ function cost(cost_object) {
 }
 
 function renderciv(name) {
-	//    let selectedCiv = civs[name];
-	let selectedCiv = localtree;
+	const selectedCiv = {
+		units:     localtree[0],
+		buildings: localtree[1],
+		techs:     localtree[2],
+	};
 
 	SVG.select(".cross").each(function () {
 		if (SVGObjectIsOpaque(this)) {
@@ -885,7 +888,7 @@ function renderciv(name) {
 		makeSVGObjectOpaque(this);
 	});
 
-	enable(selectedCiv[1], selectedCiv[0], selectedCiv[2]);
+	enable(selectedCiv.buildings, selectedCiv.units, selectedCiv.techs);
 }
 
 function caretType(caretId) {

@@ -605,6 +605,11 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 # name+1000 until this was added).
                 string_lines[lang].append(
                     f'{name_sid_ut + DLL_CREATION_OFFSET} "Research {short}"')
+                # Castle UI reads name_sid+21000 for UT buttons (same offset as the
+                # unit train-button widget). Override it to prevent vanilla content
+                # at that slot from bleeding through (e.g. 70202+21000=91202 shows
+                # "Click to enter a filename to save your custom campaign as.").
+                string_lines[lang].append(f'{name_sid_ut + 21000} "{short}"')
                 # Full <cost> tooltip — vanilla pattern: name+cost on first line,
                 # description on second. Avoids duplicating the name as we did before.
                 help_body = f"Research <b>{short}<b> (<cost>)"

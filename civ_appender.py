@@ -808,14 +808,35 @@ def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
     return new_tid
 
 
+def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectCommand:
+    """Return a copy of ec whose d value is scaled so that applying the result
+    once produces the same game effect as applying the original ec multiplier
+    times.  EC_MULTIPLY compounds (d ** N); EC_ADD and EC_RESOURCE accumulate
+    (d * N); all other types are idempotent and need no scaling."""
+    result = deepcopy(ec)
+    if multiplier <= 1:
+        return result
+    if result.type == EC_MULTIPLY:
+        result.d = result.d ** multiplier
+    elif result.type in (EC_ADD, EC_RESOURCE):
+        result.d = result.d * multiplier
+    return result
+
+
 def _multiply_effect(dat: DatFile, effect_id: int, multiplier: int) -> None:
-    """Repeat each EffectCommand in the effect (multiplier-1) extra times."""
+    """Scale each EffectCommand in the effect so that applying it once is
+    equivalent to applying the original effect multiplier times.
+
+    Uses mathematical scaling (d**N for EC_MULTIPLY, d*N for EC_ADD/RESOURCE)
+    instead of command duplication, keeping the effect command count constant
+    and avoiding engine limits on large effect lists."""
     if multiplier <= 1 or effect_id < 0 or effect_id >= len(dat.effects):
         return
-    original = list(dat.effects[effect_id].effect_commands)
-    for _ in range(multiplier - 1):
-        for ec in original:
-            dat.effects[effect_id].effect_commands.append(deepcopy(ec))
+    for ec in dat.effects[effect_id].effect_commands:
+        if ec.type == EC_MULTIPLY:
+            ec.d = ec.d ** multiplier
+        elif ec.type in (EC_ADD, EC_RESOURCE):
+            ec.d = ec.d * multiplier
 
 
 def _apply_ec_list_entry(dat: DatFile, civ_index: int, ec_entry: dict,
@@ -832,11 +853,12 @@ def _apply_ec_list_entry(dat: DatFile, civ_index: int, ec_entry: dict,
 
     cmds = [EffectCommand(type=d["type"], a=d["A"], b=d["B"], c=d["C"], d=d["D"])
             for d in ecs_dicts]
-    # Multiplier: repeat all commands multiplier times total
     if multiplier > 1:
-        orig = list(cmds)
-        for _ in range(multiplier - 1):
-            cmds.extend(deepcopy(cmd) for cmd in orig)
+        for cmd in cmds:
+            if cmd.type == EC_MULTIPLY:
+                cmd.d = cmd.d ** multiplier
+            elif cmd.type in (EC_ADD, EC_RESOURCE):
+                cmd.d = cmd.d * multiplier
 
     eff = Effect(name="C-Bonus EC-list", effect_commands=cmds)
     dat.effects.append(eff)
@@ -2063,11 +2085,15 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                             ec for ec in dat.effects[eff_id].effect_commands
                             if ec.type not in (EC_ENABLE, EC_UPGRADE)
                         ]
-                        # For multiplier=1 the global already fires for our civ;
-                        # only add (multiplier-1) extra repetitions.
+                        # For multiplier=1 the global already fires for our civ.
+                        # For multiplier>1 build a scaled supplement that fires
+                        # the *additional* delta (d scaled by multiplier-1) so
+                        # total effect across both firings equals multiplier*base.
                         extra = []
-                        for _ in range(max(0, multiplier - 1)):
-                            extra.extend(deepcopy(ec) for ec in src_cmds)
+                        if multiplier > 1:
+                            for ec in src_cmds:
+                                scaled = _scale_ec_for_multiplier(ec, multiplier - 1)
+                                extra.append(scaled)
                         if extra:
                             new_eff = Effect(name=f"C-Bonus extra {bonus_id}",
                                              effect_commands=extra)
@@ -2121,8 +2147,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             for ec_dict in ec_dicts:
                 cmd = EffectCommand(type=ec_dict["type"], a=ec_dict["A"],
                                     b=ec_dict["B"], c=ec_dict["C"], d=float(ec_dict["D"]))
-                for _ in range(multiplier):
-                    dat.effects[tb_eff_id].effect_commands.append(deepcopy(cmd))
+                dat.effects[tb_eff_id].effect_commands.append(
+                    _scale_ec_for_multiplier(cmd, multiplier))
             team_applied += 1
             continue
 
@@ -2130,8 +2156,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         if not safe_cmds:
             continue
         for ec in safe_cmds:
-            for _ in range(multiplier):
-                dat.effects[tb_eff_id].effect_commands.append(deepcopy(ec))
+            dat.effects[tb_eff_id].effect_commands.append(
+                _scale_ec_for_multiplier(ec, multiplier))
         team_applied += 1
 
     print(f"       Team bonus: {team_applied}/{len(team_entries)} entries applied")
@@ -2884,11 +2910,9 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                 print(f"       {label} bonus {bonus_id}: deferring unit "
                       f"substitution for type={ec.type} command (needs this "
                       f"civ's own elite UU)")
-                for _ in range(multiplier):
-                    pending_uu_subs.append(deepcopy(ec))
+                pending_uu_subs.append(_scale_ec_for_multiplier(ec, multiplier))
                 continue
-            for _ in range(multiplier):
-                cmds.append(deepcopy(ec))
+            cmds.append(_scale_ec_for_multiplier(ec, multiplier))
     return cmds, pending_uu_subs
 
 
