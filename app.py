@@ -935,6 +935,26 @@ def api_builder_techtree_civs():
     return jsonify(sorted(td.get("techtrees", {}).keys()))
 
 
+@app.route("/api/builder/bonuses/catalog")
+def api_builder_bonuses_catalog():
+    from bonus_names import unsupported_bonuses
+    with open(Path(__file__).parent / "bonus_names.json", encoding="utf-8") as f:
+        names = json.load(f)
+    with open(Path(__file__).parent / "team_bonus_names.json", encoding="utf-8") as f:
+        team_names = json.load(f)
+    unsupported_ids = {b["id"] for b in unsupported_bonuses()}
+    civ_bonuses = [
+        {"id": int(k), "label": v}
+        for k, v in sorted(names.items(), key=lambda x: int(x[0]))
+        if int(k) not in unsupported_ids
+    ]
+    team_bonuses = [
+        {"id": int(k), "label": v}
+        for k, v in sorted(team_names.items(), key=lambda x: int(x[0]))
+    ]
+    return jsonify({"civ": civ_bonuses, "team": team_bonuses})
+
+
 @app.route("/builder/build", methods=["POST"])
 def builder_build():
     # TODO: wire to the existing build pipeline

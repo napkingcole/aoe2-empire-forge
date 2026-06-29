@@ -337,6 +337,46 @@ details[open] > summary::before {
   }
 }
 
+/* ── Bonus picker ────────────────────────────────────────────────────────────── */
+.bonus-search-wrap {
+  position: relative;
+}
+.bonus-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: oklch(from var(--body-bg) calc(l + 0.08) c h);
+  border: 1px solid var(--accent-2);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.bonus-result-item {
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  border-bottom: 1px solid oklch(from var(--body-bg) calc(l + 0.14) c h);
+  line-height: 1.35;
+}
+.bonus-result-item:last-child { border-bottom: none; }
+.bonus-result-item:hover {
+  background: oklch(from var(--accent-2) l c h / 0.12);
+  color: var(--accent-2);
+}
+.bonus-slot {
+  background: oklch(from var(--body-bg) calc(l + 0.04) c h);
+  border: 1px solid oklch(from var(--body-bg) calc(l + 0.16) c h);
+  border-radius: 6px;
+  padding: 7px 10px;
+}
+.bonus-slot-label {
+  color: var(--body-text);
+  line-height: 1.35;
+}
+
 /* ── Builder landing ─────────────────────────────────────────────────────────── */
 .builder-option-card {
   transition: border-color 0.15s, transform 0.1s;

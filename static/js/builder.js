@@ -61,8 +61,12 @@ document.getElementById("btn-prev").addEventListener("click", () => {
   if (currentStep > 1) showStep(currentStep - 1);
 });
 
-document.getElementById("btn-next").addEventListener("click", () => {
+document.getElementById("btn-next").addEventListener("click", async () => {
   if (!validateStep(currentStep)) return;
+  if (currentStep === 2) {
+    // Entering step 3 — ensure catalog is loaded first
+    await loadBonusCatalog();
+  }
   if (currentStep < TOTAL_STEPS) showStep(currentStep + 1);
 });
 
@@ -248,6 +252,161 @@ function populateReview() {
   `;
 }
 
+// ── Bonuses ───────────────────────────────────────────────────────────────────
+
+const MAX_CIV_BONUSES = 6;
+let _bonusCatalog  = [];   // [{id, label}]
+let _teamCatalog   = [];
+
+async function loadBonusCatalog() {
+  if (_bonusCatalog.length) return;
+  try {
+    const res  = await fetch("/api/builder/bonuses/catalog");
+    const data = await res.json();
+    _bonusCatalog = data.civ;
+    _teamCatalog  = data.team;
+  } catch (e) {
+    console.warn("Could not load bonus catalog:", e);
+  }
+}
+
+// Shared search + results logic for both civ and team pickers
+function wireSearchPicker({ inputId, resultsId, catalog, onSelect }) {
+  const input   = document.getElementById(inputId);
+  const results = document.getElementById(resultsId);
+
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    if (!q) { results.classList.add("d-none"); results.innerHTML = ""; return; }
+
+    const matches = catalog
+      .filter(b => b.label.toLowerCase().includes(q))
+      .slice(0, 40);
+
+    if (!matches.length) {
+      results.innerHTML = `<div class="bonus-result-item text-muted">No results for "${q}"</div>`;
+    } else {
+      results.innerHTML = matches.map(b =>
+        `<div class="bonus-result-item" data-id="${b.id}">${b.label}</div>`
+      ).join("");
+      results.querySelectorAll(".bonus-result-item[data-id]").forEach(el => {
+        el.addEventListener("click", () => {
+          onSelect(parseInt(el.dataset.id, 10), el.textContent);
+          input.value = "";
+          results.classList.add("d-none");
+          results.innerHTML = "";
+        });
+      });
+    }
+    results.classList.remove("d-none");
+  });
+
+  // Close results when clicking outside
+  document.addEventListener("click", e => {
+    if (!input.contains(e.target) && !results.contains(e.target)) {
+      results.classList.add("d-none");
+    }
+  }, true);
+}
+
+function renderCivBonusSlots() {
+  const container = document.getElementById("bonus-slots");
+  const hint      = document.getElementById("bonus-empty-hint");
+  const bonuses   = draft.bonuses || [];
+
+  // Remove existing slots (not the hint)
+  container.querySelectorAll(".bonus-slot").forEach(el => el.remove());
+
+  hint.style.display = bonuses.length ? "none" : "";
+
+  bonuses.forEach((b, idx) => {
+    const label = (_bonusCatalog.find(c => c.id === b.id) || {}).label || `Bonus #${b.id}`;
+    const slot  = document.createElement("div");
+    slot.className = "bonus-slot d-flex align-items-center gap-2";
+    slot.innerHTML = `
+      <span class="bonus-slot-label flex-grow-1 small">${label}</span>
+      <div class="input-group input-group-sm" style="width:auto;">
+        <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h); font-size:.75rem; color:var(--accent-3)">×</span>
+        <select class="form-select form-select-sm bonus-mult" data-idx="${idx}" style="width:4.5rem;">
+          <option value="1" ${b.multiplier===1?'selected':''}>1</option>
+          <option value="2" ${b.multiplier===2?'selected':''}>2</option>
+          <option value="3" ${b.multiplier===3?'selected':''}>3</option>
+        </select>
+      </div>
+      <button class="btn btn-sm bonus-remove" data-idx="${idx}"
+        style="background:transparent; border:1px solid oklch(from var(--body-bg) calc(l + 0.2) c h); color:var(--accent-3); padding:2px 7px; line-height:1.5;"
+        title="Remove bonus">✕</button>
+    `;
+    container.appendChild(slot);
+  });
+
+  // Wire multiplier changes
+  container.querySelectorAll(".bonus-mult").forEach(sel => {
+    sel.addEventListener("change", e => {
+      const idx = parseInt(e.target.dataset.idx, 10);
+      draft.bonuses[idx].multiplier = parseInt(e.target.value, 10);
+      saveDraft();
+    });
+  });
+
+  // Wire remove buttons
+  container.querySelectorAll(".bonus-remove").forEach(btn => {
+    btn.addEventListener("click", e => {
+      const idx = parseInt(e.target.dataset.idx, 10);
+      draft.bonuses.splice(idx, 1);
+      saveDraft();
+      renderCivBonusSlots();
+    });
+  });
+}
+
+function addCivBonus(id) {
+  if (!draft.bonuses) draft.bonuses = [];
+  if (draft.bonuses.length >= MAX_CIV_BONUSES) {
+    alert(`You can have at most ${MAX_CIV_BONUSES} civilization bonuses.`);
+    return;
+  }
+  if (draft.bonuses.find(b => b.id === id)) {
+    alert("That bonus is already selected.");
+    return;
+  }
+  draft.bonuses.push({ id, multiplier: 1 });
+  saveDraft();
+  renderCivBonusSlots();
+}
+
+function renderTeamBonusSlot() {
+  const container = document.getElementById("team-bonus-slot");
+  const hint      = document.getElementById("team-bonus-empty-hint");
+  const tb        = draft.team_bonus;
+
+  container.querySelectorAll(".bonus-slot").forEach(el => el.remove());
+  hint.style.display = tb ? "none" : "";
+
+  if (!tb) return;
+  const label = (_teamCatalog.find(c => c.id === tb.id) || {}).label || `Team Bonus #${tb.id}`;
+  const slot  = document.createElement("div");
+  slot.className = "bonus-slot d-flex align-items-center gap-2";
+  slot.innerHTML = `
+    <span class="bonus-slot-label flex-grow-1 small">${label}</span>
+    <button class="btn btn-sm bonus-remove"
+      style="background:transparent; border:1px solid oklch(from var(--body-bg) calc(l + 0.2) c h); color:var(--accent-3); padding:2px 7px; line-height:1.5;"
+      title="Remove team bonus">✕</button>
+  `;
+  slot.querySelector(".bonus-remove").addEventListener("click", () => {
+    delete draft.team_bonus;
+    saveDraft();
+    renderTeamBonusSlot();
+  });
+  container.appendChild(slot);
+}
+
+function setTeamBonus(id) {
+  draft.team_bonus = { id, multiplier: 1 };
+  saveDraft();
+  renderTeamBonusSlot();
+}
+
 // ── Tech tree ─────────────────────────────────────────────────────────────────
 
 // KM's main.js calls this when the user clicks "Save Tech Tree"
@@ -348,6 +507,25 @@ async function init() {
 
   await populateTtTemplates();
   updateTreeSummary();
+
+  // Pre-load bonus catalog in background so step 3 is instant
+  loadBonusCatalog().then(() => {
+    wireSearchPicker({
+      inputId:   "bonus-search",
+      resultsId: "bonus-results",
+      catalog:   _bonusCatalog,
+      onSelect:  (id) => addCivBonus(id),
+    });
+    wireSearchPicker({
+      inputId:   "team-bonus-search",
+      resultsId: "team-bonus-results",
+      catalog:   _teamCatalog,
+      onSelect:  (id) => setTeamBonus(id),
+    });
+    // Restore saved bonuses
+    renderCivBonusSlots();
+    renderTeamBonusSlot();
+  });
 
   showStep(1);
 }

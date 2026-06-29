@@ -169,14 +169,53 @@
 
 {# Step 3 — Bonuses #}
 <div class="wizard-panel d-none" id="panel-3">
+
+  {# Civ bonuses #}
   <div class="card mb-3">
     <div class="card-header"><span class="step-badge">3</span> Civilization Bonuses</div>
-    <div class="card-body py-5 text-center">
-      <i class="fa-solid fa-bolt fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
-      <h5 class="fw-semibold mb-2">Civ Bonuses</h5>
-      <p class="text-muted mb-0">Bonus picker coming soon — choose up to 6 preset bonuses from the catalog and set multipliers.</p>
+    <div class="card-body">
+      <p class="text-muted small mb-3">Choose up to 6 civilization bonuses. Search by keyword to find bonuses, then click to add them.</p>
+
+      <div class="bonus-search-wrap mb-3">
+        <div class="input-group">
+          <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
+            <i class="fa-solid fa-magnifying-glass text-muted"></i>
+          </span>
+          <input type="text" id="bonus-search" class="form-control" placeholder="Search bonuses… e.g. infantry, archer, farm, gold" autocomplete="off">
+        </div>
+        <div id="bonus-results" class="bonus-results d-none"></div>
+      </div>
+
+      <div id="bonus-slots" class="d-flex flex-column gap-2">
+        <div class="text-muted small fst-italic" id="bonus-empty-hint">No bonuses added yet.</div>
+      </div>
     </div>
   </div>
+
+  {# Team bonus #}
+  <div class="card mb-3">
+    <div class="card-header">
+      <i class="fa-solid fa-people-group me-1" style="color: var(--accent-2);"></i> Team Bonus
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">Choose one bonus that applies to all allied civilizations.</p>
+
+      <div class="bonus-search-wrap mb-3">
+        <div class="input-group">
+          <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
+            <i class="fa-solid fa-magnifying-glass text-muted"></i>
+          </span>
+          <input type="text" id="team-bonus-search" class="form-control" placeholder="Search team bonuses…" autocomplete="off">
+        </div>
+        <div id="team-bonus-results" class="bonus-results d-none"></div>
+      </div>
+
+      <div id="team-bonus-slot">
+        <div class="text-muted small fst-italic" id="team-bonus-empty-hint">No team bonus selected.</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 {# Step 4 — Unique Unit #}
@@ -215,14 +254,17 @@
   </div>
 </div>
 
-{# Step 7 — Team Bonus #}
+{# Step 7 — Team Bonus (included in step 3) #}
 <div class="wizard-panel d-none" id="panel-7">
   <div class="card mb-3">
     <div class="card-header"><span class="step-badge">7</span> Team Bonus</div>
-    <div class="card-body py-5 text-center">
-      <i class="fa-solid fa-people-group fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
-      <h5 class="fw-semibold mb-2">Team Bonus</h5>
-      <p class="text-muted mb-0">Team bonus picker coming soon — choose one bonus from the catalog that applies to all allies.</p>
+    <div class="card-body py-4 text-center">
+      <i class="fa-solid fa-circle-check fa-3x mb-3" style="color: var(--accent-2); opacity: 0.7;"></i>
+      <h5 class="fw-semibold mb-2">Team Bonus is on Step 3</h5>
+      <p class="text-muted mb-3">The team bonus picker is part of the Bonuses step.</p>
+      <button class="btn btn-outline-primary btn-sm" onclick="showStep(3)">
+        <i class="fa-solid fa-arrow-left me-1"></i> Go to Bonuses
+      </button>
     </div>
   </div>
 </div>
