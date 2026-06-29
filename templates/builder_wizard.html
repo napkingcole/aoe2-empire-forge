@@ -121,10 +121,48 @@
 <div class="wizard-panel d-none" id="panel-2">
   <div class="card mb-3">
     <div class="card-header"><span class="step-badge">2</span> Tech Tree</div>
-    <div class="card-body py-5 text-center">
-      <i class="fa-solid fa-diagram-project fa-3x mb-3" style="color: var(--accent-2); opacity: 0.6;"></i>
-      <h5 class="fw-semibold mb-2">Tech Tree Selection</h5>
-      <p class="text-muted mb-0">Interactive tech tree coming next — you'll toggle each unit, building, and upgrade on or off for your civ.</p>
+    <div class="card-body">
+
+      <p class="text-muted small mb-3">
+        Choose which units, buildings, and techs your civilization has access to.
+        Click a node in the tree to remove it; click again to restore it.
+      </p>
+
+      <div class="row g-3 align-items-end mb-4">
+        <div class="col-md-5">
+          <label class="form-label fw-semibold" for="tt-template-select">Start from template</label>
+          <select id="tt-template-select" class="form-select">
+            <option value="full">Full tree (all nodes enabled)</option>
+          </select>
+          <div class="form-text">Load a vanilla civ's tree as your starting point, then customise.</div>
+        </div>
+        <div class="col-md-auto">
+          <button id="btn-open-tree" class="btn btn-primary">
+            <i class="fa-solid fa-diagram-project me-1"></i>
+            <span id="btn-open-tree-label">Open Tech Tree</span>
+          </button>
+        </div>
+      </div>
+
+      {# Summary shown after the tree has been configured #}
+      <div id="tt-summary" class="d-none">
+        <hr style="border-color: oklch(from var(--body-bg) calc(l + 0.15) c h);">
+        <div class="d-flex gap-4 flex-wrap">
+          <div class="stat-box text-center px-4">
+            <div class="stat-number" id="tt-count-units">—</div>
+            <div class="stat-label">Units</div>
+          </div>
+          <div class="stat-box text-center px-4">
+            <div class="stat-number" id="tt-count-buildings">—</div>
+            <div class="stat-label">Buildings</div>
+          </div>
+          <div class="stat-box text-center px-4">
+            <div class="stat-number" id="tt-count-techs">—</div>
+            <div class="stat-label">Techs</div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -226,5 +264,8 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='aoe2techtree/js/svg.min.js') }}"></script>
+<script src="{{ url_for('static', filename='aoe2techtree/js/techtree.js') }}"></script>
+<script src="{{ url_for('static', filename='aoe2techtree/js/main.js') }}"></script>
 <script src="{{ url_for('static', filename='js/builder.js') }}"></script>
 {% endblock %}

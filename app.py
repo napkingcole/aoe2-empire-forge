@@ -892,6 +892,49 @@ def api_builder_meta():
     })
 
 
+_TECHTREE_DATA_PATH = Path(__file__).parent / "static" / "aoe2techtree" / "data" / "data.json"
+_techtree_data: dict | None = None
+
+def _load_techtree_data() -> dict:
+    global _techtree_data
+    if _techtree_data is None:
+        with open(_TECHTREE_DATA_PATH, encoding="utf-8") as f:
+            _techtree_data = json.load(f)
+    return _techtree_data
+
+
+@app.route("/api/builder/techtree")
+def api_builder_techtree():
+    """Return a localtree array ([[unitIds], [buildingIds], [techIds]]) for a
+    given civ, or the full master tree if civ=full (or omitted)."""
+    civ = request.args.get("civ", "full")
+    td  = _load_techtree_data()
+
+    if civ == "full":
+        return jsonify({
+            "units":     [int(k) for k in td["data"]["units"].keys()],
+            "buildings": [int(k) for k in td["data"]["buildings"].keys()],
+            "techs":     [int(k) for k in td["data"]["techs"].keys()],
+        })
+
+    techtrees = td.get("techtrees", {})
+    if civ not in techtrees:
+        return jsonify({"error": f"Unknown civ: {civ}"}), 404
+
+    tt = techtrees[civ]
+    return jsonify({
+        "units":     [n["id"] for n in tt.get("units",     [])],
+        "buildings": [n["id"] for n in tt.get("buildings", [])],
+        "techs":     [n["id"] for n in tt.get("techs",     [])],
+    })
+
+
+@app.route("/api/builder/techtree/civs")
+def api_builder_techtree_civs():
+    td = _load_techtree_data()
+    return jsonify(sorted(td.get("techtrees", {}).keys()))
+
+
 @app.route("/builder/build", methods=["POST"])
 def builder_build():
     # TODO: wire to the existing build pipeline

@@ -248,6 +248,81 @@ function populateReview() {
   `;
 }
 
+// ── Tech tree ─────────────────────────────────────────────────────────────────
+
+// KM's main.js calls this when the user clicks "Save Tech Tree"
+window.setTechTree = function (localtree) {
+  draft.tree = {
+    units:     localtree[0],
+    buildings: localtree[1],
+    techs:     localtree[2],
+  };
+  saveDraft();
+  updateTreeSummary();
+};
+
+function updateTreeSummary() {
+  const t = draft.tree;
+  if (!t || !t.units) return;
+  document.getElementById("tt-summary").classList.remove("d-none");
+  document.getElementById("tt-count-units").textContent     = t.units.length;
+  document.getElementById("tt-count-buildings").textContent = t.buildings.length;
+  document.getElementById("tt-count-techs").textContent     = t.techs.length;
+  document.getElementById("btn-open-tree-label").textContent = "Edit Tech Tree";
+}
+
+async function populateTtTemplates() {
+  try {
+    const res  = await fetch("/api/builder/techtree/civs");
+    const civs = await res.json();
+    const sel  = document.getElementById("tt-template-select");
+
+    // Prepend "current draft" option if user already has a tree
+    if (draft.tree && draft.tree.units) {
+      const curr = document.createElement("option");
+      curr.value = "_current";
+      curr.textContent = "— Continue editing current tree —";
+      sel.insertBefore(curr, sel.firstChild);
+      sel.value = "_current";
+    }
+
+    civs.forEach(name => {
+      const o  = document.createElement("option");
+      o.value  = name;
+      o.textContent = name;
+      sel.appendChild(o);
+    });
+  } catch (e) {
+    console.warn("Could not load techtree civ list:", e);
+  }
+}
+
+document.getElementById("btn-open-tree").addEventListener("click", async () => {
+  const templateVal = document.getElementById("tt-template-select").value;
+
+  let treeToLoad;
+
+  // If user has a saved tree and chose "current", load it; otherwise fetch template
+  if (draft.tree && draft.tree.units && templateVal === "_current") {
+    treeToLoad = [draft.tree.units, draft.tree.buildings, draft.tree.techs];
+  } else {
+    try {
+      const url = templateVal === "full"
+        ? "/api/builder/techtree?civ=full"
+        : `/api/builder/techtree?civ=${encodeURIComponent(templateVal)}`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      treeToLoad = [data.units, data.buildings, data.techs];
+    } catch (e) {
+      alert("Failed to load tech tree data. Please try again.");
+      return;
+    }
+  }
+
+  // canEdit 3 = builder edit mode (toggle nodes, Save Tech Tree callback)
+  showTechtree(treeToLoad, 0, 3, 0, "", "/static");
+});
+
 // ── Bootstrap: fetch meta & restore draft ────────────────────────────────────
 
 async function init() {
@@ -270,6 +345,9 @@ async function init() {
   } catch (err) {
     console.error("Failed to load builder metadata:", err);
   }
+
+  await populateTtTemplates();
+  updateTreeSummary();
 
   showStep(1);
 }
