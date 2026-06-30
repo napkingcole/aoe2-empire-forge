@@ -1327,7 +1327,7 @@ def _find_upgrade_tech(dat: DatFile, from_unit: int, to_unit: int,
 # which createCivBonus-style bonuses are actually covered.
 HANDLED_BONUS_IDS = {
     156, 157, 158, 152, 155, 261, 189, 210, 208, 120, 125, 234, 137, 138,
-    290, 103, 247, 221, 133, 330, 332, 308, 309, 310,
+    290, 131, 103, 247, 221, 133, 330, 332, 308, 309, 310,
     123, 209, 325,
     195, 258, 277, 278, 279,
     239, 400,
@@ -1536,9 +1536,27 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                                 name="C-Bonus, -50% barracks tech cost")
         return True
 
+    # ── No houses + −100 starting wood (Huns iconic bonus) ───────────────────
+    if bonus_id == 131:
+        _TECH_MINUS100_WOOD = 225    # "C-Bonus, -100w" — fires after TC spawn
+        _TECH_REMOVE_HOUSES = 289    # "[EW] Remove hun houses" — EC_SET on house units
+        for tid in (_TECH_MINUS100_WOOD, _TECH_REMOVE_HOUSES):
+            new_tid = _allocate_tech(dat, tid, civ_index)
+            if new_tid >= 0:
+                _multiply_effect(dat, dat.techs[new_tid].effect_id, multiplier)
+        # The vanilla Huns TT effect hardcodes EC_RESOURCE a=4 b=1 d=2000
+        # (population headroom) which is what actually removes the house cap.
+        # Techs 225/289 do not contain this command, so we add it to the TT effect.
+        tt_eff_id = dat.civs[civ_index].tech_tree_id
+        dat.effects[tt_eff_id].effect_commands.append(
+            EffectCommand(type=1, a=4, b=1, c=-1, d=2000.0)
+        )
+        return True
+
     # ── Cavalier in Castle Age ────────────────────────────────────────────────
     if bonus_id == 103:          # Cavalier upgrade available in Castle Age
         _TECH_CAVALIER = 209
+        _TECH_PALADIN = 265
         _KNIGHT_MAKE_AVAIL = 166   # "Knight (make avail)" — fires at Castle Age
         src = dat.techs[_TECH_CAVALIER]
         new_tech = deepcopy(src)
@@ -1554,12 +1572,30 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             dat.effects.append(new_eff)
             new_tech.effect_id = len(dat.effects) - 1
         dat.techs.append(new_tech)
-        # Disable the global Cavalier tech (209) for this civ so it doesn't
-        # reappear as a duplicate button in Imperial Age.
+        new_cav_id = len(dat.techs) - 1
+
+        # Allocate a civ-specific Paladin tech whose prerequisite points to
+        # new_cav_id instead of 209, so it unlocks after the Castle-Age Cavalier.
+        pal_src = dat.techs[_TECH_PALADIN]
+        new_pal = deepcopy(pal_src)
+        new_pal.civ = civ_index
+        reqs = list(new_pal.required_techs)
+        if _TECH_CAVALIER in reqs:
+            reqs[reqs.index(_TECH_CAVALIER)] = new_cav_id
+        new_pal.required_techs = tuple(reqs)
+        pal_eid = pal_src.effect_id
+        if 0 <= pal_eid < len(dat.effects):
+            new_pal_eff = deepcopy(dat.effects[pal_eid])
+            dat.effects.append(new_pal_eff)
+            new_pal.effect_id = len(dat.effects) - 1
+        dat.techs.append(new_pal)
+
+        # Disable both originals so neither renders a duplicate button.
         tt_eff_id = dat.civs[civ_index].tech_tree_id
-        dat.effects[tt_eff_id].effect_commands.append(
-            EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(_TECH_CAVALIER))
-        )
+        dat.effects[tt_eff_id].effect_commands.extend([
+            EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(_TECH_CAVALIER)),
+            EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(_TECH_PALADIN)),
+        ])
         return True
 
     if bonus_id == 247:          # Parthian Tactics available in Castle Age

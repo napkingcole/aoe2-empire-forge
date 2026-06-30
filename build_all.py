@@ -29,6 +29,7 @@ import zipfile
 from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
+from version import __version__ as _APP_VERSION
 from civ_appender import (apply_civ, assign_all_languages,
     DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET)
 from build_civ import (
@@ -251,7 +252,8 @@ def _build_combined_data_zip(dat,
         os.unlink(tmp_path)
 
     info_json = json.dumps(
-        {"Title": mod_name, "CacheStatus": 0, "Description": "", "Author": ""},
+        {"Title": mod_name, "CacheStatus": 0, "Description": "", "Author": "",
+         "builder_version": _APP_VERSION},
         separators=(",", ":"),
     ).encode("utf-8")
 
@@ -287,7 +289,8 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                             lang_values: set[int] | None = None) -> bytes:
     """Package all UI assets for every civ into one ui zip."""
     info_json = json.dumps(
-        {"Title": f"{mod_name} (UI)", "CacheStatus": 0, "Description": "", "Author": ""},
+        {"Title": f"{mod_name} (UI)", "CacheStatus": 0, "Description": "", "Author": "",
+         "builder_version": _APP_VERSION},
         separators=(",", ":"),
     ).encode("utf-8")
 
