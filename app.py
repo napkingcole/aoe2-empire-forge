@@ -12,17 +12,20 @@ Routes:
 """
 
 import contextlib
+import hashlib
 import io
 import json
 import os
+import re
 import tempfile
 import threading
 import uuid
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from flask import (Flask, flash, jsonify, redirect, render_template,
-                   request, send_file, session, url_for)
+                   request, send_file, send_from_directory, session, url_for)
 
 from bonus_names import (bonus_name, skip_reason, unsupported_bonuses,
                          unsupported_unique_units, unsupported_unique_techs,
@@ -51,6 +54,109 @@ app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
 
 SESSIONS_DIR = Path(tempfile.gettempdir()) / "aoe2civbuilder"
 SESSIONS_DIR.mkdir(exist_ok=True)
+
+# Shared parsed DatFile objects — keyed by path; all endpoints share this cache
+# so the DAT is only parsed once regardless of which endpoint hits it first.
+_DAT_OBJ_CACHE: dict[str, Any] = {}
+
+def _get_dat(dat_path: str):
+    """Return cached DatFile; parse and cache on first call (shared across endpoints)."""
+    if dat_path not in _DAT_OBJ_CACHE:
+        _DAT_OBJ_CACHE[dat_path] = load_dat(dat_path)
+    return _DAT_OBJ_CACHE[dat_path]
+
+# Read-only DAT cache keyed by path — used only for cost lookups, never mutated.
+_DAT_COSTS_CACHE: dict[str, dict] = {}
+
+# UU stat cache — keyed by dat_path → {km_idx: stats_dict}
+_UU_STATS_CACHE: dict[str, dict] = {}
+
+# Bump this when _UU_TRAITS changes so stale disk caches are automatically invalidated.
+_UU_STATS_DISK_VERSION = 3  # bumped: fixed cost fallback + amount-mode cost parsing
+
+_CACHE_DIR = Path(__file__).parent / ".cache"
+
+
+def _uu_stats_cache_path(dat_path: str) -> Path:
+    h = hashlib.md5(dat_path.encode()).hexdigest()[:10]
+    return _CACHE_DIR / f"uu_stats_{h}.json"
+
+
+def _load_uu_stats_disk(dat_path: str) -> dict | None:
+    """Return cached stats dict from disk, or None if missing/stale."""
+    try:
+        f = _uu_stats_cache_path(dat_path)
+        if not f.exists():
+            return None
+        with open(f) as fh:
+            data = json.load(fh)
+        if data.get("_v") != _UU_STATS_DISK_VERSION:
+            return None
+        if int(data.get("_mtime", 0)) != int(Path(dat_path).stat().st_mtime):
+            return None
+        return {int(k): v for k, v in data.items() if not k.startswith("_")}
+    except Exception:
+        return None
+
+
+def _save_uu_stats_disk(dat_path: str, stats: dict) -> None:
+    """Write stats to disk so future app restarts skip the slow parse."""
+    try:
+        _CACHE_DIR.mkdir(exist_ok=True)
+        payload: dict = {
+            "_v":     _UU_STATS_DISK_VERSION,
+            "_mtime": int(Path(dat_path).stat().st_mtime),
+        }
+        payload.update({str(k): v for k, v in stats.items()})
+        with open(_uu_stats_cache_path(dat_path), "w") as fh:
+            json.dump(payload, fh)
+    except Exception:
+        pass
+
+
+# Attack/armor class IDs → player-readable names.
+# Classes not listed here are internal/base classes and are not shown as bonuses.
+_ATTACK_CLASS_NAMES: dict[int, str] = {
+    1:  "infantry",
+    2:  "turtle ships",
+    5:  "elephants",
+    8:  "cavalry",
+    15: "archers",
+    16: "ships",
+    19: "unique units",
+    20: "siege weapons",
+    21: "buildings",
+    27: "spearmen",
+    28: "cavalry archers",
+    29: "eagle warriors",
+    30: "camels",
+    34: "fishing ships",
+}
+# These are base armor classes present on nearly every unit — not meaningful bonuses.
+_SKIP_ATTACK_CLASSES: frozenset[int] = frozenset({3, 4, 6, 7, 9, 10, 11, 12, 13, 14,
+                                                   17, 18, 22, 23, 24, 25, 26, 31, 32,
+                                                   33, 35, 36, 37, 38, 39})
+
+# Hand-curated special traits that cannot be derived from numeric stats.
+_UU_TRAITS: dict[int, list[str]] = {
+    6:  ["Deals trample damage to nearby units"],
+    11: ["Can fire while moving"],
+    20: ["Extended melee reach — attacks units 2 tiles away"],
+    23: ["Fires 5 projectiles per volley"],
+    24: ["Extremely fast training time"],
+    25: ["Retreats to a safe distance after throwing"],
+    27: ["Projectile can hit multiple units in a line"],
+    29: ["Low accuracy (60%) — high speed projectile"],
+    31: ["Becomes a lighter dismounted unit on death (50 HP)"],
+    34: ["Attack ignores all melee and pierce armor"],
+    36: ["Can construct Donjon buildings"],
+    38: ["Shields nearby allied units from arrow projectiles"],
+    78: ["Projectile passes through multiple targets"],
+    80: ["Can toggle between melee and ranged attack mode"],
+    84: ["Ranged attack extends to 13 tiles when targeting buildings"],
+    # Custom
+    39: ["Cannot be converted by Monks"],
+}
 
 # Populated once by a background thread shortly after startup; stays None if
 # the check hasn't finished yet, is offline, or no update is available.
@@ -863,6 +969,11 @@ _ARCH_OPTIONS = [
 ]
 
 
+@app.route("/resources/uniticons/<path:filename>")
+def serve_unit_icon(filename):
+    return send_from_directory(Path(__file__).parent / "uniticons", filename)
+
+
 @app.route("/builder")
 def builder_landing():
     return render_template("builder_landing.html")
@@ -966,6 +1077,243 @@ def api_builder_bonuses_catalog():
     return jsonify({"civ": civ_bonuses, "team": team_bonuses})
 
 
+def _unit_stats_block(u) -> dict:
+    """Extract display stats from a genieutils unit object."""
+    t50 = u.type_50
+    bonuses = []
+    for a in t50.attacks:
+        if a.class_ in _SKIP_ATTACK_CLASSES or a.amount <= 0:
+            continue
+        name = _ATTACK_CLASS_NAMES.get(a.class_)
+        if name:
+            bonuses.append([name, a.amount])
+    bonuses.sort(key=lambda x: -x[1])
+    try:
+        train_time = int(u.creatable.train_time)
+    except (AttributeError, TypeError):
+        train_time = None
+    return {
+        "hp":          u.hit_points,
+        "attack":      t50.displayed_attack,
+        "melee_armor": t50.displayed_melee_armour,
+        "pierce_armor": u.creatable.displayed_pierce_armour,
+        "range":       t50.max_range if t50.max_range > 0 else None,
+        "min_range":   t50.min_range if t50.min_range > 0 else None,
+        "reload_time": round(t50.reload_time, 2),
+        "speed":       round(u.speed, 2),
+        "train_time":  train_time,
+        "bonuses":     bonuses,
+    }
+
+
+def _build_all_uu_stats(dat_path: str) -> dict[int, dict]:
+    """
+    Compute full stats for every UU from the DAT file.
+    Returns km_idx → {base, elite, ranged, traits, cost}.
+    Cached in _UU_STATS_CACHE keyed by dat_path.
+    """
+    import civ_appender as ca
+    import km_custom_uu as kcu
+
+    if dat_path in _UU_STATS_CACHE:
+        return _UU_STATS_CACHE[dat_path]
+
+    # Try the disk cache — survives app restarts, keyed by DAT mtime.
+    cached = _load_uu_stats_disk(dat_path)
+    if cached is not None:
+        _UU_STATS_CACHE[dat_path] = cached
+        return cached
+
+    dat  = _get_dat(dat_path)
+    out: dict[int, dict] = {}
+    vanilla_keys = set(ca._KM_UU_TECHS.keys())
+    presets      = getattr(kcu, "PRESETS", {})
+    RES          = {0: "F", 1: "W", 2: "S", 3: "G"}
+
+    # ── Vanilla units ────────────────────────────────────────────────────────
+    for km_idx in vanilla_keys:
+        try:
+            t1, t2 = ca._KM_UU_TECHS[km_idx]
+            eff1   = dat.effects[dat.techs[t1].effect_id]
+            eff2   = dat.effects[dat.techs[t2].effect_id]
+
+            base_uid: int | None = None
+            for cmd in eff1.effect_commands:
+                if cmd.type == 2:          # EC_ENABLE
+                    base_uid = int(cmd.a); break
+
+            if base_uid is None:
+                continue
+
+            # Match EC_UPGRADE in elite tech where a == base_uid
+            elite_uid: int | None = None
+            for cmd in eff2.effect_commands:
+                if cmd.type == 3 and int(cmd.a) == base_uid:
+                    elite_uid = int(cmd.b); break
+
+            bu = dat.civs[0].units[base_uid]
+            eu = dat.civs[0].units[elite_uid] if elite_uid is not None else None
+
+            cost_parts: list[str] = []
+            for civ_i in range(min(2, len(dat.civs))):
+                parts = [
+                    f"{int(rc.amount)}{RES[rc.type]}"
+                    for rc in dat.civs[civ_i].units[base_uid].creatable.resource_costs
+                    if rc.type in RES and rc.amount > 0
+                ]
+                if parts:
+                    cost_parts = parts
+                    break
+
+            out[km_idx] = {
+                "base":   _unit_stats_block(bu),
+                "elite":  _unit_stats_block(eu) if eu else None,
+                "ranged": bu.type_50.max_range > 0,
+                "traits": _UU_TRAITS.get(km_idx, []),
+                "cost":   " ".join(cost_parts),
+            }
+        except Exception:
+            pass
+
+    # ── Custom units (PRESETS) ───────────────────────────────────────────────
+    for km_idx, p in presets.items():
+        try:
+            base_uid = p.get("base_unit_id")
+            bu = dat.civs[0].units[base_uid] if base_uid is not None else None
+
+            hp      = p.get("hp",     (None, None)) or (None, None)
+            speed_p = p.get("speed",  (None, None)) or (None, None)
+            da      = p.get("displayed_attack",    (None, None)) or (None, None)
+            dma     = p.get("displayed_melee_armor",  (None, None)) or (None, None)
+            dpa     = p.get("displayed_pierce_armor", (None, None)) or (None, None)
+
+            mode    = p.get("mode", "replace")
+            attacks = p.get("attacks") or ([], [])
+
+            # Derive displayed_attack from class 4 (melee) when not set explicitly
+            def _class4_atk(atk_list):
+                if not atk_list:
+                    return None
+                for item in atk_list:
+                    if len(item) == 2 and isinstance(item[0], int) and item[0] == 4:
+                        return item[1]
+                return None
+
+            def _r(pair, fallback):
+                b = pair[0] if pair[0] is not None else (fallback() if callable(fallback) else fallback)
+                e = pair[1] if pair[1] is not None else b
+                return b, e
+
+            # For attack: prefer explicit da, then class-4 amount, then base_unit field
+            c4_base  = _class4_atk(attacks[0] if attacks else [])
+            c4_elite = _class4_atk(attacks[1] if len(attacks) > 1 else [])
+            base_da  = da[0] if da[0] is not None else (c4_base if c4_base is not None else
+                        (bu.type_50.displayed_attack if bu else None))
+            elite_da = da[1] if da[1] is not None else (c4_elite if c4_elite is not None else base_da)
+
+            base_ma, elite_ma = _r(dma, lambda: bu.type_50.displayed_melee_armour    if bu else None)
+            base_pa, elite_pa = _r(dpa, lambda: bu.creatable.displayed_pierce_armour if bu else None)
+
+            base_range  = bu.type_50.max_range   if bu else None
+            base_reload = bu.type_50.reload_time if bu else None
+            base_speed  = round(bu.speed, 2)     if bu else None
+
+            spd_b = speed_p[0] or base_speed
+            spd_e = (speed_p[1] if len(speed_p) > 1 else None) or spd_b
+
+            # Attack bonuses — only works cleanly in 'replace' mode; skip class 4 (main attack)
+            def _parse_attacks(lst):
+                result = []
+                if mode != "replace":
+                    return result
+                for item in (lst or []):
+                    if len(item) == 2 and isinstance(item[0], int):
+                        cls, amt = item[0], item[1]
+                        # class 4 = melee base attack, already shown as Attack field
+                        if cls == 4 or cls in _SKIP_ATTACK_CLASSES or amt <= 0:
+                            continue
+                        nm = _ATTACK_CLASS_NAMES.get(cls)
+                        if nm:
+                            result.append([nm, amt])
+                return sorted(result, key=lambda x: -x[1])
+
+            base_bon  = _parse_attacks(attacks[0] if attacks else [])
+            elite_bon = _parse_attacks(attacks[1] if len(attacks) > 1 else [])
+
+            # Training cost — unit_cost may be None
+            uc       = p.get("unit_cost") or {}
+            uu_tup   = uc.get("uu") if uc else None
+            cost_mode = uc.get("mode", "full")
+            if cost_mode == "full" and isinstance(uu_tup, (tuple, list)) and len(uu_tup) == 4:
+                cost_str = " ".join(f"{int(v)}{['F','W','S','G'][i]}"
+                                    for i, v in enumerate(uu_tup) if v)
+            elif cost_mode == "amount" and isinstance(uu_tup, list) and bu is not None:
+                # [(slot_idx, amount), ...] — slot index into base unit's ResourceCosts array,
+                # keeps the inherited resource type, only amount is overridden.
+                slot_amts = {int(si): int(amt) for si, amt in uu_tup}
+                parts = []
+                for si, rc in enumerate(bu.creatable.resource_costs):
+                    amt = slot_amts.get(si, int(rc.amount))
+                    if rc.type in RES and amt > 0:
+                        parts.append(f"{amt}{RES[rc.type]}")
+                cost_str = " ".join(parts) if parts else None
+            else:
+                cost_str = None
+
+            hp_b = hp[0]
+            hp_e = hp[1] if len(hp) > 1 and hp[1] is not None else hp_b
+
+            def _tier(hp_v, da_v, ma_v, pa_v, spd_v, bons):
+                return {
+                    "hp":          hp_v,
+                    "attack":      da_v,
+                    "melee_armor": ma_v,
+                    "pierce_armor":pa_v,
+                    "range":       base_range if base_range and base_range > 0 else None,
+                    "min_range":   None,
+                    "reload_time": round(base_reload, 2) if base_reload else None,
+                    "speed":       spd_v,
+                    "bonuses":     bons,
+                }
+
+            out[km_idx] = {
+                "base":   _tier(hp_b, base_da,  base_ma,  base_pa,  spd_b, base_bon),
+                "elite":  _tier(hp_e, elite_da, elite_ma, elite_pa, spd_e, elite_bon),
+                "ranged": bool(base_range and base_range > 0),
+                "traits": _UU_TRAITS.get(km_idx, []),
+                "cost":   cost_str,
+            }
+        except Exception:
+            pass
+
+    _UU_STATS_CACHE[dat_path] = out
+    _save_uu_stats_disk(dat_path, out)   # persist so future restarts skip the parse
+    return out
+
+
+@app.route("/api/builder/prewarm")
+def api_builder_prewarm():
+    """Start DAT parsing + UU stat computation in a background thread.
+
+    Called by the JS as soon as dat_path is known (step 1 page load), so the
+    cache is warm long before the user reaches the UU picker step.
+    """
+    dat_path = request.args.get("dat_path", "").strip()
+    if not dat_path:
+        return jsonify({"status": "skipped", "reason": "no dat_path"})
+    if dat_path in _UU_STATS_CACHE:
+        return jsonify({"status": "already_cached"})
+
+    def _warm():
+        try:
+            _build_all_uu_stats(dat_path)
+        except Exception as exc:
+            print(f"[prewarm] {exc}")
+
+    threading.Thread(target=_warm, daemon=True).start()
+    return jsonify({"status": "warming"})
+
+
 @app.route("/api/builder/uu/catalog")
 def api_builder_uu_catalog():
     import civ_appender as ca
@@ -988,7 +1336,6 @@ def api_builder_uu_catalog():
         16: "105_50730.png",   # Tarkan
         17: "117_50730.png",   # War Wagon
         18: "133_50730.png",   # Genoese Crossbowman
-        19: "385_50730.png",   # Ghulam
         21: "099_50730.png",   # Magyar Huszar
         22: "114_50730.png",   # Boyar
         23: "190_50730.png",   # Organ Gun
@@ -1006,42 +1353,158 @@ def api_builder_uu_catalog():
         38: "370_50730.png",   # Hussite Wagon
         45: "405_50730.png",   # Centurion
         82: "408_50730.png",   # Monaspa
-        85: "436_50730.png",   # Tiger Cavalry
-        87: "461_50730.png",   # Liao Dao
+        84: "436_50730.png",   # Fire Archer
+        86: "461_50730.png",   # Iron Pagoda
+        87: "463_50730.png",   # Liao Dao
+        3:  "045_50730.png",   # Teutonic Knight
+        9:  "039_50730.png",   # Janissary
+        10: "038_50730.png",   # Berserk
+        15: "108_50730.png",   # Plumed Archer
+        19: "385_50730.png",   # Ghulam
+        20: "097_50730.png",   # Kamayuk
+        25: "197_50730.png",   # Gbeto
+        28: "233_50730.png",   # Karambit Warrior
+        31: "249_50730.png",   # Konnik
+        78: "390_50730.png",   # Chakram Thrower
+        79: "386_50730.png",   # Urumi Swordsman
+        80: "389_50730.png",   # Ratha
+        81: "407_50730.png",   # Composite Bowman
+        83: "434_50730.png",   # White Feather Guard
+        85: "432_50730.png",   # Tiger Cavalry
+        # Custom units
+        39: "377_50730.png",   # Crusader Knight
+        40: "351_50730.png",   # Xolotl Warrior
+        41: "058_50730.png",   # Saboteur
+        42: "299_50730.png",   # Ninja
+        43: "144_50730.png",   # Flamethrower
+        44: "300_50730.png",   # Photonman
+        46: "319_50730.png",   # Apukispay
+        48: "166_50730.png",   # Amazon Warrior
+        49: "165_50730.png",   # Amazon Archer
+        50: "297_50730.png",   # Iroquois Warrior
+        51: "357_50730.png",   # Varangian Guard
+        52: "260_50730.png",   # Gendarme
+        54: "379_50730.png",   # Ritterbruder
+        55: "256_50730.png",   # Kazak
+        56: "376_50730.png",   # Szlachcic
+        58: "236_50730.png",   # Rajput
+        60: "207_50730.png",   # Numidian Javelinman
+        61: "350_50730.png",   # Sosso Guard
+        62: "136_50730.png",   # Swiss Pikeman
+        63: "359_50730.png",   # Headhunter
+        64: "368_50730.png",   # Teulu
+        65: "366_50730.png",   # Maillotins
+        66: "206_50730.png",   # Hashashin
+        67: "163_50730.png",   # Highlander
+        68: "361_50730.png",   # Stradiot
+        69: "216_50730.png",   # Ahosi
+        70: "162_50730.png",   # Landsknecht
+        71: "181_50730.png",   # Clibinarii
+        72: "259_50730.png",   # Silahtar
+        73: "119_50730.png",   # Jaridah
+        74: "081_50730.png",   # Wolf Warrior
+        76: "375_50730.png",   # Castellan
+        53: "317_50730.png",   # Cuahchiqueh
+        57: "244_50730.png",   # Cuirassier
+        59: "180_50730.png",   # Seljuk Archer
+        77: "306_50730.png",   # Wind Warrior
     }
 
     unsupported = {47, 75}
     vanilla_keys = set(ca._KM_UU_TECHS.keys())
     catalog = []
+
+    # Load full stats from DAT if a path is available
+    dat_path = request.args.get("dat_path", "")
+    stats_map: dict[int, dict] = {}
+    if dat_path:
+        try:
+            stats_map = _build_all_uu_stats(dat_path)
+        except Exception:
+            pass
+
     for km_idx, name in ca._KM_UU_NAMES.items():
         if km_idx in unsupported:
             continue
         icon_file = _ICON_MAP.get(km_idx)
+        is_vanilla = km_idx in vanilla_keys
+        entry_stats = stats_map.get(km_idx)
+
         catalog.append({
-            "km_idx": km_idx,
-            "name":   name,
-            "vanilla": km_idx in vanilla_keys,
-            "icon":  f"/resources/uniticons/{icon_file}" if icon_file else None,
+            "km_idx":        km_idx,
+            "name":          name,
+            "vanilla":       is_vanilla,
+            "icon":          f"/resources/uniticons/{icon_file}" if icon_file else None,
+            "stats":         entry_stats,
+            "training_cost": entry_stats["cost"] if entry_stats else None,
         })
     catalog.sort(key=lambda x: x["name"])
     return jsonify(catalog)
+
+
+def _split_ut_label(label: str) -> tuple[str, str]:
+    """'Garland Wars (Infantry +4 attack)' → ('Garland Wars', 'Infantry +4 attack')"""
+    m = re.match(r'^(.+?)\s*\((.+)\)\s*$', label)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return label, ""
 
 
 @app.route("/api/builder/ut/catalog")
 def api_builder_ut_catalog():
     from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
 
-    castle = [
-        {"id": i, "label": label}
-        for i, label in enumerate(_UNIQUE_CASTLE_STRINGS)
-        if i in _KM_CASTLE_UT_TECHS
-    ]
-    imperial = [
-        {"id": i, "label": label}
-        for i, label in enumerate(_UNIQUE_IMP_STRINGS)
-        if i in _KM_IMP_UT_TECHS
-    ]
+    castle = []
+    for i, label in enumerate(_UNIQUE_CASTLE_STRINGS):
+        if i not in _KM_CASTLE_UT_TECHS:
+            continue
+        name, desc = _split_ut_label(label)
+        castle.append({"id": i, "label": label, "name": name, "desc": desc})
+
+    imperial = []
+    for i, label in enumerate(_UNIQUE_IMP_STRINGS):
+        if i not in _KM_IMP_UT_TECHS:
+            continue
+        name, desc = _split_ut_label(label)
+        imperial.append({"id": i, "label": label, "name": name, "desc": desc})
+
     return jsonify({"castle": castle, "imperial": imperial})
+
+
+@app.route("/api/builder/ut/costs")
+def api_builder_ut_costs():
+    """Return vanilla tech research costs (from DAT) for all UT catalog entries."""
+    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
+    dat_path = request.args.get("dat_path", "").strip()
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"castle": {}, "imperial": {}})
+
+    if dat_path not in _DAT_COSTS_CACHE:
+        try:
+            dat = _get_dat(dat_path)
+            RES_MAP = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+
+            def _tech_cost(tech_id: int) -> dict | None:
+                if tech_id >= len(dat.techs):
+                    return None
+                t = dat.techs[tech_id]
+                cost = {"food": 0, "wood": 0, "stone": 0, "gold": 0}
+                for rc in t.resource_costs:
+                    if rc.type in RES_MAP and rc.amount > 0:
+                        cost[RES_MAP[rc.type]] = int(rc.amount)
+                time_s = (t.research_locations[0].research_time
+                          if t.research_locations else 60)
+                return {"cost": cost, "time": int(time_s)}
+
+            castle   = {str(k): v for k, tid in _KM_CASTLE_UT_TECHS.items()
+                        if (v := _tech_cost(tid)) is not None}
+            imperial = {str(k): v for k, tid in _KM_IMP_UT_TECHS.items()
+                        if (v := _tech_cost(tid)) is not None}
+            _DAT_COSTS_CACHE[dat_path] = {"castle": castle, "imperial": imperial}
+        except Exception:
+            return jsonify({"castle": {}, "imperial": {}})
+
+    return jsonify(_DAT_COSTS_CACHE[dat_path])
 
 
 @app.route("/builder/build", methods=["POST"])
@@ -1096,6 +1559,33 @@ def builder_download():
     if not out_file or not Path(out_file).exists():
         return "No wizard mod file available — please build first.", 404
     return send_file(out_file, as_attachment=True, download_name=out_name)
+
+
+# ── Startup prewarm ───────────────────────────────────────────────────────────
+
+def _startup_prewarm() -> None:
+    """Auto-detect the DAT at boot and begin stat computation in the background.
+
+    By the time the user opens the browser and navigates to the UU step, the
+    slow first-run parse is usually already done (or served from disk cache).
+    """
+    try:
+        raw = find_game_dat()
+        if not raw:
+            return
+        dat_path = str(raw)
+        if dat_path in _UU_STATS_CACHE:
+            return
+        threading.Thread(
+            target=lambda: _build_all_uu_stats(dat_path),
+            daemon=True,
+            name="uu-startup-prewarm",
+        ).start()
+    except Exception:
+        pass
+
+
+_startup_prewarm()
 
 
 # ── Dev server entry point ────────────────────────────────────────────────────

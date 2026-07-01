@@ -276,6 +276,11 @@
         </div>
       </div>
 
+      {# Stats-loading notice — shown while prewarm is in progress, hidden once stats arrive #}
+      <div id="uu-stats-loading" class="alert alert-secondary d-none py-2 mb-3" role="alert" style="font-size:.82rem;">
+        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Loading extended unique unit information…
+      </div>
+
       {# Unit grid #}
       <div id="uu-grid" class="uu-grid mb-3">
         <div class="text-muted small fst-italic">Loading…</div>
@@ -315,6 +320,7 @@
             <label class="form-label fw-semibold" for="uu-description">Description <span class="text-muted fw-normal small">(optional)</span></label>
             <textarea id="uu-description" class="form-control" rows="2" maxlength="200"
                       placeholder="Short description shown on the civ selection screen."></textarea>
+            <div id="uu-cost-preview" class="form-text mt-1" style="color: var(--accent-2); font-size: 0.75rem;"></div>
           </div>
         </div>
       </div>
@@ -327,6 +333,214 @@
 
     </div>
   </div>
+
+  {# ── Stat overrides card (shown when a unit is selected) ───────────────────── #}
+  <div id="uu-overrides-card" class="card mb-3 d-none">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+      <span class="small fw-semibold" style="cursor:pointer; flex:1;"
+            data-bs-toggle="collapse" data-bs-target="#uu-overrides-body" aria-expanded="true">
+        <i class="fa-solid fa-chevron-down me-1 text-muted fa-rotate-180" style="font-size:.75rem;" id="uo-chevron"></i>
+        <i class="fa-solid fa-sliders me-1" style="color:var(--accent-2)"></i>
+        Stat Overrides
+        <span class="text-muted fw-normal ms-1">(optional — blank = game default)</span>
+        <span id="uo-badge" class="badge rounded-pill ms-1 d-none"
+              style="background:var(--accent-2); font-size:.68rem; vertical-align:middle;"></span>
+      </span>
+      <button type="button" id="btn-clear-overrides" class="btn btn-outline-secondary btn-sm py-1 ms-2">
+        <i class="fa-solid fa-rotate-left me-1"></i>Reset
+      </button>
+    </div>
+    <div class="collapse" id="uu-overrides-body">
+      <div class="card-body pb-2">
+
+        {# Column headers #}
+        <div class="row g-2 mb-2">
+          <div class="col-4"></div>
+          <div class="col-4 text-center" style="font-size:.75rem; font-weight:700; color:var(--accent-2);">Standard</div>
+          <div class="col-4 text-center" style="font-size:.75rem; font-weight:700; color:#d4a017;">Elite</div>
+        </div>
+
+        {# ── Macro for a standard two-column stat row ── #}
+        {% macro uo_row(stat_id, label, pattern="[0-9]*", inputmode="numeric", suffix="", row_id="") %}
+        <div class="row g-2 mb-2 align-items-start" {% if row_id %}id="{{ row_id }}"{% endif %}>
+          <div class="col-4 small fw-semibold" style="padding-top:.3rem;">{{ label }}</div>
+          <div class="col-4">
+            {% if suffix %}
+            <div class="input-group input-group-sm">
+              <input type="text" id="uo-{{ stat_id }}-base" class="form-control uo-input"
+                     pattern="{{ pattern }}" inputmode="{{ inputmode }}" placeholder="—" autocomplete="off">
+              <span class="input-group-text" style="font-size:.75rem;">{{ suffix }}</span>
+            </div>
+            {% else %}
+            <input type="text" id="uo-{{ stat_id }}-base" class="form-control form-control-sm uo-input"
+                   pattern="{{ pattern }}" inputmode="{{ inputmode }}" placeholder="—" autocomplete="off">
+            {% endif %}
+            <div class="uo-def" id="uo-{{ stat_id }}-base-def"></div>
+          </div>
+          <div class="col-4">
+            {% if suffix %}
+            <div class="input-group input-group-sm">
+              <input type="text" id="uo-{{ stat_id }}-elite" class="form-control uo-input"
+                     pattern="{{ pattern }}" inputmode="{{ inputmode }}" placeholder="—" autocomplete="off">
+              <span class="input-group-text" style="font-size:.75rem;">{{ suffix }}</span>
+            </div>
+            {% else %}
+            <input type="text" id="uo-{{ stat_id }}-elite" class="form-control form-control-sm uo-input"
+                   pattern="{{ pattern }}" inputmode="{{ inputmode }}" placeholder="—" autocomplete="off">
+            {% endif %}
+            <div class="uo-def" id="uo-{{ stat_id }}-elite-def"></div>
+          </div>
+        </div>
+        {% endmacro %}
+
+        {{ uo_row("hp",     "HP",         pattern="[1-9][0-9]*") }}
+        {{ uo_row("attack", "Attack",     pattern="[0-9]*") }}
+        {{ uo_row("melee",  "M. Armor",   pattern="-?[0-9]*") }}
+        {{ uo_row("pierce", "P. Armor",   pattern="-?[0-9]*") }}
+        {{ uo_row("range",  "Range",      pattern="[0-9]*\.?[0-9]*", inputmode="decimal", row_id="uo-row-range") }}
+        {{ uo_row("reload", "Reload",     pattern="[0-9]*\.?[0-9]*", inputmode="decimal", suffix="s") }}
+        {{ uo_row("speed",  "Speed",      pattern="[0-9]*\.?[0-9]*", inputmode="decimal") }}
+        {{ uo_row("train",  "Train Time", pattern="[1-9][0-9]*", suffix="s") }}
+
+        {# ── Training Cost ─────────────────────────────────────────────────────── #}
+        <hr class="my-2" style="border-color:oklch(from var(--body-bg) calc(l + 0.12) c h);">
+        <div class="small fw-semibold mb-2" style="color:var(--accent-2);">
+          <i class="fa-solid fa-coins me-1"></i>Training Cost
+        </div>
+        <div class="row g-2 mb-1">
+          {% for res_id, label, color in [("food","Food","#c97c2f"),("wood","Wood","#7aab4a"),("stone","Stone","#8a9ba8"),("gold","Gold","#d4a017")] %}
+          <div class="col-6 col-md-3">
+            <label class="form-label mb-1" style="font-size:.72rem; font-weight:600; color:{{ color }};">{{ label }}</label>
+            <input type="text" id="uo-cost-{{ res_id }}" class="form-control form-control-sm uo-input"
+                   pattern="[0-9]*" inputmode="numeric" placeholder="—" autocomplete="off">
+          </div>
+          {% endfor %}
+        </div>
+        <div class="uo-def" id="uo-cost-def"></div>
+
+      </div>
+    </div>
+  </div>
+
+  {# ── Advanced flags card (shown when a unit is selected) ────────────────────── #}
+  <div id="uu-advanced-card" class="card mb-3 d-none">
+    <div class="card-header py-2" style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#uu-advanced-body" aria-expanded="false">
+      <span class="small fw-semibold">
+        <i class="fa-solid fa-gear me-1" style="color:var(--accent-2)"></i>
+        Advanced Traits
+        <span class="text-muted fw-normal ms-1">(optional)</span>
+        <span id="ua-badge" class="badge rounded-pill ms-1 d-none"
+              style="background:var(--accent-2); font-size:.68rem; vertical-align:middle;"></span>
+      </span>
+      <i class="fa-solid fa-chevron-down float-end mt-1 text-muted" style="font-size:.75rem;" id="ua-chevron"></i>
+    </div>
+    <div class="collapse" id="uu-advanced-body">
+      <div class="card-body pb-3">
+
+        <div class="row g-3">
+          {# Cannot Be Converted #}
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-no-convert">
+              <label class="form-check-label small fw-semibold" for="ua-no-convert">
+                Cannot Be Converted
+              </label>
+              <div class="form-text mt-0">Unit is immune to Monk conversion.</div>
+            </div>
+          </div>
+
+          {# Regenerates HP #}
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-regen-hp">
+              <label class="form-check-label small fw-semibold" for="ua-regen-hp">
+                Regenerates HP
+              </label>
+              <div class="form-text mt-0">Continuously heals, even during combat. Subtle: 1 HP / 5s — Noticeable: 3 HP / 2s.</div>
+            </div>
+            <div class="ua-regen-inputs d-none ms-4 mt-2">
+              <div class="d-flex gap-2 align-items-center">
+                <input type="text" id="ua-regen-amount" class="form-control form-control-sm"
+                       style="width:60px;" pattern="[1-9][0-9]*" inputmode="numeric" placeholder="1" autocomplete="off">
+                <span class="small text-muted">HP every</span>
+                <input type="text" id="ua-regen-interval" class="form-control form-control-sm"
+                       style="width:60px;" pattern="[1-9][0-9]*" inputmode="numeric" placeholder="5" autocomplete="off">
+                <span class="small text-muted">seconds</span>
+              </div>
+            </div>
+          </div>
+
+          {# Attack Ignores Armor #}
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-ignore-armor">
+              <label class="form-check-label small fw-semibold" for="ua-ignore-armor">
+                Attack Ignores Armor
+              </label>
+              <div class="form-text mt-0">Attacks deal full damage regardless of target armor (like the Leitis).</div>
+            </div>
+          </div>
+
+          {# Deals Trample Damage — only for melee units #}
+          <div class="col-12" id="ua-row-trample">
+            <div class="form-check">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-trample">
+              <label class="form-check-label small fw-semibold" for="ua-trample">
+                Deals Trample Damage
+              </label>
+              <div class="form-text mt-0">Area-of-effect melee damage to nearby enemies.</div>
+            </div>
+          </div>
+
+          {# Bonus Damage Resistance #}
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-bonus-resist">
+              <label class="form-check-label small fw-semibold" for="ua-bonus-resist">
+                Resists Bonus Damage
+              </label>
+              <div class="form-text mt-0">Unit takes reduced counter-unit bonus damage (e.g. Cataphract vs. Pikemen).</div>
+            </div>
+            <div class="ua-bonus-resist-inputs d-none ms-4 mt-2">
+              <div class="d-flex gap-2 align-items-center">
+                <input type="text" id="ua-bonus-resist-pct" class="form-control form-control-sm"
+                       style="width:60px;" pattern="[1-9][0-9]?" inputmode="numeric" placeholder="50" autocomplete="off">
+                <span class="small text-muted">% less bonus damage</span>
+              </div>
+            </div>
+          </div>
+
+          {# Charge Attack #}
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-charge">
+              <label class="form-check-label small fw-semibold" for="ua-charge">
+                Charge Attack
+              </label>
+              <div class="form-text mt-0">Deals flat bonus damage on the next attack after charging (e.g. Romans' Comitatenses, Burgundian Coustillier).</div>
+            </div>
+            <div class="ua-charge-inputs d-none ms-4 mt-2">
+              <div class="d-flex gap-3 align-items-end">
+                <div style="width:80px;">
+                  <label class="form-label mb-1" style="font-size:.72rem; color:var(--accent-3);">Bonus Dmg</label>
+                  <input type="text" id="ua-charge-pool" class="form-control form-control-sm"
+                         pattern="[1-9][0-9]*" inputmode="numeric" placeholder="10" autocomplete="off">
+                </div>
+                <div style="width:90px;">
+                  <label class="form-label mb-1" style="font-size:.72rem; color:var(--accent-3);">Recharge/s</label>
+                  <input type="text" id="ua-charge-rate" class="form-control form-control-sm"
+                         pattern="[0-9]*\.?[0-9]*" inputmode="decimal" placeholder="0.25" autocomplete="off">
+                </div>
+              </div>
+              <div class="form-text mt-1"><em>Bonus Dmg</em>: flat damage added at full charge. <em>Recharge/s</em>: energy gained per second. (Comitatenses default: 5 dmg, 0.25/s)</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 {# Macro: reusable UT panel body #}
@@ -339,87 +553,140 @@
     </div>
     <div class="card-body">
 
-      <p class="text-muted small mb-3">
-        Name your unique technology, set its cost and research time, then add up to 3 effects from the catalog.
-      </p>
-
-      {# Name + description #}
-      <div class="row g-3 mb-3">
-        <div class="col-md-6">
-          <label class="form-label fw-semibold" for="{{ prefix }}-name">
-            Tech Name <span class="text-danger">*</span>
-          </label>
-          <input type="text" id="{{ prefix }}-name" class="form-control"
-                 placeholder="e.g. Steel Stirrups" maxlength="40" autocomplete="off">
-          <div class="form-text">Displayed on the tech button in-game.</div>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label fw-semibold" for="{{ prefix }}-desc">
-            Description <span class="text-muted fw-normal small">(optional)</span>
-          </label>
-          <textarea id="{{ prefix }}-desc" class="form-control" rows="2" maxlength="200"
-                    placeholder="Short description shown on the civ selection screen."></textarea>
-        </div>
+      {# ── Mode toggle ── #}
+      <div class="btn-group w-100 mb-3" role="group" id="{{ prefix }}-mode-group">
+        <input type="radio" class="btn-check" name="{{ prefix }}-mode" id="{{ prefix }}-mode-vanilla" value="vanilla" autocomplete="off">
+        <label class="btn btn-outline-primary" for="{{ prefix }}-mode-vanilla">
+          <i class="fa-solid fa-scroll me-1"></i> Pick Vanilla Tech
+        </label>
+        <input type="radio" class="btn-check" name="{{ prefix }}-mode" id="{{ prefix }}-mode-custom" value="custom" autocomplete="off">
+        <label class="btn btn-outline-primary" for="{{ prefix }}-mode-custom">
+          <i class="fa-solid fa-flask me-1"></i> Build Custom
+        </label>
       </div>
 
-      {# Resource costs + time #}
-      <label class="form-label fw-semibold">Cost &amp; Research Time</label>
-      <div class="row g-2 mb-4">
-        <div class="col-6 col-sm-4 col-md-auto">
-          <label class="form-label small mb-1" style="color:#e07b54;">
-            <i class="fa-solid fa-drumstick-bite me-1"></i>Food
-          </label>
-          <input type="number" id="{{ prefix }}-food" class="form-control form-control-sm ut-cost-input"
-                 min="0" max="9999" value="0" style="width:80px;">
-        </div>
-        <div class="col-6 col-sm-4 col-md-auto">
-          <label class="form-label small mb-1" style="color:#8a6c3e;">
-            <i class="fa-solid fa-tree me-1"></i>Wood
-          </label>
-          <input type="number" id="{{ prefix }}-wood" class="form-control form-control-sm ut-cost-input"
-                 min="0" max="9999" value="0" style="width:80px;">
-        </div>
-        <div class="col-6 col-sm-4 col-md-auto">
-          <label class="form-label small mb-1" style="color:#9ca3af;">
-            <i class="fa-solid fa-mountain me-1"></i>Stone
-          </label>
-          <input type="number" id="{{ prefix }}-stone" class="form-control form-control-sm ut-cost-input"
-                 min="0" max="9999" value="0" style="width:80px;">
-        </div>
-        <div class="col-6 col-sm-4 col-md-auto">
-          <label class="form-label small mb-1" style="color:#fca311;">
-            <i class="fa-solid fa-coins me-1"></i>Gold
-          </label>
-          <input type="number" id="{{ prefix }}-gold" class="form-control form-control-sm ut-cost-input"
-                 min="0" max="9999" value="0" style="width:80px;">
-        </div>
-        <div class="col-6 col-sm-4 col-md-auto">
-          <label class="form-label small mb-1" style="color:#60a5fa;">
-            <i class="fa-solid fa-clock me-1"></i>Time (s)
-          </label>
-          <input type="number" id="{{ prefix }}-time" class="form-control form-control-sm ut-cost-input"
-                 min="0" max="9999" value="60" style="width:80px;">
-        </div>
-      </div>
-
-      {# Effects picker #}
-      <label class="form-label fw-semibold">Tech Effects</label>
-      <p class="text-muted small mb-2">Add up to 3 effects applied when this tech is researched. Search the same catalog as civ bonuses.</p>
-
-      <div class="bonus-search-wrap mb-3">
-        <div class="input-group">
+      {# ── Vanilla section: searchable card grid ── #}
+      <div id="{{ prefix }}-vanilla-section">
+        <div class="input-group mb-3">
           <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
             <i class="fa-solid fa-magnifying-glass text-muted"></i>
           </span>
-          <input type="text" id="{{ prefix }}-effect-search" class="form-control"
-                 placeholder="Search effects… e.g. infantry, cavalry, archer" autocomplete="off">
+          <input type="text" id="{{ prefix }}-vanilla-search" class="form-control"
+                 placeholder="Search technologies… e.g. infantry, cavalry, monk" autocomplete="off">
         </div>
-        <div id="{{ prefix }}-effect-results" class="bonus-results d-none"></div>
+        <div id="{{ prefix }}-vanilla-grid" class="ut-grid mb-3">
+          <div class="text-muted small fst-italic">Loading…</div>
+        </div>
+        <div id="{{ prefix }}-vanilla-hint" class="text-center py-2 text-muted small fst-italic">
+          <i class="fa-solid fa-hand-pointer me-1" style="color: var(--accent-2); opacity:.6;"></i>
+          Select a technology above — name, cost, and description will be auto-filled.
+        </div>
       </div>
 
-      <div id="{{ prefix }}-effect-slots" class="d-flex flex-column gap-2">
-        <div class="text-muted small fst-italic" id="{{ prefix }}-effect-empty">No effects added yet.</div>
+      {# ── Custom section: name input ── #}
+      <div id="{{ prefix }}-custom-section" style="display:none">
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" for="{{ prefix }}-name">
+              Tech Name <span class="text-danger">*</span>
+            </label>
+            <input type="text" id="{{ prefix }}-name" class="form-control"
+                   placeholder="e.g. Steel Stirrups" maxlength="40" autocomplete="off">
+            <div class="form-text">Displayed on the tech button in-game.</div>
+          </div>
+        </div>
       </div>
+
+      {# ── Shared: fields shown after tech selection or in custom mode ── #}
+      <div id="{{ prefix }}-shared-section" class="d-none">
+        <hr style="border-color: oklch(from var(--body-bg) calc(l + 0.12) c h); margin-bottom: 1rem;">
+
+        {# Vanilla mode: selected tech badge #}
+        <div id="{{ prefix }}-vanilla-selected" class="d-none mb-3">
+          <div class="d-flex align-items-center gap-2">
+            <i class="fa-solid fa-check-circle" style="color: var(--accent-2);"></i>
+            <span class="fw-semibold small">Selected: <span id="{{ prefix }}-vanilla-name" class="text-accent-2" style="color: var(--accent-2);"></span></span>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" style="font-size:.7rem;padding:2px 8px;"
+                    id="{{ prefix }}-vanilla-change">
+              Change
+            </button>
+          </div>
+        </div>
+
+        {# Description #}
+        <div class="row g-3 mb-3">
+          <div class="col-12 col-md-8">
+            <label class="form-label fw-semibold" for="{{ prefix }}-desc">
+              Description <span class="text-muted fw-normal small">(optional override)</span>
+            </label>
+            <textarea id="{{ prefix }}-desc" class="form-control" rows="2" maxlength="200"
+                      placeholder="Short description shown in the tech tooltip."></textarea>
+            <div id="{{ prefix }}-cost-preview" class="form-text mt-1" style="color: var(--accent-2); font-size: 0.75rem;"></div>
+          </div>
+        </div>
+
+        {# Resource costs + time #}
+        <label class="form-label fw-semibold">Cost &amp; Research Time</label>
+        <div class="row g-2 mb-4">
+          <div class="col-6 col-sm-4 col-md-auto">
+            <label class="form-label small mb-1" style="color:#e07b54;">
+              <i class="fa-solid fa-drumstick-bite me-1"></i>Food
+            </label>
+            <input type="number" id="{{ prefix }}-food" class="form-control form-control-sm ut-cost-input"
+                   min="0" max="9999" value="0" style="width:80px;">
+          </div>
+          <div class="col-6 col-sm-4 col-md-auto">
+            <label class="form-label small mb-1" style="color:#8a6c3e;">
+              <i class="fa-solid fa-tree me-1"></i>Wood
+            </label>
+            <input type="number" id="{{ prefix }}-wood" class="form-control form-control-sm ut-cost-input"
+                   min="0" max="9999" value="0" style="width:80px;">
+          </div>
+          <div class="col-6 col-sm-4 col-md-auto">
+            <label class="form-label small mb-1" style="color:#9ca3af;">
+              <i class="fa-solid fa-mountain me-1"></i>Stone
+            </label>
+            <input type="number" id="{{ prefix }}-stone" class="form-control form-control-sm ut-cost-input"
+                   min="0" max="9999" value="0" style="width:80px;">
+          </div>
+          <div class="col-6 col-sm-4 col-md-auto">
+            <label class="form-label small mb-1" style="color:#fca311;">
+              <i class="fa-solid fa-coins me-1"></i>Gold
+            </label>
+            <input type="number" id="{{ prefix }}-gold" class="form-control form-control-sm ut-cost-input"
+                   min="0" max="9999" value="0" style="width:80px;">
+          </div>
+          <div class="col-6 col-sm-4 col-md-auto">
+            <label class="form-label small mb-1" style="color:#60a5fa;">
+              <i class="fa-solid fa-clock me-1"></i>Time (s)
+            </label>
+            <input type="number" id="{{ prefix }}-time" class="form-control form-control-sm ut-cost-input"
+                   min="0" max="9999" value="60" style="width:80px;">
+          </div>
+        </div>
+
+        {# Effects picker — custom mode only #}
+        <div id="{{ prefix }}-effects-section">
+          <label class="form-label fw-semibold">Tech Effects</label>
+          <p class="text-muted small mb-2">Add up to 5 effects applied when this tech is researched.</p>
+
+          <div class="bonus-search-wrap mb-3">
+            <div class="input-group">
+              <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
+                <i class="fa-solid fa-magnifying-glass text-muted"></i>
+              </span>
+              <input type="text" id="{{ prefix }}-effect-search" class="form-control"
+                     placeholder="Search effects… e.g. infantry, cavalry, archer" autocomplete="off">
+            </div>
+            <div id="{{ prefix }}-effect-results" class="bonus-results d-none"></div>
+          </div>
+
+          <div id="{{ prefix }}-effect-slots" class="d-flex flex-column gap-2">
+            <div class="text-muted small fst-italic" id="{{ prefix }}-effect-empty">No effects added yet.</div>
+          </div>
+        </div>
+
+      </div>{# /shared-section #}
 
     </div>
   </div>
@@ -526,6 +793,10 @@
     Next <i class="fa-solid fa-arrow-right ms-1"></i>
   </button>
 </div>
+
+{# Singleton floating tooltips (positioned by JS) #}
+<div id="uu-stat-popup"></div>
+<div id="ut-card-tooltip"></div>
 
 {% endblock %}
 

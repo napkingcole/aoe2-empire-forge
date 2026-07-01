@@ -1,6 +1,7 @@
 /ignore/
 /voice_files/
 /__pycache__/
+/.cache/
 /AoE2-Civbuilder-main/
 /venv/
 /my_civs/

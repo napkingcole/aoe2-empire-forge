@@ -194,6 +194,22 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     uu_info          = _resolve_uu_info(civ_def, dat, slot, civ_result)
     uu_override_name = (draft.get("unique_unit") or {}).get("name", "").strip()
     uu_override_desc = (draft.get("unique_unit") or {}).get("description", "").strip()
+
+    # Extract training cost from the UU unit after apply_civ; append to description.
+    _uu_cost_str: str = ""
+    if uu_info and uu_info.get("unit_id") is not None:
+        try:
+            unit_obj = dat.civs[slot].units[uu_info["unit_id"]]
+            _RES = {0: "F", 1: "W", 2: "S", 3: "G"}
+            cost_parts = [
+                f"{int(rc.amount)}{_RES[rc.type]}"
+                for rc in unit_obj.creatable.resource_costs
+                if rc.type in _RES and rc.amount > 0
+            ]
+            if cost_parts:
+                _uu_cost_str = "Costs: " + " ".join(cost_parts)
+        except Exception:
+            pass
     uu_display = (
         uu_override_name or (uu_info["name"] if uu_info else "Unique Unit")
     )
@@ -315,13 +331,20 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             string_lines[lang].append(f'{dll + 10000} "{uu_display}"')
             if uu_override_name:
                 # In-game overrides: base name, create button text, castle hover tooltip, help
-                desc_body = uu_override_desc or uu_display
+                desc_body = uu_override_desc or ""
+                if _uu_cost_str:
+                    desc_body = (desc_body + "\\n" + _uu_cost_str) if desc_body else _uu_cost_str
                 string_lines[lang].append(f'{dll} "{uu_display}"')
                 string_lines[lang].append(f'{dll + DLL_CREATION_OFFSET} "Create {uu_display}"')
                 string_lines[lang].append(
                     f'{dll + 21000} "Create <b>{uu_display}<b>'
-                    + (f'\\n{desc_body}' if uu_override_desc else '')
+                    + (f'\\n{desc_body}' if desc_body else '')
                     + '"')
+                string_lines[lang].append(f'{dll + DLL_HELP_OFFSET} "{uu_display}"')
+            elif _uu_cost_str:
+                # No name override but still write cost to the Castle hover tooltip
+                string_lines[lang].append(
+                    f'{dll + 21000} "Create <b>{uu_display}<b>\\n{_uu_cost_str}"')
                 string_lines[lang].append(f'{dll + DLL_HELP_OFFSET} "{uu_display}"')
             else:
                 string_lines[lang].append(f'{dll + DLL_HELP_OFFSET} "{uu_display}"')
