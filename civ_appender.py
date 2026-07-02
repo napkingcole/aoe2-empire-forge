@@ -536,9 +536,28 @@ MAX_TOTAL_CIVS = 63
 # Worst case (all 3 features, all MAX_TOTAL_CIVS civs) needs
 # 63*2 + 63*2 + 3 = 255 slots; the pool has 1813, comfortable headroom.
 KM_UU_POOL_SLOTS_PER_CIV = 2   # 0=UU name, 1=Elite name.
-UT_POOL_OFFSET = MAX_TOTAL_CIVS * KM_UU_POOL_SLOTS_PER_CIV   # 126
+# UT name SIDs must be in the 44000-52678 range so that name_sid+21000 (the
+# Castle hover-tooltip slot) lands in 65000-73678 (safe and overridable).
+# The 70000-70734 range used previously put +21000 in 91000-91734, which
+# overlaps the game's language-DLL civ-picker strings (e.g. 91300 = "Click
+# to play as the Burmese") that mod key-value files cannot override.
+# CAMPAIGN_STRING_POOL index 335 is the first 44000-range entry.
+UT_POOL_OFFSET = 335                                                         # 44000-range SIDs
 UT_POOL_SLOTS_PER_CIV = 2      # 0=Castle UT name, 1=Imperial UT name.
-BONUS_FIXED_POOL_OFFSET = UT_POOL_OFFSET + MAX_TOTAL_CIVS * UT_POOL_SLOTS_PER_CIV  # 252
+BONUS_FIXED_POOL_OFFSET = UT_POOL_OFFSET + MAX_TOTAL_CIVS * UT_POOL_SLOTS_PER_CIV  # 461
+
+# UT hover-tooltip help strings: a SEPARATE pool block using IDs in the
+# 60000-68999 range (existing vanilla campaign narrative strings). These IDs
+# are used DIRECTLY as language_dll_help (not via name+100000 offset) so the
+# Castle UT research-button hover tooltip shows cost details without touching
+# the 170000-170999 live multiplayer lobby UI range.
+#   safe derivatives: +21000 = 81000-89999 (empty in vanilla)
+#                     +100000 = 160000-168999 (empty in vanilla)
+UT_HELP_POOL_OFFSET = next(
+    i for i, sid in enumerate(CAMPAIGN_STRING_POOL)
+    if 60000 <= sid <= 68999
+)  # = 1090; first pool entry in the 60000-68999 safe zone
+UT_HELP_SLOTS_PER_CIV = 2  # 0=Castle UT help, 1=Imperial UT help
 
 # Fixed (non-per-civ) sids for bonus 308/309/310 — computed once at import
 # time since CAMPAIGN_STRING_POOL is a plain list, not dependent on any
@@ -812,12 +831,23 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
     """Return a copy of ec whose d value is scaled so that applying the result
     once produces the same game effect as applying the original ec multiplier
     times.  EC_MULTIPLY compounds (d ** N); EC_ADD and EC_RESOURCE accumulate
-    (d * N); all other types are idempotent and need no scaling."""
+    (d * N); all other types are idempotent and need no scaling.
+
+    Special case: EC_ADD with c=8 (armor attribute) uses packed d values where
+    d = (armor_class_id << 8) | amount.  Only the amount byte must be scaled;
+    the class_id byte identifies which armor class to modify and must be
+    preserved unchanged.  Scaling the whole packed integer would corrupt the
+    class_id (e.g. 769 * 2 = 1538, changing class 3 → class 6)."""
     result = deepcopy(ec)
     if multiplier <= 1:
         return result
     if result.type == EC_MULTIPLY:
         result.d = result.d ** multiplier
+    elif result.type == EC_ADD and int(result.c) == 8:
+        d_int = int(result.d)
+        class_id = d_int >> 8
+        amount   = d_int & 0xFF
+        result.d = float((class_id << 8) | (amount * multiplier))
     elif result.type in (EC_ADD, EC_RESOURCE):
         result.d = result.d * multiplier
     return result
@@ -829,12 +859,18 @@ def _multiply_effect(dat: DatFile, effect_id: int, multiplier: int) -> None:
 
     Uses mathematical scaling (d**N for EC_MULTIPLY, d*N for EC_ADD/RESOURCE)
     instead of command duplication, keeping the effect command count constant
-    and avoiding engine limits on large effect lists."""
+    and avoiding engine limits on large effect lists.  See _scale_ec_for_multiplier
+    for the packed-armor (EC_ADD c=8) special case."""
     if multiplier <= 1 or effect_id < 0 or effect_id >= len(dat.effects):
         return
     for ec in dat.effects[effect_id].effect_commands:
         if ec.type == EC_MULTIPLY:
             ec.d = ec.d ** multiplier
+        elif ec.type == EC_ADD and int(ec.c) == 8:
+            d_int = int(ec.d)
+            class_id = d_int >> 8
+            amount   = d_int & 0xFF
+            ec.d = float((class_id << 8) | (amount * multiplier))
         elif ec.type in (EC_ADD, EC_RESOURCE):
             ec.d = ec.d * multiplier
 
@@ -2097,6 +2133,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     applied = 0
     extra_strings: list[dict] = []
     extra_unit_strings: list[dict] = []
+    bonus_tech_map: dict[int, int] = {}  # template_id → allocated_id for all bonus techs
     for entry in civ_bonuses:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
             continue
@@ -2105,8 +2142,13 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
 
         tech_ids = civ_bonus_techs(bonus_id)
         if tech_ids:
+            # Share _seen across the list so an elite tech's required_tech pointer
+            # reuses the already-allocated make-avail copy instead of creating a
+            # duplicate (e.g. bonus 69 [596, 597]: without sharing, _allocate_tech(597)
+            # recursively copies 596 again → two make-avail techs, orphaned elite chain).
+            seen_bonus: dict[int, int] = {}
             for tech_id in tech_ids:
-                new_tid = _allocate_tech(dat, tech_id, civ_index)
+                new_tid = _allocate_tech(dat, tech_id, civ_index, seen_bonus)
                 if new_tid < 0:
                     continue
 
@@ -2143,6 +2185,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                     # EC_UPGRADE must stay so upgrades/enables actually fire).
                     _multiply_effect(dat, eff_id, multiplier)
                 applied += 1
+            bonus_tech_map.update(seen_bonus)
             continue
 
         ec_entries = civ_bonus_ec_list(bonus_id)
@@ -2162,7 +2205,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
           + ("…" if len(skipped) > 8 else ""))
 
     bonus_result = {"applied": applied, "skipped": skipped, "extra_tech_strings": extra_strings,
-                    "extra_unit_strings": extra_unit_strings}
+                    "extra_unit_strings": extra_unit_strings, "bonus_tech_map": bonus_tech_map}
 
     # ── Team bonus (index 4) ──────────────────────────────────────────────────
     team_entries = raw[4] if len(raw) > 4 and isinstance(raw[4], list) else []
@@ -2201,6 +2244,34 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     bonus_result["team_applied"] = team_applied
     bonus_result["team_total"]   = len(team_entries)
     return bonus_result
+
+
+def _restore_elite_upgrade_location(dat: DatFile, tech_id: int, civ_index: int) -> None:
+    """Fix a cloned elite-upgrade tech whose research_location building was wiped
+    to -1 by step-0 nullification. Derives the correct building from the base
+    unit's own train_locations (e.g. Castle=82 for Organ Gun, Dock=45 for Caravel).
+    No-ops if the tech already has a valid location or is auto-fire (time==0)."""
+    if not (0 <= tech_id < len(dat.techs)):
+        return
+    t = dat.techs[tech_id]
+    if not (t.research_locations
+            and t.research_locations[0].location_id == -1
+            and t.research_locations[0].research_time > 0):
+        return
+    eid = t.effect_id
+    if not (0 <= eid < len(dat.effects)):
+        return
+    for ec in dat.effects[eid].effect_commands:
+        if ec.type == EC_UPGRADE:
+            base_uid = int(ec.a)
+            if base_uid < len(dat.civs[civ_index].units):
+                u = dat.civs[civ_index].units[base_uid]
+                if u and u.creatable and u.creatable.train_locations:
+                    bldg = u.creatable.train_locations[0].unit_id
+                    if bldg > 0:
+                        t.research_locations[0].location_id = bldg
+                        print(f"       Restored elite-upgrade location: tech {tech_id} → building {bldg}")
+            break
 
 
 def _apply_km_uu(dat: DatFile, civ_index: int, km_uu_index: int) -> tuple[int, int]:
@@ -2508,11 +2579,16 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     imperial_ut_entries = (_bonuses_raw[3]
                            if len(_bonuses_raw) > 3 and isinstance(_bonuses_raw[3], list)
                            else [])
-    _ut_pool_base = UT_POOL_OFFSET + civ_index * UT_POOL_SLOTS_PER_CIV
-    castle_ut_sid = _campaign_sid(_ut_pool_base + 0)
-    imp_ut_sid    = _campaign_sid(_ut_pool_base + 1)
-    castle_ut_desc_sid = _help_sid(castle_ut_sid)
-    imp_ut_desc_sid    = _help_sid(imp_ut_sid)
+    _ut_pool_base      = UT_POOL_OFFSET      + civ_index * UT_POOL_SLOTS_PER_CIV
+    _ut_help_pool_base = UT_HELP_POOL_OFFSET + civ_index * UT_HELP_SLOTS_PER_CIV
+    castle_ut_sid      = _campaign_sid(_ut_pool_base + 0)
+    imp_ut_sid         = _campaign_sid(_ut_pool_base + 1)
+    # desc_sid = name_sid (not name+100000 — the 170000s range is live lobby UI).
+    castle_ut_desc_sid = castle_ut_sid
+    imp_ut_desc_sid    = imp_ut_sid
+    # help_sid from UT_HELP_POOL_OFFSET (60000s, safe existing vanilla IDs).
+    castle_ut_help_sid = _campaign_sid(_ut_help_pool_base + 0)
+    imp_ut_help_sid    = _campaign_sid(_ut_help_pool_base + 1)
     castle_ut_tech_id: int | None = None
     imp_ut_tech_id:    int | None = None
     castle_ut_pending_uu_subs: list = []
@@ -2520,6 +2596,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     if castle_ut_entries or imperial_ut_entries:
         (castle_ut_sid, imp_ut_sid, castle_ut_tech_id, imp_ut_tech_id,
          castle_ut_desc_sid, imp_ut_desc_sid,
+         castle_ut_help_sid, imp_ut_help_sid,
          castle_ut_pending_uu_subs, imp_ut_pending_uu_subs) = (
             _append_unique_tech_stubs(
                 dat, civ_index, alias,
@@ -2551,6 +2628,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         # standard vanilla elite-upgrade convention — so deferred UU
         # substitutions (see UU_SUBSTITUTION_TYPES) can use this civ's real
         # elite UU rather than the catalog source civ's hardcoded one.
+        _restore_elite_upgrade_location(dat, km_uu_elite_tech_id, civ_index)
         if 0 <= km_uu_elite_tech_id < len(dat.techs):
             elite_eff_id = dat.techs[km_uu_elite_tech_id].effect_id
             if 0 <= elite_eff_id < len(dat.effects):
@@ -2651,6 +2729,10 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     if "bonuses" in civ_def:
         bonus_results = _apply_bonuses(dat, civ_index, civ_def, tb_eff_id)
         bonus_results.setdefault("extra_unit_strings", [])
+        # Bonus-allocated elite upgrade techs (e.g. Elite Caravel from bonus 69)
+        # also have their research_location wiped by step 0; restore them now.
+        for _clone_tid in bonus_results.get("bonus_tech_map", {}).values():
+            _restore_elite_upgrade_location(dat, _clone_tid, civ_index)
     bonus_results["extra_unit_strings"].extend(km_uu_custom_unit_strings)
 
     # 8. Language audio is handled in a single batch call to assign_all_languages()
@@ -2668,12 +2750,15 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         "imp_ut_sid":            imp_ut_sid,
         "castle_ut_desc_sid":    castle_ut_desc_sid,
         "imp_ut_desc_sid":       imp_ut_desc_sid,
+        "castle_ut_help_sid":    castle_ut_help_sid,
+        "imp_ut_help_sid":       imp_ut_help_sid,
         "castle_ut_tech_id":     castle_ut_tech_id,
         "imp_ut_tech_id":        imp_ut_tech_id,
         "orig_castle_ut_tech_id":  orig_castle_ut_tech_id,
         "orig_imp_ut_tech_id":    orig_imp_ut_tech_id,
         "km_uu_make_avail_tech_id": km_uu_make_avail_tech_id,
         "km_uu_elite_tech_id":      km_uu_elite_tech_id,
+        "bonus_tech_map":           bonus_results.get("bonus_tech_map", {}),
     }
 
 
@@ -2956,37 +3041,47 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
                                castle_ut_entries: list,
                                imperial_ut_entries: list,
                                ) -> tuple[int, int, int | None, int | None, int, int,
-                                          list, list]:
+                                          int, int, list, list]:
     """Create Castle UT (btn7) and Imperial UT (btn8) from bonus catalog entries.
 
     Returns (castle_name_sid, imp_name_sid, castle_tech_id, imp_tech_id,
-    castle_desc_sid, imp_desc_sid, castle_pending_uu_subs, imp_pending_uu_subs).
+    castle_desc_sid, imp_desc_sid, castle_help_sid, imp_help_sid,
+    castle_pending_uu_subs, imp_pending_uu_subs).
     name_sid comes from CAMPAIGN_STRING_POOL (UT_POOL_OFFSET block) — an
-    EXISTING vanilla id; desc_sid is DERIVED via _help_sid(name_sid) (name+
-    100000), matching the vanilla engine convention the Castle hover tooltip
-    actually keys off (see _help_sid's docstring). The pending_uu_subs lists
-    (see _build_ut_effect_cmds/UU_SUBSTITUTION_TYPES) must be patched in by
-    the caller once this civ's own elite UU id is resolved — apply_civ may
-    not know it yet at this point (e.g. KM-custom UU presets resolve later).
+    EXISTING vanilla id used for the button label, tech-tree display, and
+    lang_desc. help_sid comes from UT_HELP_POOL_OFFSET (60000-68999 range,
+    also existing vanilla ids) and is set DIRECTLY as language_dll_help so
+    the Castle UT hover tooltip shows cost detail without touching the
+    170000-170999 live multiplayer lobby UI range. The pending_uu_subs lists
+    must be patched in by the caller once the civ's elite UU id is resolved.
     """
     # Default costs: Castle UT = 300 food + 300 gold; Imperial UT = 450 food + 225 stone
     # icon_id 33 = vanilla Castle UT icon; 107 = vanilla Imperial UT icon
-    pool_base = UT_POOL_OFFSET + civ_index * UT_POOL_SLOTS_PER_CIV
+    pool_base      = UT_POOL_OFFSET      + civ_index * UT_POOL_SLOTS_PER_CIV
+    help_pool_base = UT_HELP_POOL_OFFSET + civ_index * UT_HELP_SLOTS_PER_CIV
     ut_configs = [
         (7,  "Castle UT",   102, castle_ut_entries,   300, 3, 300,  33,
-         _campaign_sid(pool_base + 0), _KM_CASTLE_UT_TECHS),
+         _campaign_sid(pool_base + 0), _campaign_sid(help_pool_base + 0), _KM_CASTLE_UT_TECHS),
         (8,  "Imperial UT", 103, imperial_ut_entries, 450, 2, 225, 107,
-         _campaign_sid(pool_base + 1), _KM_IMP_UT_TECHS),
+         _campaign_sid(pool_base + 1), _campaign_sid(help_pool_base + 1), _KM_IMP_UT_TECHS),
     ]
     used_name_sids: list[int] = []
     used_desc_sids: list[int] = []
+    used_help_sids: list[int] = []
     used_tech_ids: list[int | None] = []
     pending_subs_per_slot: list[list] = []
     for (btn, label, age_req, entries, cost_food, cost_b_type, cost_b, icon,
-         name_sid, ut_lookup) in ut_configs:
-        desc_sid = _help_sid(name_sid)
+         name_sid, help_sid, ut_lookup) in ut_configs:
+        # lang_desc = name_sid+1000 (safe: UT_POOL_OFFSET now uses 44000-range SIDs,
+        # so +1000 = 45000-range, which is empty in vanilla). build_all.py writes
+        # "TechName (effect)" at this SID so the Castle button shows the effect.
+        # lang_help = help_sid from UT_HELP_POOL_OFFSET (a 60000s existing vanilla
+        # ID): set DIRECTLY so the Castle UT hover tooltip reads from a safe range.
+        # build_all.py writes "Research <b>UT<b> (<cost>)\n..." at help_sid.
+        desc_sid = name_sid + DLL_CREATION_OFFSET
         used_name_sids.append(name_sid)
         used_desc_sids.append(desc_sid)
+        used_help_sids.append(help_sid)
         if not entries:
             used_tech_ids.append(None)
             pending_subs_per_slot.append([])
@@ -3013,8 +3108,8 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
             research_time=60,
             icon_id=icon,
             lang_name=name_sid,
-            lang_desc=_creation_sid(name_sid),
-            lang_help=desc_sid,
+            lang_desc=desc_sid,
+            lang_help=help_sid,
             lang_tech_tree=_tech_tree_sid(name_sid),
             hot_key_id=hotkey,
         )
@@ -3036,6 +3131,7 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         used_tech_ids[0] if len(used_tech_ids) > 0 else None,
         used_tech_ids[1] if len(used_tech_ids) > 1 else None,
         used_desc_sids[0], used_desc_sids[1],
+        used_help_sids[0], used_help_sids[1],
         pending_subs_per_slot[0] if len(pending_subs_per_slot) > 0 else [],
         pending_subs_per_slot[1] if len(pending_subs_per_slot) > 1 else [],
     )

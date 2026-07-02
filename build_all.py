@@ -458,6 +458,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         imp_ut_sid    = civ_result["imp_ut_sid"]
         castle_ut_desc_sid = civ_result["castle_ut_desc_sid"]
         imp_ut_desc_sid    = civ_result["imp_ut_desc_sid"]
+        castle_ut_help_sid = civ_result["castle_ut_help_sid"]
+        imp_ut_help_sid    = civ_result["imp_ut_help_sid"]
 
         # Resolve the custom UU info for description + string writes + techtree.
         uu_info = _resolve_uu_info(civ_def, dat, slot, civ_result)
@@ -591,34 +593,34 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
             # into one string; split so the button label matches vanilla
             # style (just the name) and the tooltip shows the description
             # after the cost token.
-            for name_sid_ut, desc_sid_ut, full in (
-                (castle_ut_sid, castle_ut_desc_sid, castle_ut_name),
-                (imp_ut_sid, imp_ut_desc_sid, imp_ut_name),
+            for name_sid_ut, desc_sid_ut, help_sid_ut, full in (
+                (castle_ut_sid, castle_ut_desc_sid, castle_ut_help_sid, castle_ut_name),
+                (imp_ut_sid, imp_ut_desc_sid, imp_ut_help_sid, imp_ut_name),
             ):
                 short, _, paren = full.partition(" (")
                 desc = paren.rstrip(")") if paren else ""
                 string_lines[lang].append(f'{name_sid_ut} "{short}"')
-                # The tech's language_dll_description/tech_tree fields point
-                # at name_sid_ut+1000/+150000 (vanilla offset convention —
-                # see civ_appender._creation_sid/_tech_tree_sid). Without a
-                # written override at THOSE exact ids too, the engine falls
-                # back to whatever vanilla content already lives there
-                # instead of leaving it blank — confirmed live (a Castle UT
-                # button showed an unrelated campaign dialogue line at
-                # name+1000 until this was added).
-                string_lines[lang].append(
-                    f'{name_sid_ut + DLL_CREATION_OFFSET} "Research {short}"')
-                # Castle UI reads name_sid+21000 for UT buttons (same offset as the
-                # unit train-button widget). Override it to prevent vanilla content
-                # at that slot from bleeding through (e.g. 70202+21000=91202 shows
-                # "Click to enter a filename to save your custom campaign as.").
-                string_lines[lang].append(f'{name_sid_ut + 21000} "{short}"')
-                # Full <cost> tooltip — vanilla pattern: name+cost on first line,
-                # description on second. Avoids duplicating the name as we did before.
-                help_body = f"Research <b>{short}<b> (<cost>)"
+                # lang_desc in the DAT tech points to name_sid+DLL_CREATION_OFFSET
+                # (name_sid+1000). UT_POOL_OFFSET now uses the 44000-range so +1000
+                # lands in the 45000-range (safe empty vanilla slots). The Castle
+                # button description area reads this SID and shows "Name (effect)".
+                desc_text = f"{short} ({desc})" if desc else short
+                string_lines[lang].append(f'{name_sid_ut + DLL_CREATION_OFFSET} "{desc_text}"')
+                # Castle UI reads name_sid+21000 for UT button hover tooltips.
+                # UT_POOL_OFFSET uses 44000-range SIDs so +21000 = 65000-range, which
+                # is safe and overridable (unlike the old 70000-range where +21000
+                # landed in 91000-range civ-picker DLL strings, e.g. 91300 = Burmese).
+                ut_hover = f"Research <b>{short}<b> (<cost>)"
                 if desc:
-                    help_body += f"\\n{desc}"
-                string_lines[lang].append(f'{desc_sid_ut} "{help_body}"')
+                    ut_hover += f"\\n{desc}"
+                string_lines[lang].append(f'{name_sid_ut + 21000} "{ut_hover}"')
+                # lang_help in the DAT tech points to help_sid_ut — a 60000s existing
+                # vanilla ID (UT_HELP_POOL_OFFSET block). Writing the cost tooltip here
+                # is safe: 60000-68999 are campaign narrative strings that only appear
+                # in campaign scenarios (which this mod does not affect), and the engine
+                # reads language_dll_help directly for TECH research-button hover tooltips.
+                # We do NOT write at name_sid_ut+100000 (=170000s, live lobby UI).
+                string_lines[lang].append(f'{help_sid_ut} "{ut_hover}"')
                 string_lines[lang].append(
                     f'{name_sid_ut + DLL_TECH_TREE_OFFSET} "{short}"')
             # Bonus-specific research buttons (e.g. Imperial Scorpion, Royal
