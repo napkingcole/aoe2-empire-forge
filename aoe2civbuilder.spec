@@ -20,6 +20,7 @@ a = Analysis(
         ('vanilla/aoe2techtree_strings', 'vanilla/aoe2techtree_strings'),
         ('bonus_catalog_raw.json', '.'),
         ('bonus_names.json', '.'),
+        ('team_bonus_names.json', '.'),
         ('civilizations.json', '.'),
         ('aiconfig.json', '.'),
         ('futuravailableunits.json', '.'),
