@@ -680,9 +680,14 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 uu_dll = uu_info["dll_name"]
                 string_lines[lang].append(f'{uu_dll + 10000} "{uu_display}"')
                 string_lines[lang].append(f'{uu_dll + DLL_HELP_OFFSET} "{uu_display}"')
+                # Castle train-button hover reads name+21000. KM-custom UUs
+                # write this via extra_unit_strings/ext_sid; vanilla UUs need
+                # it written here or a stale campaign string bleeds through.
+                string_lines[lang].append(f'{uu_dll + 21000} "{uu_display}"')
             if uu_elite_dll and uu_elite_name:
                 string_lines[lang].append(f'{uu_elite_dll + 10000} "{uu_elite_name}"')
                 string_lines[lang].append(f'{uu_elite_dll + DLL_HELP_OFFSET} "{uu_elite_name}"')
+                string_lines[lang].append(f'{uu_elite_dll + 21000} "{uu_elite_name}"')
 
         # Button PNGs (104×104 civ picker emblem).
         # Use the canonical civTechTrees name (e.g. "britons"), not the DAT

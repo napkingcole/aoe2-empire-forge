@@ -308,6 +308,19 @@ and 47 cover the full stable roster (knights, camels, scouts, elephants, steppe 
 <!-- 
   Template for new entries:
 
+## 2026-07-03 — Vanilla UU Castle train-button hover shows wrong unit name
+
+**Symptom:** A civ using a vanilla UU (e.g. Teutonic Knight) replacing a civ slot whose original UU had a different name (e.g. Ethiopians / Shotel Warrior) showed the replaced civ's unit name and description in the Castle train-button hover tooltip.
+
+**Root cause:** `build_all.py` writes the UU display name to `dll_name + 10000` (tech tree) and `dll_name + DLL_HELP_OFFSET` (+100000) for vanilla UUs, but not to `dll_name + 21000` — the slot the Castle train-button hover reads from. KM-custom UUs had this covered via `ext_sid` in the `extra_unit_strings` path. For vanilla UUs the `+21000` slot was left unwritten, so the game fell back to whatever vanilla campaign/scenario string existed at that SID, which for the Ethiopians slot happened to be "Shotel Warrior (fragile infantry, high attack)".
+
+**Fix:** Added `dll_name + 21000` write for both the normal and elite vanilla UU in the string block in `build_all.py`.
+
+**Commit:** (2026-07-03)
+
+---
+
+<!-- 
 ## YYYY-MM-DD — Short description
 
 **Symptom:** What the user saw / what broke in-game.
