@@ -65,6 +65,20 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "1.7.0": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Team bonus labels displayed the wrong text in-game and in the builder — team bonuses now read from the correct name list",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Team bonus #30 (Military buildings +5 population room) was silently never applied — now correctly implemented",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #35 (Infantry +20% HP) was allocating dead Castle and Imperial stubs that did nothing — trimmed to the single correct Feudal tech",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #55 (Stable units +1 pierce armor in Castle &amp; Imperial Age) only applied in Imperial Age — Castle Age pierce armor now also fires correctly",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #280 (Folwark replaces the Mill) was allocating 7 extra empty/unrelated techs — trimmed to the correct 4-tech Poles chain",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #300 (Camel Scouts available in Feudal Age) produced a 0-command tech — now uses a direct enable command that correctly unlocks unit 1755",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #26 (TC/Dock work rate per age) had a trailing blank tech — now resolves to a single tech covering all four age variants",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #105 (Economic upgrades −33% food) previously allocated 10 dead stubs — food discount now correctly applies to all 16 standard eco upgrade techs at game start",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #318 (Start with a Mule Cart) had a blank placeholder tech removed; the actual spawn tech now fires cleanly",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Specific mod fix: Elite Organ Gun/Caravel upgrade buttons missing; UT hover showing wrong civ name; Castle UT showing no effect description; Carrack ×2 giving 0 armor instead of +2",
+        "Known limitation noted: Bonus #105 applies the food discount but the 'one age earlier' portion is not yet implemented",
+        "Known limitation noted: Bonuses #81 (no buildings to age up), #283 (Chemistry/HC in Castle Age), and #352 (Siege Engineers in Castle Age) require further coding to accommodate.",
+    ],
     "1.67": [
         "<strong class=\"color-accent-2\">VOICE LINES:</strong> Your selected civs voice lines will now be properly set in-game",
         "<strong class=\"color-accent-2\">Castle/Wonder Skins:</strong> Your selected castle and wonder skins will be properly set in-game",
