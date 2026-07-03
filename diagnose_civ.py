@@ -59,6 +59,11 @@ _bn_path = Path(__file__).parent / "bonus_names.json"
 if _bn_path.exists():
     _BONUS_NAMES = json.loads(_bn_path.read_text(encoding="utf-8"))
 
+_TEAM_BONUS_NAMES: dict[str, str] = {}
+_tbn_path = Path(__file__).parent / "team_bonus_names.json"
+if _tbn_path.exists():
+    _TEAM_BONUS_NAMES = json.loads(_tbn_path.read_text(encoding="utf-8"))
+
 
 # ── EC formatting ─────────────────────────────────────────────────────────────
 
@@ -151,6 +156,12 @@ def _is_invisible_button(dat: DatFile, tech_id: int) -> bool:
 
 def _bonus_label(bonus_id: int, multiplier: int = 1) -> str:
     name = _BONUS_NAMES.get(str(bonus_id), "")
+    mult = f" ×{multiplier}" if multiplier != 1 else ""
+    desc = f"  ({name})" if name else ""
+    return f"[{bonus_id}]{mult}{desc}"
+
+def _team_bonus_label(bonus_id: int, multiplier: int = 1) -> str:
+    name = _TEAM_BONUS_NAMES.get(str(bonus_id), "")
     mult = f" ×{multiplier}" if multiplier != 1 else ""
     desc = f"  ({name})" if name else ""
     return f"[{bonus_id}]{mult}{desc}"
@@ -349,7 +360,7 @@ def diagnose_one(dat: DatFile, civ_def: dict,
                 continue
             tid  = int(entry[0])
             mult = int(entry[1]) if len(entry) > 1 else 1
-            print(f"    {_bonus_label(tid, mult)}")
+            print(f"    {_team_bonus_label(tid, mult)}")
         applied = b_res.get("team_applied", 0)
         total   = b_res.get("team_total", len(team_list))
         ok = "✓" if applied == total else "⚠"

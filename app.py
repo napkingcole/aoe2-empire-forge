@@ -28,7 +28,7 @@ from bonus_names import (bonus_name, skip_reason, unsupported_bonuses,
                          unsupported_unique_units, unsupported_unique_techs,
                          unsupported_team_bonuses)
 from build_all import (_build_combined_data_zip, _build_combined_ui_zip,
-                       _ut_name, _ut_bonus_id, _BONUS_NAMES,
+                       _ut_name, _ut_bonus_id, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
@@ -564,7 +564,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     if not isinstance(entry, list):
                         continue
                     bid = str(entry[0])
-                    txt = _BONUS_NAMES.get(bid, "")
+                    txt = _TEAM_BONUS_NAMES.get(bid, "")
                     if txt:
                         desc_parts.append(f"• {txt} \\n")
             full_desc = "".join(desc_parts)

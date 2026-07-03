@@ -9,3 +9,4 @@
 .claude
 .DS_Store
 .claude_tmp
+.cache/

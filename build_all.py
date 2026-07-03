@@ -166,6 +166,8 @@ _UNIQUE_IMP_STRINGS = [
 
 _BONUS_NAMES: dict[str, str] = json.loads(
     (Path(__file__).parent / "bonus_names.json").read_text(encoding="utf-8"))
+_TEAM_BONUS_NAMES: dict[str, str] = json.loads(
+    (Path(__file__).parent / "team_bonus_names.json").read_text(encoding="utf-8"))
 
 
 def _load_vanilla_civ_descriptions() -> dict[int, str]:
@@ -549,7 +551,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 if not isinstance(entry, list):
                     continue
                 bid = str(entry[0])
-                txt = _BONUS_NAMES.get(bid, "")
+                txt = _TEAM_BONUS_NAMES.get(bid, "")
                 if txt:
                     tb_lines.append(txt)
             if tb_lines:
@@ -831,6 +833,12 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     size_mb = out_path.stat().st_size / 1024 / 1024
     print(f"  → {out_path}  ({size_mb:.1f} MB)")
     print("Done.")
+    print()
+    print("Known bonus limitations (partial implementation):")
+    print("  [81]  No buildings required to age up — NOT IMPLEMENTED (requires engine-level tech prereq change)")
+    print("  [105] Economic upgrades −33% food — food discount applied; 'one age earlier' NOT implemented")
+    print("  [283] Chemistry + Hand Cannoneer in Castle Age — NOT IMPLEMENTED (gate-stub mechanism, cloning insufficient)")
+    print("  [352] Siege Engineers in Castle Age — NOT IMPLEMENTED (gate-stub mechanism, cloning insufficient)")
 
 
 def main() -> None:
