@@ -88,7 +88,7 @@ def _find_civ_slot(dat, name: str) -> int | None:
 
 
 def _decode_flag(civ_def: dict) -> bytes | None:
-    """Decode customFlagData base64 PNG/JPG and return PNG bytes, or None if absent."""
+    """Decode customFlagData base64 PNG/JPG, resize to 104×104, return PNG bytes."""
     import io
     raw = civ_def.get("customFlagData", "")
     if not raw:
@@ -103,16 +103,20 @@ def _decode_flag(civ_def: dict) -> bytes | None:
         img_bytes = base64.b64decode(raw)
     except Exception:
         return None
-    # If not already PNG, convert via Pillow.
-    if not img_bytes.startswith(b'\x89PNG'):
-        try:
-            from PIL import Image
-            buf = io.BytesIO()
-            Image.open(io.BytesIO(img_bytes)).save(buf, format="PNG")
-            img_bytes = buf.getvalue()
-        except Exception:
-            return None
-    return img_bytes
+    # Normalise to 104×104 PNG via Pillow (handles JPEG conversion + resize in one pass).
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(img_bytes))
+        if img.size != (104, 104):
+            img = img.resize((104, 104), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        # Pillow unavailable or corrupt — return raw bytes only if already PNG.
+        if img_bytes.startswith(b'\x89PNG'):
+            return img_bytes
+        return None
 
 
 def _build_ui_zip(civ_def: dict, ui_civ_name: str, name_string_id: int) -> bytes:
