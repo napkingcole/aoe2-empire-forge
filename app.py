@@ -65,7 +65,7 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
-    "1.7.0": [
+    "1.7.1": [
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Team bonus labels displayed the wrong text in-game and in the builder — team bonuses now read from the correct name list",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Team bonus #30 (Military buildings +5 population room) was silently never applied — now correctly implemented",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #35 (Infantry +20% HP) was allocating dead Castle and Imperial stubs that did nothing — trimmed to the single correct Feudal tech",
