@@ -21,6 +21,11 @@ The "opt-out" pool. Every make-avail and upgrade tech for every unit line appear
 2. Determines which techs this civ needs (via reverse enable/upgrade maps from tree[0]) → `keep_enabled`
 3. Writes `type=102` commands for everything in `all_disableable - keep_enabled`
 
+#### Proxy Unit Pattern (Camel Scout / Camel Rider)
+Some make-avail techs enable a **proxy unit** rather than the canonical unit visible to the player. Tech 235 "Make Camels Available" enables unit 1755 (CAMELSC / Camel Scout), not unit 329 (Camel Rider). The Camel Scout is the Feudal Age form; it upgrades to Camel Rider in Castle Age, and tech 236 upgrades both 1755 and 329 → 330 (Heavy Camel Rider).
+
+Because `enable_map[329]` was empty (tech 235 only names 1755 in its EC_ENABLE), any custom civ with 329 in tree[0] would accidentally disable tech 235, making camel riders untrainable. **Step 2b** in `_apply_tree_wiring` fixes this by detecting equivalences via shared upgrade destinations (units that both feed into the same Heavy Camel via tech 236 are equivalent) and propagating make-avail techs across the group.
+
 ### Pool 2: type=8 (Unlock Tech)
 The "opt-in" pool. Some techs (Battle Elephant tech 630, Elephant Archer tech 480) are NOT in any civ's type=102 list by default — they're disabled globally and each interested civ must add a `type=8` command to unlock them. Without type=8, the unit never appears even if it's in tree[0].
 

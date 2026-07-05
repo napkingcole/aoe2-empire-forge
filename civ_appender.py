@@ -729,6 +729,36 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
             elif c.type == 3:                    # EC_UPGRADE → produces new unit b
                 upgrade_map.setdefault(c.b, []).append(tech_id)
 
+    # ── Step 2b: Extend enable_map for "proxy unit" equivalences.
+    # Some make-avail techs enable a proxy unit (e.g. 1755 CAMELSC) rather than
+    # the canonical unit the user puts in tree[0] (e.g. 329 CVLRY/Camel Rider).
+    # The link: a single upgrade tech upgrades BOTH the proxy and the canonical
+    # to the same destination (tech 236 upgrades 1755→330 and 329→330).  Detect
+    # these groups by collecting, per upgrade tech, which source units share the
+    # same destination, then propagate make-avail entries across each group.
+    upgrade_sources: dict[int, set[int]] = {}  # dest_unit → equivalent source set
+    for tech_id in all_disableable:
+        if tech_id >= len(dat.techs):
+            continue
+        eid = dat.techs[tech_id].effect_id
+        if eid < 0 or eid >= len(dat.effects):
+            continue
+        per_dest: dict[int, list[int]] = {}
+        for c in dat.effects[eid].effect_commands:
+            if c.type == 3:
+                per_dest.setdefault(int(c.b), []).append(int(c.a))
+        for dest, srcs in per_dest.items():
+            if len(srcs) > 1:
+                upgrade_sources.setdefault(dest, set()).update(srcs)
+    for sources in upgrade_sources.values():
+        combined: set[int] = set()
+        for src in sources:
+            combined.update(enable_map.get(src, []))
+        for src in sources:
+            new_entries = combined - set(enable_map.get(src, []))
+            if new_entries:
+                enable_map.setdefault(src, []).extend(new_entries)
+
     # ── Step 3: Compute "keep enabled" = techs the civ must NOT disable.
     keep_enabled: set[int] = set(tree_techs)  # directly specified researchable techs
     for uid in tree_units | tree_buildings:
@@ -1363,7 +1393,7 @@ def _find_upgrade_tech(dat: DatFile, from_unit: int, to_unit: int,
 # which createCivBonus-style bonuses are actually covered.
 HANDLED_BONUS_IDS = {
     156, 157, 158, 152, 155, 261, 189, 210, 208, 120, 125, 234, 137, 138,
-    290, 131, 103, 247, 221, 133, 330, 332, 308, 309, 310,
+    290, 131, 103, 247, 283, 81, 352, 221, 133, 330, 332, 308, 309, 310,
     123, 209, 325,
     195, 258, 277, 278, 279,
     239, 400,
@@ -1659,6 +1689,115 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             dat.effects[tt_eff_id].effect_commands.append(
                 EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(orig_tid))
             )
+        return True
+
+    if bonus_id == 283:          # Chemistry and Hand Cannoneer available in Castle Age
+        # Mirror of the Bohemian design, using the deep-copy pattern from bonus 247.
+        # Chemistry (47) is a University Imperial Age tech.  We clone it with a
+        # Castle Age gate and disable the original so only one button appears.
+        # HC make-avail (tech 85) fires when Chemistry (47) is done — but since we
+        # disabled 47 and cloned it as a new ID, we also clone tech 85 to fire
+        # when our civ-specific Chemistry clone fires.
+        _CHEMISTRY     = 47
+        _HC_MAKE_AVAIL = 85    # auto-fire; EC_ENABLE unit 5 (HCANR)
+        _CASTLE_AGE    = 102
+
+        # ── Civ-specific Chemistry clone, available at Castle Age ──────────
+        chem_src = dat.techs[_CHEMISTRY]
+        new_chem = deepcopy(chem_src)
+        new_chem.civ = civ_index
+        new_chem.required_techs = (_CASTLE_AGE, -1, -1, -1, -1, -1)
+        new_chem.required_tech_count = 1
+        chem_eid = chem_src.effect_id
+        if 0 <= chem_eid < len(dat.effects):
+            new_chem_eff = deepcopy(dat.effects[chem_eid])
+            dat.effects.append(new_chem_eff)
+            new_chem.effect_id = len(dat.effects) - 1
+        dat.techs.append(new_chem)
+        new_chem_id = len(dat.techs) - 1
+
+        # ── Civ-specific HC make-avail, fires when civ Chemistry fires ─────
+        hc_src = dat.techs[_HC_MAKE_AVAIL]
+        new_hc = deepcopy(hc_src)
+        new_hc.civ = civ_index
+        new_hc.required_techs = (new_chem_id, -1, -1, -1, -1, -1)
+        new_hc.required_tech_count = 1
+        hc_eid = hc_src.effect_id
+        if 0 <= hc_eid < len(dat.effects):
+            new_hc_eff = deepcopy(dat.effects[hc_eid])
+            dat.effects.append(new_hc_eff)
+            new_hc.effect_id = len(dat.effects) - 1
+        dat.techs.append(new_hc)
+
+        # Disable original Chemistry so there is no duplicate research button.
+        tt_eff_id = dat.civs[civ_index].tech_tree_id
+        dat.effects[tt_eff_id].effect_commands.append(
+            EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(_CHEMISTRY))
+        )
+        return True
+
+    if bonus_id == 81:           # No buildings required to advance ages or unlock buildings
+        # Mirrors the Khmer mechanism: tech 638 (civ=28, req_count=0) auto-fires at
+        # game start for Khmer.  Shadow Node+ techs 659/660/661 (one per age gate)
+        # use OR semantics (required_tech_count=1) and include 638 in their list.
+        # When 638 fires, the shadow nodes fire, satisfying age tech requirements
+        # without the player having built any buildings.
+        # We create a civ-specific clone of tech 638 and add its ID to the free
+        # OR slot in each of the three Shadow Node+ techs.
+        _SHADOW_NODES = (659, 660, 661)  # Shadow Node+ for Age Two/Three/Four
+
+        template = dat.techs[638]        # Khmer requirement (req_count=0, no effect)
+        new_req = deepcopy(template)
+        new_req.civ = civ_index
+        new_req.name = 'C-Bonus, No building requirement'
+        dat.techs.append(new_req)
+        new_req_id = len(dat.techs) - 1
+
+        for shadow_tid in _SHADOW_NODES:
+            shadow = dat.techs[shadow_tid]
+            req_list = list(shadow.required_techs)
+            filled = False
+            for i, r in enumerate(req_list):
+                if r == -1:
+                    req_list[i] = new_req_id
+                    filled = True
+                    break
+            if not filled:
+                raise RuntimeError(
+                    f'bonus 81: no free slot in required_techs for shadow node tech {shadow_tid}'
+                )
+            shadow.required_techs = tuple(req_list)
+
+        return True
+
+    if bonus_id == 352:          # Siege Engineers available in Castle Age
+        # Jurchens (civ 52) use this same pattern: civ-specific tech 978 fires
+        # when Castle Age (102) is reached; tech 377 (Siege Engineers) already
+        # has OR semantics (count=1) with [103, 978, ...] — satisfying either
+        # Imperial Age OR tech 978 makes the button appear.
+        # We clone tech 978 for our civ and add the new ID to a free slot in 377.
+        _SIEGE_ENG   = 377
+        _JURCHEN_REQ = 978   # template: civ=52, req=[102], fires at Castle Age
+
+        template = dat.techs[_JURCHEN_REQ]
+        new_req = deepcopy(template)
+        new_req.civ = civ_index
+        new_req.name = 'C-Bonus, Siege Engineers Castle Age'
+        dat.techs.append(new_req)
+        new_req_id = len(dat.techs) - 1
+
+        siege_eng = dat.techs[_SIEGE_ENG]
+        req_list = list(siege_eng.required_techs)
+        filled = False
+        for i, r in enumerate(req_list):
+            if r == -1:
+                req_list[i] = new_req_id
+                filled = True
+                break
+        if not filled:
+            raise RuntimeError('bonus 352: no free slot in required_techs for tech 377')
+        siege_eng.required_techs = tuple(req_list)
+
         return True
 
     if bonus_id == 221:          # Spearman/Militia upgrades one age earlier (except Man-at-Arms)
