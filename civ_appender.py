@@ -703,6 +703,37 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
             elif c.type == 3:                     # EC_UPGRADE → to unit b
                 ec8_unit_techs.setdefault(int(c.b), []).append(tech_id)
 
+    # ── Step 0b: Propagate ec8_unit_techs through global upgrade chains.
+    # Some ec8-unlocked unit lines have auto-fire upgrade techs (e.g. tech 860
+    # "Upgrade Camel Scouts to Riders" fires globally at Castle Age, upgrades
+    # unit 1755→329) that live in neither the ec8 nor the disableable pool.
+    # Without this pass ec8_unit_techs[329] stays empty, so no type=8 for
+    # tech 235 (the camel opt-in) ever gets written for a civ with 329 in tree[0].
+    # Build a forward upgrade map from every civ-agnostic (civ=-1) tech, then
+    # propagate ec8 requirements downstream until stable.
+    fwd_upgrade: dict[int, list[int]] = {}  # src_unit → [dest_units]
+    for tech in dat.techs:
+        if tech.civ != -1:
+            continue
+        eid = tech.effect_id
+        if eid < 0 or eid >= len(dat.effects):
+            continue
+        for c in dat.effects[eid].effect_commands:
+            if c.type == 3:
+                fwd_upgrade.setdefault(int(c.a), []).append(int(c.b))
+    changed = True
+    while changed:
+        changed = False
+        for src_unit, dest_units in fwd_upgrade.items():
+            src_ec8 = set(ec8_unit_techs.get(src_unit, []))
+            if not src_ec8:
+                continue
+            for dest_unit in dest_units:
+                new = src_ec8 - set(ec8_unit_techs.get(dest_unit, []))
+                if new:
+                    ec8_unit_techs.setdefault(dest_unit, []).extend(new)
+                    changed = True
+
     # ── Step 1: Collect all potentially-disableable tech IDs from vanilla civs.
     all_disableable: set[int] = set()
     for civ in dat.civs:
