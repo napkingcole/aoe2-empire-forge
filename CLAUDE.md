@@ -26,7 +26,7 @@ The `llm/` directory contains comprehensive AoE2 DE dat modding documentation. R
 | unlock tech  | 8    | (copy from vanilla) | ...             | ...         | ...        |
 | disable tech | 102  | -1           | -1                       | -1          | float(tech_id) |
 
-**Unit attribute IDs (c parameter for EC_SET/ADD/MULTIPLY):** `10`=HP, `11`=LOS, `13`=work rate, `100`=attack.
+**Unit attribute IDs (c parameter for EC_SET/ADD/MULTIPLY):** `0`=HP, `1`=LOS, `9`=attack, `13`=work rate. See `llm/effect_commands.md` for the full table.
 
 **Standard resource IDs (a for EC_RESOURCE):** `0`=food, `1`=wood, `2`=stone, `3`=gold.
 

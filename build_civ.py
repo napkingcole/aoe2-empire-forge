@@ -64,17 +64,31 @@ def _civ_file_name(civ_name: str) -> str:
     return civ_name.lower().replace(" ", "_")
 
 
+_CIV_NAME_ALIASES: dict[str, str] = {
+    # KM display name → DAT internal name
+    "britons":      "british",
+    "franks":       "french",
+    "inca":         "incas",
+    "maya":         "mayans",
+    "magyars":      "magyar",
+    "hindustanis":  "indians",   # pre-rename game versions
+    "indians":      "hindustanis",  # post-rename game versions
+}
+
+
 def _find_civ_slot(dat, name: str) -> int | None:
     """Return the index of the civ whose name matches (case-insensitive), or None."""
     name_lower = name.lower()
+    candidate  = _CIV_NAME_ALIASES.get(name_lower, name_lower)
     for i, civ in enumerate(dat.civs):
-        if civ.name.lower() == name_lower:
+        dat_name = civ.name.lower()
+        if dat_name == name_lower or dat_name == candidate:
             return i
     return None
 
 
 def _decode_flag(civ_def: dict) -> bytes | None:
-    """Decode customFlagData base64 PNG/JPG and return PNG bytes, or None if absent."""
+    """Decode customFlagData base64 PNG/JPG, resize to 104×104, return PNG bytes."""
     import io
     raw = civ_def.get("customFlagData", "")
     if not raw:
@@ -87,18 +101,25 @@ def _decode_flag(civ_def: dict) -> bytes | None:
             break
     try:
         img_bytes = base64.b64decode(raw)
-    except Exception:
+    except Exception as e:
+        print(f"WARNING: customFlagData base64 decode failed — flag will be omitted ({e})")
         return None
-    # If not already PNG, convert via Pillow.
-    if not img_bytes.startswith(b'\x89PNG'):
-        try:
-            from PIL import Image
-            buf = io.BytesIO()
-            Image.open(io.BytesIO(img_bytes)).save(buf, format="PNG")
-            img_bytes = buf.getvalue()
-        except Exception:
-            return None
-    return img_bytes
+    # Normalise to 104×104 PNG via Pillow (handles JPEG conversion + resize in one pass).
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(img_bytes))
+        if img.size != (104, 104):
+            img = img.resize((104, 104), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception as e:
+        # Pillow unavailable or corrupt — return raw bytes only if already PNG.
+        if img_bytes.startswith(b'\x89PNG'):
+            print(f"WARNING: Pillow unavailable/failed ({e}); using raw PNG bytes as-is (no resize)")
+            return img_bytes
+        print(f"WARNING: Flag image could not be decoded (Pillow unavailable or corrupt image: {e}) — flag will be omitted. Install Pillow to support JPEG flags.")
+        return None
 
 
 def _build_ui_zip(civ_def: dict, ui_civ_name: str, name_string_id: int) -> bytes:
@@ -143,6 +164,7 @@ def _build_ui_zip(civ_def: dict, ui_civ_name: str, name_string_id: int) -> bytes
                     f"widgetui/textures/ingame/icons/civ_techtree_buttons/{fname}",
                     flag_png,
                 )
+            zf.writestr(f"widgetui/textures/menu/civs/{fn}.png", flag_png)
             # civ_emblems/{fn}.png is a 450×280 background overlay (score/loading
             # screen), NOT a badge.  Omit it — writing the 104×104 flag there
             # causes it to stretch into a giant emblem in the UI.
@@ -469,6 +491,25 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
     # Used to set Trigger Tech ID on the elite UniqueUnit node so the tech-tree
     # panel correctly tracks when the elite unit is unlocked.
     _km_uu_elite_tech_id = (civ_result or {}).get("km_uu_elite_tech_id", -1)
+    # Mapping of template tech ID (civ=99) → newly allocated civ-specific tech ID
+    # for all bonus-catalog techs. Used to retarget CivTechTrees nodes whose
+    # Trigger Tech ID points at a template that was cloned for this civ
+    # (e.g. Elite Caravel node trigger=597 → newly allocated tech 1625).
+    _bonus_tech_map: dict[int, int] = (civ_result or {}).get("bonus_tech_map", {})
+
+    # Unit IDs enabled by bonus techs — used to show non-Castle UniqueUnit nodes
+    # (e.g. Caravel) that are unlocked via bonus rather than listed in tree[0].
+    _bonus_enabled_units: set[int] = set()
+    if dat is not None:
+        for new_tid in _bonus_tech_map.values():
+            if 0 <= new_tid < len(dat.techs):
+                tech = dat.techs[new_tid]
+                if 0 <= tech.effect_id < len(dat.effects):
+                    for ec in dat.effects[tech.effect_id].effect_commands:
+                        if ec.type == 2 and int(ec.b) == 1:   # EC_ENABLE show
+                            _bonus_enabled_units.add(int(ec.a))
+                        elif ec.type == 3:                      # EC_UPGRADE → to unit b
+                            _bonus_enabled_units.add(int(ec.b))
 
     # Pre-compute UT retargeting info from civ_result (if available).
     _orig_castle_ut_tid = (civ_result or {}).get("orig_castle_ut_tech_id")
@@ -489,7 +530,12 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
             node_type = node.get("Node Type", "")
             node_id   = node.get("Node ID", -1)
 
-            if node_type == "UniqueUnit" and uu_unit_info is not None:
+            # Only patch Castle (Building 82) UniqueUnit nodes with the custom UU.
+            # Non-Castle UniqueUnits (e.g. Caravel at Dock) have their Trigger Tech
+            # ID updated via bonus_tech_map below and their status set via
+            # _bonus_enabled_units — they must NOT be mangled by _patch_uu_node.
+            if (node_type == "UniqueUnit" and uu_unit_info is not None
+                    and node.get("Building ID") == 82):
                 _patch_uu_node(node)
                 changed += 1
                 continue  # status already set inside _patch_uu_node
@@ -523,12 +569,25 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                     changed += 1
                     continue
 
+            # Retarget any node whose Trigger Tech ID points at a civ=99 bonus
+            # template that was cloned for this civ (e.g. Elite Caravel trigger=597
+            # → newly allocated civ-specific tech). Only updates the trigger; node
+            # status is still governed by tree[2] membership below.
+            trigger_tid = node.get("Trigger Tech ID")
+            if trigger_tid is not None:
+                trigger_int = int(trigger_tid)
+                if trigger_int in _bonus_tech_map:
+                    node["Trigger Tech ID"] = _bonus_tech_map[trigger_int]
+                    changed += 1
+
             if use_type == "Building":
                 ok = node_id in building_ids
             elif use_type == "Tech":
                 ok = node_id in tech_ids
             else:
-                ok = node_id in unit_ids
+                # bonus-enabled units (e.g. Caravel via bonus 69) may not appear
+                # in tree[0] but are still available; include them here.
+                ok = node_id in unit_ids or node_id in _bonus_enabled_units
             current = node.get("Node Status", "")
             if not ok:
                 if current != STATUS_OFF:
@@ -771,8 +830,9 @@ def main() -> None:
                   f"name string ID defaulting to {name_string_id}")
 
     # ── Apply civ ─────────────────────────────────────────────────────────────
-    civ_index = apply_civ(dat, civ_def, target_slot=target_slot)["civ_index"]
-    total     = len(dat.civs)
+    civ_result = apply_civ(dat, civ_def, target_slot=target_slot)
+    civ_index  = civ_result["civ_index"]
+    total      = len(dat.civs)
     print(f"  Output: {total} civs total (custom civ at index {civ_index})")
 
     # ── Patch civTechTrees.json display (replace mode only) ───────────────────
@@ -810,7 +870,9 @@ def main() -> None:
             per_civ_path = ct_folder / f"{vanilla_tt_name}.json"
             if per_civ_path.exists():
                 print(f"Patching CivTechTrees/{vanilla_tt_name}.json")
-                patched = _patch_per_civ_techtree(per_civ_path, civ_def)
+                patched = _patch_per_civ_techtree(
+                    per_civ_path, civ_def, dat, target_slot, civ_result=civ_result
+                )
                 if patched is not None:
                     per_civ_techtree = (f"{vanilla_tt_name}.json", patched)
             else:

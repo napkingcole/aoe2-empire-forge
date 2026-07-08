@@ -75,9 +75,71 @@ a = unit_id   b = -1   c = attribute_id   d = multiplier
 | 109 | ATTR_REGEN_HP      | HP regeneration per minute |
 | 158 | ATTR_UI_REFRESH    | No-op toggle — pair with ATTR_TRAIN_LOC to force UI update |
 
-**Attack/armor encoding:** `d = float(class_id * 256 + amount)`. Common classes: melee=4, pierce=3.
+**Attack/armor encoding:** `d = float(class_id * 256 + amount)`. Use the armor class IDs below.
+
+**Full armor class list:**
+
+| ID | Name | Notes |
+|----|------|-------|
+| 0  | WONDER | |
+| 1  | INFANTRY | |
+| 2  | TURTLE_SHIP | |
+| 3  | PIERCE | base pierce armor/attack |
+| 4  | MELEE | base melee armor/attack |
+| 5  | ELEPHANT | |
+| 8  | CAVALRY | |
+| 11 | BUILDING | |
+| 13 | STONE_WALL_GATE | |
+| 14 | PREDATOR_ANIMAL | |
+| 15 | ARCHER | |
+| 16 | SHIP | |
+| 17 | RAM_TREBUCHET | |
+| 19 | UNIQUE_UNIT | |
+| 20 | SIEGE_WEAPON | |
+| 21 | STANDARD_BUILDING | |
+| 22 | WALL_GATE | |
+| 23 | GUNPOWDER | |
+| 24 | HUNTED_PREDATOR_ANIMAL | |
+| 25 | MONK | |
+| 26 | CASTLE | |
+| 27 | SPEARMAN | |
+| 28 | CAVALRY_ARCHER | |
+| 29 | EAGLE_WARRIOR | |
+| 30 | CAMEL | |
+| 32 | CONDOTTIERO | |
+| 34 | FISHING_SHIP | |
+| 35 | MAMELUKE | |
+| 36 | HERO | |
+| 37 | BALLISTA_ELEPHANT_WAGON | |
+| 38 | SKIRMISHER | |
+| 39 | CAMEL_SHOTEL | |
 
 **"All units" targeting:** `a=-1, b=class_id` applies to all units of that class (same pattern as Chemistry).
+
+**EC_ADD "needs baseline zero" caveat:** If a unit has NO existing attack entry for a given armor class, `EC_ADD` against that class does nothing — the engine finds no matching entry to add to. You must first set a baseline `AttackOrArmor(class, 0)` on the unit data directly before the tech fires.
+
+### type = 6 — Resource Modifier Multiplicative
+Multiply a resource value by a factor.
+```
+a = resource_id   b = 0(set)/1(add)   c = -1   d = multiplier
+```
+
+### Scoped Variants (TEAM / ENEMY / NEUTRAL / GAIA)
+All of types 0–7 have four additional scoped forms that apply the same effect to a different player group. Add the corresponding offset to the base type number:
+
+| Base type | +10 = TEAM | +20 = ENEMY | +30 = NEUTRAL | +40 = GAIA |
+|-----------|-----------|------------|--------------|-----------|
+| 0 (SET)   | 10 | 20 | 30 | 40 |
+| 1 (RESOURCE ADD) | 11 | 21 | 31 | 41 |
+| 2 (ENABLE) | 12 | 22 | 32 | 42 |
+| 3 (UPGRADE) | 13 | 23 | 33 | 43 |
+| 4 (ADD) | 14 | 24 | 34 | 44 |
+| 5 (MULTIPLY) | 15 | 25 | 35 | 45 |
+| 6 (RES_MULTIPLY) | 16 | 26 | 36 | 46 |
+| 7 (SPAWN) | 17 | 27 | 37 | 47 |
+| 8 (MODIFY_TECH) | 18 | 28 | 38 | 48 |
+
+Example: type=14 = TEAM_ATTRIBUTE_MODIFIER_ADDITIVE; gives the bonus to all allied players. This is how team bonuses work (e.g. "Team gets +5 LOS on scouts").
 
 ### EC_TECH_COST = 101
 Modify the resource cost of a tech.

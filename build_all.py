@@ -29,6 +29,7 @@ import zipfile
 from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
+from version import __version__ as _APP_VERSION
 from civ_appender import (apply_civ, assign_all_languages,
     DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET)
 from build_civ import (
@@ -165,6 +166,8 @@ _UNIQUE_IMP_STRINGS = [
 
 _BONUS_NAMES: dict[str, str] = json.loads(
     (Path(__file__).parent / "bonus_names.json").read_text(encoding="utf-8"))
+_TEAM_BONUS_NAMES: dict[str, str] = json.loads(
+    (Path(__file__).parent / "team_bonus_names.json").read_text(encoding="utf-8"))
 
 
 def _load_vanilla_civ_descriptions() -> dict[int, str]:
@@ -251,7 +254,8 @@ def _build_combined_data_zip(dat,
         os.unlink(tmp_path)
 
     info_json = json.dumps(
-        {"Title": mod_name, "CacheStatus": 0, "Description": "", "Author": ""},
+        {"Title": mod_name, "CacheStatus": 0, "Description": "", "Author": "",
+         "builder_version": _APP_VERSION},
         separators=(",", ":"),
     ).encode("utf-8")
 
@@ -287,7 +291,8 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                             lang_values: set[int] | None = None) -> bytes:
     """Package all UI assets for every civ into one ui zip."""
     info_json = json.dumps(
-        {"Title": f"{mod_name} (UI)", "CacheStatus": 0, "Description": "", "Author": ""},
+        {"Title": f"{mod_name} (UI)", "CacheStatus": 0, "Description": "", "Author": "",
+         "builder_version": _APP_VERSION},
         separators=(",", ":"),
     ).encode("utf-8")
 
@@ -428,7 +433,12 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
 
         ui_civ_name = dat.civs[slot].name
         tt_idx      = _civ_techtree_index(ui_civ_name)
-        name_sid    = 10271 + tt_idx if tt_idx is not None else 10271
+        if tt_idx is None:
+            print(f"  ERROR: {replace_name!r} (DAT name {ui_civ_name!r}) not found in KM_TECHTREE_ORDER — "
+                  f"cannot assign a civ name string ID. Add an alias to _civ_techtree_index or choose a "
+                  f"different replacement civ. Skipping {alias!r}.")
+            continue
+        name_sid = 10271 + tt_idx
 
         print(f"\n  [{slot}] {replace_name!r} → {alias!r}  (string ID {name_sid})")
 
@@ -455,6 +465,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         imp_ut_sid    = civ_result["imp_ut_sid"]
         castle_ut_desc_sid = civ_result["castle_ut_desc_sid"]
         imp_ut_desc_sid    = civ_result["imp_ut_desc_sid"]
+        castle_ut_help_sid = civ_result["castle_ut_help_sid"]
+        imp_ut_help_sid    = civ_result["imp_ut_help_sid"]
 
         # Resolve the custom UU info for description + string writes + techtree.
         uu_info = _resolve_uu_info(civ_def, dat, slot, civ_result)
@@ -544,7 +556,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 if not isinstance(entry, list):
                     continue
                 bid = str(entry[0])
-                txt = _BONUS_NAMES.get(bid, "")
+                txt = _TEAM_BONUS_NAMES.get(bid, "")
                 if txt:
                     tb_lines.append(txt)
             if tb_lines:
@@ -588,34 +600,34 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
             # into one string; split so the button label matches vanilla
             # style (just the name) and the tooltip shows the description
             # after the cost token.
-            for name_sid_ut, desc_sid_ut, full in (
-                (castle_ut_sid, castle_ut_desc_sid, castle_ut_name),
-                (imp_ut_sid, imp_ut_desc_sid, imp_ut_name),
+            for name_sid_ut, desc_sid_ut, help_sid_ut, full in (
+                (castle_ut_sid, castle_ut_desc_sid, castle_ut_help_sid, castle_ut_name),
+                (imp_ut_sid, imp_ut_desc_sid, imp_ut_help_sid, imp_ut_name),
             ):
                 short, _, paren = full.partition(" (")
                 desc = paren.rstrip(")") if paren else ""
                 string_lines[lang].append(f'{name_sid_ut} "{short}"')
-                # The tech's language_dll_description/tech_tree fields point
-                # at name_sid_ut+1000/+150000 (vanilla offset convention —
-                # see civ_appender._creation_sid/_tech_tree_sid). Without a
-                # written override at THOSE exact ids too, the engine falls
-                # back to whatever vanilla content already lives there
-                # instead of leaving it blank — confirmed live (a Castle UT
-                # button showed an unrelated campaign dialogue line at
-                # name+1000 until this was added).
-                string_lines[lang].append(
-                    f'{name_sid_ut + DLL_CREATION_OFFSET} "Research {short}"')
-                # Castle UI reads name_sid+21000 for UT buttons (same offset as the
-                # unit train-button widget). Override it to prevent vanilla content
-                # at that slot from bleeding through (e.g. 70202+21000=91202 shows
-                # "Click to enter a filename to save your custom campaign as.").
-                string_lines[lang].append(f'{name_sid_ut + 21000} "{short}"')
-                # Full <cost> tooltip — vanilla pattern: name+cost on first line,
-                # description on second. Avoids duplicating the name as we did before.
-                help_body = f"Research <b>{short}<b> (<cost>)"
+                # lang_desc in the DAT tech points to name_sid+DLL_CREATION_OFFSET
+                # (name_sid+1000). UT_POOL_OFFSET now uses the 44000-range so +1000
+                # lands in the 45000-range (safe empty vanilla slots). The Castle
+                # button description area reads this SID and shows "Name (effect)".
+                desc_text = f"{short} ({desc})" if desc else short
+                string_lines[lang].append(f'{name_sid_ut + DLL_CREATION_OFFSET} "{desc_text}"')
+                # Castle UI reads name_sid+21000 for UT button hover tooltips.
+                # UT_POOL_OFFSET uses 44000-range SIDs so +21000 = 65000-range, which
+                # is safe and overridable (unlike the old 70000-range where +21000
+                # landed in 91000-range civ-picker DLL strings, e.g. 91300 = Burmese).
+                ut_hover = f"Research <b>{short}<b> (<cost>)"
                 if desc:
-                    help_body += f"\\n{desc}"
-                string_lines[lang].append(f'{desc_sid_ut} "{help_body}"')
+                    ut_hover += f"\\n{desc}"
+                string_lines[lang].append(f'{name_sid_ut + 21000} "{ut_hover}"')
+                # lang_help in the DAT tech points to help_sid_ut — a 60000s existing
+                # vanilla ID (UT_HELP_POOL_OFFSET block). Writing the cost tooltip here
+                # is safe: 60000-68999 are campaign narrative strings that only appear
+                # in campaign scenarios (which this mod does not affect), and the engine
+                # reads language_dll_help directly for TECH research-button hover tooltips.
+                # We do NOT write at name_sid_ut+100000 (=170000s, live lobby UI).
+                string_lines[lang].append(f'{help_sid_ut} "{ut_hover}"')
                 string_lines[lang].append(
                     f'{name_sid_ut + DLL_TECH_TREE_OFFSET} "{short}"')
             # Bonus-specific research buttons (e.g. Imperial Scorpion, Royal
@@ -673,9 +685,14 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 uu_dll = uu_info["dll_name"]
                 string_lines[lang].append(f'{uu_dll + 10000} "{uu_display}"')
                 string_lines[lang].append(f'{uu_dll + DLL_HELP_OFFSET} "{uu_display}"')
+                # Castle train-button hover reads name+21000. KM-custom UUs
+                # write this via extra_unit_strings/ext_sid; vanilla UUs need
+                # it written here or a stale campaign string bleeds through.
+                string_lines[lang].append(f'{uu_dll + 21000} "{uu_display}"')
             if uu_elite_dll and uu_elite_name:
                 string_lines[lang].append(f'{uu_elite_dll + 10000} "{uu_elite_name}"')
                 string_lines[lang].append(f'{uu_elite_dll + DLL_HELP_OFFSET} "{uu_elite_name}"')
+                string_lines[lang].append(f'{uu_elite_dll + 21000} "{uu_elite_name}"')
 
         # Button PNGs (104×104 civ picker emblem).
         # Use the canonical civTechTrees name (e.g. "britons"), not the DAT
@@ -826,6 +843,14 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     size_mb = out_path.stat().st_size / 1024 / 1024
     print(f"  → {out_path}  ({size_mb:.1f} MB)")
     print("Done.")
+    print()
+    print("Known bonus limitations (partial implementation):")
+    print("  [81]  No buildings required to age up — IMPLEMENTED (Khmer shadow-node mechanism).")
+    print("        Limited to ~4 civs per batch; raises RuntimeError if Shadow Node+ prereq slots fill up.")
+    print("  [105] Economic upgrades −33% food — food discount applied; 'one age earlier' NOT implemented")
+    print("  [283] Chemistry + Hand Cannoneer in Castle Age — IMPLEMENTED (Castle Age gate clone).")
+    print("  [352] Siege Engineers in Castle Age — IMPLEMENTED (Jurchen prereq-slot mechanism).")
+    print("        Limited by available prereq slots in tech 377; raises RuntimeError if slots fill up.")
 
 
 def main() -> None:

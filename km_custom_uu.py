@@ -740,6 +740,11 @@ BESPOKE_TASKS: dict[int, list[dict]] = {
 def _apply_bespoke_tasks(dat: DatFile, uu_unit, elite_unit, km_uu_index: int) -> None:
     for spec in BESPOKE_TASKS.get(km_uu_index, []):
         source = dat.civs[0].units[spec["source_unit"]]
+        if source is None:
+            raise RuntimeError(
+                f"_apply_bespoke_tasks: unit slot {spec['source_unit']} is None in civ 0 — "
+                f"DAT may be missing expected units for KM UU index {km_uu_index}"
+            )
         base_task = source.bird.tasks[spec["source_task_index"]]
         targets = spec.get("for_each")
         unit_ids = targets if targets is not None else [None]

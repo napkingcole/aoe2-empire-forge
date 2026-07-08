@@ -4,6 +4,104 @@ Patterns discovered in custom mod development (~/Sites/aoe2) that go beyond the 
 
 ---
 
+## Tech Prerequisites — OR-Logic with required_tech_count
+
+`tech.required_tech_count` controls how many of the `required_techs` tuple must be satisfied. Setting it to `1` while listing multiple IDs creates OR-logic — the tech unlocks when ANY ONE prerequisite is met:
+
+```python
+df.techs[COINAGE].required_techs = (techs.CASTLE_AGE, dummy_feudal_gate_id, -1, -1, -1, -1)
+df.techs[COINAGE].required_tech_count = 1
+# Every civ meets Castle Age → unaffected.
+# Franks meet dummy_feudal_gate_id at Feudal → they unlock Coinage early.
+```
+
+To add a civ-specific early-access gate without locking out other civs:
+1. Create a civ-restricted dummy tech with `civ=TARGET_CIV` that fires as a prerequisite in an earlier age.
+2. Add it as an extra entry in `required_techs` WITHOUT incrementing `required_tech_count`.
+
+This is the pattern used by Burgundians Cavalier (tech 768) and can be applied to any civ-specific age-unlock.
+
+---
+
+## Unit Duplication — Update base_id and copy_id
+
+When duplicating a unit for multi-building training, update both fields after appending:
+
+```python
+civ.units.append(missionary_copy)
+new_id = len(civ.units) - 1
+civ.units[new_id].base_id = new_id
+civ.units[new_id].copy_id = new_id
+civ.units[new_id].creatable.train_location_id = NEW_BUILDING
+```
+
+Also loop every effect in the game and duplicate any EffectCommand with `a == ORIGINAL_UNIT_ID` so the copy receives the same buffs/upgrades (EXCEPT upgrade chains — those need separate handling so each tier upgrades along its own line).
+
+---
+
+## ResourceStorage — Building On-Build/On-Death Resource Effects
+
+`unit.resource_storages` is a 3-tuple of `ResourceStorage(resource_id, amount, mode)` where `mode` controls when the resource change fires:
+
+| mode | Trigger |
+|------|---------|
+| 1    | On creation (permanent — kept after death) |
+| 2    | On death/destruction (gives back — must be negative to deduct on build) |
+| 4    | On completion of construction AND on death (round-trip: deduct on build, refund on destroy) |
+| 8    | On completion of construction only (permanent) |
+| 64   | On completion; fire and forget (used for token resources) |
+
+The "only one castle at a time" pattern:
+1. Give all civs `civ.resources[CASTLE_RESOURCE] = 1` as a starting balance.
+2. Add `ResourceCost(CASTLE_RESOURCE, 1, flag=0)` to the Castle's costs — checks you have 1 but doesn't deduct (flag=0 = don't pay).
+3. Add `ResourceStorage(CASTLE_RESOURCE, -1, mode=2)` to Castle's storages — deducts 1 on completion, refunds on destruction.
+
+---
+
+## Hero Mode Flags
+
+`unit.creatable.hero_mode` is a bitmask — combine by addition:
+
+| Value | Effect |
+|-------|--------|
+| 1     | One-at-a-time (gold border portrait, can't train another while alive) |
+| 2     | Cannot be converted |
+| 4     | HP regeneration |
+| 6     | Cannot be converted AND regenerates (2+4) |
+
+Full list on the [AoE2DE UGC Guide](https://ugc.aoe2.rocks/).
+
+---
+
+## Charge Type 4 — Projectile Dodge
+
+In addition to melee charges (`charge_type=1`), `charge_type=4` implements a projectile dodge (Shrivamsha Rider pattern):
+
+```python
+unit.creatable.max_charge = 1
+unit.creatable.recharge_rate = 1
+unit.creatable.charge_event = 0   # not triggered by attacking
+unit.creatable.charge_type = 4    # dodge mode
+```
+
+Can be applied to any unit or building — the Shrivamsha Rider is the canonical reference.
+
+---
+
+## civ.resources[] — Starting Resource Values
+
+Each `Civ` object has a `resources` list indexed by resource ID. You can set any slot directly without using EC_RESOURCE:
+
+```python
+CUSTOM_RESOURCE = 120
+for civ in df.civs:
+    civ.resources[CUSTOM_RESOURCE] = 1  # every civ starts with 1 of this resource
+```
+
+This is how starting scout ID, MERCENARY_KIPCHAK_COUNT cap, and similar per-civ startup values work in vanilla. Useful for building-limit or token mechanics.
+
+---
+
 ## Creating a New Unit from Scratch
 
 Every civ must have the **same number of units** — the engine crashes on map load if any civ's unit array differs in length. When appending a new unit:
@@ -320,3 +418,27 @@ if cls in _ARCH_BUILDING_CLASSES and i != BUILDING_CASTLE and i != BUILDING_WOND
 | UNIT_SABOTEUR | 706 — safe base for cloning explosion units |
 | MELEE_ARMOR_CLASS | 4 |
 | PIERCE_ARMOR_CLASS | 3 |
+
+## Building Architecture-Set Variant Lists
+
+Each building type has multiple unit IDs — one per architecture set. When applying a stat change to "all versions of Barracks" you must iterate all variants:
+
+```python
+ARCHERY_RANGE_ALL = [87, 10, 14]
+BARRACKS_ALL      = [12, 498, 132, 20]
+BLACKSMITH_ALL    = [103, 18, 19]
+MONASTERY_ALL     = [104, 31, 32]
+DOCK_ALL          = [45, 133, 47, 51]
+SIEGE_WORKSHOP_ALL= [49, 150]
+HOUSE_ALL         = [70, 463, 464, 465, 191, 192]
+TOWN_CENTER_ALL   = [109, 71, 141, 142, 618, 619, 620, 621, 614, 615, 616, 617, 481, 482, 483, 484, 611, 612, 613, 597]
+MARKET_ALL        = [84, 116, 137, 1646]
+STABLE_ALL        = [101, 86, 153]
+MILL_ALL          = [68, 129, 130, 131]
+UNIVERSITY_ALL    = [209, 210]
+LUMBER_CAMP_ALL   = [562, 563, 564, 565]
+MINING_CAMP_ALL   = [584, 585, 586, 587]
+FOLWARK_ALL       = [1734, 1711, 1720]
+```
+
+For per-civ graphic changes (not stat changes), iterate `df.civs` instead — each civ's unit list holds the civ-specific version. Stat changes should go through all architecture variants above.

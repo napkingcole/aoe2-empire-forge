@@ -31,7 +31,7 @@ from bonus_names import (bonus_name, skip_reason, unsupported_bonuses,
                          unsupported_unique_units, unsupported_unique_techs,
                          unsupported_team_bonuses)
 from build_all import (_build_combined_data_zip, _build_combined_ui_zip,
-                       _ut_name, _ut_bonus_id, _BONUS_NAMES,
+                       _ut_name, _ut_bonus_id, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
@@ -171,6 +171,29 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "1.7.3": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Custom flag icon now shows correctly in the civilization picker and in-game interface",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #283 (Chemistry/Hand Cannoneer in Castle Age) no longer breaks Bombard Cannons, Bombard Towers, or Cannon Galleons — now mirrors the Bohemian mechanism",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #283 (Chemistry/Hand Cannoneer in Castle Age) Chemistry now correctly unlocks in Castle Age — Castle Age trigger was cloned but not wired correctly",
+    ],
+    "1.7.2": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Fixed a bug that prevented camel riders from being trainable",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Fixed Bonus #283 - Chemistry/HC in Castle Age",
+    ],
+    "1.7.1": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Team bonus labels displayed the wrong text in-game and in the builder — team bonuses now read from the correct name list",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Team bonus #30 (Military buildings +5 population room) was silently never applied — now correctly implemented",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #35 (Infantry +20% HP) was allocating dead Castle and Imperial stubs that did nothing — trimmed to the single correct Feudal tech",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #55 (Stable units +1 pierce armor in Castle &amp; Imperial Age) only applied in Imperial Age — Castle Age pierce armor now also fires correctly",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #280 (Folwark replaces the Mill) was allocating 7 extra empty/unrelated techs — trimmed to the correct 4-tech Poles chain",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #300 (Camel Scouts available in Feudal Age) produced a 0-command tech — now uses a direct enable command that correctly unlocks unit 1755",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #26 (TC/Dock work rate per age) had a trailing blank tech — now resolves to a single tech covering all four age variants",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #105 (Economic upgrades −33% food) previously allocated 10 dead stubs — food discount now correctly applies to all 16 standard eco upgrade techs at game start",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #318 (Start with a Mule Cart) had a blank placeholder tech removed; the actual spawn tech now fires cleanly",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Specific mod fix: Elite Organ Gun/Caravel upgrade buttons missing; UT hover showing wrong civ name; Castle UT showing no effect description; Carrack ×2 giving 0 armor instead of +2",
+        "Known limitation noted: Bonus #105 applies the food discount but the 'one age earlier' portion is not yet implemented",
+        "Known limitation noted: Bonuses #81 (no buildings to age up), #283 (Chemistry/HC in Castle Age), and #352 (Siege Engineers in Castle Age) require further coding to accommodate.",
+    ],
     "1.67": [
         "<strong class=\"color-accent-2\">VOICE LINES:</strong> Your selected civs voice lines will now be properly set in-game",
         "<strong class=\"color-accent-2\">Castle/Wonder Skins:</strong> Your selected castle and wonder skins will be properly set in-game",
@@ -670,7 +693,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     if not isinstance(entry, list):
                         continue
                     bid = str(entry[0])
-                    txt = _BONUS_NAMES.get(bid, "")
+                    txt = _TEAM_BONUS_NAMES.get(bid, "")
                     if txt:
                         desc_parts.append(f"• {txt} \\n")
             full_desc = "".join(desc_parts)
