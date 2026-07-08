@@ -564,6 +564,15 @@ UT_HELP_SLOTS_PER_CIV = 2  # 0=Castle UT help, 1=Imperial UT help
 # build-time state. Creation/help text ids are DERIVED (_creation_sid/
 # _help_sid), not separate pool slots — see the offset-convention note above
 # _creation_sid's definition.
+#
+# LATENT RISK: because these SIDs are shared across all civs, the help text
+# written to _help_sid(NAME_SID) in extra_unit_strings is first-definition-wins
+# in multi-civ batches. Currently safe because _setup_*_unit sets identical
+# base stats for every civ, so every civ's help_text is the same string.
+# If per-civ stat differences are ever introduced for these units (e.g. a
+# separate bonus modifying their HP), the tooltip will show the first-processed
+# civ's stats for all civs. To fix at that point: allocate per-civ SIDs using
+# UT_POOL_OFFSET pattern and set u.language_dll_help per-civ in _create_bonus_handler.
 IMP_SCORPION_NAME_SID      = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 0)
 ROYAL_ELEPHANT_NAME_SID    = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 1)
 ROYAL_LANCER_NAME_SID      = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 2)
@@ -830,13 +839,20 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
 # ── Bonus application ────────────────────────────────────────────────────────
 
 def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
-                   _seen: dict | None = None) -> int:
+                   _seen: dict | None = None,
+                   tech_remaps: dict | None = None) -> int:
     """
     Deepcopy tech_id and assign it exclusively to civ_index.
 
     Also recursively allocates any civ-specific required techs so the whole
     dependency chain fires correctly for our civ.  _seen maps original tech
     IDs to our allocated copies (prevents infinite recursion and reuse).
+
+    tech_remaps maps a global tech ID to a civ-specific replacement (e.g.
+    Chemistry 47 → a civ-specific Castle-Age clone).  Any required_techs
+    entry in the new clone that matches a key in tech_remaps is redirected
+    to the mapped replacement so the prerequisite chain stays intact even
+    after the original global tech is disabled.
     """
     if _seen is None:
         _seen = {}
@@ -871,14 +887,21 @@ def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
     reqs = list(new_tech.required_techs)
     changed = False
     for i, req_id in enumerate(reqs):
-        if req_id <= 0:
+        if req_id < 0:
+            continue
+        # Apply explicit substitutions first (e.g. Chemistry 47 → civ-specific
+        # clone created by bonus 283).  Without this, a tech whose prerequisite
+        # is a global tech that bonus 283 disabled would stall forever.
+        if tech_remaps and req_id in tech_remaps:
+            reqs[i] = tech_remaps[req_id]
+            changed = True
             continue
         if req_id >= len(dat.techs) - 1:   # guard (techs grew as we append)
             continue
         req_civ = dat.techs[req_id].civ
         if req_civ == -1 or req_civ == civ_index:
             continue  # global or already ours — leave pointer as-is
-        our_req = _allocate_tech(dat, req_id, civ_index, _seen)
+        our_req = _allocate_tech(dat, req_id, civ_index, _seen, tech_remaps)
         if our_req >= 0:
             reqs[i] = our_req
             changed = True
@@ -951,11 +974,7 @@ def _apply_ec_list_entry(dat: DatFile, civ_index: int, ec_entry: dict,
     cmds = [EffectCommand(type=d["type"], a=d["A"], b=d["B"], c=d["C"], d=d["D"])
             for d in ecs_dicts]
     if multiplier > 1:
-        for cmd in cmds:
-            if cmd.type == EC_MULTIPLY:
-                cmd.d = cmd.d ** multiplier
-            elif cmd.type in (EC_ADD, EC_RESOURCE):
-                cmd.d = cmd.d * multiplier
+        cmds = [_scale_ec_for_multiplier(cmd, multiplier) for cmd in cmds]
 
     eff = Effect(name="C-Bonus EC-list", effect_commands=cmds)
     dat.effects.append(eff)
@@ -1134,6 +1153,10 @@ def _setup_imperial_scorpion_unit(dat: DatFile) -> None:
     the upgrade tech (civ-specific, added by the caller) decides who can
     actually research their way into fielding one.
     """
+    # Idempotency guard — multiple civs with bonus 308 each call this; only
+    # the first call needs to do work since the result is identical for all civs.
+    if dat.civs[0].units[_IMP_SCORPION] is not None and dat.civs[0].units[_IMP_SCORPION].name == "IMPBAL":
+        return
     for civ in dat.civs:
         src = civ.units[_HEAVY_SCORPION]
         if src is None:
@@ -1189,6 +1212,10 @@ def _setup_royal_battle_elephant_unit(dat: DatFile) -> None:
     KM left the cosmetic graphic overrides commented out ("seem wrong"), so we
     keep Elite Battle Elephant's graphics as-is, same as upstream.
     """
+    # Idempotency guard — only run once per DAT regardless of how many civs
+    # have bonus 309.
+    if dat.civs[0].units[_ROYAL_ELEPHANT] is not None and dat.civs[0].units[_ROYAL_ELEPHANT].name == "RBATELE":
+        return
     for civ in dat.civs:
         src = civ.units[_ELITE_BATTLE_ELEPHANT]
         if src is None:
@@ -1223,6 +1250,10 @@ def _setup_royal_lancer_unit(dat: DatFile) -> None:
     including the Cuman Chief graphic reskin (graphic IDs 10508-10513 are
     vanilla DE assets, verified present in the dat).
     """
+    # Idempotency guard — only run once per DAT regardless of how many civs
+    # have bonus 310.
+    if dat.civs[0].units[_ROYAL_LANCER] is not None and dat.civs[0].units[_ROYAL_LANCER].name == "RSLANCER":
+        return
     for civ in dat.civs:
         src = civ.units[_ELITE_STEPPE_LANCER]
         if src is None:
@@ -1429,12 +1460,14 @@ HANDLED_BONUS_IDS = {
     195, 258, 277, 278, 279,
     239, 400,
     222, 356, 401,
+    286,
 }
 
 
 def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                           multiplier: int, extra_strings: list[dict],
-                          extra_unit_strings: list[dict] | None = None) -> bool:
+                          extra_unit_strings: list[dict] | None = None,
+                          tech_remaps: dict | None = None) -> bool:
     """
     Handle a single createCivBonus-style bonus.  Returns True if handled.
 
@@ -1722,49 +1755,84 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             )
         return True
 
+    if bonus_id == 286:          # Can upgrade Bombard Cannons to Houfnice (Imperial Age gated)
+        # Tech 787 (Houfnice) requires Chemistry (47) as its prerequisite in vanilla.
+        # If bonus 283 is also present, Chemistry becomes Castle-Age — without an
+        # explicit Imperial Age gate, Houfnice would unlock immediately after Castle-Age
+        # Chemistry fires.  We add Imperial Age (103) as an additional required tech
+        # so Houfnice stays gated behind Imperial Age regardless of Chemistry's age.
+        _HOUFNICE_TECH = 787
+        _IMPERIAL_AGE  = 103
+        seen_h: dict[int, int] = {}
+        new_tid = _allocate_tech(dat, _HOUFNICE_TECH, civ_index, seen_h, tech_remaps)
+        if new_tid < 0:
+            return False
+        _multiply_effect(dat, dat.techs[new_tid].effect_id, multiplier)
+        t = dat.techs[new_tid]
+        reqs = list(t.required_techs)
+        if _IMPERIAL_AGE not in reqs:
+            free_slot = next((i for i, r in enumerate(reqs) if r < 0), None)
+            if free_slot is not None:
+                reqs[free_slot] = _IMPERIAL_AGE
+                t.required_techs = reqs
+                t.required_tech_count = sum(1 for r in reqs if r >= 0)
+        return True
+
     if bonus_id == 283:          # Chemistry and Hand Cannoneer available in Castle Age
-        # Mirror of the Bohemian design, using the deep-copy pattern from bonus 247.
-        # Chemistry (47) is a University Imperial Age tech.  We clone it with a
-        # Castle Age gate and disable the original so only one button appears.
-        # HC make-avail (tech 85) fires when Chemistry (47) is done — but since we
-        # disabled 47 and cloned it as a new ID, we also clone tech 85 to fire
-        # when our civ-specific Chemistry clone fires.
-        _CHEMISTRY     = 47
-        _HC_MAKE_AVAIL = 85    # auto-fire; EC_ENABLE unit 5 (HCANR)
-        _CASTLE_AGE    = 102
+        # Mirror the actual Bohemian mechanism rather than creating a Chemistry clone.
+        #
+        # How Bohemians work (from DAT inspection):
+        #   Chemistry (47): required_techs=[103, 800], count=1  ← OR-logic
+        #   Tech 800 ('C-Bonus, Earlier Chemistry', civ=39): fires at Castle Age (102).
+        #     Its firing satisfies Chemistry's OR-prereq, making Chemistry researchable
+        #     at Castle Age.  Chemistry itself is NOT auto-fire — the player still pays
+        #     for it; it just becomes available one age early.
+        #   Tech 801 ('C-Bonus, Earlier Hand Cannon', civ=39): required_techs=[113, 47]
+        #     count=2 — fires when Castle Age (via tech 113 'Dupl. Castle Age') AND
+        #     Chemistry are both done.
+        #   HC make-avail (85): required_techs=[103, 47, 285, 801], count=2.
+        #     For Bohemians in Castle Age: 47 + 801 = count 2 → HC unlocked.
+        #     For all other civs in Imperial Age: 103 + 47 = count 2 → HC unlocked.
+        #
+        # We clone 800 and 801 for our civ; then clone HC make-avail pointing to our
+        # 801 clone.  Chemistry (47) is NOT disabled — it stays global, fires via
+        # OR-logic, and all Chemistry-dependent techs (Bombard Cannon tech 188,
+        # Bombard Tower 64, Cannon Galleon 37, etc.) remain intact.
+        _EARLIER_CHEMISTRY = 800
+        _EARLIER_HC_PREREQ = 801
+        _HC_MAKE_AVAIL     = 85
+        _CHEMISTRY         = 47
 
-        # ── Civ-specific Chemistry clone, available at Castle Age ──────────
-        chem_src = dat.techs[_CHEMISTRY]
-        new_chem = deepcopy(chem_src)
-        new_chem.civ = civ_index
-        new_chem.required_techs = (_CASTLE_AGE, -1, -1, -1, -1, -1)
-        new_chem.required_tech_count = 1
-        chem_eid = chem_src.effect_id
-        if 0 <= chem_eid < len(dat.effects):
-            new_chem_eff = deepcopy(dat.effects[chem_eid])
-            dat.effects.append(new_chem_eff)
-            new_chem.effect_id = len(dat.effects) - 1
-        dat.techs.append(new_chem)
-        new_chem_id = len(dat.techs) - 1
+        seen_283: dict[int, int] = {}
+        new_800_id = _allocate_tech(dat, _EARLIER_CHEMISTRY, civ_index, seen_283, tech_remaps)
+        new_801_id = _allocate_tech(dat, _EARLIER_HC_PREREQ, civ_index, seen_283, tech_remaps)
 
-        # ── Civ-specific HC make-avail, fires when civ Chemistry fires ─────
-        hc_src = dat.techs[_HC_MAKE_AVAIL]
-        new_hc = deepcopy(hc_src)
-        new_hc.civ = civ_index
-        new_hc.required_techs = (new_chem_id, -1, -1, -1, -1, -1)
-        new_hc.required_tech_count = 1
-        hc_eid = hc_src.effect_id
-        if 0 <= hc_eid < len(dat.effects):
-            new_hc_eff = deepcopy(dat.effects[hc_eid])
-            dat.effects.append(new_hc_eff)
-            new_hc.effect_id = len(dat.effects) - 1
-        dat.techs.append(new_hc)
+        # Chemistry (47) already has required_techs=[103, 800, -1, -1, -1, -1], count=1
+        # (OR-logic: Imperial Age or Bohemian Castle-Age trigger).  The engine checks
+        # specific tech IDs, so our clone (new_800_id) must be added to a free slot —
+        # otherwise Chemistry only unlocks for the original Bohemian civ (ID 800).
+        if new_800_id >= 0:
+            chem = dat.techs[_CHEMISTRY]
+            reqs = list(chem.required_techs)
+            free = next((i for i, r in enumerate(reqs) if r < 0), None)
+            if free is not None:
+                reqs[free] = new_800_id
+                chem.required_techs = reqs
+                # required_tech_count stays 1 — OR-logic already set
 
-        # Disable original Chemistry so there is no duplicate research button.
-        tt_eff_id = dat.civs[civ_index].tech_tree_id
-        dat.effects[tt_eff_id].effect_commands.append(
-            EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(_CHEMISTRY))
-        )
+        # Clone HC make-avail wired to our 801 clone so it fires at Castle Age.
+        if new_801_id >= 0:
+            hc_src = dat.techs[_HC_MAKE_AVAIL]
+            new_hc = deepcopy(hc_src)
+            new_hc.civ = civ_index
+            new_hc.required_techs = (_CHEMISTRY, new_801_id, -1, -1, -1, -1)
+            new_hc.required_tech_count = 2
+            hc_eid = hc_src.effect_id
+            if 0 <= hc_eid < len(dat.effects):
+                new_hc_eff = deepcopy(dat.effects[hc_eid])
+                dat.effects.append(new_hc_eff)
+                new_hc.effect_id = len(dat.effects) - 1
+            dat.techs.append(new_hc)
         return True
 
     if bonus_id == 81:           # No buildings required to advance ages or unlock buildings
@@ -1776,6 +1844,17 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         # We create a civ-specific clone of tech 638 and add its ID to the free
         # OR slot in each of the three Shadow Node+ techs.
         _SHADOW_NODES = (659, 660, 661)  # Shadow Node+ for Age Two/Three/Four
+
+        # Pre-flight: each shadow node has 6 required_techs slots. Count how
+        # many are still free across all three. If any is already full, fail
+        # now with a clear message rather than mid-loop.
+        for _sn in _SHADOW_NODES:
+            _free = sum(1 for r in dat.techs[_sn].required_techs if r == -1)
+            if _free == 0:
+                raise RuntimeError(
+                    f"bonus 81: tech {_sn} has no free required_techs slots — "
+                    f"too many civs with bonus 81 in this batch (max ~4)."
+                )
 
         template = dat.techs[638]        # Khmer requirement (req_count=0, no effect)
         new_req = deepcopy(template)
@@ -1809,6 +1888,14 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         # We clone tech 978 for our civ and add the new ID to a free slot in 377.
         _SIEGE_ENG   = 377
         _JURCHEN_REQ = 978   # template: civ=52, req=[102], fires at Castle Age
+
+        # Pre-flight: verify tech 377 still has a free slot before we try to fill it.
+        _free = sum(1 for r in dat.techs[_SIEGE_ENG].required_techs if r == -1)
+        if _free == 0:
+            raise RuntimeError(
+                "bonus 352: tech 377 (Siege Engineers) has no free required_techs slots — "
+                "too many civs with bonus 352 in this batch."
+            )
 
         template = dat.techs[_JURCHEN_REQ]
         new_req = deepcopy(template)
@@ -2295,15 +2382,28 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     """
     raw = civ_def.get("bonuses", [])
     if not raw:
-        return
+        return {}
 
     # ── Civ bonuses (index 0) ─────────────────────────────────────────────────
     civ_bonuses = raw[0] if len(raw) > 0 and isinstance(raw[0], list) else []
+
+    # Enforce dependency ordering: some bonuses must run before their dependents.
+    # 309 (create Royal Battle Elephant tech) must precede 155 (make it free).
+    # 310 (create Royal Lancer tech)          must precede 261 (make it free).
+    _BONUS_FIRST = {309: 0, 310: 0}
+    civ_bonuses = sorted(
+        civ_bonuses,
+        key=lambda e: _BONUS_FIRST.get(int(e[0]) if isinstance(e, (list, tuple)) and e else 0, 1),
+    )
+
     skipped = []
     applied = 0
     extra_strings: list[dict] = []
     extra_unit_strings: list[dict] = []
     bonus_tech_map: dict[int, int] = {}  # template_id → allocated_id for all bonus techs
+    # Maps a global tech ID to a civ-specific clone allocated by a bonus handler.
+    # Passed to _allocate_tech so prerequisite chains on cloned techs stay intact.
+    tech_remaps: dict[int, int] = {}
     for entry in civ_bonuses:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
             continue
@@ -2318,7 +2418,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             # recursively copies 596 again → two make-avail techs, orphaned elite chain).
             seen_bonus: dict[int, int] = {}
             for tech_id in tech_ids:
-                new_tid = _allocate_tech(dat, tech_id, civ_index, seen_bonus)
+                new_tid = _allocate_tech(dat, tech_id, civ_index, seen_bonus, tech_remaps)
                 if new_tid < 0:
                     continue
 
@@ -2365,7 +2465,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             applied += len(ec_entries)
             continue
 
-        if _create_bonus_handler(dat, bonus_id, civ_index, multiplier, extra_strings, extra_unit_strings):
+        if _create_bonus_handler(dat, bonus_id, civ_index, multiplier, extra_strings, extra_unit_strings, tech_remaps):
             applied += 1
         else:
             skipped.append(bonus_id)
@@ -2909,7 +3009,16 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     #    after all civs are processed — see app.py / build_all.py.
     lang_val = civ_def.get("language", 0)
 
-    print(f"       tech_tree_id(eff)={tt_eff_id}  team_bonus_id(eff)={tb_eff_id}")
+    # Guard: TT effects exceeding ~189 commands crash the game at startup.
+    _TT_COMMAND_SOFT_LIMIT = 185
+    _tt_cmd_count = len(dat.effects[tt_eff_id].effect_commands)
+    if _tt_cmd_count > _TT_COMMAND_SOFT_LIMIT:
+        print(f"  WARNING: TT effect for {alias!r} has {_tt_cmd_count} commands "
+              f"(soft limit {_TT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
+              f"Game may crash at startup — reduce tree disables or bonus count.")
+
+    print(f"       tech_tree_id(eff)={tt_eff_id}  team_bonus_id(eff)={tb_eff_id}  "
+          f"TT_commands={_tt_cmd_count}")
     return {
         "civ_index":             civ_index,
         "lang_val":              lang_val,
@@ -2929,6 +3038,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         "km_uu_make_avail_tech_id": km_uu_make_avail_tech_id,
         "km_uu_elite_tech_id":      km_uu_elite_tech_id,
         "bonus_tech_map":           bonus_results.get("bonus_tech_map", {}),
+        "uu_id":                    uu_id,
+        "elite_uu_id":              elite_uu_id,
     }
 
 
@@ -3013,6 +3124,8 @@ def _apply_uu_stats(u, stats: dict, elite: bool, civ_def: dict) -> None:
             for arm in u.type_50.armours:
                 if arm.class_ == 3:
                     arm.amount = stats["pierce_armor"]
+            if u.creatable:
+                u.creatable.displayed_pierce_armour = stats["pierce_armor"]
         if "range" in stats:
             u.type_50.max_range = stats["range"]
 

@@ -101,7 +101,8 @@ def _decode_flag(civ_def: dict) -> bytes | None:
             break
     try:
         img_bytes = base64.b64decode(raw)
-    except Exception:
+    except Exception as e:
+        print(f"WARNING: customFlagData base64 decode failed — flag will be omitted ({e})")
         return None
     # Normalise to 104×104 PNG via Pillow (handles JPEG conversion + resize in one pass).
     try:
@@ -112,10 +113,12 @@ def _decode_flag(civ_def: dict) -> bytes | None:
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         return buf.getvalue()
-    except Exception:
+    except Exception as e:
         # Pillow unavailable or corrupt — return raw bytes only if already PNG.
         if img_bytes.startswith(b'\x89PNG'):
+            print(f"WARNING: Pillow unavailable/failed ({e}); using raw PNG bytes as-is (no resize)")
             return img_bytes
+        print(f"WARNING: Flag image could not be decoded (Pillow unavailable or corrupt image: {e}) — flag will be omitted. Install Pillow to support JPEG flags.")
         return None
 
 
@@ -161,6 +164,7 @@ def _build_ui_zip(civ_def: dict, ui_civ_name: str, name_string_id: int) -> bytes
                     f"widgetui/textures/ingame/icons/civ_techtree_buttons/{fname}",
                     flag_png,
                 )
+            zf.writestr(f"widgetui/textures/menu/civs/{fn}.png", flag_png)
             # civ_emblems/{fn}.png is a 450×280 background overlay (score/loading
             # screen), NOT a badge.  Omit it — writing the 104×104 flag there
             # causes it to stretch into a giant emblem in the UI.

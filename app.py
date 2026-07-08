@@ -65,6 +65,11 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "1.7.3": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Custom flag icon now shows correctly in the civilization picker and in-game interface",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #283 (Chemistry/Hand Cannoneer in Castle Age) no longer breaks Bombard Cannons, Bombard Towers, or Cannon Galleons — now mirrors the Bohemian mechanism",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #283 (Chemistry/Hand Cannoneer in Castle Age) Chemistry now correctly unlocks in Castle Age — Castle Age trigger was cloned but not wired correctly",
+    ],
     "1.7.2": [
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Fixed a bug that prevented camel riders from being trainable",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Fixed Bonus #283 - Chemistry/HC in Castle Age",

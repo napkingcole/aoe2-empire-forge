@@ -270,6 +270,36 @@ def diagnose_one(dat: DatFile, civ_def: dict,
         _report_tech(dat, make_id,  "make-avail", warnings)
         _report_tech(dat, elite_id, "elite-upgrade", warnings, verbose=True)
 
+    # ── UU Stats ─────────────────────────────────────────────────────────────
+    uu_id       = result.get("uu_id", -1)
+    elite_uu_id = result.get("elite_uu_id", -1)
+    uu_stats    = civ_def.get("unique_unit", {}).get("stats", {})
+    pierce_overridden = "pierce_armor" in uu_stats
+    _section("UU STATS (from DAT after apply)")
+    for uid, label in ((uu_id, "Base UU"), (elite_uu_id, "Elite UU")):
+        if uid < 0:
+            continue
+        u = dat.civs[civ_index].units[uid] if uid < len(dat.civs[civ_index].units) else None
+        if u is None:
+            print(f"    {label} (id {uid}): unit slot is None")
+            continue
+        hp    = u.hit_points
+        spd   = u.speed
+        atk   = u.type_50.displayed_attack if u.type_50 else "?"
+        m_arm = u.type_50.displayed_melee_armour if u.type_50 else "?"
+        p_arm_displayed = getattr(u.creatable, "displayed_pierce_armour", "?") if u.creatable else "?"
+        p_arm_actual    = next((a.amount for a in (u.type_50.armours if u.type_50 else []) if a.class_ == 3), "?")
+        print(f"    {label} (id {uid}):")
+        print(f"      HP={hp}  speed={spd}  attack={atk}  melee_armor={m_arm}")
+        if pierce_overridden:
+            match = "✓" if p_arm_displayed == p_arm_actual else "⚠ MISMATCH"
+            print(f"      pierce_armor  actual={p_arm_actual}  displayed={p_arm_displayed}  {match}")
+            if p_arm_displayed != p_arm_actual:
+                _warn(f"{label} (id {uid}): pierce armor displayed={p_arm_displayed} "
+                      f"but actual={p_arm_actual} — stat panel will show wrong value", warnings)
+        else:
+            print(f"      pierce_armor  {p_arm_actual} (inherited from source, not overridden)")
+
     # ── Castle UT ─────────────────────────────────────────────────────────────
     castle_entries = raw[2] if len(raw) > 2 and isinstance(raw[2], list) else []
     c_tech  = result.get("castle_ut_tech_id")

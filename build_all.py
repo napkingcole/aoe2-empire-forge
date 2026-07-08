@@ -433,7 +433,12 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
 
         ui_civ_name = dat.civs[slot].name
         tt_idx      = _civ_techtree_index(ui_civ_name)
-        name_sid    = 10271 + tt_idx if tt_idx is not None else 10271
+        if tt_idx is None:
+            print(f"  ERROR: {replace_name!r} (DAT name {ui_civ_name!r}) not found in KM_TECHTREE_ORDER — "
+                  f"cannot assign a civ name string ID. Add an alias to _civ_techtree_index or choose a "
+                  f"different replacement civ. Skipping {alias!r}.")
+            continue
+        name_sid = 10271 + tt_idx
 
         print(f"\n  [{slot}] {replace_name!r} → {alias!r}  (string ID {name_sid})")
 
@@ -840,10 +845,12 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     print("Done.")
     print()
     print("Known bonus limitations (partial implementation):")
-    print("  [81]  No buildings required to age up — NOT IMPLEMENTED (requires engine-level tech prereq change)")
+    print("  [81]  No buildings required to age up — IMPLEMENTED (Khmer shadow-node mechanism).")
+    print("        Limited to ~4 civs per batch; raises RuntimeError if Shadow Node+ prereq slots fill up.")
     print("  [105] Economic upgrades −33% food — food discount applied; 'one age earlier' NOT implemented")
-    print("  [283] Chemistry + Hand Cannoneer in Castle Age — NOT IMPLEMENTED (gate-stub mechanism, cloning insufficient)")
-    print("  [352] Siege Engineers in Castle Age — NOT IMPLEMENTED (gate-stub mechanism, cloning insufficient)")
+    print("  [283] Chemistry + Hand Cannoneer in Castle Age — IMPLEMENTED (Castle Age gate clone).")
+    print("  [352] Siege Engineers in Castle Age — IMPLEMENTED (Jurchen prereq-slot mechanism).")
+    print("        Limited by available prereq slots in tech 377; raises RuntimeError if slots fill up.")
 
 
 def main() -> None:

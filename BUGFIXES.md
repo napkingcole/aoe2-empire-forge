@@ -138,6 +138,67 @@ Added `_TEAM_BONUS_NAMES` dict in `build_all.py` (exported) and imported + used 
 
 ---
 
+## 2026-07-07 — Custom flag icon missing from in-game civ picker and in-game interface
+
+**Symptom:** A civ with a custom flag showed the default AoE2 flag icon in both the
+civilization picker menu and the in-game interface, even though the widgetui folder
+was present.
+
+**Root cause:** `_build_ui_zip` in `build_civ.py` wrote the flag PNG to
+`widgetui/textures/ingame/icons/civ_techtree_buttons/` (tech-tree button) but not to
+`widgetui/textures/menu/civs/` (the civ picker / in-game flag slot).
+
+**Fix:** Added the missing `widgetui/textures/menu/civs/{fn}.png` write after the
+per-variant icon loop in `_build_ui_zip`. Also added warning logs to `_decode_flag`
+for silent Pillow/JPEG failures.
+
+**Commit:** (2026-07-07)
+
+---
+
+## 2026-07-07 — Bonus #283 broke Bombard Cannons, Bombard Towers, and Cannon Galleons
+
+**Symptom:** A civ with bonus #283 (Chemistry and Hand Cannoneer available in Castle
+Age) could not train Bombard Cannons even in Imperial Age. Houfnice upgrade was also
+missing because it depends on Bombard Cannon being researchable first.
+
+**Root cause:** The original bonus #283 handler cloned Chemistry (tech 47) as a
+civ-specific Castle-Age version, then disabled the original tech 47 via a `type=102`
+command in the TT effect. Techs 188 (Bombard Cannon), 64 (Bombard Tower), and 37
+(Cannon Galleon) all have tech 47 in their `required_techs` — with 47 disabled, their
+prerequisite was never satisfied and they never fired.
+
+**Fix:** Replaced the handler entirely. The correct mechanism mirrors how Bohemians
+actually work in the DAT: Chemistry (47) already has `required_techs=[103, 800],
+count=1` (OR-logic). Tech 800 is a Bohemian-owned auto-fire that triggers at Castle
+Age, satisfying Chemistry's OR-prereq without disabling 47. We clone techs 800 and
+801 for the custom civ and add the 800-clone ID to Chemistry's free OR-prereq slot so
+Chemistry unlocks at Castle Age for that civ only. Chemistry 47 is never disabled.
+
+**Commit:** (2026-07-07)
+
+---
+
+## 2026-07-07 — Bonus #283 Chemistry still locked behind Imperial Age after handler rewrite
+
+**Symptom:** After the handler rewrite above, Chemistry was still only researchable in
+Imperial Age.
+
+**Root cause:** The new handler called `_allocate_tech(dat, 800, ...)` to clone tech
+800 but discarded the return value. The clone's new ID was never written into Chemistry
+(47)'s `required_techs` list. The engine checks prereqs by exact tech ID — tech 800
+was in Chemistry's list, but our clone (e.g. ID 1200) was not, so the clone's firing
+never satisfied Chemistry's prereq for non-Bohemian civs.
+
+**Fix:** Captured `new_800_id` from `_allocate_tech` and slotted it into the first
+free `−1` entry in Chemistry's `required_techs` list. `required_tech_count` stays 1
+(OR-logic already set); any of `[103, 800, new_800_id]` now satisfies it. Other civs
+are unaffected because `new_800_id` is civ-specific and never fires for them.
+
+**Commit:** (2026-07-07)
+
+---
+
 ## 2026-07-03 — Bonus 35 (Infantry +20% HP) fires empty Castle/Imperial techs
 
 **Symptom:** `diagnose_civ.py` reported bonus 35 allocating three techs (Feudal,
