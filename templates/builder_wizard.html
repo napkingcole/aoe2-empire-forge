@@ -200,22 +200,23 @@
 
   {# Civ bonuses #}
   <div class="card mb-3">
-    <div class="card-header"><span class="step-badge">3</span> Civilization Bonuses</div>
+    <div class="card-header d-flex align-items-center gap-2">
+      <span class="step-badge">3</span> Civilization Bonuses
+      <span id="bonus-count-badge" class="ms-auto badge"
+            style="background:oklch(from var(--body-bg) calc(l + 0.2) c h);color:var(--body-text);font-weight:500;font-size:.75rem;">0 / 6</span>
+    </div>
     <div class="card-body">
-      <p class="text-muted small mb-3">Choose up to 6 civilization bonuses. Search by keyword to find bonuses, then click to add them.</p>
+      <p class="text-muted small mb-3">Choose up to 6 civilization bonuses. Click a card to select it; click again to remove it.</p>
 
-      <div class="bonus-search-wrap mb-3">
-        <div class="input-group">
-          <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
-            <i class="fa-solid fa-magnifying-glass text-muted"></i>
-          </span>
-          <input type="text" id="bonus-search" class="form-control" placeholder="Search bonuses… e.g. infantry, archer, farm, gold" autocomplete="off">
-        </div>
-        <div id="bonus-results" class="bonus-results d-none"></div>
+      <div class="input-group mb-3">
+        <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
+          <i class="fa-solid fa-magnifying-glass text-muted"></i>
+        </span>
+        <input type="text" id="bonus-search" class="form-control" placeholder="Filter bonuses… e.g. infantry, archer, farm, gold" autocomplete="off">
       </div>
 
-      <div id="bonus-slots" class="d-flex flex-column gap-2">
-        <div class="text-muted small fst-italic" id="bonus-empty-hint">No bonuses added yet.</div>
+      <div id="bonus-grid" class="bonus-grid">
+        <div class="text-muted small fst-italic">Loading…</div>
       </div>
     </div>
   </div>
@@ -226,20 +227,17 @@
       <i class="fa-solid fa-people-group me-1" style="color: var(--accent-2);"></i> Team Bonus
     </div>
     <div class="card-body">
-      <p class="text-muted small mb-3">Choose one bonus that applies to all allied civilizations.</p>
+      <p class="text-muted small mb-3">Choose one bonus that applies to all allied civilizations. Click to select, click again to remove.</p>
 
-      <div class="bonus-search-wrap mb-3">
-        <div class="input-group">
-          <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
-            <i class="fa-solid fa-magnifying-glass text-muted"></i>
-          </span>
-          <input type="text" id="team-bonus-search" class="form-control" placeholder="Search team bonuses…" autocomplete="off">
-        </div>
-        <div id="team-bonus-results" class="bonus-results d-none"></div>
+      <div class="input-group mb-3">
+        <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
+          <i class="fa-solid fa-magnifying-glass text-muted"></i>
+        </span>
+        <input type="text" id="team-bonus-search" class="form-control" placeholder="Filter team bonuses…" autocomplete="off">
       </div>
 
-      <div id="team-bonus-slot">
-        <div class="text-muted small fst-italic" id="team-bonus-empty-hint">No team bonus selected.</div>
+      <div id="team-bonus-grid" class="bonus-grid">
+        <div class="text-muted small fst-italic">Loading…</div>
       </div>
     </div>
   </div>
@@ -699,17 +697,114 @@
 {# Step 6 — Imperial UT #}
 {{ ut_panel(6, "iut", "fa-solid fa-crown", "Imperial Age") }}
 
-{# Step 7 — Team Bonus (included in step 3) #}
+{# Step 7 — Hero Unit #}
 <div class="wizard-panel d-none" id="panel-7">
   <div class="card mb-3">
-    <div class="card-header"><span class="step-badge">7</span> Team Bonus</div>
-    <div class="card-body py-4 text-center">
-      <i class="fa-solid fa-circle-check fa-3x mb-3" style="color: var(--accent-2); opacity: 0.7;"></i>
-      <h5 class="fw-semibold mb-2">Team Bonus is on Step 3</h5>
-      <p class="text-muted mb-3">The team bonus picker is part of the Bonuses step.</p>
-      <button class="btn btn-outline-primary btn-sm" onclick="showStep(3)">
-        <i class="fa-solid fa-arrow-left me-1"></i> Go to Bonuses
-      </button>
+    <div class="card-header">
+      <i class="fa-solid fa-star me-1" style="color: var(--accent-2);"></i>
+      <span class="step-badge">7</span> Hero Unit
+      <span class="badge bg-secondary ms-2" style="font-size:.65rem;font-weight:500;">Optional</span>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        Add a powerful hero unit that trains from your Castle. Heroes draw a gold portrait border,
+        are limited to one on the battlefield at a time, and cannot be converted. Click a hero to select it;
+        click again to deselect.
+      </p>
+
+      {# Category filter #}
+      <div class="btn-group btn-group-sm mb-3" role="group" id="hero-filter-group">
+        <button type="button" class="btn btn-outline-secondary active" data-filter="all">All</button>
+        <button type="button" class="btn btn-outline-secondary" data-filter="multiplayer">Multiplayer</button>
+        <button type="button" class="btn btn-outline-secondary" data-filter="campaign">Campaign</button>
+      </div>
+
+      {# Hero icon grid (populated by JS) #}
+      <div id="hero-grid" class="d-flex flex-wrap gap-2 mb-3" style="min-height:72px;">
+      </div>
+
+      {# Selected banner + clear #}
+      <div id="hero-selected-banner" class="alert alert-secondary py-2 d-none mb-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <span>
+            <i class="fa-solid fa-star me-1" style="color:goldenrod;"></i>
+            <strong id="hero-selected-label">—</strong> selected as hero
+          </span>
+          <button class="btn btn-outline-danger btn-sm" id="hero-clear-btn">Remove</button>
+        </div>
+      </div>
+
+      {# Customization panel #}
+      <div id="hero-customize-panel" class="d-none">
+        <hr class="mt-1 mb-3">
+
+        <div class="row g-2 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small">Display Name
+              <span class="text-muted fw-normal">(blank = game default)</span></label>
+            <input type="text" id="hero-name" class="form-control form-control-sm"
+                   placeholder="e.g. Grand Marshal">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Description</label>
+            <input type="text" id="hero-description" class="form-control form-control-sm"
+                   placeholder="Shown in training tooltip">
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <div class="form-label small fw-semibold text-muted mb-1"
+               style="text-transform:uppercase;letter-spacing:.05em;">
+            Stat Overrides
+            <span class="fw-normal text-muted">(blank = vanilla value)</span>
+          </div>
+          <div class="row g-2">
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-0">HP</label>
+              <input type="number" id="hero-ov-hp" class="form-control form-control-sm"
+                     min="1" placeholder="e.g. 200">
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-0">Speed</label>
+              <input type="number" id="hero-ov-speed" class="form-control form-control-sm"
+                     min="0.1" step="0.05" placeholder="e.g. 1.2">
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-0">Attack</label>
+              <input type="number" id="hero-ov-attack" class="form-control form-control-sm"
+                     min="0" placeholder="e.g. 20">
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-0">Melee Armor</label>
+              <input type="number" id="hero-ov-melee" class="form-control form-control-sm"
+                     min="0" placeholder="e.g. 3">
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-0">Pierce Armor</label>
+              <input type="number" id="hero-ov-pierce" class="form-control form-control-sm"
+                     min="0" placeholder="e.g. 2">
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-0">Train Time (s)</label>
+              <input type="number" id="hero-ov-train" class="form-control form-control-sm"
+                     min="1" placeholder="e.g. 30">
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-2">
+          <div class="form-label small fw-semibold text-muted mb-1"
+               style="text-transform:uppercase;letter-spacing:.05em;">Hero Traits</div>
+          <div class="d-flex gap-3 flex-wrap">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="hero-flag-regen">
+              <label class="form-check-label small" for="hero-flag-regen">Enhanced HP Regeneration</label>
+            </div>
+          </div>
+          <div class="form-text">One-at-a-time, gold portrait, cannot be converted, and basic HP regeneration are always active. Enhanced regen sets an explicit rate of 60 HP/min (1 HP/sec).</div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -777,6 +872,16 @@
         <div class="form-text mt-2 text-center">
           Requires the DAT file path set in Step 1.
         </div>
+        <hr class="my-3">
+        <div class="d-grid">
+          <button id="btn-export-json" class="btn btn-outline-secondary">
+            <i class="fa-solid fa-file-export me-2"></i>Export as JSON
+          </button>
+        </div>
+        <div class="form-text mt-1 text-center">
+          Save your civ definition as a <code>.civbuilder.json</code> file for
+          batch building or sharing.
+        </div>
       </div>
     </div>
   </div>
@@ -796,6 +901,7 @@
 
 {# Singleton floating tooltips (positioned by JS) #}
 <div id="uu-stat-popup"></div>
+<div id="hero-stat-popup"></div>
 <div id="ut-card-tooltip"></div>
 
 {% endblock %}

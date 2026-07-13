@@ -1051,33 +1051,45 @@ def _load_techtree_data() -> dict:
 @app.route("/api/builder/techtree")
 def api_builder_techtree():
     """Return a localtree array ([[unitIds], [buildingIds], [techIds]]) for a
-    given civ, or the full master tree if civ=full (or omitted)."""
+    given civ, or the full master tree if civ=full (or omitted).
+
+    data.json now uses SE format: top-level key 'civs' (not 'techtrees'),
+    with per-civ dicts having 'Unit', 'Building', 'Tech' integer arrays.
+    """
     civ = request.args.get("civ", "full")
     td  = _load_techtree_data()
 
     if civ == "full":
+        # Return all IDs known across all civs combined
+        all_units = set()
+        all_bldgs = set()
+        all_techs = set()
+        for cv in td.get("civs", {}).values():
+            all_units.update(cv.get("Unit", []))
+            all_bldgs.update(cv.get("Building", []))
+            all_techs.update(cv.get("Tech", []))
         return jsonify({
-            "units":     [int(k) for k in td["data"]["units"].keys()],
-            "buildings": [int(k) for k in td["data"]["buildings"].keys()],
-            "techs":     [int(k) for k in td["data"]["techs"].keys()],
+            "units":     sorted(all_units),
+            "buildings": sorted(all_bldgs),
+            "techs":     sorted(all_techs),
         })
 
-    techtrees = td.get("techtrees", {})
-    if civ not in techtrees:
+    civs = td.get("civs", {})
+    if civ not in civs:
         return jsonify({"error": f"Unknown civ: {civ}"}), 404
 
-    tt = techtrees[civ]
+    cv = civs[civ]
     return jsonify({
-        "units":     [n["id"] for n in tt.get("units",     [])],
-        "buildings": [n["id"] for n in tt.get("buildings", [])],
-        "techs":     [n["id"] for n in tt.get("techs",     [])],
+        "units":     cv.get("Unit",     []),
+        "buildings": cv.get("Building", []),
+        "techs":     cv.get("Tech",     []),
     })
 
 
 @app.route("/api/builder/techtree/civs")
 def api_builder_techtree_civs():
     td = _load_techtree_data()
-    return jsonify(sorted(td.get("techtrees", {}).keys()))
+    return jsonify(sorted(td.get("civs", {}).keys()))
 
 
 @app.route("/api/builder/bonuses/catalog")
@@ -1582,6 +1594,36 @@ def builder_download():
     if not out_file or not Path(out_file).exists():
         return "No wizard mod file available — please build first.", 404
     return send_file(out_file, as_attachment=True, download_name=out_name)
+
+
+@app.route("/api/builder/export", methods=["POST"])
+def builder_export():
+    import io
+    import re
+    from civ_schema import from_draft
+
+    data  = request.get_json(silent=True) or {}
+    draft = data.get("draft", {})
+
+    if not draft.get("alias"):
+        return jsonify({"error": "Draft is missing a civilization name."}), 400
+
+    try:
+        schema = from_draft(draft)
+    except Exception as e:
+        return jsonify({"error": f"Export failed: {e}"}), 500
+
+    alias    = draft.get("alias", "custom_civ")
+    filename = re.sub(r"[^A-Za-z0-9_-]", "_", alias).lower() or "custom_civ"
+    filename = f"{filename}.civbuilder.json"
+
+    json_bytes = json.dumps(schema, indent=2, ensure_ascii=False).encode("utf-8")
+    return send_file(
+        io.BytesIO(json_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/json",
+    )
 
 
 # ── Startup prewarm ───────────────────────────────────────────────────────────

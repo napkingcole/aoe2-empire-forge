@@ -86,6 +86,8 @@ function showStep(n) {
   document.getElementById("step-counter").textContent = `Step ${n} of ${TOTAL_STEPS}`;
   currentStep = n;
 
+  if (n === 7) { renderHeroGrid(); _heroRefreshUI(); }
+
   // Scroll to top of wizard area on step change
   document.getElementById(`panel-${n}`).scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -142,6 +144,7 @@ document.querySelectorAll(".wizard-step").forEach(dot => {
     if (target < currentStep) {
       showStep(target);
       if (target === 5 || target === 6) initUTPanel(target);
+      if (target === 7) { renderHeroGrid(); _heroRefreshUI(); }
     }
   });
 });
@@ -387,6 +390,19 @@ function populateReview() {
       }).join("")}</ul>`
     : "<em class='text-muted'>None</em>";
 
+  // ── Hero Unit ───────────────────────────────────────────────────────────
+  let heroHtml = "<em class='text-muted'>None</em>";
+  if (draft.hero_unit?.base_unit_id != null) {
+    const hid   = draft.hero_unit.base_unit_id;
+    const base  = _HERO_NAMES[hid] || `Unit #${hid}`;
+    const disp  = draft.hero_unit.name || base;
+    const sub   = draft.hero_unit.name ? `<div class="text-muted" style="font-size:.7rem;">base: ${base}</div>` : "";
+    const fls   = [];
+    if (draft.hero_unit.flags?.regen_hp) fls.push("Enhanced Regen");
+    const flStr = fls.length ? `<div class="text-muted small mt-1">${fls.join(" &middot; ")}</div>` : "";
+    heroHtml = `<div class="fw-semibold small">${disp}</div>${sub}${flStr}`;
+  }
+
   // ── UU ──────────────────────────────────────────────────────────────────
   let uuHtml = "<em class='text-danger'>Not set</em>";
   if (draft.unique_unit?.km_idx != null) {
@@ -396,10 +412,8 @@ function populateReview() {
     const override = draft.unique_unit.name;
     const display  = override || baseName;
     const subtitle = override ? `<div class="text-muted" style="font-size:.7rem;">base: ${baseName}</div>` : "";
-    uuHtml = `<div class="d-flex align-items-center gap-2">
-      <img src="${iconSrc}" style="width:32px;height:32px;object-fit:contain;background:oklch(from var(--body-bg) calc(l+0.06) c h);border-radius:4px;" onerror="this.src='${UU_PLACEHOLDER}'">
-      <div><div>${display}</div>${subtitle}</div>
-    </div>`;
+    const _uuRevImg = `<img id="uu-review-icon" src="${iconSrc}" style="width:32px;height:32px;object-fit:contain;background:oklch(from var(--body-bg) calc(l+0.06) c h);border-radius:4px;">`;
+    uuHtml = `<div class="d-flex align-items-center gap-2">${_uuRevImg}<div><div>${display}</div>${subtitle}</div></div>`;
   }
 
   // ── UT helper ───────────────────────────────────────────────────────────
@@ -454,19 +468,25 @@ function populateReview() {
           </div>
         </div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="card h-100">
           <div class="card-header small fw-semibold"><i class="fa-solid fa-person-rifle me-1" style="color:var(--accent-2)"></i>Unique Unit</div>
           <div class="card-body p-2">${uuHtml}</div>
         </div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
+        <div class="card h-100">
+          <div class="card-header small fw-semibold"><i class="fa-solid fa-star me-1" style="color:var(--accent-2)"></i>Hero Unit</div>
+          <div class="card-body p-2">${heroHtml}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
         <div class="card h-100">
           <div class="card-header small fw-semibold"><i class="fa-solid fa-chess-rook me-1" style="color:var(--accent-2)"></i>Castle UT</div>
           <div class="card-body p-2">${utSection("castle_ut", "Castle UT")}</div>
         </div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="card h-100">
           <div class="card-header small fw-semibold"><i class="fa-solid fa-crown me-1" style="color:var(--accent-2)"></i>Imperial UT</div>
           <div class="card-body p-2">${utSection("imperial_ut", "Imperial UT")}</div>
@@ -478,6 +498,10 @@ function populateReview() {
       <pre class="build-log mt-2" style="font-size:.7rem;max-height:200px;overflow:auto">${JSON.stringify(draft, (k, v) => k === "emblem" ? "[image data]" : v, 2)}</pre>
     </details>
   `;
+
+  // Wire onerror for review UU icon via JS (avoids inline HTML quote-escaping issues)
+  const revUUImg = document.getElementById("uu-review-icon");
+  if (revUUImg) revUUImg.onerror = () => { revUUImg.onerror = null; revUUImg.src = UU_PLACEHOLDER; };
 
   // Populate replace-civ dropdown from meta (if not already done)
   _populateReplaceCivSelect();
@@ -541,7 +565,726 @@ document.getElementById("btn-generate").addEventListener("click", async () => {
   }
 });
 
+// ── Export JSON ───────────────────────────────────────────────────────────────
+
+document.getElementById("btn-export-json").addEventListener("click", async () => {
+  const btn   = document.getElementById("btn-export-json");
+  const errEl = document.getElementById("build-error");
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Exporting…';
+  errEl.classList.add("d-none");
+
+  try {
+    const res = await fetch("/api/builder/export", {
+      method:  "POST",
+      headers: {"Content-Type": "application/json"},
+      body:    JSON.stringify({ draft }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      errEl.textContent = data.error || "Export failed.";
+      errEl.classList.remove("d-none");
+      return;
+    }
+    const blob     = await res.blob();
+    const cd       = res.headers.get("Content-Disposition") || "";
+    const match    = cd.match(/filename="?([^";]+)/);
+    const filename = match
+      ? match[1]
+      : `${(draft.alias || "custom_civ").toLowerCase().replace(/[^a-z0-9_-]/g, "_")}.civbuilder.json`;
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement("a");
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    errEl.textContent = `Network error: ${e.message}`;
+    errEl.classList.remove("d-none");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-file-export me-2"></i>Export as JSON';
+  }
+});
+
+// ── Hero Unit (Step 7) ────────────────────────────────────────────────────────
+
+// ── Hero catalog ─────────────────────────────────────────────────────────────
+// stats sourced from vanilla DAT. cost strips campaign-only Res4 entries.
+// specials: human-readable strings for notable abilities not visible from raw stats.
+const _HERO_CATALOG = [
+  // Multiplayer (Three Kingdoms)
+  { id: 1954, name: "Cao Cao",              faction: "Wei",          category: "multiplayer",
+    stats: { hp:475, speed:1.3,  attack:14, ma:3, pa:3, range:null, reload:2.0,
+             cost:"500 Food, 500 Gold",
+             bonuses:[["Packed Unit",3]],
+             specials:["Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)","Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1966, name: "Liu Bei",              faction: "Shu",          category: "multiplayer",
+    stats: { hp:425, speed:0.9,  attack:15, ma:3, pa:3, range:null, reload:2.0,
+             cost:"500 Food, 500 Gold",
+             bonuses:[["Eagle Warrior",3]],
+             specials:["Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)"] }},
+  { id: 1978, name: "Sun Jian",             faction: "Wu",           category: "multiplayer",
+    stats: { hp:400, speed:1.55, attack:15, ma:4, pa:4, range:null, reload:2.0,
+             cost:"500 Food, 500 Gold",
+             bonuses:[],
+             specials:["Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)","Flanking bonus — deals +25% damage from the sides and rear"] }},
+  // Campaign
+  { id:  169, name: "Aethelflaed",          faction: "Anglo-Saxon",  category: "campaign",
+    stats: { hp:140, speed:1.03, attack:8,  ma:0, pa:0, range:null, reload:2.0,
+             cost:"65 Food, 25 Gold",
+             bonuses:[["Building",2]],
+             specials:[] }},
+  { id: 1071, name: "Abraha Elephant",      faction: "Ethiopian",    category: "campaign",
+    stats: { hp:750, speed:0.7,  attack:25, ma:1, pa:3, range:null, reload:2.0,
+             cost:"200 Food, 75 Gold",
+             bonuses:[["Building",15],["Cavalry Archer",15]],
+             specials:["Trample — deals full attack damage to all enemies within 0.5 tile radius","Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id:  777, name: "Attila the Hun",       faction: "Hunnic",       category: "campaign",
+    stats: { hp:350, speed:1.2,  attack:13, ma:2, pa:2, range:null, reload:2.0,
+             cost:"60 Food, 20 Gold",
+             bonuses:[["Building",3],["Camel",40]],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1070, name: "Babur",                faction: "Mughal",       category: "campaign",
+    stats: { hp:300, speed:1.45, attack:15, ma:0, pa:0, range:null, reload:2.0,
+             cost:"55 Food, 60 Gold",
+             bonuses:[["Cavalry",18],["Castle",9],["Pikeman",9]],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id:  429, name: "Barbarossa",           faction: "German",       category: "campaign",
+    stats: { hp:170, speed:0.75, attack:19, ma:10,pa:2, range:null, reload:2.0,
+             cost:"85 Food, 40 Gold",
+             bonuses:[["Eagle Warrior",4],["Chariot",4]],
+             specials:[] }},
+  { id: 1165, name: "Bayinnaung",           faction: "Burmese",      category: "campaign",
+    stats: { hp:400, speed:0.75, attack:18, ma:1, pa:3, range:null, reload:2.0,
+             cost:"120 Food, 75 Gold",
+             bonuses:[["Building",10],["Cavalry Archer",10]],
+             specials:["Trample — deals full attack damage to all enemies within 0.5 tile radius","Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id:  198, name: "El Cid (Infantry)",    faction: "Spanish",      category: "campaign",
+    stats: { hp:330, speed:0.9,  attack:13, ma:2, pa:1, range:null, reload:2.0,
+             cost:"60 Food, 20 Gold",
+             bonuses:[["Building",3]],
+             specials:[] }},
+  { id:  824, name: "El Cid (Cavalry)",     faction: "Spanish",      category: "campaign",
+    stats: { hp:430, speed:1.32, attack:15, ma:2, pa:3, range:null, reload:2.0,
+             cost:"50 Food",
+             bonuses:[],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id:  439, name: "Francesco Sforza",     faction: "Italian",      category: "campaign",
+    stats: { hp:200, speed:1.0,  attack:12, ma:1, pa:3, range:null, reload:1.9,
+             cost:"50 Food, 35 Gold",
+             bonuses:[["Chariot",2],["Knight",12]],
+             specials:[] }},
+  { id: 1157, name: "Gajah Mada",           faction: "Malay",        category: "campaign",
+    stats: { hp:425, speed:0.9,  attack:20, ma:2, pa:0, range:null, reload:2.0,
+             cost:"60 Food, 20 Gold",
+             bonuses:[["Eagle Warrior",8],["Chariot",4]],
+             specials:[] }},
+  { id: 1269, name: "Genghis Khan",         faction: "Mongol",       category: "campaign",
+    stats: { hp:170, speed:1.4,  attack:10, ma:3, pa:3, range:6.0,  reload:2.0,
+             cost:"40 Wood, 60 Gold",
+             bonuses:[["Building",2]],
+             specials:["Pass-through projectile — arrows pierce through multiple targets in a line","Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1265, name: "Ivaylo",               faction: "Bulgarian",    category: "campaign",
+    stats: { hp:180, speed:1.35, attack:14, ma:1, pa:2, range:null, reload:1.9,
+             cost:"60 Food, 70 Gold",
+             bonuses:[],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1715, name: "Jadwiga",              faction: "Polish",       category: "campaign",
+    stats: { hp:270, speed:1.4,  attack:0,  ma:1, pa:1, range:6.0,  reload:1.6,
+             cost:"100 Gold",
+             bonuses:[],
+             specials:["Does not deal direct combat damage — support / scripted role","Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1713, name: "Jan Žižka",            faction: "Bohemian",     category: "campaign",
+    stats: { hp:230, speed:1.4,  attack:16, ma:4, pa:1, range:null, reload:2.0,
+             cost:"50 Food",
+             bonuses:[],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1266, name: "Tzar Konstantin",      faction: "Byzantine",    category: "campaign",
+    stats: { hp:300, speed:1.4,  attack:14, ma:3, pa:3, range:null, reload:1.9,
+             cost:"60 Food, 70 Gold",
+             bonuses:[],
+             specials:["Trample — deals full attack damage to all enemies within 1 tile radius","Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 2637, name: "Lautaro",              faction: "Inca",         category: "campaign",
+    stats: { hp:300, speed:1.5,  attack:18, ma:0, pa:4, range:null, reload:2.0,
+             cost:"50 Food",
+             bonuses:[["Knight",3]],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1178, name: "Le Loi",               faction: "Vietnamese",   category: "campaign",
+    stats: { hp:350, speed:1.0,  attack:22, ma:2, pa:4, range:null, reload:2.0,
+             cost:"50 Food",
+             bonuses:[],
+             specials:[] }},
+  { id: 1034, name: "Musa",                 faction: "Malian",       category: "campaign",
+    stats: { hp:230, speed:1.41, attack:18, ma:1, pa:1, range:4.0,  reload:2.0,
+             cost:"50 Wood, 60 Gold",
+             bonuses:[["Infantry",1],["Boar",5]],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1074, name: "Pachacuti",            faction: "Inca",         category: "campaign",
+    stats: { hp:230, speed:0.95, attack:10, ma:2, pa:2, range:null, reload:2.0,
+             cost:"60 Food, 30 Gold",
+             bonuses:[["Cavalry",16],["Pikeman",13]],
+             specials:[] }},
+  { id:  929, name: "Saladin",              faction: "Saracen",      category: "campaign",
+    stats: { hp:150, speed:1.4,  attack:12, ma:1, pa:0, range:3.0,  reload:2.0,
+             cost:"55 Food, 85 Gold",
+             bonuses:[["Cavalry",12]],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1035, name: "Sundjata",             faction: "Malian",       category: "campaign",
+    stats: { hp:290, speed:1.5,  attack:14, ma:2, pa:3, range:null, reload:2.0,
+             cost:"80 Food",
+             bonuses:[["Siege",10]],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1822, name: "Tamar",                faction: "Georgian",     category: "campaign",
+    stats: { hp:320, speed:1.4,  attack:0,  ma:1, pa:2, range:9.0,  reload:1.6,
+             cost:"100 Gold",
+             bonuses:[],
+             specials:["Does not deal direct combat damage — support / scripted role","Extremely long range (9 tiles)","Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1727, name: "Ulrich Von Jungingen", faction: "Teutonic",     category: "campaign",
+    stats: { hp:350, speed:1.3,  attack:17, ma:8, pa:6, range:null, reload:2.0,
+             cost:"50 Food",
+             bonuses:[],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id:  193, name: "Vlad Dracula",         faction: "Romanian",     category: "campaign",
+    stats: { hp:210, speed:1.35, attack:16, ma:6, pa:2, range:null, reload:1.9,
+             cost:"50 Food, 80 Gold",
+             bonuses:[],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1281, name: "Vytautas",             faction: "Lithuanian",   category: "campaign",
+    stats: { hp:220, speed:1.5,  attack:15, ma:4, pa:5, range:null, reload:2.0,
+             cost:"40 Wood, 50 Gold",
+             bonuses:[],
+             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
+  { id: 1690, name: "Warwolf Trebuchet",    faction: "English",      category: "campaign",
+    stats: { hp:300, speed:0,    attack:300,ma:0, pa:200,range:20.0, reload:10.0,
+             cost:"200 Wood, 200 Gold",
+             bonuses:[["Building",500]],
+             specials:["Cannot move — stationary siege weapon","Area damage — damages all units (including allies) within 0.7 tile radius","Range 20 — extreme bombardment range"] }},
+  { id: 1066, name: "Yodit",                faction: "Ethiopian",    category: "campaign",
+    stats: { hp:170, speed:1.3,  attack:17, ma:0, pa:0, range:6.0,  reload:2.0,
+             cost:"50 Food, 25 Gold",
+             bonuses:[["Eagle Warrior",1]],
+             specials:["Pass-through projectile — arrows pierce through multiple targets in a line"] }},
+];
+
+const _HERO_NAMES = Object.fromEntries(_HERO_CATALOG.map(h => [h.id, h.name]));
+
+const _HERO_PLACEHOLDER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='6' fill='%231e293b'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-size='28' fill='%2364748b'%3E%E2%9B%B9%3C/text%3E%3C/svg%3E";
+
+let _heroFilter = "all";
+
+function _heroId() { return draft.hero_unit?.base_unit_id ?? null; }
+
+function _heroSetSelected(id) {
+  if (!id) {
+    draft.hero_unit = null;
+  } else if (id !== _heroId()) {
+    draft.hero_unit = { base_unit_id: id, name: "", description: "", overrides: {}, flags: {} };
+  } else {
+    draft.hero_unit = null;  // click selected card to deselect
+  }
+  _heroRefreshUI();
+  saveDraft();
+}
+
+function _heroSave() {
+  const hu = draft.hero_unit;
+  if (!hu) return;
+  const g = s => document.getElementById(s);
+  const numOrNull = v => { const n = parseFloat(v); return v === "" || isNaN(n) ? null : n; };
+
+  hu.name        = (g("hero-name")?.value        || "").trim();
+  hu.description = (g("hero-description")?.value || "").trim();
+
+  const ov = {};
+  for (const [elId, key] of [
+    ["hero-ov-hp", "hp"], ["hero-ov-speed", "speed"], ["hero-ov-attack", "attack"],
+    ["hero-ov-melee", "melee_armor"], ["hero-ov-pierce", "pierce_armor"], ["hero-ov-train", "train_time"],
+  ]) {
+    const v = numOrNull(g(elId)?.value ?? "");
+    if (v !== null) ov[key] = v;
+  }
+  hu.overrides = ov;
+  hu.flags = { regen_hp: g("hero-flag-regen")?.checked || false };
+  saveDraft();
+}
+
+function renderHeroGrid(filter) {
+  if (filter !== undefined) _heroFilter = filter;
+  const heroes = _HERO_CATALOG.filter(
+    h => _heroFilter === "all" || h.category === _heroFilter
+  );
+  const curId = _heroId();
+  const container = document.getElementById("hero-grid");
+  if (!container) return;
+
+  container.innerHTML = heroes.map(h => {
+    const sel = h.id === curId;
+    return `<div class="hero-grid-card" data-hero-id="${h.id}"
+               style="cursor:pointer;width:86px;text-align:center;" title="${h.name}">
+      <div class="card p-1"
+           style="border:2px solid ${sel ? 'var(--accent-2)' : 'transparent'};
+                  background:${sel ? 'rgba(255,200,50,.1)' : ''};
+                  transition:border-color .12s,background .12s;">
+        <img src="/static/icons/heroes/${h.id}.webp"
+             style="width:48px;height:48px;object-fit:contain;display:block;margin:0 auto;
+                    border-radius:4px;
+                    background:oklch(from var(--body-bg) calc(l + 0.06) c h);"
+             loading="lazy">
+        <div style="font-size:.62rem;font-weight:600;line-height:1.2;margin-top:3px;
+                    word-break:break-word;">${h.name}</div>
+        ${h.faction
+          ? `<div style="font-size:.55rem;color:var(--bs-secondary);line-height:1.3;">${h.faction}</div>`
+          : ""}
+      </div>
+    </div>`;
+  }).join("") ||
+    `<div class="text-muted small fst-italic">No heroes in this category.</div>`;
+
+  // Wire onerror via JS to avoid single-quote escaping issues in inline HTML attributes
+  container.querySelectorAll(".hero-grid-card img").forEach(img => {
+    img.onerror = () => { img.onerror = null; img.src = _HERO_PLACEHOLDER; };
+  });
+
+  const popup = _getHeroPopup();
+
+  container.querySelectorAll(".hero-grid-card").forEach(el => {
+    const id   = parseInt(el.dataset.heroId, 10);
+    const hero = _HERO_CATALOG.find(h => h.id === id);
+
+    el.addEventListener("click", () => _heroSetSelected(id));
+
+    if (hero?.stats) {
+      el.addEventListener("mouseenter", e => {
+        popup.innerHTML = _buildHeroPopupHTML(hero);
+        popup.style.display = "block";
+        _positionTooltip(popup, e);
+      });
+      el.addEventListener("mousemove",  e => _positionTooltip(popup, e));
+      el.addEventListener("mouseleave", () => { popup.style.display = "none"; });
+    }
+  });
+}
+
+// ── Hero popup ────────────────────────────────────────────────────────────────
+let _heroPopupEl = null;
+function _getHeroPopup() {
+  if (!_heroPopupEl) _heroPopupEl = document.getElementById("hero-stat-popup");
+  return _heroPopupEl;
+}
+
+function _buildHeroPopupHTML(hero) {
+  const s = hero.stats;
+  const catLabel = hero.category === "multiplayer" ? "Multiplayer" : "Campaign";
+
+  const row = (label, val) =>
+    `<div class="pop-row"><span class="pop-label">${label}</span><span class="pop-val">${val}</span></div>`;
+
+  const rows = [];
+
+  rows.push(row("Cost", "500 Food, 500 Gold"));
+  rows.push(row("HP",   s.hp));
+  rows.push(row("Speed", s.speed > 0 ? s.speed : "Immobile"));
+  if (s.attack > 0 || s.range == null) {
+    rows.push(row("Attack", s.attack));
+  }
+  rows.push(row("Armor (M/P)", `${s.ma}/${s.pa}`));
+  if (s.range) rows.push(row("Range", s.range));
+  rows.push(row("Reload", `${s.reload}s`));
+
+  if (s.bonuses?.length) {
+    const bonRows = s.bonuses.map(([cls, amt]) =>
+      `<div class="pop-bonus-row"><span class="pop-bonus-name">vs ${cls}</span><span class="pop-bonus-val">+${amt}</span></div>`
+    );
+    rows.push(`<div class="pop-section-label">Bonuses</div>${bonRows.join("")}`);
+  }
+
+  if (s.specials?.length) {
+    const spRows = s.specials.map(t => `<div class="pop-trait">${t}</div>`).join("");
+    rows.push(`<div class="pop-section-label">Special</div>${spRows}`);
+  }
+
+  return `<div class="pop-name">${hero.name}</div>
+          <div class="pop-type">${hero.faction} &middot; ${catLabel}</div>
+          ${rows.join("")}`;
+}
+
+function _heroRefreshUI() {
+  const id = _heroId();
+  const hu = draft.hero_unit || {};
+  const g  = s => document.getElementById(s);
+
+  // Update card highlights without full re-render
+  document.querySelectorAll(".hero-grid-card").forEach(el => {
+    const cid   = parseInt(el.dataset.heroId, 10);
+    const inner = el.querySelector(".card");
+    if (!inner) return;
+    inner.style.borderColor = cid === id ? "var(--accent-2)"     : "transparent";
+    inner.style.background  = cid === id ? "rgba(255,200,50,.1)" : "";
+  });
+
+  // Filter button active state
+  document.querySelectorAll("#hero-filter-group button").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.filter === _heroFilter);
+  });
+
+  // Banner + customize panel
+  const banner  = g("hero-selected-banner");
+  const labelEl = g("hero-selected-label");
+  const panel   = g("hero-customize-panel");
+  if (id) {
+    if (labelEl) labelEl.textContent = _HERO_NAMES[id] || `Unit #${id}`;
+    banner?.classList.remove("d-none");
+    panel?.classList.remove("d-none");
+  } else {
+    banner?.classList.add("d-none");
+    panel?.classList.add("d-none");
+  }
+
+  // Populate customization fields
+  if (g("hero-name"))        g("hero-name").value        = hu.name        || "";
+  if (g("hero-description")) g("hero-description").value = hu.description || "";
+  const ov = hu.overrides || {};
+  if (g("hero-ov-hp"))    g("hero-ov-hp").value    = ov.hp           ?? "";
+  if (g("hero-ov-speed")) g("hero-ov-speed").value = ov.speed        ?? "";
+  if (g("hero-ov-attack"))g("hero-ov-attack").value= ov.attack       ?? "";
+  if (g("hero-ov-melee")) g("hero-ov-melee").value = ov.melee_armor  ?? "";
+  if (g("hero-ov-pierce"))g("hero-ov-pierce").value= ov.pierce_armor ?? "";
+  if (g("hero-ov-train")) g("hero-ov-train").value = ov.train_time   ?? "";
+  const fl = hu.flags || {};
+  if (g("hero-flag-regen")) g("hero-flag-regen").checked = !!fl.regen_hp;
+}
+
+// Filter buttons
+document.querySelectorAll("#hero-filter-group button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    renderHeroGrid(btn.dataset.filter);
+    _heroRefreshUI();
+  });
+});
+
+// Clear button
+document.getElementById("hero-clear-btn").addEventListener("click", () => {
+  _heroSetSelected(null);
+});
+
+// Stat + flag fields
+["hero-name","hero-description","hero-ov-hp","hero-ov-speed",
+ "hero-ov-attack","hero-ov-melee","hero-ov-pierce","hero-ov-train"].forEach(id => {
+  document.getElementById(id)?.addEventListener("input", _heroSave);
+});
+document.getElementById("hero-flag-regen")?.addEventListener("change", _heroSave);
+
 // ── Bonuses ───────────────────────────────────────────────────────────────────
+
+// Category definitions — first keyword match wins (order matters)
+const _BONUS_CATEGORIES = [
+  { key: 'naval',    icon: 'fa-anchor',       color: '#0e7490',
+    kw: ['fire ship','warship','galley','ship','dock','transport','naval','fishing'] },
+  { key: 'monk',     icon: 'fa-cross',         color: '#7e22ce',
+    kw: ['monk','relic','convert','heal','monastery'] },
+  { key: 'cost',     icon: 'fa-arrow-down',    color: '#0f766e',
+    kw: ['cost','cheaper','free','discount','-50%','-25%','-20%','-15%','-10%','-5%'] },
+  { key: 'economy',  icon: 'fa-coins',         color: '#15803d',
+    kw: ['farm','food','wood','gold','stone','trade','market','gather','mining','lumber','mill','shepherd','berry','forage','hunt','herd'] },
+  { key: 'speed',    icon: 'fa-bolt',          color: '#1d4ed8',
+    kw: ['faster','speed','rate','quickly','work rate','fire rate','move','reload'] },
+  { key: 'combat',   icon: 'fa-shield-halved', color: '#b91c1c',
+    kw: ['hit point','attack','armor','pierce','melee','damage','resist','bonus damage','line of sight','range','accuracy'] },
+  { key: 'research', icon: 'fa-flask',         color: '#b45309',
+    kw: ['research','blacksmith','university','technology','tech','age','upgrade'] },
+  { key: 'building', icon: 'fa-chess-rook',    color: '#78716c',
+    kw: ['castle','tower','wall','krepost','fortif','stone defense','palisade','wonder','house'] },
+  { key: 'default',  icon: 'fa-shield',        color: '#475569', kw: [] },
+];
+
+// Manually override auto-classification by bonus id: { 42: 'economy', 99: 'combat', ... }
+const _BONUS_CAT_OVERRIDES = {};
+
+function _classifyBonus(id, label) {
+  if (_BONUS_CAT_OVERRIDES[id]) {
+    return _BONUS_CATEGORIES.find(c => c.key === _BONUS_CAT_OVERRIDES[id])
+        || _BONUS_CATEGORIES.at(-1);
+  }
+  const lower = label.toLowerCase();
+  for (const cat of _BONUS_CATEGORIES) {
+    if (cat.kw.some(kw => lower.includes(kw))) return cat;
+  }
+  return _BONUS_CATEGORIES.at(-1);
+}
+
+// ── 3-zone bonus card parsing ─────────────────────────────────────────────────
+
+const _WHO_ICONS = {
+  archer:     { fa: 'fa-person-military-rifle', label: 'Archer' },
+  infantry:   { fa: 'fa-person-walking',        label: 'Infantry' },
+  cavalry:    { fa: 'fa-horse',                 label: 'Cavalry' },
+  villager:   { fa: 'fa-person-digging',        label: 'Villager' },
+  monk:       { fa: 'fa-person-praying',        label: 'Monk' },
+  siege:      { fa: 'fa-fire-flame-curved',     label: 'Siege' },
+  ship:       { fa: 'fa-anchor',               label: 'Naval' },
+  farm:       { fa: 'fa-wheat-awn',            label: 'Farm' },
+  wood:       { fa: 'fa-tree',                 label: 'Wood' },
+  gold:       { fa: 'fa-coins',               label: 'Gold' },
+  stone:      { fa: 'fa-mountain',            label: 'Stone' },
+  castle:     { fa: 'fa-chess-rook',          label: 'Castle' },
+  tower:      { fa: 'fa-tower-observation',   label: 'Tower' },
+  wall:       { fa: 'fa-border-all',          label: 'Wall' },
+  monastery:  { fa: 'fa-church',              label: 'Monastery' },
+  town_center:{ fa: 'fa-city',                label: 'Town Center' },
+  market:     { fa: 'fa-store',               label: 'Market' },
+  university: { fa: 'fa-microscope',          label: 'Research' },
+  default:    { fa: 'fa-shield',              label: 'Units' },
+};
+
+const _ATTR_ICONS = {
+  hp:           { fa: 'fa-heart',          label: 'HP',       color: '#ef4444' },
+  attack:       { fa: 'fa-hand-fist',      label: 'Attack',   color: '#f59e0b' },
+  attack_speed: { fa: 'fa-bolt',           label: 'Atk Spd',  color: '#f59e0b' },
+  armor:        { fa: 'fa-shield-halved',  label: 'Armor',    color: '#818cf8' },
+  speed:        { fa: 'fa-gauge-high',     label: 'Speed',    color: '#38bdf8' },
+  cost:         { fa: 'fa-tag',           label: 'Cost',     color: '#34d399' },
+  train:        { fa: 'fa-stopwatch',      label: 'Train',    color: '#a78bfa' },
+  research:     { fa: 'fa-flask',          label: 'Research', color: '#f97316' },
+  los:          { fa: 'fa-eye',           label: 'LOS',      color: '#22d3ee' },
+  range:        { fa: 'fa-bullseye',       label: 'Range',    color: '#4ade80' },
+  rate:         { fa: 'fa-gauge-high',     label: 'Rate',     color: '#38bdf8' },
+  healing:      { fa: 'fa-kit-medical',    label: 'Healing',  color: '#4ade80' },
+  capacity:     { fa: 'fa-boxes-stacked', label: 'Capacity', color: '#94a3b8' },
+  default:      { fa: 'fa-star',          label: 'Bonus',    color: '#94a3b8' },
+};
+
+function _extractBonusValue(label) {
+  const s = label.toLowerCase();
+  if (/\bfree\b|\bcosts?\s+0\b|\bno[\s-]cost\b|\binstantly\b/.test(s)) return 'FREE';
+  if (/\bdouble[ds]?\b|\btwice\b|2×|×2/.test(s)) return '2×';
+  const spct = s.match(/([+-]\d+)%/);
+  if (spct) return spct[1] + '%';
+  const wpct = s.match(/(\d+)%\s+(?:faster|cheaper)/);
+  if (wpct) return (/cheaper/.test(s) ? '-' : '+') + wpct[1] + '%';
+  const bpct = s.match(/(\d+)%/);
+  if (bpct) {
+    const n = bpct[1];
+    if (/faster|more|increased|higher|extra|bonus|additional/.test(s)) return '+' + n + '%';
+    if (/cheaper|less|reduc|fewer|discount|lower/.test(s)) return '-' + n + '%';
+    return n + '%';
+  }
+  const sint = s.match(/([+-]\d+)/);
+  if (sint) return sint[1];
+  if (/imperial\s+age/.test(s)) return 'Imp.';
+  if (/castle\s+age/.test(s)) return 'Castle';
+  if (/feudal\s+age/.test(s)) return 'Feudal';
+  return '?';
+}
+
+function _extractBonusEntity(label) {
+  const s = label.toLowerCase();
+  const map = [
+    [['cavalry archer','mounted archer','elephant archer'],              'archer'],
+    [['hand cannoneer','slinger','arbalest','longbow','skirmisher','crossbow'], 'archer'],
+    [['foot archer','archer'],                                           'archer'],
+    [['halberdier','pikeman','spearman'],                               'infantry'],
+    [['champion','militia','man-at-arms','infantry','foot soldier','swordsman'], 'infantry'],
+    [['war elephant','battle elephant','elephant'],                      'cavalry'],
+    [['camel','knight','paladin','cavalier','hussar','light cavalry','mounted'], 'cavalry'],
+    [['monk','convert'],                                                 'monk'],
+    [['trebuchet','mangonel','scorpion','battering ram','petard','bombard'], 'siege'],
+    [['fire ship','demolition ship','longboat','galley','warship','transport ship'], 'ship'],
+    [['ship','dock','fleet','naval'],                                    'ship'],
+    [['farm','mill','harvest','crop'],                                   'farm'],
+    [['villager','shepherd','builder','worker','lumberjack','miner','fisher'], 'villager'],
+    [['town center'],                                                    'town_center'],
+    [['monastery'],                                                      'monastery'],
+    [['castle','krepost'],                                               'castle'],
+    [['tower'],                                                          'tower'],
+    [['wall','palisade','fortif'],                                       'wall'],
+    [['market','trade','caravan'],                                       'market'],
+    [['university','blacksmith'],                                        'university'],
+    [['lumber','lumberjack'],                                            'wood'],
+    [['gold','mining'],                                                  'gold'],
+    [['stone'],                                                          'stone'],
+    [['food','wood','resource'],                                         'farm'],
+  ];
+  for (const [kws, key] of map) {
+    if (kws.some(k => s.includes(k))) return key;
+  }
+  return 'default';
+}
+
+function _extractBonusAttr(label) {
+  const s = label.toLowerCase();
+  // Compound checks first — order matters
+  if (s.includes('heal')) return 'healing';
+  if (s.includes('attack') && /faster|speed|rate/.test(s)) return 'attack_speed';
+  if (s.includes('fire rate') || s.includes('reload')) return 'attack_speed';
+  const map = [
+    [['hit point','health point','health'],                              'hp'],
+    [['pierce armor','melee armor','armor','armour'],                   'armor'],
+    [['attack damage','bonus damage','attack'],                         'attack'],
+    [['line of sight'],                                                  'los'],
+    [['range'],                                                          'range'],
+    [['movement speed','move speed'],                                    'speed'],
+    [['work rate','gather rate','work faster','production rate'],        'rate'],
+    [['train time','training time','creation time','train faster','creat'], 'train'],
+    [['research time','research speed','researched faster','researched in'], 'research'],
+    [['tech','upgrade','technology','technologies'],                     'research'],
+    [['cost','cheaper','discount'],                                      'cost'],
+    [['carry capacity','garrison'],                                      'capacity'],
+    [['speed','faster'],                                                 'speed'],
+  ];
+  for (const [kws, key] of map) {
+    if (kws.some(k => s.includes(k))) return key;
+  }
+  return 'default';
+}
+
+// ── Type detection ────────────────────────────────────────────────────────────
+
+function _isMultiEffect(label) {
+  return label.includes(';');
+}
+
+function _isAgeScaled(label) {
+  const s = label.toLowerCase();
+  return ['dark','feudal','castle','imperial'].filter(a => s.includes(a)).length >= 2;
+}
+
+// Find the percentage value immediately preceding each age keyword (within 40 chars).
+function _extractAgeValues(label) {
+  const s = label.toLowerCase();
+  const AGE_ABBREV = { dark: 'D', feudal: 'F', castle: 'C', imperial: 'I' };
+  const order = ['dark','feudal','castle','imperial'];
+  const results = [];
+  for (const age of order) {
+    const idx = s.indexOf(age);
+    if (idx === -1) continue;
+    const before = s.slice(Math.max(0, idx - 40), idx);
+    const matches = before.match(/[+-]?\d+%/g);
+    if (matches) results.push({ age, abbrev: AGE_ABBREV[age], value: matches[matches.length - 1] });
+  }
+  return results;
+}
+
+function _parseBonusCard(id, label) {
+  if (_isMultiEffect(label)) {
+    return {
+      type: 'multi',
+      effects: label.split(';').map(s => s.trim()).filter(Boolean).map(clause => ({
+        value:     _extractBonusValue(clause),
+        entityKey: _extractBonusEntity(clause),
+        attrKey:   _extractBonusAttr(clause),
+      })),
+    };
+  }
+  if (_isAgeScaled(label)) {
+    return {
+      type:      'age-scaled',
+      ageValues: _extractAgeValues(label),
+      entityKey: _extractBonusEntity(label),
+      attrKey:   _extractBonusAttr(label),
+    };
+  }
+  return {
+    type:      'simple',
+    value:     _extractBonusValue(label),
+    entityKey: _extractBonusEntity(label),
+    attrKey:   _extractBonusAttr(label),
+  };
+}
+
+// ── Card inner HTML ───────────────────────────────────────────────────────────
+// SVG paths — drop files at these locations:
+//   /static/icons/units/{entityKey}.png   — large unit silhouette (top-left)
+//   /static/icons/units/{entityKey}_sm.svg — small WHO icon (footer)
+//   /static/icons/attrs/{attrKey}.svg      — attribute icon
+//   /static/icons/ages/{age}.svg           — age badge (dark/feudal/castle/imperial)
+
+function _renderBonusCardInner(p, cat, mult) {
+  const catLabel  = cat.key.charAt(0).toUpperCase() + cat.key.slice(1);
+  const whoInfo   = _WHO_ICONS[p.entityKey] || _WHO_ICONS.default;
+
+  // For multi-effect, pull value+attr from first clause; otherwise use top-level
+  const displayAttrKey = p.type === 'multi' ? (p.effects[0]?.attrKey || 'default') : p.attrKey;
+  const attrInfo       = _ATTR_ICONS[displayAttrKey] || _ATTR_ICONS.default;
+  const displayVal     = p.type === 'age-scaled' ? (p.ageValues[0]?.value || '?')
+                       : p.type === 'multi'      ? (p.effects[0]?.value   || '?')
+                       : p.value;
+
+  const err = `onerror="this.style.display='none'"`;
+
+  // WHO footer cell — shared between bottom-row layouts
+  const whoCell = `<div class="bc-who">
+    <img class="bc-who-icon" src="/static/icons/units/${p.entityKey}_sm.svg" alt="${whoInfo.label}" ${err}>
+    <span class="bc-who-label">${whoInfo.label}</span>
+  </div>`;
+
+  // Bottom row: age-scaled → [age | WHO]; everything else → [WHO span-2]
+  const ROMAN = { dark: 'I', feudal: 'II', castle: 'III', imperial: 'IV' };
+  let bottomRow;
+  if (p.type === 'age-scaled' && p.ageValues.length) {
+    const av       = p.ageValues[0];
+    const ageLabel = av.age.charAt(0).toUpperCase() + av.age.slice(1) + ' Age';
+    bottomRow = `
+      <div class="card-col">${whoCell}</div>
+      <div class="card-col bc-age-col">
+        <div class="bc-age-badge">
+          <img class="bc-age-img" src="/static/icons/ages/${av.age}.svg" alt="${ageLabel}" ${err}>
+          <span class="bc-age-roman">${ROMAN[av.age] || ''}</span>
+        </div>
+        <span class="bc-age-text">Starts in<br>${ageLabel}</span>
+      </div>`;
+  } else {
+    bottomRow = `<div class="card-col span-2">${whoCell}</div>`;
+  }
+
+  return `
+    <div class="card-header">
+      <div>
+        <i class="fa-solid ${cat.icon}"></i>
+        <span class="bonus-type">${catLabel}</span>
+      </div>
+      <div class="multiplier">
+        <button class="multiplier-circle" data-mult="${mult}" title="Multiplier">
+          <span class="multiplier-amount">×${mult}</span>
+        </button>
+      </div>
+    </div>
+    <div class="card-grid">
+      <div class="card-col">
+        <img class="card-main-image" src="/static/icons/units/${p.entityKey}.png"
+             alt="${whoInfo.label}" ${err}>
+      </div>
+      <div class="card-col card-right-col">
+        <div class="bc-what">${displayVal}</div>
+        <div class="bc-attr-row">
+          <img class="bc-attr-icon" src="/static/icons/attrs/${displayAttrKey}.svg"
+               alt="${attrInfo.label}" ${err}>
+          <span class="bc-attr-label">${attrInfo.label}</span>
+        </div>
+      </div>
+      ${bottomRow}
+    </div>`;
+}
+
+// Shared event wiring: card click toggle + multiplier cycle button
+function _wireBonusGridEvents(grid, toggleFn, getDraftEntry) {
+  grid.querySelectorAll(".bonus-card").forEach(el => {
+    el.addEventListener("click", e => {
+      if (e.target.closest(".multiplier-circle")) return;
+      toggleFn(parseInt(el.dataset.bonusId, 10));
+    });
+    el.querySelector(".multiplier-circle")?.addEventListener("click", e => {
+      e.stopPropagation();
+      const b = getDraftEntry(parseInt(el.dataset.bonusId, 10));
+      if (!b) return; // only cycle when selected
+      const next = (b.multiplier || 1) >= 3 ? 1 : (b.multiplier || 1) + 1;
+      b.multiplier = next;
+      e.currentTarget.dataset.mult = next;
+      e.currentTarget.querySelector(".multiplier-amount").textContent = "×" + next;
+      saveDraft();
+    });
+  });
+}
 
 const MAX_CIV_BONUSES = 6;
 let _bonusCatalog      = [];   // [{id, label}]
@@ -613,127 +1356,116 @@ function wireSearchPicker({ inputId, resultsId, catalog, onSelect }) {
   }, true);
 }
 
-function renderCivBonusSlots() {
-  const container = document.getElementById("bonus-slots");
-  const hint      = document.getElementById("bonus-empty-hint");
-  const bonuses   = draft.bonuses || [];
+function renderBonusGrid() {
+  const grid = document.getElementById("bonus-grid");
+  if (!grid) return;
+  const q       = (document.getElementById("bonus-search")?.value || "").toLowerCase();
+  const bonuses = draft.bonuses || [];
+  const selIds  = bonuses.map(b => b.id);
 
-  // Remove existing slots (not the hint)
-  container.querySelectorAll(".bonus-slot").forEach(el => el.remove());
+  let filtered = _bonusCatalog.filter(c => !q || c.label.toLowerCase().includes(q));
 
-  hint.style.display = bonuses.length ? "none" : "";
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="text-muted small fst-italic">No bonuses match your search.</div>';
+    _updateBonusCountBadge();
+    return;
+  }
 
-  bonuses.forEach((b, idx) => {
-    const label = (_bonusCatalog.find(c => c.id === b.id) || {}).label || `Bonus #${b.id}`;
-    const slot  = document.createElement("div");
-    slot.className = "bonus-slot d-flex align-items-center gap-2";
-    slot.innerHTML = `
-      <span class="bonus-slot-label flex-grow-1 small">${label}</span>
-      <div class="input-group input-group-sm" style="width:auto;">
-        <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h); font-size:.75rem; color:var(--accent-3)">×</span>
-        <select class="form-select form-select-sm bonus-mult" data-idx="${idx}" style="width:4.5rem;">
-          <option value="1" ${b.multiplier===1?'selected':''}>1</option>
-          <option value="2" ${b.multiplier===2?'selected':''}>2</option>
-          <option value="3" ${b.multiplier===3?'selected':''}>3</option>
-        </select>
-      </div>
-      <button class="btn btn-sm bonus-remove" data-idx="${idx}"
-        style="background:transparent; border:1px solid oklch(from var(--body-bg) calc(l + 0.2) c h); color:var(--accent-3); padding:2px 7px; line-height:1.5;"
-        title="Remove bonus">✕</button>
-    `;
-    container.appendChild(slot);
-  });
+  // Selected bonuses float to the top
+  filtered = [
+    ...filtered.filter(c => selIds.includes(c.id)),
+    ...filtered.filter(c => !selIds.includes(c.id)),
+  ];
 
-  // Wire multiplier changes
-  container.querySelectorAll(".bonus-mult").forEach(sel => {
-    sel.addEventListener("change", e => {
-      const idx = parseInt(e.target.dataset.idx, 10);
-      draft.bonuses[idx].multiplier = parseInt(e.target.value, 10);
-      saveDraft();
-    });
-  });
+  grid.innerHTML = filtered.map(c => {
+    const b    = bonuses.find(b => b.id === c.id);
+    const sel  = !!b;
+    const mult = b ? b.multiplier : 1;
+    const cat  = _classifyBonus(c.id, c.label);
+    const p    = _parseBonusCard(c.id, c.label);
+    const typeClass = p.type !== 'simple' ? ` ${p.type}-bonus` : '';
+    return `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${c.id}"
+                 style="--cat-color:${cat.color};" title="${c.label.replace(/"/g, '&quot;')}">
+      ${_renderBonusCardInner(p, cat, mult)}
+    </div>`;
+  }).join('');
 
-  // Wire remove buttons
-  container.querySelectorAll(".bonus-remove").forEach(btn => {
-    btn.addEventListener("click", e => {
-      const idx = parseInt(e.target.dataset.idx, 10);
-      draft.bonuses.splice(idx, 1);
-      saveDraft();
-      renderCivBonusSlots();
-    });
-  });
+  _wireBonusGridEvents(grid, toggleCivBonus,
+    id => (draft.bonuses || []).find(b => b.id === id));
+
+  _updateBonusCountBadge();
 }
 
-function addCivBonus(id) {
+function _updateBonusCountBadge() {
+  const badge = document.getElementById("bonus-count-badge");
+  if (!badge) return;
+  const n = (draft.bonuses || []).length;
+  badge.textContent = n > 0 ? `${n} selected` : '';
+  badge.style.background = n > 0
+    ? 'oklch(from var(--accent-2) l c h / 0.18)'
+    : 'oklch(from var(--body-bg) calc(l + 0.2) c h)';
+  badge.style.color = n > 0 ? 'var(--accent-2)' : 'var(--body-text)';
+}
+
+function toggleCivBonus(id) {
   if (!draft.bonuses) draft.bonuses = [];
-  if (draft.bonuses.length >= MAX_CIV_BONUSES) {
-    alert(`You can have at most ${MAX_CIV_BONUSES} civilization bonuses.`);
-    return;
+  const idx = draft.bonuses.findIndex(b => b.id === id);
+  if (idx === -1) {
+    draft.bonuses.push({ id, multiplier: 1 });
+  } else {
+    draft.bonuses.splice(idx, 1);
   }
-  if (draft.bonuses.find(b => b.id === id)) {
-    alert("That bonus is already selected.");
-    return;
-  }
-  draft.bonuses.push({ id, multiplier: 1 });
   saveDraft();
-  renderCivBonusSlots();
+  renderBonusGrid();
 }
 
-function renderTeamBonusSlots() {
-  const container = document.getElementById("team-bonus-slot");
-  const hint      = document.getElementById("team-bonus-empty-hint");
-  if (!draft.team_bonuses) draft.team_bonuses = [];
-  const tbs = draft.team_bonuses;
+function renderTeamBonusGrid() {
+  const grid = document.getElementById("team-bonus-grid");
+  if (!grid) return;
+  const q    = (document.getElementById("team-bonus-search")?.value || "").toLowerCase();
+  const tbs  = draft.team_bonuses || [];
+  const selIds = tbs.map(b => b.id);
 
-  container.querySelectorAll(".bonus-slot").forEach(el => el.remove());
-  hint.style.display = tbs.length ? "none" : "";
+  let filtered = _teamCatalog.filter(c => !q || c.label.toLowerCase().includes(q));
 
-  tbs.forEach((tb, idx) => {
-    const label = (_teamCatalog.find(c => c.id === tb.id) || {}).label || `Team Bonus #${tb.id}`;
-    const slot  = document.createElement("div");
-    slot.className = "bonus-slot d-flex align-items-center gap-2";
-    slot.innerHTML = `
-      <span class="bonus-slot-label flex-grow-1 small">${label}</span>
-      <div class="input-group input-group-sm" style="width:auto;">
-        <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h); font-size:.75rem; color:var(--accent-3)">×</span>
-        <select class="form-select form-select-sm tb-mult" data-idx="${idx}" style="width:4.5rem;">
-          <option value="1" ${tb.multiplier===1?'selected':''}>1</option>
-          <option value="2" ${tb.multiplier===2?'selected':''}>2</option>
-          <option value="3" ${tb.multiplier===3?'selected':''}>3</option>
-        </select>
-      </div>
-      <button class="btn btn-sm bonus-remove" data-idx="${idx}"
-        style="background:transparent; border:1px solid oklch(from var(--body-bg) calc(l + 0.2) c h); color:var(--accent-3); padding:2px 7px; line-height:1.5;"
-        title="Remove team bonus">✕</button>
-    `;
-    container.appendChild(slot);
-  });
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="text-muted small fst-italic">No bonuses match your search.</div>';
+    return;
+  }
 
-  container.querySelectorAll(".tb-mult").forEach(sel => {
-    sel.addEventListener("change", e => {
-      const idx = parseInt(e.target.dataset.idx, 10);
-      draft.team_bonuses[idx].multiplier = parseInt(e.target.value, 10);
-      saveDraft();
-    });
-  });
+  // Selected bonuses float to top
+  filtered = [
+    ...filtered.filter(c => selIds.includes(c.id)),
+    ...filtered.filter(c => !selIds.includes(c.id)),
+  ];
 
-  container.querySelectorAll(".bonus-remove").forEach(btn => {
-    btn.addEventListener("click", e => {
-      const idx = parseInt(e.target.dataset.idx, 10);
-      draft.team_bonuses.splice(idx, 1);
-      saveDraft();
-      renderTeamBonusSlots();
-    });
-  });
+  grid.innerHTML = filtered.map(c => {
+    const b    = tbs.find(b => b.id === c.id);
+    const sel  = !!b;
+    const mult = b ? b.multiplier : 1;
+    const cat  = _classifyBonus(c.id, c.label);
+    const p    = _parseBonusCard(c.id, c.label);
+    const typeClass = p.type !== 'simple' ? ` ${p.type}-bonus` : '';
+    return `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${c.id}"
+                 style="--cat-color:${cat.color};" title="${c.label.replace(/"/g, '&quot;')}">
+      ${_renderBonusCardInner(p, cat, mult)}
+    </div>`;
+  }).join('');
+
+  _wireBonusGridEvents(grid, toggleTeamBonus,
+    id => (draft.team_bonuses || []).find(b => b.id === id));
 }
 
-function setTeamBonus(id) {
+function toggleTeamBonus(id) {
   if (!draft.team_bonuses) draft.team_bonuses = [];
-  if (!draft.team_bonuses.some(tb => tb.id === id)) {
+  const idx = draft.team_bonuses.findIndex(b => b.id === id);
+  if (idx === -1) {
     draft.team_bonuses.push({ id, multiplier: 1 });
+  } else {
+    draft.team_bonuses.splice(idx, 1);
   }
   saveDraft();
-  renderTeamBonusSlots();
+  renderTeamBonusGrid();
 }
 
 // ── Unique Technologies (Castle + Imperial) ───────────────────────────────────
@@ -1275,11 +2007,15 @@ function renderUUGrid() {
     return `
       <div class="uu-card${sel}" data-km-idx="${u.km_idx}">
         ${badge}
-        <img class="uu-card-icon" src="${iconSrc}" alt="${u.name}"
-             onerror="this.src='${UU_PLACEHOLDER}'">
+        <img class="uu-card-icon" src="${iconSrc}" alt="${u.name}">
         <div class="uu-card-name">${u.name}</div>
       </div>`;
   }).join("");
+
+  // Wire onerror via JS to avoid quote-escaping issues in inline HTML attributes
+  grid.querySelectorAll(".uu-card-icon").forEach(img => {
+    img.onerror = () => { img.onerror = null; img.src = UU_PLACEHOLDER; };
+  });
 
   const popup = _getUUPopup();
 
@@ -1649,12 +2385,16 @@ async function populateTtTemplates() {
 document.getElementById("btn-open-tree").addEventListener("click", async () => {
   const templateVal = document.getElementById("tt-template-select").value;
 
-  let treeToLoad;
+  // New SE architecture: showTechtree(civName, [[units],[buildings],[techs]], relativepath)
+  // The civ name drives which per-civ layout JSON to load.
+  // The initialTree drives which nodes start enabled.
+  let civName    = (templateVal === "full" || templateVal === "_current") ? "Britons" : templateVal;
+  let treeToLoad = null;  // null → showTechtree uses the civ's own defaults
 
-  // If user has a saved tree and chose "current", load it; otherwise fetch template
   if (draft.tree && draft.tree.units && templateVal === "_current") {
+    // Continue editing the user's existing selection (keep their layout civ if possible)
     treeToLoad = [draft.tree.units, draft.tree.buildings, draft.tree.techs];
-  } else {
+  } else if (templateVal !== "_current") {
     try {
       const url = templateVal === "full"
         ? "/api/builder/techtree?civ=full"
@@ -1668,8 +2408,7 @@ document.getElementById("btn-open-tree").addEventListener("click", async () => {
     }
   }
 
-  // canEdit 3 = builder edit mode (toggle nodes, Save Tech Tree callback)
-  showTechtree(treeToLoad, 0, 3, 0, "", "/static");
+  window.showTechtree(civName, treeToLoad, "/static");
 });
 
 // ── Bootstrap: fetch meta & restore draft ────────────────────────────────────
@@ -1788,21 +2527,14 @@ async function init() {
     // Restore UT panels if user had already filled them in a previous session
     if (draft.castle_ut)   initUTPanel(5);
     if (draft.imperial_ut) initUTPanel(6);
-    wireSearchPicker({
-      inputId:   "bonus-search",
-      resultsId: "bonus-results",
-      catalog:   _bonusCatalog,
-      onSelect:  (id) => addCivBonus(id),
-    });
-    wireSearchPicker({
-      inputId:   "team-bonus-search",
-      resultsId: "team-bonus-results",
-      catalog:   _teamCatalog,
-      onSelect:  (id) => setTeamBonus(id),
-    });
-    // Restore saved bonuses
-    renderCivBonusSlots();
-    renderTeamBonusSlots();
+    // Wire search inputs to filter the grids
+    document.getElementById("bonus-search")
+      .addEventListener("input", renderBonusGrid);
+    document.getElementById("team-bonus-search")
+      .addEventListener("input", renderTeamBonusGrid);
+    // Populate grids (restores any saved bonuses)
+    renderBonusGrid();
+    renderTeamBonusGrid();
   });
 
   showStep(1);

@@ -35,8 +35,8 @@ from build_civ import (
     _decode_flag,
 )
 from civ_appender import apply_civ, assign_all_languages
+from civ_overrides import _apply_uu_overrides, _apply_hero_unit, _override_ut_costs
 from dat_reader import load_dat
-from genieutils.tech import ResearchResourceCost
 
 
 # ── Draft → civ_def ──────────────────────────────────────────────────────────
@@ -87,6 +87,11 @@ def _draft_to_civ_def(draft: dict) -> dict:
     if uu.get("name"):
         civ_def["unique_unit"] = {"name": uu["name"]}
 
+    # Add hero unit ID to the trainable units list so it appears in the tech tree
+    hero_id = (draft.get("hero_unit") or {}).get("base_unit_id")
+    if hero_id is not None and hero_id not in civ_def["tree"][0]:
+        civ_def["tree"][0] = list(civ_def["tree"][0]) + [hero_id]
+
     # Emblem: wizard stores a data-URI under draft.emblem;
     # _decode_flag expects it under civ_def["customFlagData"].
     emblem = draft.get("emblem", "")
@@ -94,44 +99,6 @@ def _draft_to_civ_def(draft: dict) -> dict:
         civ_def["customFlagData"] = emblem
 
     return civ_def
-
-
-# ── UT cost/time override ────────────────────────────────────────────────────
-
-def _override_ut_costs(dat, civ_result: dict, draft: dict) -> None:
-    """
-    After apply_civ creates the Castle/Imperial UT techs with hardcoded default
-    costs, patch them with the user's custom values from the wizard draft.
-    """
-    for draft_key, result_key in (
-        ("castle_ut",   "castle_ut_tech_id"),
-        ("imperial_ut", "imp_ut_tech_id"),
-    ):
-        ut_data = draft.get(draft_key) or {}
-        if not ut_data:
-            continue
-        tech_id = civ_result.get(result_key)
-        if tech_id is None or tech_id >= len(dat.techs):
-            continue
-
-        tech = dat.techs[tech_id]
-
-        # Research time
-        time_val = ut_data.get("time")
-        if time_val is not None:
-            tech.research_time = max(0, int(time_val))
-
-        # Resource costs: pack up to 3 non-zero resources into the 3 cost slots.
-        cost = ut_data.get("cost") or {}
-        slots: list[ResearchResourceCost] = []
-        for res_name, res_type in (("food", 0), ("wood", 1), ("stone", 2), ("gold", 3)):
-            amount = int(cost.get(res_name, 0))
-            if amount > 0:
-                slots.append(ResearchResourceCost(type=res_type, amount=amount, flag=1))
-        # Always fill to exactly 3 (game engine expects exactly 3 slots)
-        while len(slots) < 3:
-            slots.append(ResearchResourceCost(type=-1, amount=0, flag=0))
-        tech.resource_costs = tuple(slots[:3])
 
 
 # ── Main build function ──────────────────────────────────────────────────────
@@ -173,6 +140,11 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     # Override UT costs and research time from wizard values
     _override_ut_costs(dat, civ_result, draft)
 
+    # Apply UU stat overrides and advanced flags before string building
+    uu_info = _resolve_uu_info(civ_def, dat, slot, civ_result)
+    _apply_uu_overrides(dat, slot, uu_info, draft)
+    _apply_hero_unit(dat, slot, draft)
+
     # ── Language (voice) assignment ─────────────────────────────────────────
     lang_val = civ_result["lang_val"]
     assign_all_languages(dat, [(civ_result["civ_index"], lang_val)])
@@ -190,8 +162,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         or _ut_name(None, castle=False)
     )
 
-    # UU info for icon + string IDs
-    uu_info          = _resolve_uu_info(civ_def, dat, slot, civ_result)
+    # UU info for icon + string IDs (resolved earlier, before _apply_uu_overrides)
     uu_override_name = (draft.get("unique_unit") or {}).get("name", "").strip()
     uu_override_desc = (draft.get("unique_unit") or {}).get("description", "").strip()
 

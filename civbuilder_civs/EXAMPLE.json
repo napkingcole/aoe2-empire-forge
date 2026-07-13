@@ -1,0 +1,155 @@
+{
+  "_doc": "civbuilder_v1 — AoE2 DE custom civilization definition. All keys with null values are optional overrides; omit them or leave null to use defaults.",
+  "format": "civbuilder_v1",
+  "schema_version": 1,
+
+  "_section_identity": "── Identity ─────────────────────────────────────────────────────────────",
+  "alias": "Vanguards",
+  "tagline": "aggressive",
+  "description": "",
+
+  "_section_appearance": "── Appearance ───────────────────────────────────────────────────────────",
+  "architecture": 2,
+  "language": 4,
+  "wonder_model": -1,
+  "castle_model": -1,
+  "emblem": "",
+
+  "_section_hero": "── Hero Unit (Optional) ─────────────────────────────────────────────────",
+  "hero_unit": null,
+
+  "_section_uu": "── Unique Unit ──────────────────────────────────────────────────────────",
+  "unique_unit": {
+    "_doc": "km_idx selects from the KM custom-UU catalog. Set to null to use a vanilla unit via vanilla_id instead (Phase Two).",
+    "km_idx": 5,
+    "vanilla_id": null,
+    "name": "Vanguard",
+    "description": "Elite shock trooper that ignores enemy fortifications.",
+
+    "overrides": {
+      "_doc": "Absolute stat values for base and elite tiers. Omit or null = inherit from base unit. cost_* applies to both tiers.",
+      "hp_base": 90,
+      "hp_elite": 110,
+      "attack_base": 12,
+      "attack_elite": 14,
+      "melee_base": 2,
+      "melee_elite": 3,
+      "pierce_base": 1,
+      "pierce_elite": 1,
+      "range_base": null,
+      "range_elite": null,
+      "reload_base": null,
+      "reload_elite": null,
+      "speed_base": 1.1,
+      "speed_elite": 1.1,
+      "train_base": 20,
+      "train_elite": 18,
+      "cost_food": 60,
+      "cost_wood": null,
+      "cost_stone": null,
+      "cost_gold": 30
+    },
+
+    "advanced_flags": {
+      "_doc": "Boolean traits applied to both tiers unless noted. regen_amount/interval drive HP regen rate. bonus_dmg_resist is a percentage (50 = 50% less bonus damage). charge_pool/rate configure charge attacks.",
+      "no_convert": false,
+      "ignore_armor": false,
+      "trample": false,
+      "regen_hp": false,
+      "regen_amount": null,
+      "regen_interval": null,
+      "bonus_dmg_resist": null,
+      "charge_pool": null,
+      "charge_rate": null
+    }
+  },
+
+  "_section_second_uu": "── Second Unique Unit (Phase Two — not yet implemented) ─────────────────",
+  "second_uu": null,
+
+  "_section_bonuses": "── Civ Bonuses ──────────────────────────────────────────────────────────",
+  "bonuses": [
+    {"id": 9,  "multiplier": 1},
+    {"id": 29, "multiplier": 1}
+  ],
+
+  "team_bonuses": [
+    {"id": 8, "multiplier": 1}
+  ],
+
+  "_section_uts": "── Unique Technologies ──────────────────────────────────────────────────",
+  "castle_ut": {
+    "_doc": "mode='vanilla' picks an existing tech by vanilla_id and re-labels it. mode='custom' builds a fully custom tech from effects[].",
+    "mode": "vanilla",
+    "vanilla_id": 460,
+    "name": "Advance Guard",
+    "description": "Vanguards move 10% faster.",
+    "cost": {"food": 300, "wood": 0, "stone": 0, "gold": 200},
+    "time": 40,
+    "effects": []
+  },
+
+  "imperial_ut": {
+    "mode": "custom",
+    "vanilla_id": null,
+    "name": "Iron Discipline",
+    "description": "Infantry +2 attack, +1 melee armor.",
+    "cost": {"food": 700, "wood": 0, "stone": 0, "gold": 450},
+    "time": 60,
+    "effects": [
+      {"id": 81,  "multiplier": 1},
+      {"id": 283, "multiplier": 1}
+    ]
+  },
+
+  "_section_tree": "── Tech Tree ────────────────────────────────────────────────────────────",
+  "tree": {
+    "_doc": "Unit, building, and tech IDs that this civ has access to. Mirrors the wizard tech-tree editor output.",
+    "units":     [74, 75, 77, 473, 567, 93, 358, 4, 24, 492, 539, 21, 125, 83, 280, 13, 545],
+    "buildings": [12, 87, 103, 104, 109, 45, 84, 68, 562, 584, 49, 82, 209, 70, 72, 117, 276],
+    "techs":     [22, 101, 102, 103, 213, 249, 199, 200, 202, 203, 55, 182, 278, 279]
+  },
+
+  "_section_unit_overrides": "── Unit Overrides (Phase Two — not yet implemented) ─────────────────────",
+  "unit_overrides": [
+    {
+      "_doc_example": "Spearmen +5 HP, +1 attack on this civ.",
+      "unit_id": 93,
+      "hp_add": 5,
+      "attack_add": 1,
+      "melee_armor_add": null,
+      "pierce_armor_add": null,
+      "speed_multiply": null,
+      "range_add": null,
+      "hp": null,
+      "attack": null,
+      "melee_armor": null,
+      "pierce_armor": null,
+      "speed": null,
+      "range": null
+    }
+  ],
+
+  "_section_button_moves": "── Button Grid Overrides (Phase Two — not yet implemented) ──────────────",
+  "button_moves": [
+    {
+      "_doc_example": "Move Spearman to button slot 4 at the Barracks to avoid overlap.",
+      "unit_id": 93,
+      "building_id": 12,
+      "button_id": 4
+    }
+  ],
+
+  "_section_free_techs": "── Free / Pre-researched Techs (Phase Two — not yet implemented) ─────────",
+  "free_techs": [
+    {
+      "_doc_example": "Give Loom for free at game start (age 1 = Dark Age).",
+      "tech_id": 22,
+      "age": 1
+    }
+  ],
+
+  "_section_skins": "── Skins (Phase Two — not yet implemented) ──────────────────────────────",
+  "monk_skin_unit": null,
+  "monastery_skin_building": null
+}

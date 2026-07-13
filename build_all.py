@@ -30,6 +30,8 @@ from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
 from version import __version__ as _APP_VERSION
+from civ_schema import is_civbuilder_v1, to_draft as _schema_to_draft
+from civ_overrides import _apply_uu_overrides, _apply_hero_unit, _override_ut_costs
 from civ_appender import (apply_civ, assign_all_languages,
     DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET)
 from build_civ import (
@@ -423,8 +425,13 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
             print(f"  ERROR: {json_path} not found — skipping")
             continue
 
-        civ_def = json.loads(json_path.read_text(encoding="utf-8"))
-        alias   = civ_def.get("alias", json_path.stem)
+        raw     = json.loads(json_path.read_text(encoding="utf-8"))
+        if is_civbuilder_v1(raw):
+            civ_def = _schema_to_draft(raw)
+            print(f"  (civbuilder_v1 format detected — converted via civ_schema)")
+        else:
+            civ_def = raw
+        alias = civ_def.get("alias", json_path.stem)
 
         slot = _find_civ_slot(dat, replace_name)
         if slot is None:
@@ -470,6 +477,12 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
 
         # Resolve the custom UU info for description + string writes + techtree.
         uu_info = _resolve_uu_info(civ_def, dat, slot, civ_result)
+
+        # civbuilder_v1 files carry UU stat overrides and advanced flags;
+        # KM-format files never have these keys, so this is always a no-op for them.
+        _override_ut_costs(dat, civ_result, civ_def)
+        _apply_uu_overrides(dat, slot, uu_info, civ_def)
+        _apply_hero_unit(dat, slot, civ_def)
         civs_overrides[slot] = {
             "name_sid": name_sid,
             "icon_id": uu_info["icon_id"] if uu_info else None,
