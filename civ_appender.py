@@ -2911,6 +2911,19 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     km_uu_make_avail_tech_id: int = -1
     km_uu_elite_tech_id:      int = -1
     km_uu_custom_unit_strings: list[dict] = []
+    # Krepost-presence signal applies to both vanilla and custom KM UU paths:
+    # bonus 93 ("Can build Krepost") maps to tech 695, which is deepcopied
+    # per-civ by _apply_bonuses below.  tree[1] membership is a secondary
+    # signal.  Computed here so both km_uu_is_vanilla and km_uu_is_custom can
+    # use it (previously only the custom path checked).
+    _bonuses_pre = civ_def.get("bonuses", [[]])
+    _civ_bonuses_pre = _bonuses_pre[0] if _bonuses_pre and isinstance(_bonuses_pre[0], list) else []
+    has_krepost_bonus = any(isinstance(e, (list, tuple)) and e and e[0] == 93
+                            for e in _civ_bonuses_pre)
+    _tree_pre = civ_def.get("tree", [[], [], []])
+    has_krepost_tree = (len(_tree_pre) > 1 and isinstance(_tree_pre[1], list)
+                        and 1251 in _tree_pre[1])
+    has_krepost = has_krepost_bonus or has_krepost_tree
     if km_uu_is_vanilla:
         km_uu_make_avail_tech_id, km_uu_elite_tech_id = _apply_km_uu(dat, civ_index, km_uu_index)
         # Extract the actual elite UNIT id (not just the tech id) from the
@@ -2927,6 +2940,23 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                         uu_id = int(ec.a)        # base UU
                         elite_uu_id = int(ec.b)  # elite UU
                         break
+        if has_krepost and uu_id >= 0:
+            # Vanilla KM UU units only have Castle in their train_locations.
+            # Add a Krepost slot to this civ's own unit copy so the UU trains
+            # there when the civ has bonus 93.
+            for uid in (uu_id, elite_uu_id):
+                if uid < 0 or uid >= len(dat.civs[civ_index].units):
+                    continue
+                u = dat.civs[civ_index].units[uid]
+                cre = getattr(u, 'creatable', None)
+                if cre is None:
+                    continue
+                tls = getattr(cre, 'train_locations', [])
+                if tls and not any(tl.unit_id == km_custom_uu.BUILDING_KREPOST for tl in tls):
+                    krepost_tl = deepcopy(tls[0])
+                    krepost_tl.unit_id = km_custom_uu.BUILDING_KREPOST
+                    cre.train_locations.append(krepost_tl)
+            print(f"       KM UU {km_uu_index} (vanilla): added Krepost train location to units {uu_id}, {elite_uu_id}")
     elif km_uu_is_custom:
         # Pool-based allocation (see CAMPAIGN_STRING_POOL docstring) for the
         # two "name" ids; desc/help ids are DERIVED via _help_sid (name+
@@ -2938,25 +2968,6 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         elite_name_sid = _campaign_sid(pool_base + 1)
         uu_desc_sid    = _help_sid(uu_name_sid)
         elite_desc_sid = _help_sid(elite_name_sid)
-        # Krepost-trainability is conditional on the civ already having
-        # Krepost available — we only ADD the train slot here, we don't
-        # grant Krepost itself (see km_custom_uu.append_km_custom_uu's
-        # has_krepost docstring for what's and isn't covered).
-        # Krepost-presence signal: bonus 93 ("Can build Krepost") is the
-        # actual mechanism (maps to vanilla tech 695, generically deepcopied
-        # per-civ by _apply_bonuses' civ_bonus_techs path below) — confirmed
-        # against a real civ_def (ignore/barracks_enjoyers.json) that grants
-        # Krepost via bonus 93 WITHOUT listing building 1251 in tree[1] at
-        # all. tree[1] membership is checked too as a defensive secondary
-        # signal, but bonus 93 is the one that's actually load-bearing.
-        _bonuses_pre = civ_def.get("bonuses", [[]])
-        _civ_bonuses_pre = _bonuses_pre[0] if _bonuses_pre and isinstance(_bonuses_pre[0], list) else []
-        has_krepost_bonus = any(isinstance(e, (list, tuple)) and e and e[0] == 93
-                                for e in _civ_bonuses_pre)
-        _tree_pre = civ_def.get("tree", [[], [], []])
-        has_krepost_tree = (len(_tree_pre) > 1 and isinstance(_tree_pre[1], list)
-                            and 1251 in _tree_pre[1])
-        has_krepost = has_krepost_bonus or has_krepost_tree
         result = km_custom_uu.append_km_custom_uu(
             dat, civ_index, km_uu_index, uu_name_sid, uu_desc_sid,
             elite_name_sid, elite_desc_sid, has_krepost=has_krepost)
