@@ -1927,6 +1927,8 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         orig_to_new: dict[int, int] = {}   # orig_tid → new tech index
         for orig_tid in _barracks_tech_ids(dat):
             t = dat.techs[orig_tid]
+            if t.civ != -1:
+                continue   # skip civ-specific techs (e.g. Legionary civ=43); only clone globals
             reqs = list(t.required_techs)
             shift_idx = next((j for j, r in enumerate(reqs) if r in _SHIFT), None)
             if shift_idx is None:
@@ -3004,6 +3006,27 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # 6c. Patch deferred UU-substitution effect commands (see
     #     UU_SUBSTITUTION_TYPES / _build_ut_effect_cmds) now that this civ's
     #     own elite UU id is fully resolved across all 3 possible paths above.
+
+    def _ensure_anarchy_train_slot(uid: int) -> None:
+        """Add a (-1, button=4) train_location to the civ's unit copy so the
+        unit appears at button 4 (R key) at whatever building attribute 42
+        points to after Anarchy/Marauders fires.  Without this slot the engine
+        falls back to button 1, overwriting the militia/cavalry line button."""
+        if uid < 0 or uid >= len(dat.civs[civ_index].units):
+            return
+        u = dat.civs[civ_index].units[uid]
+        cre = getattr(u, 'creatable', None)
+        if cre is None:
+            return
+        tls = getattr(cre, 'train_locations', [])
+        if not tls or any(tl.unit_id == -1 for tl in tls):
+            return  # already has dynamic slot or no train_locations
+        dyn = deepcopy(tls[0])
+        dyn.unit_id    = -1
+        dyn.button_id  = 4
+        dyn.hot_key_id = 16748  # R-key slot used by vanilla Huskarl/Tarkhan
+        cre.train_locations.append(dyn)
+
     mercenary_slot_ready = False
     for pending in (castle_ut_pending_uu_subs, imp_ut_pending_uu_subs):
         for eff_id, ec in pending:
@@ -3019,6 +3042,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 ec.a = _MERCENARY_UU_SLOT
             else:
                 ec.a = elite_uu_id
+            if ec.type == EC_SET and int(ec.c) == 42:
+                _ensure_anarchy_train_slot(elite_uu_id)
             dat.effects[eff_id].effect_commands.append(ec)
     if (castle_ut_pending_uu_subs or imp_ut_pending_uu_subs) and elite_uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own elite unique "
@@ -3033,6 +3058,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             if uu_id < 0:
                 continue
             ec.a = uu_id
+            if ec.type == EC_SET and int(ec.c) == 42:
+                _ensure_anarchy_train_slot(uu_id)
             dat.effects[eff_id].effect_commands.append(ec)
     if (castle_ut_pending_base_uu_subs or imp_ut_pending_base_uu_subs) and uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own base unique "
