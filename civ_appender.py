@@ -1467,7 +1467,8 @@ HANDLED_BONUS_IDS = {
 def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                           multiplier: int, extra_strings: list[dict],
                           extra_unit_strings: list[dict] | None = None,
-                          tech_remaps: dict | None = None) -> bool:
+                          tech_remaps: dict | None = None,
+                          civ_def: dict | None = None) -> bool:
     """
     Handle a single createCivBonus-style bonus.  Returns True if handled.
 
@@ -1924,12 +1925,36 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         # Man-at-Arms (gated on Feudal Age 101) is intentionally excluded.
         _SHIFT = {103: 102, 102: 101}
         tt_eff_id = dat.civs[civ_index].tech_tree_id
+        barracks_ids = set(_barracks_tech_ids(dat))
+        _tree_list = (civ_def or {}).get('tree', [[]])
+        tree_units = set(_tree_list[0]) if _tree_list else set()
+        # Collect techs already disabled for this civ (used in Filter A below)
+        tt_disabled = {int(ec.d) for ec in dat.effects[tt_eff_id].effect_commands if ec.type == 102}
+        orig_to_new: dict[int, int] = {}   # orig_tid → new tech index
         for orig_tid in _barracks_tech_ids(dat):
             t = dat.techs[orig_tid]
+            if t.civ != -1:
+                continue   # skip civ-specific techs (e.g. Legionary civ=43); only clone globals
             reqs = list(t.required_techs)
             shift_idx = next((j for j, r in enumerate(reqs) if r in _SHIFT), None)
             if shift_idx is None:
                 continue   # no age gate to shift (or Feudal Age gate = Man-at-Arms)
+            # Filter A: skip if any non-barracks prereq is already disabled for this civ.
+            # This excludes DLC/Chronicles shadow techs (e.g. 'Paphos Shadow Tech' 1138)
+            # that are type=102 disabled for all vanilla civs, which would otherwise create
+            # an unresearchable duplicate tech at the same button slot as the real one.
+            if any(r not in (-1, 101, 102, 103) and r not in barracks_ids and r in tt_disabled
+                   for r in reqs):
+                continue
+            # Filter B: skip if the tech upgrades units that aren't in this civ's tree.
+            # This excludes DLC units (Elite War Dog, Fire Lancer, Hoplite, Champi Warrior, etc.)
+            # that would otherwise get cloned and appear as researchable at the Barracks.
+            eid_check = t.effect_id
+            if 0 <= eid_check < len(dat.effects):
+                upgrade_srcs = {int(ec.a) for ec in dat.effects[eid_check].effect_commands
+                                if ec.type == EC_UPGRADE}
+                if upgrade_srcs and not upgrade_srcs.intersection(tree_units):
+                    continue
             new_tech = deepcopy(t)
             new_tech.civ = civ_index
             new_reqs = list(new_tech.required_techs)
@@ -1940,10 +1965,39 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                 new_eff = deepcopy(dat.effects[eid])
                 dat.effects.append(new_eff)
                 new_tech.effect_id = len(dat.effects) - 1
+            new_idx = len(dat.techs)
             dat.techs.append(new_tech)
+            orig_to_new[orig_tid] = new_idx
             dat.effects[tt_eff_id].effect_commands.append(
                 EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(orig_tid))
             )
+        # Fix prerequisite chains: new copies of upper-tier techs (e.g. Two-Handed
+        # Swordsman, Champion) still reference the original lower-tier tech IDs which
+        # are now disabled.  Replace those references with the newly-created copies so
+        # the entire upgrade chain remains researchable one age earlier.
+        for orig_tid, new_idx in orig_to_new.items():
+            nt = dat.techs[new_idx]
+            new_reqs = list(nt.required_techs)
+            changed = False
+            for j, r in enumerate(new_reqs):
+                if r in orig_to_new:
+                    new_reqs[j] = orig_to_new[r]
+                    changed = True
+            if changed:
+                nt.required_techs = tuple(new_reqs)
+        # Disable civ-specific barracks techs that this civ should never see.
+        # The engine ignores tech.civ for building-display purposes (it only
+        # controls auto-fire), so a civ-specific tech like Legionary (civ=43)
+        # will appear for any civ whose prerequisites happen to be satisfied.
+        # Our type=102 commands above also mark disabled techs as "done" for
+        # prereq checking, which can inadvertently satisfy e.g. Legionary's
+        # requirement for Long Swordsman.  Explicitly disable them all.
+        for btid in barracks_ids:
+            bt = dat.techs[btid]
+            if bt.civ not in (-1, civ_index) and btid not in orig_to_new:
+                dat.effects[tt_eff_id].effect_commands.append(
+                    EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(btid))
+                )
         return True
 
     # ── Archer cost reductions ────────────────────────────────────────────────
@@ -2465,7 +2519,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             applied += len(ec_entries)
             continue
 
-        if _create_bonus_handler(dat, bonus_id, civ_index, multiplier, extra_strings, extra_unit_strings, tech_remaps):
+        if _create_bonus_handler(dat, bonus_id, civ_index, multiplier, extra_strings, extra_unit_strings, tech_remaps, civ_def):
             applied += 1
         else:
             skipped.append(bonus_id)
@@ -2863,11 +2917,14 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     imp_ut_tech_id:    int | None = None
     castle_ut_pending_uu_subs: list = []
     imp_ut_pending_uu_subs:    list = []
+    castle_ut_pending_base_uu_subs: list = []
+    imp_ut_pending_base_uu_subs:    list = []
     if castle_ut_entries or imperial_ut_entries:
         (castle_ut_sid, imp_ut_sid, castle_ut_tech_id, imp_ut_tech_id,
          castle_ut_desc_sid, imp_ut_desc_sid,
          castle_ut_help_sid, imp_ut_help_sid,
-         castle_ut_pending_uu_subs, imp_ut_pending_uu_subs) = (
+         castle_ut_pending_uu_subs, imp_ut_pending_uu_subs,
+         castle_ut_pending_base_uu_subs, imp_ut_pending_base_uu_subs) = (
             _append_unique_tech_stubs(
                 dat, civ_index, alias,
                 castle_ut_entries, imperial_ut_entries)
@@ -2891,6 +2948,19 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     km_uu_make_avail_tech_id: int = -1
     km_uu_elite_tech_id:      int = -1
     km_uu_custom_unit_strings: list[dict] = []
+    # Krepost-presence signal applies to both vanilla and custom KM UU paths:
+    # bonus 93 ("Can build Krepost") maps to tech 695, which is deepcopied
+    # per-civ by _apply_bonuses below.  tree[1] membership is a secondary
+    # signal.  Computed here so both km_uu_is_vanilla and km_uu_is_custom can
+    # use it (previously only the custom path checked).
+    _bonuses_pre = civ_def.get("bonuses", [[]])
+    _civ_bonuses_pre = _bonuses_pre[0] if _bonuses_pre and isinstance(_bonuses_pre[0], list) else []
+    has_krepost_bonus = any(isinstance(e, (list, tuple)) and e and e[0] == 93
+                            for e in _civ_bonuses_pre)
+    _tree_pre = civ_def.get("tree", [[], [], []])
+    has_krepost_tree = (len(_tree_pre) > 1 and isinstance(_tree_pre[1], list)
+                        and 1251 in _tree_pre[1])
+    has_krepost = has_krepost_bonus or has_krepost_tree
     if km_uu_is_vanilla:
         km_uu_make_avail_tech_id, km_uu_elite_tech_id = _apply_km_uu(dat, civ_index, km_uu_index)
         # Extract the actual elite UNIT id (not just the tech id) from the
@@ -2904,8 +2974,26 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             if 0 <= elite_eff_id < len(dat.effects):
                 for ec in dat.effects[elite_eff_id].effect_commands:
                     if ec.type == EC_UPGRADE:
-                        elite_uu_id = ec.b
+                        uu_id = int(ec.a)        # base UU
+                        elite_uu_id = int(ec.b)  # elite UU
                         break
+        if has_krepost and uu_id >= 0:
+            # Vanilla KM UU units only have Castle in their train_locations.
+            # Add a Krepost slot to this civ's own unit copy so the UU trains
+            # there when the civ has bonus 93.
+            for uid in (uu_id, elite_uu_id):
+                if uid < 0 or uid >= len(dat.civs[civ_index].units):
+                    continue
+                u = dat.civs[civ_index].units[uid]
+                cre = getattr(u, 'creatable', None)
+                if cre is None:
+                    continue
+                tls = getattr(cre, 'train_locations', [])
+                if tls and not any(tl.unit_id == km_custom_uu.BUILDING_KREPOST for tl in tls):
+                    krepost_tl = deepcopy(tls[0])
+                    krepost_tl.unit_id = km_custom_uu.BUILDING_KREPOST
+                    cre.train_locations.append(krepost_tl)
+            print(f"       KM UU {km_uu_index} (vanilla): added Krepost train location to units {uu_id}, {elite_uu_id}")
     elif km_uu_is_custom:
         # Pool-based allocation (see CAMPAIGN_STRING_POOL docstring) for the
         # two "name" ids; desc/help ids are DERIVED via _help_sid (name+
@@ -2917,29 +3005,11 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         elite_name_sid = _campaign_sid(pool_base + 1)
         uu_desc_sid    = _help_sid(uu_name_sid)
         elite_desc_sid = _help_sid(elite_name_sid)
-        # Krepost-trainability is conditional on the civ already having
-        # Krepost available — we only ADD the train slot here, we don't
-        # grant Krepost itself (see km_custom_uu.append_km_custom_uu's
-        # has_krepost docstring for what's and isn't covered).
-        # Krepost-presence signal: bonus 93 ("Can build Krepost") is the
-        # actual mechanism (maps to vanilla tech 695, generically deepcopied
-        # per-civ by _apply_bonuses' civ_bonus_techs path below) — confirmed
-        # against a real civ_def (ignore/barracks_enjoyers.json) that grants
-        # Krepost via bonus 93 WITHOUT listing building 1251 in tree[1] at
-        # all. tree[1] membership is checked too as a defensive secondary
-        # signal, but bonus 93 is the one that's actually load-bearing.
-        _bonuses_pre = civ_def.get("bonuses", [[]])
-        _civ_bonuses_pre = _bonuses_pre[0] if _bonuses_pre and isinstance(_bonuses_pre[0], list) else []
-        has_krepost_bonus = any(isinstance(e, (list, tuple)) and e and e[0] == 93
-                                for e in _civ_bonuses_pre)
-        _tree_pre = civ_def.get("tree", [[], [], []])
-        has_krepost_tree = (len(_tree_pre) > 1 and isinstance(_tree_pre[1], list)
-                            and 1251 in _tree_pre[1])
-        has_krepost = has_krepost_bonus or has_krepost_tree
         result = km_custom_uu.append_km_custom_uu(
             dat, civ_index, km_uu_index, uu_name_sid, uu_desc_sid,
             elite_name_sid, elite_desc_sid, has_krepost=has_krepost)
         uu_unit_id, elite_unit_id, km_uu_make_avail_tech_id, km_uu_elite_tech_id = result
+        uu_id       = uu_unit_id
         elite_uu_id = elite_unit_id
         preset_name = km_custom_uu.PRESETS[km_uu_index]["name"]
         # No separate extra_tech_strings entry for the elite tech — it
@@ -2971,6 +3041,39 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # 6c. Patch deferred UU-substitution effect commands (see
     #     UU_SUBSTITUTION_TYPES / _build_ut_effect_cmds) now that this civ's
     #     own elite UU id is fully resolved across all 3 possible paths above.
+
+    # hot_key_id for button 4 (R key) in each target building.
+    # Verified against vanilla units: Huskarl → Barracks 16748, Tarkan → Stable 16741.
+    _ANARCHY_SLOT_HOTKEYS: dict[int, int] = {
+        12:  16748,   # Barracks btn4 (R)
+        101: 16741,   # Stable btn4 (R)
+    }
+
+    def _ensure_anarchy_train_slot(uid: int, target_building: int = 12) -> None:
+        """Add a (-1, button=4) train_location to the civ's unit copy so the
+        unit appears at button 4 (R key) at whatever building attribute 42
+        points to after Anarchy/Marauders fires.  Without this slot the engine
+        falls back to button 1, overwriting the militia/cavalry line button.
+        target_building is the EC_SET c=42 d value (e.g. 12=Barracks, 101=Stable)."""
+        if uid < 0 or uid >= len(dat.civs[civ_index].units):
+            return
+        u = dat.civs[civ_index].units[uid]
+        cre = getattr(u, 'creatable', None)
+        if cre is None:
+            return
+        tls = getattr(cre, 'train_locations', [])
+        if not tls or any(tl.unit_id == -1 for tl in tls):
+            return  # already has dynamic slot or no train_locations
+        hot_key = _ANARCHY_SLOT_HOTKEYS.get(target_building, 16748)
+        dyn = deepcopy(tls[0])
+        dyn.unit_id    = -1
+        dyn.button_id  = 4
+        dyn.hot_key_id = hot_key
+        # Insert at index 1 so the -1 placeholder sits right after the Castle
+        # slot (matching Huskarl/Tarkan's vanilla layout). EC_SET c=42 only
+        # activates index-1 for the dynamic mechanism; index 2+ is ignored.
+        cre.train_locations.insert(1, dyn)
+
     mercenary_slot_ready = False
     for pending in (castle_ut_pending_uu_subs, imp_ut_pending_uu_subs):
         for eff_id, ec in pending:
@@ -2986,10 +3089,29 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 ec.a = _MERCENARY_UU_SLOT
             else:
                 ec.a = elite_uu_id
+            if ec.type == EC_SET and int(ec.c) == 42:
+                _ensure_anarchy_train_slot(elite_uu_id, int(ec.d))
             dat.effects[eff_id].effect_commands.append(ec)
     if (castle_ut_pending_uu_subs or imp_ut_pending_uu_subs) and elite_uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own elite unique "
                "unit, but this civ has no UU defined — effect left as a no-op.")
+        print(f"       WARNING: {msg}")
+        warnings.append(msg)
+
+    # Patch deferred base-UU substitution commands (e.g. Anarchy / Marauders UT
+    # which redirect the base UU's training building to Barracks or Stable).
+    for pending in (castle_ut_pending_base_uu_subs, imp_ut_pending_base_uu_subs):
+        for eff_id, ec in pending:
+            if uu_id < 0:
+                continue
+            ec.a = uu_id
+            if ec.type == EC_SET and int(ec.c) == 42:
+                _ensure_anarchy_train_slot(uu_id, int(ec.d))
+            dat.effects[eff_id].effect_commands.append(ec)
+    if (castle_ut_pending_base_uu_subs or imp_ut_pending_base_uu_subs) and uu_id < 0:
+        msg = ("Castle/Imperial UT references this civ's own base unique "
+               "unit (e.g. Anarchy train-at-Barracks), but this civ has no "
+               "UU defined — effect left as a no-op.")
         print(f"       WARNING: {msg}")
         warnings.append(msg)
 
@@ -3271,7 +3393,7 @@ def _setup_mercenary_uu_unit(dat: DatFile, civ_index: int, elite_uu_id: int) -> 
 
 
 def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
-                          lookup: dict[int, int]) -> tuple[list, list]:
+                          lookup: dict[int, int]) -> tuple[list, list, list]:
     """Collect effect commands for a UT's bonus entries.
 
     `entries` is bonuses[2] (castle) or bonuses[3] (imperial) from the KM JSON.
@@ -3282,16 +3404,23 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
     entirely different bonus-ID namespace and produced wrong effects (e.g.
     Stirrups would research Britons' "Castle 15% cheaper" tech).
 
-    Returns (cmds, pending_uu_subs). `pending_uu_subs` holds EffectCommand
-    templates (see UU_SUBSTITUTION_TYPES) whose `.a` still needs to be set to
-    THIS civ's own elite UU unit id once it's known — the UU is sometimes
-    resolved later than the UT stub (e.g. KM-custom UU presets), so the caller
-    must patch `.a` in and append these to the tech's effect afterward. Until
-    patched, the UT silently has no functional effect for that specific entry
-    (better than referencing another civ's unit).
+    Returns (cmds, pending_elite_uu_subs, pending_base_uu_subs).
+
+    `pending_elite_uu_subs` holds EffectCommand templates whose `.a` needs to
+    be set to THIS civ's own ELITE UU unit id (UU_SUBSTITUTION_TYPES plus
+    civ-specific commands referencing the source civ's elite UU).
+
+    `pending_base_uu_subs` holds EffectCommand templates whose `.a` needs to
+    be set to THIS civ's own BASE UU unit id.  Used for Anarchy / Marauders
+    style UTs that redirect the UU's training building.
+
+    Both lists are deferred because the UU may not be allocated until after
+    the UT stubs are created (e.g. KM-custom UU presets).  Until patched the
+    UT silently omits these commands (better than referencing the wrong unit).
     """
     cmds: list = []
-    pending_uu_subs: list = []
+    pending_elite_uu_subs: list = []
+    pending_base_uu_subs: list  = []
     for entry in entries:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
             continue
@@ -3303,40 +3432,76 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
             continue
         if tech_id < 0 or tech_id >= len(dat.techs):
             continue
-        eid = dat.techs[tech_id].effect_id
+        source_tech = dat.techs[tech_id]
+        eid = source_tech.effect_id
         if eid < 0 or eid >= len(dat.effects):
             continue
         all_cmds = dat.effects[eid].effect_commands
+
+        # For civ-specific techs (e.g. Anarchy, Marauders) that contain an
+        # EC_ENABLE(b=1) command targeting their own UU: identify the source
+        # civ's base and elite UU unit IDs so we can substitute them with the
+        # destination civ's own UU ids rather than blindly copying wrong ids.
+        src_base_uu_ids: set[int] = set()
+        src_elite_uu_ids: set[int] = set()
+        if source_tech.civ != -1:
+            for ec in all_cmds:
+                if ec.type == EC_ENABLE and int(ec.b) == 1:
+                    src_base_uu_ids.add(int(ec.a))
+            if src_base_uu_ids:
+                all_unit_refs = {int(ec.a) for ec in all_cmds
+                                 if ec.type in (EC_SET, EC_ADD, EC_MULTIPLY) and ec.a >= 0}
+                src_elite_uu_ids = all_unit_refs - src_base_uu_ids
+
         for ec in all_cmds:
-            if ec.type in (EC_ENABLE, EC_UPGRADE):
+            a = int(ec.a)
+            if ec.type == EC_ENABLE:
+                if a in src_base_uu_ids and int(ec.b) == 1:
+                    # Enable the destination civ's own base UU (e.g. Anarchy)
+                    print(f"       {label} bonus {bonus_id}: deferring base-UU "
+                          f"enable (type=2 a={a}) for substitution")
+                    pending_base_uu_subs.append(_scale_ec_for_multiplier(ec, multiplier))
+                # All other EC_ENABLE (including non-UU) are intentionally skipped
+                continue
+            if ec.type == EC_UPGRADE:
                 continue
             if ec.type in UU_SUBSTITUTION_TYPES:
                 print(f"       {label} bonus {bonus_id}: deferring unit "
                       f"substitution for type={ec.type} command (needs this "
                       f"civ's own elite UU)")
-                pending_uu_subs.append(_scale_ec_for_multiplier(ec, multiplier))
+                pending_elite_uu_subs.append(_scale_ec_for_multiplier(ec, multiplier))
                 continue
-            cmds.append(_scale_ec_for_multiplier(ec, multiplier))
-    return cmds, pending_uu_subs
+            scaled = _scale_ec_for_multiplier(ec, multiplier)
+            if ec.type in (EC_SET, EC_ADD, EC_MULTIPLY):
+                if a in src_base_uu_ids:
+                    pending_base_uu_subs.append(scaled)
+                    continue
+                if a in src_elite_uu_ids:
+                    pending_elite_uu_subs.append(scaled)
+                    continue
+            cmds.append(scaled)
+    return cmds, pending_elite_uu_subs, pending_base_uu_subs
 
 
 def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
                                castle_ut_entries: list,
                                imperial_ut_entries: list,
                                ) -> tuple[int, int, int | None, int | None, int, int,
-                                          int, int, list, list]:
+                                          int, int, list, list, list, list]:
     """Create Castle UT (btn7) and Imperial UT (btn8) from bonus catalog entries.
 
     Returns (castle_name_sid, imp_name_sid, castle_tech_id, imp_tech_id,
     castle_desc_sid, imp_desc_sid, castle_help_sid, imp_help_sid,
-    castle_pending_uu_subs, imp_pending_uu_subs).
+    castle_pending_uu_subs, imp_pending_uu_subs,
+    castle_pending_base_uu_subs, imp_pending_base_uu_subs).
     name_sid comes from CAMPAIGN_STRING_POOL (UT_POOL_OFFSET block) — an
     EXISTING vanilla id used for the button label, tech-tree display, and
     lang_desc. help_sid comes from UT_HELP_POOL_OFFSET (60000-68999 range,
     also existing vanilla ids) and is set DIRECTLY as language_dll_help so
     the Castle UT hover tooltip shows cost detail without touching the
     170000-170999 live multiplayer lobby UI range. The pending_uu_subs lists
-    must be patched in by the caller once the civ's elite UU id is resolved.
+    (elite UU) and pending_base_uu_subs lists (base UU) must be patched in by
+    the caller once the civ's UU ids are resolved.
     """
     # Default costs: Castle UT = 300 food + 300 gold; Imperial UT = 450 food + 225 stone
     # icon_id 33 = vanilla Castle UT icon; 107 = vanilla Imperial UT icon
@@ -3353,6 +3518,7 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
     used_help_sids: list[int] = []
     used_tech_ids: list[int | None] = []
     pending_subs_per_slot: list[list] = []
+    pending_base_subs_per_slot: list[list] = []
     for (btn, label, age_req, entries, cost_food, cost_b_type, cost_b, icon,
          name_sid, help_sid, ut_lookup) in ut_configs:
         # lang_desc = name_sid+1000 (safe: UT_POOL_OFFSET now uses 44000-range SIDs,
@@ -3368,10 +3534,13 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         if not entries:
             used_tech_ids.append(None)
             pending_subs_per_slot.append([])
+            pending_base_subs_per_slot.append([])
             continue
-        cmds, pending_uu_subs = _build_ut_effect_cmds(dat, entries, label, ut_lookup)
+        cmds, pending_uu_subs, pending_base_uu_subs = _build_ut_effect_cmds(
+            dat, entries, label, ut_lookup)
         eff_id = _append_effect(dat, Effect(name=f"{alias} {label}", effect_commands=cmds))
         pending_subs_per_slot.append([(eff_id, ec) for ec in pending_uu_subs])
+        pending_base_subs_per_slot.append([(eff_id, ec) for ec in pending_base_uu_subs])
         # Copy hotkey from first entry's vanilla tech so S/D keys work in-game.
         hotkey = -1
         if entries and isinstance(entries[0], (list, tuple)) and entries[0]:
@@ -3417,4 +3586,6 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         used_help_sids[0], used_help_sids[1],
         pending_subs_per_slot[0] if len(pending_subs_per_slot) > 0 else [],
         pending_subs_per_slot[1] if len(pending_subs_per_slot) > 1 else [],
+        pending_base_subs_per_slot[0] if len(pending_base_subs_per_slot) > 0 else [],
+        pending_base_subs_per_slot[1] if len(pending_base_subs_per_slot) > 1 else [],
     )

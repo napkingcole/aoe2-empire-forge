@@ -171,6 +171,16 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "1.7.4": [
+        "<strong class=\"color-accent-2\">NEW:</strong> Microsoft Store / Xbox App installation now auto-detected — DAT file path found automatically on first launch",
+        "<strong class=\"color-accent-2\">NEW:</strong> Bonus #286 added: Can upgrade Bombard Cannons to Houfnice (properly gated behind Imperial Age even when Bonus #283 is active)",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #283 (Chemistry/HC in Castle Age) completely reworked — now truly mirrors the Bohemian mechanism (tech 800/801 cloning) so Bombard Cannons, Bombard Towers, and Cannon Galleons all work correctly alongside early Chemistry",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Anarchy / Marauders unique tech — UU now appears at the correct button slot (R key / button 4) in Barracks or Stable after the tech fires; previously overwrote the militia or cavalry line button",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #222 (Barracks techs one age earlier) no longer clones DLC/Chronicles shadow techs or techs for units not in the civ's tree, preventing unresearchable duplicate buttons",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Vanilla KM unique units now correctly appear as trainable at the Krepost when the civ has Bonus #93 (Can build Krepost)",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Custom unique unit pierce armor stat now displays correctly in the in-game unit stats panel",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Idempotency guards added for Imperial Scorpion (#308), Royal Battle Elephant (#309), and Royal Lancer (#310) — prevents data corruption when multiple civs share these bonuses in a single build",
+    ],
     "1.7.3": [
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Custom flag icon now shows correctly in the civilization picker and in-game interface",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus #283 (Chemistry/Hand Cannoneer in Castle Age) no longer breaks Bombard Cannons, Bombard Towers, or Cannon Galleons — now mirrors the Bohemian mechanism",
