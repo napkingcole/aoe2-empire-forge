@@ -1054,7 +1054,9 @@ async function init() {
         datStatus.textContent = "✓ Auto-detected";
         datStatus.className   = "form-text text-success";
       } else {
-        datStatus.textContent = "Not auto-detected — enter path manually.";
+        datStatus.innerHTML   = "Not auto-detected — enter path manually.<br>"
+          + "<small>Steam: <code>…/Steam/steamapps/common/AoE2DE/resources/_common/dat/empires2_x2_p1.dat</code><br>"
+          + "Microsoft Store: <code>C:\\Program Files\\WindowsApps\\Microsoft.MSPhoenix_[version]\\resources\\_common\\dat\\empires2_x2_p1.dat</code></small>";
         datStatus.className   = "form-text text-warning";
       }
     } catch {

@@ -1,7 +1,7 @@
 """
 dat_reader.py — Load and inspect an AoE2 DE DAT file.
 
-Auto-detects the Steam/Xbox Game Pass installation on Mac and Windows.
+Auto-detects the Steam/Xbox Game Pass/Microsoft Store installation on Mac and Windows.
 Call load_dat() to get a DatFile object ready for modification.
 """
 
@@ -35,6 +35,16 @@ def find_game_dat() -> Path | None:
     for candidate in STEAM_DAT_CANDIDATES:
         if candidate.exists():
             return candidate
+    # Microsoft Store: directory name contains a version string, so glob for it.
+    _winapps = Path("C:/Program Files/WindowsApps")
+    if _winapps.exists():
+        for rel in (
+            "Microsoft.MSPhoenix_*/resources/_common/dat/empires2_x2_p1.dat",
+            "Microsoft.MSPhoenix_*/resources_common/dat/empires2_x2_p1.dat",
+        ):
+            matches = sorted(_winapps.glob(rel))
+            if matches:
+                return matches[-1]  # pick highest-versioned dir if multiple
     return None
 
 
