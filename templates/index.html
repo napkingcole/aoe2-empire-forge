@@ -3,9 +3,9 @@
 
 {% block content %}
 <div class="text-center mb-4">
-  <h1 class="display-6 fw-bold">AOE2: Empire Forge</h1>
-  <p class="text-secondary">Convert your KrakenMeister civ JSONs into a playable AoE2:DE mod.</p>
-  <p class="text-secondary">For now, you can use Fritz' working forked version <a href="https://civbuilder.velarix.space/" target="_blank" rel="noopener">here</a>.</p>
+  <h1 class="display-6 fw-medium">AOE2: Empire Forge</h1>
+  <p class="">Convert your KrakenMeister civ JSONs into a playable AoE2:DE mod.</p>
+  <p class="">For now, you can use Fritz' working forked version <a href="https://civbuilder.velarix.space/" target="_blank" rel="noopener">here</a>.</p>
 </div>
 
 <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
@@ -24,7 +24,7 @@
             <i class="fa-solid fa-folder-closed icon-closed"></i>
           </div>
           <p class="mb-1 fw-semibold body-text">Drop All Your KrakenMeister civ JSON files here</p>
-          <p class="text-secondary small mb-3">or click to browse</p>
+          <p class="small mb-3">or click to browse</p>
           <input type="file" id="civ_files" name="civ_files"
                  accept=".json" multiple class="d-none">
           <button type="button" class="btn btn-outline-primary btn-sm"

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AOE2: Empire Forge — Forge Your Own Civilization</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <script src="https://kit.fontawesome.com/21a7a6684f.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="../static/css/plaster.css">
+  <style>
+    /* Page-specific tweaks not in the shared sheet */
+    .ef-hero { min-height: 580px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Navbar ──────────────────────────────────────────────────────────── -->
+<nav class="ef-nav">
+  <div class="ef-nav-inner">
+    <a href="#"><img src="../static/logo-horz-lg.png" alt="AOE2: Empire Forge" class="ef-logo"></a>
+    <div class="ef-nav-links">
+      <a href="#features">How It Works</a>
+      <a href="#build">Build Anything</a>
+      <a href="#" class="active">Build Civ</a>
+      <a href="#">Upload</a>
+      <a href="#">Known Limitations</a>
+      <a href="#">Changelog</a>
+    </div>
+    <a href="#download" class="ef-btn ef-btn-primary">Download for Windows</a>
+  </div>
+</nav>
+
+<!-- ── Hero ────────────────────────────────────────────────────────────── -->
+<section class="ef-hero">
+  <!--
+    Replace the gradient with your hero artwork:
+    style="background-image: url('/static/hero-art.jpg');"
+  -->
+  <div class="ef-hero-overlay"></div>
+  <div class="ef-hero-inner">
+    <p class="ef-hero-eyebrow">AOE2: Empire Forge</p>
+    <h1 class="ef-hero-headline">Forge Your Own<br>Civilization.</h1>
+    <p class="ef-hero-sub">
+      Build a fully custom AoE2:DE civilization — bonuses, unique units, tech tree,
+      architecture — and generate a real game mod. No modding tools. No scripts. No guesswork.
+    </p>
+    <div class="ef-hero-actions">
+      <a href="#download" class="ef-btn ef-btn-primary">
+        <i class="fa-brands fa-windows me-2"></i>Download for Windows
+      </a>
+      <a href="#" class="ef-btn ef-btn-ghost">Build in Browser</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── Ornament divider ────────────────────────────────────────────────── -->
+<div style="background: var(--parch-light); padding: 2rem 0 0;">
+  <div class="ef-ornament">
+    <span class="ef-ornament-line rev"></span>
+    <span class="ef-ornament-diamond sm"></span>
+    <span class="ef-ornament-diamond"></span>
+    <span class="ef-ornament-diamond sm"></span>
+    <span class="ef-ornament-line"></span>
+  </div>
+</div>
+
+<!-- ── Features ───────────────────────────────────────────────────────── -->
+<section class="ef-section-plaster" id="features">
+  <div class="ef-container">
+    <p class="ef-section-label">Made for players, not modders</p>
+    <h2 class="ef-section-heading">Everything you need.<br>Nothing you don't.</h2>
+    <p class="ef-section-sub">
+      If you can read AoE2's tech tree and know what a civ bonus does,
+      you have all the expertise this tool requires.
+    </p>
+
+    <div class="ef-features-grid">
+      <div class="ef-feature">
+        <div class="ef-feature-icon">
+          <i class="fa-solid fa-shield-halved"></i>
+        </div>
+        <h3>No Modding Knowledge Required</h3>
+        <p>
+          Point, click, pick. Every bonus, unit, and tech is surfaced as a
+          plain-language card — not a cryptic effect command. We handle
+          the dat file so you don't have to.
+        </p>
+      </div>
+      <div class="ef-feature">
+        <div class="ef-feature-icon">
+          <i class="fa-solid fa-users"></i>
+        </div>
+        <h3>Made for the Community</h3>
+        <p>
+          Share a working .aoe2mod with your friends in minutes. Runs in
+          the browser or locally — no account, no subscription, no
+          reliance on third-party services.
+        </p>
+      </div>
+      <div class="ef-feature">
+        <div class="ef-feature-icon">
+          <i class="fa-brands fa-windows"></i>
+        </div>
+        <h3>Download and Run Locally</h3>
+        <p>
+          A lightweight Windows app that reads your own game files —
+          nothing is uploaded. Built on the same engine that powers the
+          KrakenMeister civ format.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Ornament divider ────────────────────────────────────────────────── -->
+<div style="background: var(--parch-light); padding: 0 0 2rem;">
+  <div class="ef-ornament">
+    <span class="ef-ornament-line rev"></span>
+    <span class="ef-ornament-diamond sm"></span>
+    <span class="ef-ornament-diamond"></span>
+    <span class="ef-ornament-diamond sm"></span>
+    <span class="ef-ornament-line"></span>
+  </div>
+</div>
+
+<!-- ── Build Anything ─────────────────────────────────────────────────── -->
+<section class="ef-section-dark" id="build">
+  <div class="ef-container">
+    <p class="ef-section-label">Build Anything</p>
+    <h2 class="ef-section-heading" style="color: var(--cream);">Every part of a civilization,<br>yours to design.</h2>
+    <p class="ef-section-sub" style="color: var(--cream-mid);">
+      Mix and match from every vanilla bonus, unique unit, and unique tech in the game.
+      Or write your own.
+    </p>
+
+    <div class="ef-build-grid">
+      <div class="ef-build-card">
+        <div class="ef-build-card-img">
+          <!--
+            Replace with: <img src="/static/screenshot-bonuses.jpg" alt="Bonus picker">
+          -->
+          <i class="fa-solid fa-bolt"></i>
+        </div>
+        <div class="ef-build-card-body">
+          <h3>Civilization Bonuses</h3>
+          <p>
+            Choose from every vanilla bonus in the game — economy, military,
+            tech cost, building speed, and more — with per-bonus multiplier controls.
+          </p>
+        </div>
+      </div>
+
+      <div class="ef-build-card">
+        <div class="ef-build-card-img">
+          <i class="fa-solid fa-sword"></i>
+        </div>
+        <div class="ef-build-card-body">
+          <h3>Unique Units</h3>
+          <p>
+            Pick any vanilla or community unique unit as your Castle Age and
+            Imperial Age special — with full stat overrides and a live tech tree preview.
+          </p>
+        </div>
+      </div>
+
+      <div class="ef-build-card">
+        <div class="ef-build-card-img">
+          <i class="fa-solid fa-scroll"></i>
+        </div>
+        <div class="ef-build-card-body">
+          <h3>Tech Tree &amp; Unique Techs</h3>
+          <p>
+            Assign Castle and Imperial unique techs from the full vanilla roster.
+            See the tech tree update live as you configure your civ.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA / download ─────────────────────────────────────────────────── -->
+<section class="ef-cta-section" id="download">
+  <img src="../static/crest.png" alt="Empire Forge crest" class="ef-cta-crest">
+  <h2>Ready to Forge Your Empire?</h2>
+  <p>
+    Download Empire Forge for free and build your first custom civilization
+    in minutes. Works with any AoE2:DE install — Steam or Microsoft Store.
+  </p>
+  <a href="#" class="ef-btn ef-btn-primary">
+    <i class="fa-brands fa-windows me-2"></i>Download for Windows — Free
+  </a>
+  <span class="ef-cta-secondary">
+    Prefer the browser? <a href="#">Build in browser</a> using Fritz' hosted version.
+  </span>
+</section>
+
+<!-- ── Footer ─────────────────────────────────────────────────────────── -->
+<footer class="ef-footer">
+  <div class="ef-footer-links">
+    <a href="#"><i class="fa-brands fa-discord me-1"></i>Empire Forge Discord</a>
+    <a href="#"><i class="fa-brands fa-discord me-1"></i>My Discord</a>
+    <a href="#"><i class="fa-solid fa-envelope me-1"></i>aoenapkingcole@gmail.com</a>
+    <a href="#"><i class="fa-brands fa-github me-1"></i>GitHub</a>
+  </div>
+  <p class="ef-footer-copy">
+    AOE2: Empire Forge — community tool, not affiliated with Microsoft or World's Edge.
+  </p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
