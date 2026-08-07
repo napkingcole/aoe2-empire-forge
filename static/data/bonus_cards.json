@@ -1,36 +1,2536 @@
 {
-  "_note": "Card display overrides. Fields: type, value, attr, entity, entity2, footer, lead, ageValues. ageValues: [{age, value}] — age is dark/feudal/castle/imperial; Roman numerals are automatic. Tokens: [food][wood][gold][stone][pop]. Omitted fields fall back to auto-parse.",
-
-  "0":  { "value": "-50%",  "attr": "[wood] Cost",      "entity": "town_center", "footer": "Town Centers"         },
-  "1":  { "type": "age-scaled", "entity": "archer",     "footer": "Foot Archers", "lead": "Foot Archer range:",
-           "ageValues": [{"age":"castle","value":"+1"},{"age":"imperial","value":"+2"}]                            },
-  "2":  { "value": "+25%",  "attr": "Work Rate",        "entity": "villager",    "footer": "Shepherds"            },
-  "3":  { "type": "age-scaled", "entity": "castle",     "footer": "Castles",     "lead": "Castle cost:"           },
-  "4":  { "value": "+20%",  "attr": "HP",               "entity": "cavalry",     "footer": "Feudal Age+"          },
-  "5":  { "value": "+10%",  "attr": "Work Rate",        "entity": "villager",    "footer": "Foragers"             },
-  "6":  { "value": "FREE",  "attr": "Research",         "entity": "town_center", "footer": "Loom"                 },
-  "7":  { "type": "text" },
-  "8":  { "value": "+10",   "attr": "Pop. Space",       "entity": "town_center", "footer": "Imperial Age"         },
-  "9":  { "type": "age-scaled", "entity": "infantry",   "footer": "Infantry",    "lead": "Attack vs. buildings:",
-           "ageValues": [{"age":"feudal","value":"+1"},{"age":"castle","value":"+2"},{"age":"imperial","value":"+3"}] },
-  "10": { "lead": "Infantry cost less:" },
-  "11": { "value": "2×",    "attr": "Heal Range",       "entity": "monk",        "footer": "Monks"                },
-  "12": { "type": "text" },
-  "13": { "value": "-40%",  "attr": "Cost",             "entity": "farm",        "footer": "Farms"                },
-  "14": { "type": "dual",   "value": "+1",              "attr": "Armor",         "entity": "infantry", "entity2": "cavalry", "footer": "Barracks + Stable" },
-  "15": { "value": "-50%",  "attr": "Cost",             "entity": "farm",        "footer": "Eco Drop-offs"        },
-  "16": { "type": "text" },
-  "17": { "value": "+33%",  "attr": "Atk Speed",        "entity": "infantry",    "footer": "Feudal Age+"          },
-  "18": { "type": "text" },
-  "19": { "value": "+50%",  "attr": "HP",               "entity": "ship",        "footer": "Demo Ships"           },
-  "20": { "type": "age-scaled", "entity": "university", "footer": "Technologies", "lead": "Tech cost less:"       },
-  "21": { "attr": "[plus][heart]", "type": "age-scaled", "entity": "castle",     "footer": "Buildings",    "lead": "Building HP Increase:"          },
-  "22": { "value": "+25%",  "attr": "Atk Speed",        "entity": "ship",        "footer": "Fire Ships"           },
-  "23": { "type": "dual",   "value": "-25%",            "attr": "Cost",           "entity": "cavalry", "entity2": "infantry", "footer": "Camels, Pikes, Skirms" },
-  "24": { "value": "+50",   "attr": "[wood] + [food]",  "entity": "villager",    "footer": "Starting Resources"   },
-  "25": { "type": "dual",   "value": "2×",              "attr": "HP",             "entity": "town_center", "entity2": "ship" },
-  "26": { "type": "age-scaled", "entity": "town_center","footer": "TC + Dock",   "lead": "TC + Dock work rate:"   },
-  "27": { "type": "text" },
-  "28": { "value": "2×",    "attr": "HP",               "entity": "ship",        "footer": "Transport Ships"      },
-  "29": { "value": "+25%",  "attr": "Atk Speed",        "entity": "ship",        "footer": "Galleys"              }
+  "_note": [
+    "Single-column layout — fields map top to bottom:",
+    "",
+    "  ┌── HEADER (auto: category color + name) ──────┐",
+    "  │  [icon]          ← entity, icon               │",
+    "  │  [icon]  [icon]  ← dual only (icon + icon2)   │",
+    "  │  [heading]       ← heading                    │",
+    "  │  [stat]          ← stat                       │",
+    "  │  [prog_label]    ← progression only           │",
+    "  │  [age table]     ← progression only (ages)    │",
+    "  │ ─────────────────────────────────────         │",
+    "  │  [who] [description] ← entity + description   │",
+    "  └───────────────────────────────────────────────┘",
+    "",
+    "  type:        value | progression | dual | multi | desc | hidden",
+    "  heading:     Big bold text — '+20%', 'FREE', 'CAN', 'Building Damage'",
+    "  stat:        Smaller label below heading — 'HP', 'Cost', 'Work Rate'",
+    "  description: Bottom label (who/what is affected) — 'Shepherds', 'Infantry'",
+    "  entity:      Unit/building key — drives icon, small who-icon, default description",
+    "  entity2:     Second entity for 'dual' cards (shown side-by-side with entity)",
+    "  icon:        Filename in /static/icons/units/ — overrides main image only",
+    "  icon2:       Filename for second image in 'dual'",
+    "  prog_label:  Small label above the age table (progression only)",
+    "  ages:        [{age, value}] — age: dark|feudal|castle|imperial; Roman numerals auto",
+    "  lines:       ['...','...'] — desc card lines (auto-split on ; if omitted)",
+    "  hidden:      true → card not rendered",
+    "  _label:      Human note, ignored by parser — documents which bonus this is",
+    "",
+    "  Tokens in any string field: [food][wood][gold][stone][pop] → inline resource icons",
+    "  Omitted fields fall back to auto-parse."
+  ],
+  "0": {
+    "heading": "-50% [wood]",
+    "stat": "Town Centers cost -50% wood starting in the Castle Age",
+    "entity": "town_center",
+    "description": "Town Center"
+  },
+  "1": {
+    "type": "progression",
+    "entity": "archer",
+    "description": "Foot Archers",
+    "prog_label": "+1 Range Starting in Castle",
+    "heading": "+1 range",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "+1"
+      },
+      {
+        "age": "imperial",
+        "value": "+1"
+      }
+    ]
+  },
+  "2": {
+    "type": "dual",
+    "heading": "+25%",
+    "stat": "Shepherds work 25% faster",
+    "entity": "villager",
+    "entity2": "sheep",
+    "description": "Villagers"
+  },
+  "3": {
+    "stat": "Discount",
+    "type": "progression",
+    "entity": "castle",
+    "description": "Castles",
+    "prog_label": "Discount per age:",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "-15%"
+      },
+      {
+        "age": "imperial",
+        "value": "-25%"
+      }
+    ]
+  },
+  "4": {
+    "heading": "+20% HP",
+    "stat": "Mounted Units +20% HP Starting in Feudal",
+    "entity": "scout",
+    "entity2": "cavalry_archer",
+    "description": "Mounted Units"
+  },
+  "5": {
+    "heading": "+10% Work Rate",
+    "stat": "Foragers work 10% faster",
+    "entity": "villager",
+    "entity2": "berries",
+    "description": "Villagers"
+  },
+  "6": {
+    "heading": "Loom",
+    "entity": "town_center",
+    "entity2": "loom",
+    "stat": "Loom can be researched instantly",
+    "description": "Villagers"
+  },
+  "7": {
+    "type": "dual",
+    "heading": "+Attack, Carry",
+    "stat": "",
+    "entity": "villager",
+    "entity2": "boar",
+    "description": "Villagers"
+  },
+  "8": {
+    "heading": "+10 Pop Space",
+    "stat": "Increased population in Imperial Age",
+    "entity": "town_center",
+    "description": "Imperial Age"
+  },
+  "9": {
+    "type": "progression",
+    "entity": "infantry",
+    "description": "Infantry",
+    "prog_label": "Attack vs. buildings:",
+    "stat": "Extra Building Damage",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "+1"
+      },
+      {
+        "age": "castle",
+        "value": "+2"
+      },
+      {
+        "age": "imperial",
+        "value": "+3"
+      }
+    ]
+  },
+  "10": {
+    "type": "progression",
+    "heading": "test",
+    "prog_label": "Infantry cost less:",
+    "stat": "Infantry Discount",
+    "description": "Infantry"
+  },
+  "11": {
+    "heading": "×2 Range",
+    "stat": "Monks have double the standard healing range",
+    "entity": "monk",
+    "description": "Monks"
+  },
+  "12": {
+    "type": "desc",
+    "description": "Town Centers"
+  },
+  "13": {
+    "heading": "40% OFF",
+    "stat": "Farms cost -40%",
+    "entity": "farm",
+    "description": "Farms"
+  },
+  "14": {
+    "type": "progression",
+    "heading": "+1 Armor",
+    "stat": "+1 Armor per age",
+    "prog_label": "Armor:",
+    "entity": "barracks",
+    "entity2": "stable",
+    "description": "Barracks + Stable",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "+1"
+      },
+      {
+        "age": "imperial",
+        "value": "+1"
+      }
+    ]
+  },
+  "15": {
+    "type": "dual",
+    "heading": "-50%",
+    "stat": "Economic Drop-off Buildings cost -50%",
+    "entity": "lumber_camp",
+    "entity2": "mining_camp",
+    "description": "Drop-off sites"
+  },
+  "16": {
+    "type": "desc",
+    "entity": "fishing_ship",
+    "description": "Fishing Ships"
+  },
+  "17": {
+    "heading": "+33% [reload]",
+    "stat": "Infantry attack 33% faster starting in Feudal Age",
+    "entity": "infantry",
+    "description": "Infantry"
+  },
+  "18": {
+    "type": "desc",
+    "description": "Chinese Start"
+  },
+  "19": {
+    "heading": "+50% [heart]",
+    "stat": "Demolition Ships +50% hit points",
+    "entity": "demolition_ship",
+    "description": "Demolition Ships"
+  },
+  "20": {
+    "type": "progression",
+    "entity": "university",
+    "entity2": "blacksmith",
+    "description": "Technologies",
+    "prog_label": "Tech cost discount:"
+  },
+  "21": {
+    "stat": "[plus][heart]",
+    "type": "progression",
+    "entity": "castle",
+    "description": "Buildings",
+    "prog_label": "Building HP Increase:"
+  },
+  "22": {
+    "heading": "+25% [reload]",
+    "stat": "Attack Speed Increase",
+    "entity": "fire_ship",
+    "description": "Fire Ships"
+  },
+  "23": {
+    "type": "dual",
+    "heading": "-25%",
+    "stat": "Camel Riders, Skirmishers, Pikemen, Halberdiers cost -25%",
+    "entity": "camel_rider",
+    "entity2": "skirmisher",
+    "description": "Camels, Pikes, Skirms"
+  },
+  "24": {
+    "type": "dual",
+    "heading": "+50 Each",
+    "stat": "Start with +50 wood and +50 food",
+    "entity": "wood",
+    "entity2": "food",
+    "description": "Starting Resources"
+  },
+  "25": {
+    "type": "dual",
+    "heading": "×2 HP",
+    "stat": "Town Center, Dock 2x hit points",
+    "entity": "town_center",
+    "entity2": "dock",
+    "description": "TC & Dock"
+  },
+  "26": {
+    "type": "progression",
+    "entity": "town_center",
+    "entity2": "dock",
+    "stat": "+ Work Rate",
+    "description": "TC & Dock",
+    "prog_label": "Increase Per Age"
+  },
+  "27": {
+    "type": "desc"
+  },
+  "28": {
+    "type": "desc",
+    "entity": "transport_ship",
+    "description": "Transport Ships"
+  },
+  "29": {
+    "heading": "+25% [reload]",
+    "stat": "Galleys attack +25% faster",
+    "entity": "galley",
+    "description": "Galleys"
+  },
+  "30": {
+    "heading": "+25% [heart]",
+    "entity": "camel_rider",
+    "stat": "Camel units +25% hit points",
+    "description": "Camel Units"
+  },
+  "31": {
+    "type": "dual",
+    "heading": "+25% [heart]",
+    "stat": "Gunpowder units +25% hit points",
+    "entity": "hand_cannoneer",
+    "entity2": "bombard_cannon",
+    "description": "Gunpowder"
+  },
+  "32": {
+    "type": "dual",
+    "heading": "+20% [workrate]",
+    "stat": "Gold miners work 20% faster",
+    "entity": "villager",
+    "entity2": "gold_mining",
+    "description": "Villagers"
+  },
+  "33": {
+    "type": "dual",
+    "heading": "+1 [pierce_armor]",
+    "stat": "Scout Cavalry, Light Cavalry, Hussar +1 pierce armor",
+    "entity": "scout",
+    "entity2": "hussar",
+    "description": "Light Cavalry line"
+  },
+  "34": {
+    "type": "progression",
+    "stat": "Warship discount",
+    "prog_label": "Discount per age:",
+    "entity": "galley",
+    "description": "Warships",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "-15%"
+      },
+      {
+        "age": "castle",
+        "value": "-15%"
+      },
+      {
+        "age": "imperial",
+        "value": "-20%"
+      }
+    ]
+  },
+  "35": {
+    "heading": "+20% [heart]",
+    "stat": "Infantry +20% hit points starting in Feudal Age",
+    "entity": "infantry",
+    "description": "Infantry"
+  },
+  "36": {
+    "heading": "+25% [reload]",
+    "stat": "Cavalry Archers attack 25% faster",
+    "entity": "cavalry_archer",
+    "description": "Cavalry Archers"
+  },
+  "37": {
+    "heading": "+40% [workrate]",
+    "stat": "Hunters work 40% faster",
+    "entity": "villager",
+    "entity2": "boar",
+    "description": "Hunters"
+  },
+  "38": {
+    "type": "progression",
+    "heading": "+[heart]",
+    "stat": "Hit Points",
+    "entity": "hussar",
+    "description": "Light Cav + Steppe Lancers",
+    "prog_label": "HP bonus per age:",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "+20%"
+      },
+      {
+        "age": "imperial",
+        "value": "+30%"
+      }
+    ]
+  },
+  "39": {
+    "type": "progression",
+    "heading": "+Movement Speed",
+    "stat": "Movement Speed",
+    "entity": "infantry",
+    "description": "Infantry",
+    "prog_label": "Speed bonus per age:",
+    "ages": [
+      {
+        "age": "dark",
+        "value": "+5%"
+      },
+      {
+        "age": "feudal",
+        "value": "+10%"
+      },
+      {
+        "age": "castle",
+        "value": "+15%"
+      },
+      {
+        "age": "imperial",
+        "value": "+20%"
+      }
+    ]
+  },
+  "40": {
+    "heading": "+15% [workrate]",
+    "stat": "Lumberjacks work 15% faster",
+    "entity": "lumber_camp",
+    "description": "Lumberjacks"
+  },
+  "41": {
+    "heading": "+25% [reload]",
+    "stat": "Siege units attack 25% faster",
+    "entity": "onager",
+    "entity2": "bombard_cannon",
+    "description": "Siege Units"
+  },
+  "42": {
+    "type": "desc",
+    "entity": "sheep",
+    "description": "Sheep",
+    "lines": [
+      "Can steal enemy sheep",
+      "Sheep within one unit's LoS cannot be stolen"
+    ]
+  },
+  "43": {
+    "heading": "UNLOCKED",
+    "stat": "Missionaries can be trained at the Monastery",
+    "entity": "missionary",
+    "description": "Missionaries"
+  },
+  "44": {
+    "heading": "+50 [gold]",
+    "stat": "Starting gold",
+    "entity": "gold",
+    "description": "Starting Resources"
+  },
+  "45": {
+    "heading": "+5 [heart]",
+    "stat": "Per Monastery Technology",
+    "entity": "monk",
+    "description": "Monks"
+  },
+  "46": {
+    "type": "dual",
+    "heading": "+1 / −50 [food]",
+    "stat": "Extra villager, -50 starting food",
+    "entity": "villager",
+    "entity2": "food",
+    "description": "Starting Conditions"
+  },
+  "47": {
+    "type": "progression",
+    "stat": "Cost Discount",
+    "entity": "cavalry_archer",
+    "description": "Cavalry Archers",
+    "prog_label": "Discount per age:",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "-10%"
+      },
+      {
+        "age": "imperial",
+        "value": "-20%"
+      }
+    ]
+  },
+  "48": {
+    "type": "dual",
+    "heading": "-50% [wood]",
+    "stat": "Ranged Soldiers & Infantry production cost",
+    "entity": "archer",
+    "entity2": "fire_lancer",
+    "description": "Ranged & Infantry"
+  },
+  "49": {
+    "type": "dual",
+    "heading": "FREE",
+    "stat": "Archer Armor Upgrades",
+    "entity": "archer",
+    "entity2": "archer_armor",
+    "description": "Archers"
+  },
+  "50": {
+    "heading": "UNLOCKED",
+    "stat": "Train Turtle Ships at Docks",
+    "entity": "turtle_ship",
+    "description": "Turtle Ships"
+  },
+  "51": {
+    "heading": "UNLOCKED",
+    "stat": "Train Longboats at Docks",
+    "entity": "longboat",
+    "description": "Longboats"
+  },
+  "52": {
+    "heading": "-20%",
+    "stat": "Gunpowder Unit Cost",
+    "entity": "hand_cannoneer",
+    "entity2": "bombard_cannon",
+    "description": "Gunpowder Units"
+  },
+  "53": {
+    "heading": "UPGRADE",
+    "stat": "Imperial Camel Rider Available",
+    "entity": "imperial_camel",
+    "description": "Camel Line"
+  },
+  "54": {
+    "heading": "+10% [workrate]",
+    "stat": "Fishermen work 10% faster",
+    "entity": "villager",
+    "description": "Fishermen"
+  },
+  "55": {
+    "type": "progression",
+    "stat": "Pierce Armor",
+    "entity": "stable",
+    "description": "Stable Units",
+    "prog_label": "Pierce armor per age:",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "+1"
+      },
+      {
+        "age": "imperial",
+        "value": "+2 total"
+      }
+    ]
+  },
+  "56": {
+    "type": "progression",
+    "stat": "Cost Discount",
+    "entity": "villager",
+    "description": "Villagers",
+    "prog_label": "Discount per age:",
+    "ages": [
+      {
+        "age": "dark",
+        "value": "-8%"
+      },
+      {
+        "age": "feudal",
+        "value": "-13%"
+      },
+      {
+        "age": "castle",
+        "value": "-18%"
+      },
+      {
+        "age": "imperial",
+        "value": "-23%"
+      }
+    ]
+  },
+  "57": {
+    "type": "progression",
+    "stat": "Food Cost Discount",
+    "entity": "infantry",
+    "description": "Military Units",
+    "prog_label": "Food discount per age:",
+    "ages": [
+      {
+        "age": "dark",
+        "value": "-10%"
+      },
+      {
+        "age": "feudal",
+        "value": "-15%"
+      },
+      {
+        "age": "castle",
+        "value": "-20%"
+      },
+      {
+        "age": "imperial",
+        "value": "-25%"
+      }
+    ]
+  },
+  "58": {
+    "heading": "-15% [stone]",
+    "stat": "Building Stone Cost",
+    "entity": "castle",
+    "entity2": "tower",
+    "description": "All Buildings"
+  },
+  "59": {
+    "heading": "+10 Pop",
+    "stat": "Per House",
+    "entity": "house",
+    "description": "Houses"
+  },
+  "60": {
+    "type": "dual",
+    "heading": "UPGRADES",
+    "stat": "Villagers benefit from Blacksmith upgrades",
+    "entity": "blacksmith",
+    "entity2": "villager",
+    "description": "Villagers"
+  },
+  "61": {
+    "heading": "UNLOCKED",
+    "stat": "Slingers from Archery Range",
+    "entity": "slinger",
+    "description": "Slingers"
+  },
+  "62": {
+    "type": "desc",
+    "entity": "villager",
+    "description": "Villagers",
+    "lines": [
+      "Villagers kill wolves with one strike"
+    ]
+  },
+  "63": {
+    "heading": "-15%",
+    "stat": "Scout Cavalry-line cost",
+    "entity": "scout",
+    "entity2": "hussar",
+    "description": "Scout line"
+  },
+  "64": {
+    "heading": "-15%",
+    "stat": "Siege Workshop Cost",
+    "entity": "siege_workshop",
+    "description": "Siege Weapons"
+  },
+  "65": {
+    "heading": "-20% [gold]",
+    "stat": "All Unit Gold Cost",
+    "entity": "gold",
+    "description": "All Units"
+  },
+  "66": {
+    "heading": "+[wood]",
+    "stat": "Foragers generate 33% wood rate",
+    "entity": "villager",
+    "entity2": "wood",
+    "description": "Foragers"
+  },
+  "67": {
+    "heading": "+10% [heart]",
+    "stat": "All Ships +10% Hit Points",
+    "entity": "ship",
+    "description": "Ships"
+  },
+  "68": {
+    "heading": "UNLOCKED",
+    "stat": "Build Feitoria (Imperial Age)",
+    "entity": "feitoria",
+    "description": "Feitoria"
+  },
+  "69": {
+    "heading": "UNLOCKED",
+    "stat": "Build Caravels at Docks",
+    "entity": "caravel",
+    "description": "Caravels"
+  },
+  "70": {
+    "heading": "+18% [reload]",
+    "stat": "Foot Archer attack speed",
+    "entity": "archer",
+    "description": "Foot Archers"
+  },
+  "71": {
+    "type": "dual",
+    "heading": "+100 Each",
+    "stat": "+100 [gold], +100 [food] per age advance",
+    "entity": "gold",
+    "entity2": "food",
+    "description": "Per Age Advance"
+  },
+  "72": {
+    "heading": "FREE",
+    "stat": "Pikeman Upgrade",
+    "entity": "spearman",
+    "description": "Spearmen"
+  },
+  "73": {
+    "heading": "-15% [wood]",
+    "stat": "Building Wood Cost",
+    "entity": "lumber_camp",
+    "description": "All Buildings"
+  },
+  "74": {
+    "type": "progression",
+    "stat": "Pierce Armor",
+    "entity": "infantry",
+    "entity2": "infantry_pierce_armor",
+    "description": "Barracks Units",
+    "prog_label": "Pierce armor starting Feudal:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "+1"
+      },
+      {
+        "age": "castle",
+        "value": "+2"
+      },
+      {
+        "age": "imperial",
+        "value": "+3"
+      }
+    ]
+  },
+  "75": {
+    "heading": "+10% [gold]",
+    "stat": "Gold drop-off bonus",
+    "entity": "villager",
+    "entity2": "gold_mining",
+    "description": "Gold Miners"
+  },
+  "76": {
+    "type": "progression",
+    "stat": "Movement Speed",
+    "entity": "villager",
+    "description": "Villagers",
+    "prog_label": "Speed bonus per age:",
+    "ages": [
+      {
+        "age": "dark",
+        "value": "+5%"
+      },
+      {
+        "age": "feudal",
+        "value": "+10%"
+      }
+    ]
+  },
+  "77": {
+    "heading": "+10% Speed",
+    "stat": "All Ships +10% Speed",
+    "entity": "ship",
+    "description": "Ships"
+  },
+  "78": {
+    "type": "progression",
+    "stat": "Cost Discount",
+    "entity": "stable",
+    "description": "Stable Units",
+    "prog_label": "Discount per age:",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "-15%"
+      },
+      {
+        "age": "imperial",
+        "value": "-20%"
+      }
+    ]
+  },
+  "79": {
+    "heading": "+10% Speed",
+    "stat": "Melee Elephant Movement Speed",
+    "entity": "battle_elephant",
+    "description": "Battle Elephants"
+  },
+  "80": {
+    "type": "desc",
+    "entity": "house",
+    "description": "Villagers",
+    "lines": [
+      "Villagers can garrison in Houses"
+    ]
+  },
+  "81": {
+    "type": "desc",
+    "entity": "town_center",
+    "description": "Age Advancement",
+    "lines": [
+      "No buildings required to advance to the next age",
+      "No buildings required to unlock other buildings"
+    ]
+  },
+  "82": {
+    "heading": "66% Faster",
+    "stat": "Age Advance Speed",
+    "entity": "town_center",
+    "description": "Age Advances"
+  },
+  "83": {
+    "type": "progression",
+    "stat": "Cost Discount",
+    "entity": "battle_elephant",
+    "description": "Elephant Units",
+    "prog_label": "Discount per age:",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "-25%"
+      },
+      {
+        "age": "imperial",
+        "value": "-35%"
+      }
+    ]
+  },
+  "84": {
+    "heading": "-33% / +200%",
+    "stat": "Fish Traps cheaper, +200% food",
+    "entity": "fishing_ship",
+    "description": "Fish Traps"
+  },
+  "85": {
+    "type": "dual",
+    "heading": "+1/+1 Armor",
+    "stat": "Foot Archers + Condottieri +1/+1 armor",
+    "entity": "archer",
+    "entity2": "condottiero",
+    "description": "Foot Archers + Condottieri"
+  },
+  "86": {
+    "heading": "FREE",
+    "stat": "Lumber Camp Upgrades",
+    "entity": "lumber_camp",
+    "description": "Lumberjacks"
+  },
+  "87": {
+    "type": "progression",
+    "stat": "Attack",
+    "entity": "infantry",
+    "description": "Infantry",
+    "prog_label": "Attack bonus per age:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "+1"
+      },
+      {
+        "age": "castle",
+        "value": "+2"
+      },
+      {
+        "age": "imperial",
+        "value": "+3"
+      }
+    ]
+  },
+  "88": {
+    "heading": "-50%",
+    "stat": "Monastery Tech Cost",
+    "entity": "monastery",
+    "description": "Monastery Techs"
+  },
+  "89": {
+    "type": "desc",
+    "lines": [
+      "Enemy positions are revealed at the start of the game"
+    ]
+  },
+  "90": {
+    "type": "dual",
+    "heading": "+20% [heart]",
+    "stat": "Archery Range units + Fire Lancers HP",
+    "entity": "archery_range",
+    "entity2": "fire_lancer",
+    "description": "Archers + Fire Lancers"
+  },
+  "91": {
+    "heading": "FREE",
+    "stat": "Militia-line Upgrades",
+    "entity": "infantry",
+    "description": "Militia Line"
+  },
+  "92": {
+    "heading": "-50% [stone]",
+    "stat": "Town Centers cost less stone",
+    "entity": "town_center",
+    "description": "Town Centers"
+  },
+  "93": {
+    "heading": "UNLOCKED",
+    "stat": "Build Krepost",
+    "entity": "krepost",
+    "description": "Krepost"
+  },
+  "94": {
+    "heading": "+50%",
+    "stat": "Livestock food supply",
+    "entity": "sheep",
+    "description": "Livestock"
+  },
+  "95": {
+    "type": "dual",
+    "entity": "barracks",
+    "entity2": "stable",
+    "description": "All Units",
+    "lines": [
+      "Units deal +25% damage when fighting from higher elevation"
+    ]
+  },
+  "96": {
+    "type": "dual",
+    "heading": "FREE",
+    "stat": "Thumb Ring + Parthian Tactics",
+    "entity": "thumb_ring",
+    "entity2": "parthian_tactics",
+    "description": "Archery Range Techs"
+  },
+  "97": {
+    "type": "progression",
+    "stat": "Movement Speed",
+    "entity": "cavalry",
+    "description": "Mounted Units",
+    "prog_label": "Speed bonus per age:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "+5%"
+      },
+      {
+        "age": "castle",
+        "value": "+10%"
+      },
+      {
+        "age": "imperial",
+        "value": "+15%"
+      }
+    ]
+  },
+  "98": {
+    "type": "dual",
+    "heading": "+1 TC",
+    "stat": "An Extra Town Center can be built in Feudal Age",
+    "entity": "town_center",
+    "entity2": "feudal_age",
+    "description": "Town Centers"
+  },
+  "99": {
+    "type": "dual",
+    "heading": "UNLOCKED",
+    "stat": "Siege Workshop and Battering Ram available in the Feudal Age; Capped Ram upgrade available in Castle Age",
+    "entity": "siege_workshop",
+    "entity2": "battering_ram",
+    "description": "Siege Workshop"
+  },
+  "100": {
+    "heading": "+100 [food]",
+    "stat": "Per Town Center",
+    "entity": "town_center",
+    "description": "Town Centers"
+  },
+  "101": {
+    "type": "dual",
+    "heading": "+10% Speed",
+    "stat": "Movement Speed",
+    "entity": "spearman",
+    "entity2": "skirmisher",
+    "description": "Spearmen + Skirms"
+  },
+  "102": {
+    "heading": "+1 [attack] per Relic",
+    "stat": "Knights + Unique Unit +1 attack (max +4)",
+    "entity": "knight",
+    "entity2": "relic",
+    "description": "Knight + UU"
+  },
+  "103": {
+    "heading": "UNLOCKED",
+    "stat": "Cavalier upgrade available in Castle Age",
+    "entity": "cavalier",
+    "description": "Cavalier Upgrade"
+  },
+  "104": {
+    "type": "dual",
+    "heading": "+25% Attack",
+    "stat": "Gunpowder Units Increased Attack",
+    "entity": "hand_cannoneer",
+    "entity2": "bombard_cannon",
+    "description": "Gunpowder Units"
+  },
+  "105": {
+    "type": "dual",
+    "entity": "lumber_camp",
+    "entity2": "mill",
+    "stat": "Economic upgrades cost -33% food and available one age earlier",
+    "description": "Economic Upgrades"
+  },
+  "106": {
+    "type": "dual",
+    "heading": "50% / 100%",
+    "stat": "Fortifications + TC build faster",
+    "entity": "tower",
+    "entity2": "town_center",
+    "description": "Fortifications + TC"
+  },
+  "107": {
+    "heading": "-33%",
+    "stat": "Bonus Damage Received",
+    "entity": "infantry",
+    "description": "All Soldiers"
+  },
+  "108": {
+    "heading": "+125%",
+    "stat": "Farm Upgrade Food Bonus",
+    "entity": "farm",
+    "description": "Farm Upgrades"
+  },
+  "109": {
+    "heading": "UNLOCKED",
+    "stat": "Build Donjon",
+    "entity": "donjon",
+    "description": "Donjon"
+  },
+  "110": {
+    "type": "desc"
+  },
+  "120": {
+    "heading": "+15% [workrate]",
+    "stat": "Farmers work 15% faster",
+    "entity": "farm",
+    "description": "Farmers"
+  },
+  "121": {
+    "heading": "-15%",
+    "stat": "Age Advancement costs -15% less",
+    "entity": "town_center",
+    "description": "Age Advances"
+  },
+  "122": {
+    "heading": "-15%",
+    "stat": "Fishing Ship Cost",
+    "entity": "fishing_ship",
+    "description": "Fishing Ships"
+  },
+  "123": {
+    "type": "dual",
+    "heading": "-33%",
+    "stat": "Dock + University tech cost",
+    "entity": "dock",
+    "entity2": "university",
+    "description": "Dock + University Techs"
+  },
+  "124": {
+    "type": "dual",
+    "heading": "-33%",
+    "stat": "Imperial Age advancement costs less",
+    "entity": "town_center",
+    "entity2": "imperial_age",
+    "description": "Imperial Age"
+  },
+  "125": {
+    "heading": "FREE [gold]",
+    "stat": "Blacksmith upgrades cost no gold",
+    "entity": "blacksmith",
+    "description": "Blacksmith"
+  },
+  "126": {
+    "heading": "+18% [reload]",
+    "stat": "Gunpowder attack speed",
+    "entity": "hand_cannoneer",
+    "description": "Gunpowder Units"
+  },
+  "127": {
+    "heading": "+30% [workrate]",
+    "stat": "Builders work 30% faster",
+    "entity": "villager",
+    "description": "Builders"
+  },
+  "128": {
+    "heading": "+11% Faster",
+    "stat": "Military units created 11% faster",
+    "entity": "barracks",
+    "description": "All Military"
+  },
+  "129": {
+    "heading": "+3 Carry",
+    "stat": "Villager carry capacity",
+    "entity": "villager",
+    "description": "Villagers"
+  },
+  "130": {
+    "heading": "+35% Accuracy",
+    "stat": "Increased trebuchet accuracy",
+    "entity": "trebuchet",
+    "description": "Trebuchets"
+  },
+  "131": {
+    "type": "desc",
+    "entity": "house",
+    "description": "Houses",
+    "lines": [
+      "Villagers do not require Houses",
+      "Start with -100 [wood]"
+    ]
+  },
+  "132": {
+    "heading": "Resources",
+    "stat": "Last 15% longer",
+    "entity": "villager",
+    "description": "All Resources"
+  },
+  "133": {
+    "type": "progression",
+    "stat": "Cost Discount",
+    "entity": "archer",
+    "entity2": "skirmisher",
+    "description": "Foot Archers + Skirms",
+    "prog_label": "Discount per age:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "-10%"
+      },
+      {
+        "age": "castle",
+        "value": "-20%"
+      },
+      {
+        "age": "imperial",
+        "value": "-30%"
+      }
+    ]
+  },
+  "134": {
+    "type": "dual",
+    "heading": "+[food] Trickle",
+    "stat": "Lumberjacks generate food in addition to wood",
+    "entity": "lumber_camp",
+    "entity2": "food",
+    "description": "Lumberjacks"
+  },
+  "135": {
+    "heading": "+20% [workrate]",
+    "stat": "Stone miners work 20% faster",
+    "entity": "stone_mining",
+    "description": "Stone Miners"
+  },
+  "136": {
+    "type": "desc",
+    "entity": "mill",
+    "description": "Economic Upgrades",
+    "lines": [
+      "Economic upgrades cost no wood",
+      "Researched faster than normal"
+    ]
+  },
+  "137": {
+    "type": "dual",
+    "heading": "-50% [food]",
+    "stat": "Blacksmith and Siege tech food cost -50%",
+    "entity": "blacksmith",
+    "entity2": "siege_workshop",
+    "description": "Blacksmith + Siege Techs"
+  },
+  "138": {
+    "heading": "-50%",
+    "stat": "Stable technologies cost -50%",
+    "entity": "stable",
+    "description": "Stable Techs"
+  },
+  "139": {
+    "type": "dual",
+    "heading": "+2 Sheep",
+    "stat": "New Town Centers spawn 2 sheep (Castle Age+)",
+    "entity": "town_center",
+    "entity2": "sheep",
+    "description": "Town Centers"
+  },
+  "140": {
+    "type": "desc",
+    "lines": [
+      "Wonders cost no wood",
+      "Wonders provide +50 population capacity",
+      "Maximum 1 Wonder"
+    ]
+  },
+  "141": {
+    "heading": "+3 [heart]",
+    "stat": "Villagers gain +3 HP per economic technology",
+    "entity": "mill",
+    "description": "Villagers"
+  },
+  "142": {
+    "type": "progression",
+    "stat": "HP Regeneration",
+    "entity": "villager",
+    "description": "Villagers",
+    "prog_label": "HP regen per minute:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "10 HP/min"
+      },
+      {
+        "age": "castle",
+        "value": "15 HP/min"
+      },
+      {
+        "age": "imperial",
+        "value": "20 HP/min"
+      }
+    ]
+  },
+  "143": {
+    "type": "dual",
+    "heading": "2× Speed",
+    "stat": "Barracks, Stable, and Archery Range build 100% faster",
+    "entity": "barracks",
+    "entity2": "stable",
+    "description": "Military Buildings"
+  },
+  "144": {
+    "type": "dual",
+    "heading": "+5 Pop",
+    "stat": "Each drop-off building provides +5 population",
+    "entity": "lumber_camp",
+    "entity2": "mining_camp",
+    "description": "Drop-off Sites"
+  },
+  "145": {
+    "heading": "Instant",
+    "stat": "Ballistics is researched instantly for free",
+    "entity": "university",
+    "description": "Ballistics"
+  },
+  "146": {
+    "type": "desc"
+  },
+  "171": {
+    "heading": "+20% [workrate]",
+    "stat": "Trade carts work 20% faster",
+    "entity": "market",
+    "description": "Trade Carts"
+  },
+  "172": {
+    "type": "desc",
+    "entity": "archer",
+    "description": "Archers",
+    "lines": [
+      "Squires movement speed bonus also applies to Archers"
+    ]
+  },
+  "173": {
+    "type": "desc",
+    "entity": "infantry",
+    "description": "Shock Infantry",
+    "lines": [
+      "Shock Infantry units receive a movement speed bonus"
+    ]
+  },
+  "174": {
+    "heading": "+150 [wood]",
+    "stat": "Starting wood",
+    "entity": "wood",
+    "description": "Starting Resources"
+  },
+  "175": {
+    "heading": "+100 [stone]",
+    "stat": "Starting stone",
+    "entity": "stone",
+    "description": "Starting Resources"
+  },
+  "176": {
+    "type": "dual",
+    "heading": "+50 Each",
+    "stat": "+50 [wood], +50 [stone]",
+    "entity": "wood",
+    "entity2": "stone",
+    "description": "Starting Resources"
+  },
+  "177": {
+    "type": "dual",
+    "heading": "+70 / +30",
+    "stat": "+70 [food], +30 [gold]",
+    "entity": "food",
+    "entity2": "gold",
+    "description": "Starting Resources"
+  },
+  "178": {
+    "heading": "66% Faster",
+    "stat": "Monks train 66% faster",
+    "entity": "monk",
+    "description": "Monks"
+  },
+  "179": {
+    "heading": "50% Faster",
+    "stat": "Trebuchets train 50% faster",
+    "entity": "trebuchet",
+    "description": "Trebuchets"
+  },
+  "180": {
+    "heading": "33% Faster",
+    "stat": "Cavalry Archers train 33% faster",
+    "entity": "cavalry_archer",
+    "description": "Cavalry Archers"
+  },
+  "181": {
+    "heading": "3× Speed",
+    "stat": "Petards train 200% faster",
+    "entity": "petard",
+    "description": "Petards"
+  },
+  "182": {
+    "heading": "+8 [pierce_armor]",
+    "stat": "Petards have +8 pierce armor",
+    "entity": "petard",
+    "description": "Petards"
+  },
+  "183": {
+    "type": "desc",
+    "hidden": true
+  },
+  "184": {
+    "heading": "+1 Range",
+    "stat": "Galley-line +1 attack range",
+    "entity": "galley",
+    "description": "Galleys"
+  },
+  "185": {
+    "type": "desc",
+    "hidden": true
+  },
+  "186": {
+    "type": "desc",
+    "hidden": true
+  },
+  "187": {
+    "type": "desc",
+    "hidden": true
+  },
+  "188": {
+    "type": "desc",
+    "hidden": true
+  },
+  "189": {
+    "type": "value",
+    "entity": "gold",
+    "heading": "+500 [gold]",
+    "stat": "Receive +500 gold upon reaching the Imperial Age",
+    "description": "Imperial Age"
+  },
+  "190": {
+    "type": "desc",
+    "entity": "monk",
+    "description": "Monks",
+    "lines": [
+      "Monks carrying relics have increased armor and hit points"
+    ]
+  },
+  "191": {
+    "heading": "×2 HP",
+    "stat": "Explosive units have 2× hit points",
+    "entity": "demolition_ship",
+    "description": "Explosive Units"
+  },
+  "192": {
+    "heading": "+2 Villagers",
+    "stat": "Town Centers spawn 2 villagers on each age advance",
+    "entity": "town_center",
+    "description": "Town Centers"
+  },
+  "193": {
+    "heading": "UNLOCKED",
+    "stat": "Warrior Priests can be trained at Monasteries",
+    "entity": "warrior_priest",
+    "description": "Warrior Priests"
+  },
+  "194": {
+    "heading": "+2000 [heart]",
+    "stat": "Castle + Krepost hit points",
+    "entity": "castle",
+    "description": "Castles + Kreposts"
+  },
+  "195": {
+    "type": "desc",
+    "hidden": true
+  },
+  "196": {
+    "heading": "-75 [wood]",
+    "stat": "Barracks cost -75 [wood]",
+    "entity": "barracks",
+    "description": "Barracks"
+  },
+  "197": {
+    "heading": "-75 [wood]",
+    "stat": "Stables cost -75 [wood]",
+    "entity": "stable",
+    "description": "Stables"
+  },
+  "198": {
+    "heading": "-75 [wood]",
+    "stat": "Archery Ranges cost -75 [wood]",
+    "entity": "archery_range",
+    "description": "Archery Range"
+  },
+  "199": {
+    "heading": "-100 [wood]",
+    "stat": "Monasteries cost -100 [wood]",
+    "entity": "monastery",
+    "description": "Monastery"
+  },
+  "200": {
+    "heading": "-100 [wood]",
+    "stat": "Siege Workshops cost -100 [wood]",
+    "entity": "siege_workshop",
+    "description": "Siege Workshop"
+  },
+  "201": {
+    "type": "dual",
+    "heading": "-50 [wood]",
+    "stat": "Military buildings cost -50 [wood]",
+    "entity": "barracks",
+    "entity2": "stable",
+    "description": "Military Buildings"
+  },
+  "202": {
+    "type": "dual",
+    "heading": "-100 [wood]",
+    "stat": "Blacksmith and University cost -100 [wood]",
+    "entity": "blacksmith",
+    "entity2": "university",
+    "description": "Blacksmith + University"
+  },
+  "203": {
+    "type": "desc",
+    "entity": "infantry",
+    "description": "Infantry",
+    "lines": [
+      "Gain +1 bonus attack vs. Villagers per age starting in Feudal Age"
+    ]
+  },
+  "204": {
+    "heading": "+15 Carry",
+    "stat": "Fishermen and Fishing Ships carry +15",
+    "entity": "fishing_ship",
+    "description": "Fishing Ships"
+  },
+  "205": {
+    "heading": "+1 Attack",
+    "stat": "Galley-line +1 attack",
+    "entity": "galley",
+    "description": "Galleys"
+  },
+  "206": {
+    "type": "desc",
+    "heading": "Bonus vs. Vils",
+    "stat": "Steppe Lancers gain bonus attack vs. Villagers",
+    "entity": "steppe_lancer",
+    "description": "Steppe Lancers"
+  },
+  "207": {
+    "heading": "+33% Attack",
+    "stat": "Steppe Lancers attack 33% faster",
+    "entity": "steppe_lancer",
+    "description": "Steppe Lancers"
+  },
+  "208": {
+    "heading": "+25% Attack",
+    "stat": "Elephant units have +25% attack",
+    "entity": "battle_elephant",
+    "description": "Elephant Units"
+  },
+  "209": {
+    "heading": "UNLOCKED",
+    "stat": "Stone Walls can be built in the Dark Age",
+    "entity": "tower",
+    "description": "Stone Walls"
+  },
+  "210": {
+    "type": "desc",
+    "hidden": true
+  },
+  "211": {
+    "heading": "+25 [food]",
+    "stat": "Villagers return 25 [food] on death",
+    "entity": "villager",
+    "description": "Villagers"
+  },
+  "212": {
+    "heading": "+20% [reload]",
+    "stat": "Camel units attack 20% faster",
+    "entity": "camel_rider",
+    "description": "Camel Units"
+  },
+  "213": {
+    "type": "desc",
+    "entity": "mangonel",
+    "description": "Mangonels",
+    "heading": "Cut Trees",
+    "stat": "Mangonels can cut trees"
+  },
+  "214": {
+    "type": "desc",
+    "hidden": true
+  },
+  "215": {
+    "heading": "+Garrison",
+    "stat": "Rams and Siege Towers have increased garrison capacity",
+    "entity": "battering_ram",
+    "description": "Rams + Siege Towers"
+  },
+  "216": {
+    "heading": "+15 Pop",
+    "stat": "Per Tower",
+    "entity": "tower",
+    "description": "Towers"
+  },
+  "217": {
+    "heading": "+20% Speed",
+    "stat": "Gunpowder units move 20% faster",
+    "entity": "hand_cannoneer",
+    "entity2": "chemistry",
+    "description": "Gunpowder Units"
+  },
+  "218": {
+    "heading": "+400 [gold]",
+    "stat": "Per standing Castle",
+    "entity": "castle",
+    "description": "Castles"
+  },
+  "219": {
+    "heading": "+20% Speed",
+    "stat": "Monks move 20% faster",
+    "entity": "monk",
+    "description": "Monks"
+  },
+  "220": {
+    "type": "dual",
+    "heading": "+2 vs Skirms",
+    "stat": "Melee Cavalry bonus damage vs. Skirmishers",
+    "entity": "cavalry",
+    "entity2": "skirmisher",
+    "description": "Melee Cavalry"
+  },
+  "221": {
+    "type": "dual",
+    "heading": "1 Age Earlier",
+    "stat": "Spearman + Militia-line upgrades",
+    "entity": "spearman",
+    "entity2": "infantry",
+    "description": "Spearman + Militia Lines"
+  },
+  "222": {
+    "type": "desc",
+    "entity": "mill",
+    "entity2": "cow",
+    "description": "Mills",
+    "lines": [
+      "Mills spawn Cows which can be slaughtered for food"
+    ]
+  },
+  "223": {
+    "type": "desc",
+    "hidden": true
+  },
+  "224": {
+    "heading": "×2 HP",
+    "stat": "Siege Towers have 2× hit points",
+    "entity": "siege_tower",
+    "description": "Siege Towers"
+  },
+  "225": {
+    "heading": "2× Training Speed",
+    "stat": "Siege Towers train 100% faster",
+    "entity": "siege_tower",
+    "description": "Siege Towers"
+  },
+  "226": {
+    "heading": "-33% [wood]",
+    "stat": "Siege units cost -33% [wood]",
+    "entity": "siege_workshop",
+    "description": "Siege Units"
+  },
+  "227": {
+    "type": "value",
+    "entity": "cannon_galleon",
+    "description": "Cannon Galleons",
+    "stat": "Cannon Galleons benefit from Ballistics research",
+    "heading":"Ballistics"
+  },
+  "228": {
+    "type": "value",
+    "entity": "galley",
+    "stat":"Warships have bonus attack vs. Villagers",
+    "description": "Warships",
+    "heading":"Villager Damage"
+  },
+  "229": {
+    "type": "desc",
+    "entity": "battering_ram",
+    "description": "Battering Rams",
+    "lines": [
+      "Battering Rams generate stone when attacking buildings"
+    ]
+  },
+  "230": {
+    "type": "desc",
+    "hidden": true
+  },
+  "231": {
+    "heading": "-25%",
+    "stat": "Feudal Age advance costs -25% less",
+    "entity": "feudal_age",
+    "description": "Feudal Age"
+  },
+  "232": {
+    "type": "dual",
+    "heading": "50% Faster",
+    "stat": "Spearmen and Skirmishers train 50% faster",
+    "entity": "spearman",
+    "entity2": "skirmisher",
+    "description": "Spearmen + Skirms"
+  },
+  "233": {
+    "heading": "+25% [heart]",
+    "stat": "Spearman-line has +25% hit points",
+    "entity": "spearman",
+    "description": "Spearmen"
+  },
+  "234": {
+    "heading": "FREE [gold]",
+    "stat": "Market technologies cost no gold",
+    "entity": "market",
+    "description": "Market Techs"
+  },
+  "235": {
+    "heading": "2× Duration",
+    "stat": "Trees last 100% longer",
+    "entity": "wood",
+    "description": "Forests"
+  },
+  "236": {
+    "heading": "+30% Duration",
+    "stat": "Stone deposits last 30% longer",
+    "entity": "stone",
+    "description": "Stone Mines"
+  },
+  "237": {
+    "heading": "+30% Duration",
+    "stat": "Gold deposits last 30% longer",
+    "entity": "gold",
+    "description": "Gold Mines"
+  },
+  "238": {
+    "heading": "+35% [food]",
+    "stat": "Berry bushes contain +35% more food",
+    "entity": "berries",
+    "description": "Berries"
+  },
+  "239": {
+    "type": "desc",
+    "entity": "tower",
+    "description": "City Walls",
+    "lines": [
+      "Can upgrade Fortified Walls to City Walls in the Imperial Age"
+    ]
+  },
+  "240": {
+    "heading": "+35% [food]",
+    "stat": "Fish contain +35% more food",
+    "entity": "fishing_ship",
+    "description": "Fish"
+  },
+  "241": {
+    "heading": "Faster Heal",
+    "stat": "All units heal at a faster rate",
+    "entity": "monk",
+    "description": "All Units"
+  },
+  "242": {
+    "heading": "2× Speed",
+    "stat": "Buildings repair 100% faster",
+    "entity": "villager",
+    "description": "Builders"
+  },
+  "243": {
+    "heading": "+1 vs Infantry",
+    "stat": "Skirmishers have +1 bonus attack vs. Infantry",
+    "entity": "skirmisher",
+    "description": "Skirmishers"
+  },
+  "244": {
+    "heading": "+1 Attack",
+    "stat": "Archery Range units have +1 attack",
+    "entity": "archery_range",
+    "description": "Archery Range"
+  },
+  "245": {
+    "type": "desc",
+    "hidden": true
+  },
+  "246": {
+    "type": "desc",
+    "hidden": true
+  },
+  "247": {
+    "heading": "UNLOCKED",
+    "stat": "Parthian Tactics can be researched in the Castle Age",
+    "entity": "parthian_tactics",
+    "description": "Cavalry Archers"
+  },
+  "248": {
+    "heading": "-25%",
+    "stat": "Castle Age advance costs -25% less",
+    "entity": "town_center",
+    "description": "Castle Age"
+  },
+  "249": {
+    "heading": "+1 Attack",
+    "stat": "Cavalry have +1 attack",
+    "entity": "cavalry",
+    "description": "Cavalry"
+  },
+  "250": {
+    "type": "desc",
+    "entity": "blacksmith",
+    "description": "Forging Upgrades",
+    "lines": [
+      "Forging, Iron Casting, and Blast Furnace each add +1 bonus damage vs. buildings"
+    ]
+  },
+  "251": {
+    "heading": "+3 [pierce_armor]",
+    "stat": "All buildings have +3 pierce armor",
+    "entity": "castle",
+    "description": "All Buildings"
+  },
+  "252": {
+    "type": "progression",
+    "stat": "Movement Speed",
+    "entity": "archer",
+    "description": "Foot Archers",
+    "prog_label": "Speed bonus per age:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "+5% Speed"
+      },
+      {
+        "age": "castle",
+        "value": "+10% Speed"
+      },
+      {
+        "age": "imperial",
+        "value": "+15% Speed"
+      }
+    ]
+  },
+  "253": {
+    "heading": "+1 vs Vils",
+    "stat": "Foot Archers have +1 bonus attack vs. Villagers",
+    "entity": "archer",
+    "description": "Foot Archers"
+  },
+  "254": {
+    "type": "desc",
+    "entity": "hand_cannoneer",
+    "description": "Gunpowder Units",
+    "lines": [
+      "Gunpowder units have bonus attack vs. Camels"
+    ]
+  },
+  "255": {
+    "type": "desc",
+    "entity": "fire_lancer",
+    "description": "Shock Infantry",
+    "lines": [
+      "Shock Infantry have bonus attack vs. stone defenses"
+    ]
+  },
+  "256": {
+    "type": "desc",
+    "entity": "scout_cavalry",
+    "description": "Scout Cavalry",
+    "lines": [
+      "Scout Cavalry line have bonus attack vs. stone defenses"
+    ]
+  },
+  "257": {
+    "heading": "+5% [workrate]",
+    "stat": "All villagers work 5% faster",
+    "entity": "villager",
+    "description": "Villagers"
+  },
+  "258": {
+    "type": "desc",
+    "hidden": true
+  },
+  "259": {
+    "heading": "10× HP",
+    "stat": "Farms have 10× hit points",
+    "entity": "farm",
+    "description": "Farms"
+  },
+  "260": {
+    "heading": "+2 vs Cav",
+    "stat": "Militia-line has +2 bonus attack vs. Cavalry",
+    "entity": "infantry",
+    "description": "Militia Line"
+  },
+  "261": {
+    "heading": "FREE",
+    "stat": "Elite Steppe Lancer upgrade is free",
+    "entity": "steppe_lancer",
+    "description": "Steppe Lancers"
+  },
+  "262": {
+    "heading": "+2 [pierce_armor]",
+    "stat": "Steppe Lancers have +2 pierce armor",
+    "entity": "steppe_lancer",
+    "description": "Steppe Lancers"
+  },
+  "263": {
+    "type": "value",
+    "entity": "castle",
+    "heading":"+[attack] vs Buildings",
+    "description": "Castles",
+    "stat":"Castles have bonus attack vs. buildings"
+  },
+  "264": {
+    "type": "desc",
+    "hidden": true
+  },
+  "265": {
+    "type": "value",
+    "entity": "outpost",
+    "description": "Outposts",
+    "heading": "Can Garrison",
+    "stat": "Outposts can garrison units"
+  },
+  "266": {
+    "heading": "+10 [pierce_armor]",
+    "stat": "Builders and Repairers have +10 pierce armor",
+    "entity": "villager",
+    "description": "Builders"
+  },
+  "267": {
+    "heading": "+50 Pop",
+    "stat": "Castles and Kreposts provide +50 population",
+    "entity": "castle",
+    "description": "Castles + Kreposts",
+    "entity2": "krepost"
+  },
+  "268": {
+    "type": "value",
+    "heading": "+1 [attack] vs. Rams",
+    "entity": "bombard_tower",
+    "description": "Bombard Towers",
+    "stat": "Bombard Towers have bonus attack vs. Rams"
+  },
+  "269": {
+    "type": "desc",
+    "entity": "tower",
+    "description": "Towers",
+    "lines": [
+      "Towers deal extra damage to Cavalry"
+    ]
+  },
+  "270": {
+    "type": "desc",
+    "entity": "monastery",
+    "description": "Monastery",
+    "lines": [
+      "Can build Monastery in the Feudal Age",
+      "Feudal Age Monks have longer conversions and cannot pick up relics"
+    ]
+  },
+  "271": {
+    "heading": "50% Faster",
+    "stat": "Scorpions train 50% faster",
+    "entity": "scorpion",
+    "description": "Scorpions"
+  },
+  "272": {
+    "heading": "+25% [reload]",
+    "stat": "Town Centers attack 25% faster",
+    "entity": "town_center",
+    "description": "Town Centers"
+  },
+  "273": {
+    "heading": "-50% [gold]",
+    "stat": "Trebuchets cost -50% gold",
+    "entity": "trebuchet",
+    "description": "Trebuchets"
+  },
+  "274": {
+    "type": "desc",
+    "entity": "demolition_ship",
+    "description": "Explosive Units",
+    "lines": [
+      "Explosive units have increased blast radius"
+    ]
+  },
+  "275": {
+    "type": "desc",
+    "entity": "hand_cannoneer",
+    "description": "Gunpowder Units",
+    "lines": [
+      "Gunpowder units have bonus attack vs. buildings"
+    ]
+  },
+  "276": {
+    "heading": "+1 [pierce_armor]",
+    "stat": "Shock Infantry have +1 pierce armor",
+    "entity": "infantry",
+    "description": "Shock Infantry"
+  },
+  "277": {
+    "type": "desc",
+    "hidden": true
+  },
+  "278": {
+    "type": "desc",
+    "hidden": true
+  },
+  "279": {
+    "type": "desc",
+    "hidden": true
+  },
+  "280": {
+    "type": "desc",
+    "entity": "mill",
+    "description": "Folwark",
+    "lines": [
+      "Folwark replaces the Mill; also functions as a farm drop-off site"
+    ]
+  },
+  "281": {
+    "type": "dual",
+    "heading": "+[gold] Trickle",
+    "stat": "Stone Miners also generate gold",
+    "entity": "stone_mining",
+    "entity2": "gold",
+    "description": "Stone Miners"
+  },
+  "282": {
+    "heading": "UPGRADE",
+    "stat": "Winged Hussar is available, replacing the Hussar",
+    "entity": "hussar",
+    "description": "Hussar Line"
+  },
+  "283": {
+    "type": "dual",
+    "heading": "UNLOCKED",
+    "stat": "Chemistry + Hand Cannoneer in Castle Age",
+    "entity": "chemistry",
+    "entity2": "hand_cannoneer",
+    "description": "Castle Age"
+  },
+  "284": {
+    "heading": "+25%",
+    "stat": "Spearmen deal +25% bonus damage",
+    "entity": "spearman",
+    "description": "Spearmen"
+  },
+  "285": {
+    "type": "desc",
+    "entity": "monastery",
+    "description": "Villagers",
+    "lines": [
+      "Fervor and Sanctity research also benefits Villagers"
+    ]
+  },
+  "286": {
+    "heading": "UPGRADE",
+    "stat": "Houfnice available (Imperial Age)",
+    "entity": "bombard_cannon",
+    "description": "Bombard Cannons"
+  },
+  "287": {
+    "heading": "UNLOCKED",
+    "stat": "Build Caravanserai (Imperial Age)",
+    "entity": "market",
+    "description": "Caravanserai"
+  },
+  "288": {
+    "heading": "+1/+1 Armor",
+    "stat": "Gunpowder units have +1/+1P armor",
+    "entity": "hand_cannoneer",
+    "description": "Gunpowder Units"
+  },
+  "289": {
+    "heading": "+200 [wood]",
+    "stat": "Receive +200 [wood] per age advance",
+    "entity": "wood",
+    "description": "Age Advances"
+  },
+  "290": {
+    "heading": "-50%",
+    "stat": "Barracks technologies cost -50%",
+    "entity": "barracks",
+    "description": "Barracks"
+  },
+  "291": {
+    "type": "dual",
+    "heading": "+25% [reload]",
+    "stat": "Attack speed",
+    "entity": "skirmisher",
+    "entity2": "battle_elephant",
+    "description": "Skirms + Elephant Archers"
+  },
+  "292": {
+    "type": "desc",
+    "entity": "battle_elephant",
+    "description": "Elephant Units",
+    "lines": [
+      "Elephant units receive 25% less bonus damage",
+      "Elephants are more resistant to monk conversion"
+    ]
+  },
+  "293": {
+    "heading": "15 HP/min",
+    "stat": "Ships regenerate 15 HP per minute",
+    "entity": "ship",
+    "description": "Ships"
+  },
+  "294": {
+    "heading": "+2 Bushes",
+    "stat": "Start with 2 extra Forage Bushes",
+    "entity": "berries",
+    "description": "Starting Resources"
+  },
+  "295": {
+    "type": "desc",
+    "entity": "mill",
+    "description": "Mills",
+    "lines": [
+      "Mills can be garrisoned with livestock to passively produce food"
+    ]
+  },
+  "296": {
+    "type": "progression",
+    "stat": "Increased Bonus Damage",
+    "entity": "cavalry",
+    "entity2": "steppe_lancer",
+    "description": "Mounted Units",
+    "prog_label": "Bonus damage per age:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "+20%"
+      },
+      {
+        "age": "castle",
+        "value": "+30%"
+      },
+      {
+        "age": "imperial",
+        "value": "+40%"
+      }
+    ]
+  },
+  "297": {
+    "hidden": true
+  },
+  "298": {
+    "heading": "UNLOCKED",
+    "stat": "Thirisadai can be trained at Docks",
+    "entity": "thirisadai",
+    "description": "Thirisadai"
+  },
+  "299": {
+    "heading": "UNLOCKED",
+    "stat": "Shrivamsha Riders can be recruited",
+    "entity": "shrivamsha_rider",
+    "description": "Shrivamsha Riders"
+  },
+  "300": {
+    "heading": "UNLOCKED",
+    "stat": "Camel Scouts can be recruited in the Feudal Age",
+    "entity": "camel_rider",
+    "description": "Camel Scouts"
+  },
+  "301": {
+    "heading": "+20 [gold]",
+    "stat": "Gain +20 [gold] per technology researched",
+    "entity": "gold",
+    "description": "Technologies"
+  },
+  "302": {
+    "heading": "+Armor",
+    "stat": "Ships receive additional armor from Blacksmith upgrades",
+    "entity": "ship",
+    "description": "Navy"
+  },
+  "303": {
+    "heading": "+1/+1 Armor",
+    "stat": "Elephant units have +1/+1P armor",
+    "entity": "battle_elephant",
+    "description": "Elephant Units"
+  },
+  "304": {
+    "heading": "+3/+3 Armor",
+    "stat": "Monks have +3/+3P armor",
+    "entity": "monk",
+    "description": "Monks"
+  },
+  "305": {
+    "type": "dual",
+    "heading": "2× Effect",
+    "stat": "Infantry Blacksmith armor bonuses doubled",
+    "entity": "blacksmith",
+    "entity2": "infantry",
+    "description": "Infantry"
+  },
+  "306": {
+    "type": "dual",
+    "entity": "scorpion",
+    "entity2": "ballistics",
+    "heading": "+Ballistics",
+    "description": "Scorpions",
+    "stat": "Scorpions cost -60% gold and benefit from Ballistics research"
+  },
+  "307": {
+    "heading": "UNLOCKED",
+    "stat": "Legionary replaces the Two-Handed Swordsman and Champion",
+    "entity": "legionary",
+    "description": "Militia Line"
+  },
+  "308": {
+    "heading": "UPGRADE",
+    "stat": "Imperial Scorpion upgrade is available",
+    "entity": "scorpion",
+    "description": "Scorpions"
+  },
+  "309": {
+    "heading": "UPGRADE",
+    "stat": "Royal Battle Elephant upgrade is available",
+    "entity": "battle_elephant",
+    "description": "Battle Elephants"
+  },
+  "310": {
+    "heading": "UPGRADE",
+    "stat": "Royal Steppe Lancer upgrade is available",
+    "entity": "steppe_lancer",
+    "description": "Steppe Lancers"
+  },
+  "311": {
+    "heading": "+2 vs Archers",
+    "stat": "Cavalry Archers have +2 bonus attack vs. Archers",
+    "entity": "cavalry_archer",
+    "description": "Cavalry Archers"
+  },
+  "312": {
+    "type": "desc",
+    "entity": "lumber_camp",
+    "description": "Economy",
+    "lines": [
+      "Wood and mining upgrades are 40% more effective",
+      "Economic drop-off buildings cost -25%"
+    ]
+  },
+  "313": {
+    "heading": "Free Relic",
+    "stat": "First Monastery gets a free relic",
+    "entity": "monastery",
+    "description": "Monastery"
+  },
+  "314": {
+    "heading": "UNLOCKED",
+    "stat": "Savar replaces the Paladin",
+    "entity": "savar",
+    "description": "Cavalry"
+  },
+  "315": {
+    "heading": "+1 Projectile",
+    "stat": "Galley-line and Dromons fire an additional projectile",
+    "entity": "galley",
+    "description": "Galley Line"
+  },
+  "316": {
+    "heading": "UNLOCKED",
+    "stat": "Fortified Church replaces the Monastery",
+    "entity": "monastery",
+    "description": "Monastery"
+  },
+  "317": {
+    "type": "dual",
+    "heading": "UNLOCKED",
+    "stat": "Mule Carts replace Lumber Camps and Mining Camps",
+    "entity": "mule_cart",
+    "entity2": "mining_camp",
+    "description": "Drop-off Sites"
+  },
+  "318": {
+    "heading": "FREE",
+    "stat": "Start with a free Mule Cart",
+    "entity": "mule_cart",
+    "description": "Starting Resources"
+  },
+  "319": {
+    "heading": "+10% [workrate]",
+    "stat": "Villagers within 8 tiles of a Monastery work 10% faster",
+    "entity": "villager",
+    "entity2": "monastery",
+    "description": "Villagers"
+  },
+  "320": {
+    "heading": "-15% Damage",
+    "stat": "Taken from higher elevation",
+    "entity": "tower",
+    "description": "All Units + Buildings"
+  },
+  "321": {
+    "type": "progression",
+    "stat": "HP Regeneration",
+    "entity": "cavalry",
+    "description": "Mounted Units",
+    "prog_label": "HP regen per minute:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "2 HP/min"
+      },
+      {
+        "age": "castle",
+        "value": "8 HP/min"
+      },
+      {
+        "age": "imperial",
+        "value": "14 HP/min"
+      }
+    ]
+  },
+  "322": {
+    "heading": "UNLOCKED",
+    "stat": "Flaming Camels can be trained at Siege Workshops (Imperial Age)",
+    "entity": "flaming_camel",
+    "description": "Flaming Camels"
+  },
+  "323": {
+    "type": "desc",
+    "entity": "castle",
+    "description": "Buildings",
+    "lines": [
+      "Buildings return partial stone cost when destroyed"
+    ]
+  },
+  "324": {
+    "type": "value",
+    "entity": "villager",
+    "heading": "+Work Rate",
+    "stat": "Villagers work faster when near other villagers",
+    "description": "Villagers"
+  },
+  "325": {
+    "type": "value",
+    "entity": "cavalry",
+    "entity2": "husbandry",
+    "heading": "[attack] Speed",
+    "stat": "Husbandry also increases mounted unit attack speed",
+    "description": "Mounted Units"
+  },
+  "326": {
+    "heading": "10% [stone]",
+    "stat": "Trade carts yield 10% stone",
+    "entity": "trade_cart",
+    "description": "Trade carts"
+  },
+  "327": {
+    "type": "desc",
+    "entity": "blacksmith",
+    "description": "Blacksmith Upgrades",
+    "lines": [
+      "Blacksmith attack upgrades also increase bonus damage vs. specific unit types"
+    ]
+  },
+  "328": {
+    "type": "desc",
+    "entity": "cavalry_archer",
+    "description": "Cavalry Archers",
+    "lines": [
+      "Cavalry Archers have a chance to dodge incoming projectiles"
+    ]
+  },
+  "329": {
+    "type": "value",
+    "entity": "farm",
+    "heading": "No Mills",
+    "stat": "Farmers don't require mills or town centers to drop off food",
+    "description": "Farmers"
+  },
+  "330": {
+    "type": "value",
+    "entity": "farm",
+    "heading": "2x2 Farms",
+    "stat": "Farms are 2×2 tiles (half standard size)",
+    "description": "Farms"
+  },
+  "332": {
+    "heading": "UNLOCKED",
+    "stat": "Knights can be recruited in the Feudal Age (30 HP)",
+    "entity": "knight",
+    "description": "Feudal Knights"
+  },
+  "333": {
+    "type": "value",
+    "heading": "Attack",
+    "stat": "Siege Towers can fire arrows at enemy units",
+    "entity": "siege_tower",
+    "description": "Siege Towers"
+  },
+  "334": {
+    "type": "progression",
+    "stat": "Movement Speed",
+    "entity": "fire_lancer",
+    "entity2": "fire_ship",
+    "description": "Fire Lancers + Fire Ships",
+    "prog_label": "Speed bonus per age:",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "+5%"
+      },
+      {
+        "age": "imperial",
+        "value": "+10%"
+      }
+    ]
+  },
+  "335": {
+    "type": "dual",
+    "heading": "-25%",
+    "stat": "Archery Range + Blacksmith tech cost",
+    "entity": "archery_range",
+    "entity2": "blacksmith",
+    "description": "Archery Techs"
+  },
+  "336": {
+    "type": "progression",
+    "stat": "Movement Speed",
+    "entity": "siege_workshop",
+    "entity2": "catapult_galleon",
+    "description": "Siege Weapons + Siege Ships",
+    "prog_label": "Speed bonus per age:",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "+10%"
+      },
+      {
+        "age": "imperial",
+        "value": "+15%"
+      }
+    ]
+  },
+  "337": {
+    "heading": "UNLOCKED",
+    "stat": "War Chariots can be recruited",
+    "entity": "war_chariot",
+    "description": "War Chariots"
+  },
+  "338": {
+    "hidden": true
+  },
+  "339": {
+    "type": "dual",
+    "heading": "+65 [food]",
+    "stat": "Per military production building and Dock",
+    "entity": "barracks",
+    "entity2": "dock",
+    "description": "Military Buildings + Docks"
+  },
+  "340": {
+    "type": "progression",
+    "stat": "HP Regeneration",
+    "entity": "infantry",
+    "description": "Infantry",
+    "prog_label": "HP regen per minute:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "10 HP/min"
+      },
+      {
+        "age": "castle",
+        "value": "20 HP/min"
+      },
+      {
+        "age": "imperial",
+        "value": "30 HP/min"
+      }
+    ]
+  },
+  "341": {
+    "type":"dual",
+    "heading": "+2 Attack",
+    "stat": "Jian Swordsmen + Hei Guang Cavalry +2 attack",
+    "entity": "jian_swordsman",
+    "entity2": "hei_guang",
+    "description": "Jian Swordsmen + Hei Guang Cavalry"
+  },
+  "342": {
+    "type": "desc",
+    "entity": "dock",
+    "description": "Naval Techs",
+    "lines": [
+      "Careening and Dry Dock available one age earlier",
+      "Cost and research time -75%"
+    ]
+  },
+  "343": {
+    "heading": "UNLOCKED",
+    "stat": "Jian Swordsmen can be recruited",
+    "entity": "jian_swordsman",
+    "description": "Jian Swordsmen"
+  },
+  "344": {
+    "hidden": true
+  },
+  "345": {
+    "heading": "+1 Villager",
+    "stat": "Receive a free Villager per Mill, Lumber Camp, or Mining Camp tech",
+    "entity": "villager",
+    "description": "Eco Technologies"
+  },
+  "346": {
+    "type": "progression",
+    "stat": "Hit Points",
+    "entity": "hei_guang",
+    "entity2": "xianbei_raider",
+    "description": "Hei Guang Cavalry + Xianbei Raiders",
+    "prog_label": "HP bonus per age:",
+    "ages": [
+      {
+        "age": "castle",
+        "value": "+15%"
+      },
+      {
+        "age": "imperial",
+        "value": "+30%"
+      }
+    ]
+  },
+  "347": {
+    "type": "dual",
+    "heading": "-25%",
+    "stat": "Traction Trebuchets and Lou Chuans cost -25%",
+    "entity": "traction_trebuchet",
+    "entity2": "lou_chuan",
+    "description": "Traction Trebuchets + Lou Chuans"
+  },
+  "348": {
+    "heading": "UNLOCKED",
+    "stat": "Xianbei Raiders can be recruited",
+    "entity": "xianbei_raider",
+    "description": "Xianbei Raiders"
+  },
+  "349": {
+    "hidden": true
+  },
+  "350": {
+    "type": "value",
+    "entity": "boar",
+    "heading": "No Decay",
+    "stat": "Meat from hunted animals and livestock does not decay",
+    "description": "Hunt + Livestock"
+  },
+  "351": {
+    "type": "dual",
+    "heading": "+20% [reload]",
+    "stat": "Mounted units and Fire Lancers attack 20% faster",
+    "entity": "cavalry",
+    "entity2": "fire_lancer",
+    "description": "Mounted + Fire Lancers"
+  },
+  "352": {
+    "heading": "UNLOCKED",
+    "stat": "Siege Engineers can be researched in the Castle Age",
+    "entity": "siege_engineers",
+    "description": "Siege"
+  },
+  "353": {
+    "type": "desc",
+    "entity": "siege_workshop",
+    "description": "Siege + Fortification",
+    "lines": [
+      "Siege and Fortification upgrades cost -75% wood",
+      "Research +100% faster"
+    ]
+  },
+  "354": {
+    "heading": "-50%",
+    "stat": "Units receive -50% friendly fire damage",
+    "entity": "infantry",
+    "description": "All Units"
+  },
+  "355": {
+    "heading": "UNLOCKED",
+    "stat": "Grenadiers can be recruited",
+    "entity": "grenadier",
+    "description": "Grenadiers"
+  },
+  "356": {
+    "type": "desc",
+    "entity": "pasture",
+    "description": "Pastures",
+    "lines": [
+      "Pastures replace Farms and also provide Mill upgrades"
+    ]
+  },
+  "357": {
+    "heading": "+10% [food]",
+    "stat": "Shepherds and Herders generate +10% extra food",
+    "entity": "villager",
+    "entity2": "sheep",
+    "description": "Shepherds + Herders"
+  },
+  "358": {
+    "heading": "2× Effect",
+    "stat": "Melee attack upgrades have double effect",
+    "entity": "blacksmith",
+    "description": "Melee Upgrades"
+  },
+  "359": {
+    "type": "dual",
+    "heading": "+25% Faster",
+    "stat": "Skirmishers, Spearmen, and Scouts train and upgrade +25% faster",
+    "entity": "skirmisher",
+    "entity2": "spearman",
+    "description": "Counter Units"
+  },
+  "360": {
+    "heading": "UNLOCKED",
+    "stat": "Heavy Cavalry Archer available in Castle Age at -50% cost",
+    "entity": "cavalry_archer",
+    "description": "Cavalry Archers"
+  },
+  "361": {
+    "heading": "UNLOCKED",
+    "stat": "Mounted Trebuchets can be trained",
+    "entity": "mounted_trebuchet",
+    "description": "Mounted Trebuchets"
+  },
+  "362": {
+    "type": "desc",
+    "hidden": true
+  },
+  "400": {
+    "heading": "+50% [heart]",
+    "stat": "Fortified Walls and Gates have +50% hit points",
+    "entity": "stone_gate",
+    "description": "Fortified Walls & Gates"
+  },
+  "401": {
+    "type": "desc",
+    "entity": "blacksmith",
+    "description": "Infantry + Cavalry",
+    "lines": [
+      "Infantry and Cavalry Blacksmith upgrades also increase damage vs. buildings"
+    ]
+  },
+  "331": {
+    "hidden": true
+  }
 }

@@ -47,6 +47,18 @@
   /* Shadows */
   --shadow-card: 0 2px 8px rgba(44,26,10,0.14), 0 1px 2px rgba(44,26,10,0.08);
   --shadow-card-hover: 0 6px 20px rgba(44,26,10,0.18), 0 2px 6px rgba(44,26,10,0.1);
+
+  /* Bonus card category colors */
+  --cat-naval:    #0369a1;   /* ocean blue   */
+  --cat-monk:     #5423af;   /* purple       */
+  --cat-cost:     #6b9e13;   /* warm sienna  */
+  --cat-economy:  #013417;   /* green        */
+  --cat-speed:    #1f46aa;   /* blue         */
+  --cat-combat:   #990707;   /* red          */
+  --cat-research: #5e2900;   /* amber        */
+  --cat-building: #525252;   /* stone gray   */
+  --cat-unlock:   #6f1766;   /* cyan         */
+  --cat-default:  #475569;   /* slate        */
 }
 
 /* ── Reset / base ────────────────────────────────────────────────────────── */
@@ -709,21 +721,24 @@ footer {
 .bonus-card:hover {
   background: color-mix(in srgb, var(--cat-color, transparent) 10%, var(--parch-mid));
 }
-.bonus-card.selected {
+/* .bonus-card.selected {
   background: rgba(140,32,32,0.07);
   border-color: var(--crimson);
-}
-.card-right-col {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
-.bc-what {
+} */
+.card-heading {
   color: var(--crimson);
-  font-size: 35px;
   font-weight: 700;
-  letter-spacing: -0.05em;
+  font-size: clamp(13px, 3.5vw, 18px);
+  letter-spacing: -0.03em;
+  text-align: center;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.card-stat {
+  font-size: 0.75rem;
+  color: var(--ink-mid);
+  text-align: center;
+  letter-spacing: 0.04em;
 }
 .bc-age-badge {
   width: 24px;
@@ -755,58 +770,55 @@ footer {
   }
 }
 
-.bonus-card.selected .bc-what { color: var(--crimson); }
-.bc-who { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.bc-who-icon { width: 18px; height: 18px; object-fit: contain; }
-.bc-who-label { color: var(--ink); font-size: 0.72rem; }
+.bonus-card.selected .card-heading { color: var(--crimson); }
+.card-who {
+  margin-top: auto;
+  padding-top: 5px;
+  border-top: 1px solid rgba(0,0,0,0.12);
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  text-align: center;
+  text-wrap: pretty;
+}
+.card-who-icon { width: 18px; height: 18px; object-fit: contain; }
+.card-who-label { color: var(--ink-mid); font-size: 0.7rem; }
+.card-who-sep { font-size: 0.7rem; color: var(--ash); margin: 0 1px; }
 .bc-age-val { color: var(--ink-mid); }
 .bonus-card.selected .bc-age-val { color: var(--crimson); }
 
-/* ── Text-only card layout (complex bonuses) ─────────────────────────────── */
-.bc-text-body {
-  padding: 8px 10px 10px;
-  display: flex;
-  align-items: center;
-  flex: 1;
+/* ── Desc card layout (icon optional + free-text lines) ─────────────────── */
+.card-desc-lines {
+  padding-left: 15px;
+  text-wrap: pretty;
 }
-.bc-text-label {
-  font-size: 0.78rem;
-  line-height: 1.4;
+.desc-line {
+  font-size: 0.76rem;
+  line-height: 1.35;
   color: var(--ink-mid);
   margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
-.bonus-card.selected .bc-text-label { color: var(--ink); }
+.bonus-card.selected .desc-line { color: var(--ink); }
 
-/* ── Age-scaled card layout ──────────────────────────────────────────────── */
-/* Right-col value shown as attribute text instead of a big percentage */
-.age-scaled-bonus .bc-what-text {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-  line-height: 1.1;
+/* ── Progression card — heading is the stat name, not a number ─────────── */
+.progression-bonus .card-heading {
+  font-size: clamp(10px, 3vw, 18px);
+  letter-spacing: 0.02em;
 }
-/* Bottom row: lead label + flex list of per-age values */
-.bc-age-scaled {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.bc-age-lead {
-  font-size: 0.72rem;
+.card-prog-label {
+  font-size: 0.65rem;
   font-weight: 600;
   color: var(--ash);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  text-align: center;
 }
 .age-bonus-table {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
   justify-content: space-evenly;
   font-size: 14px;
 }
@@ -828,13 +840,23 @@ footer {
 .bc-mult { background: rgba(140,32,32,0.08); color: var(--crimson); }
 .bc-mult select { color: var(--crimson); }
 .bonus-card .card-header {
+  background-color: var(--cat-color);
+  color: #fff;
+}
+/* Texture overlay: invert the dark image to ~mid-tone, then luminosity-blend
+   so the category color's hue/saturation shows at full vibrancy. */
+.bonus-card .card-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   background-image: url('../bg-banner.jpg');
   background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;
-  background-color: var(--cat-color);
-  background-blend-mode: luminosity;
-  color: #fff;
+  filter: brightness(1.45);
+  mix-blend-mode: luminosity;
+  pointer-events: none;
 }
 .bonus-result-item {
   background: var(--parch-light);
@@ -899,7 +921,8 @@ footer {
 .bonus-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
-  gap: 6px;
+  column-gap: 8px;
+  row-gap: 8px;
   max-height: 660px;
   overflow-y: auto;
   padding: 2px;
@@ -915,6 +938,7 @@ footer {
 }
 .bonus-card .card-header {
     position: relative;
+    isolation: isolate;
     display: flex;
     gap: 10px;
     justify-content: space-between;
@@ -934,27 +958,54 @@ footer {
     inset: 0;
     box-shadow: 0 -2px 5px rgb(0 0 0 / 0.65) inset;
 }
-.card-grid {
-  background: url('../bg-plaster-small.jpg') repeat 0 0 #e6e0d3;
+.bonus-card .card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 10px 10px;
+  gap: 5px;
+  background-image: url('../bg-plaster-small.jpg');
+  background-repeat: repeat;
+  background-color: color-mix(in srgb, var(--cat-color, transparent) 5%, var(--parch-light));
   background-size: contain;
-  flex: 1 0 auto;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  padding: 10px;
-  gap: 8px;
-
-  .span-2 {
-    grid-column: span 2;
-  }
-  .card-col {
-    min-width: 0;
-  }
 }
-.bonus-card.text-bonus {
-  .bc-text-body {
-    background: url('../bg-plaster-small.jpg') repeat 0 0 #e6e0d3;
-    background-size: contain;
-  }
+.bonus-card:hover .card-body {
+  background-color: color-mix(in srgb, var(--cat-color, transparent) 10%, var(--parch-mid));
+}
+.card-icon {
+  width: auto;
+  height: 66px;
+  object-fit: contain;
+  filter: drop-shadow(1px 1px 1px black);
+}
+/* Dual: two icons side by side on one line */
+.card-icon-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+}
+.card-icon-row > img:nth-child(-n+2) {
+    flex: 1 1 50%;
+    min-width: 0;
+}
+/* Corners are decorative anchors — must be out of grid flow so they don't
+   consume subgrid tracks. Their ::before/::after pseudo-elements are already
+   position:absolute and will continue to position against .bonus-card. */
+.top-corners {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+}
+.bottom-corners {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 0;
 }
 .top-corners::before,
 .top-corners::after,
@@ -1024,35 +1075,6 @@ img.card-main-image {
     corner-shape: bevel;
 }
 
-/* ── Dual-entity stacked icon layout ─────────────────────────────────────── */
-.card-dual-stack {
-  position: relative;
-  width: 60px;
-  height: 70px;
-}
-.card-dual-back {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  opacity: 0.65;
-  transform: scale(0.82);
-  transform-origin: top left;
-  z-index: 0;
-}
-.card-dual-front {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 1;
-}
-.bc-who-sep {
-  font-size: 0.7rem;
-  color: var(--ash);
-  margin: 0 2px;
-}
-.bc-attr-row {
-  line-height: 1.15;
-}
 .card-shadow {
     position: absolute;
     inset: 11px 0 0 0;
@@ -1103,6 +1125,11 @@ img.card-main-image {
 }
 
 /* ── UU cards ────────────────────────────────────────────────────────────── */
+.uu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  gap: 8px;
+}
 .uu-card {
   border-color: var(--border);
   background: var(--parch-light);

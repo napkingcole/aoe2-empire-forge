@@ -979,28 +979,42 @@ document.getElementById("hero-flag-regen")?.addEventListener("change", _heroSave
 
 // Category definitions — first keyword match wins (order matters)
 const _BONUS_CATEGORIES = [
-  { key: 'naval',    icon: 'fa-anchor',       color: '#0e7490',
-    kw: ['fire ship','warship','galley','ship','dock','transport','naval','fishing'] },
-  { key: 'monk',     icon: 'fa-cross',         color: '#7e22ce',
-    kw: ['monk','relic','convert','heal','monastery'] },
-  { key: 'cost',     icon: 'fa-arrow-down',    color: '#0f766e',
-    kw: ['cost','cheaper','free','discount','-50%','-25%','-20%','-15%','-10%','-5%'] },
-  { key: 'economy',  icon: 'fa-coins',         color: '#15803d',
-    kw: ['farm','food','wood','gold','stone','trade','market','gather','mining','lumber','mill','shepherd','berry','forage','hunt','herd'] },
-  { key: 'speed',    icon: 'fa-bolt',          color: '#1d4ed8',
-    kw: ['faster','speed','rate','quickly','work rate','fire rate','move','reload'] },
-  { key: 'combat',   icon: 'fa-shield-halved', color: '#b91c1c',
-    kw: ['hit point','attack','armor','pierce','melee','damage','resist','bonus damage','line of sight','range','accuracy'] },
-  { key: 'research', icon: 'fa-flask',         color: '#b45309',
-    kw: ['research','blacksmith','university','technology','tech','age','upgrade'] },
-  { key: 'building', icon: 'fa-chess-rook',    color: '#78716c',
-    kw: ['castle','tower','wall','krepost','fortif','stone defense','palisade','wonder','house'] },
-  { key: 'default',  icon: 'fa-shield',        color: '#475569', kw: [] },
+  { key: 'naval',    icon: 'fa-anchor',       kw: ['fire ship','warship','galley','ship','dock','transport','naval','fishing'] },
+  { key: 'monk',     icon: 'fa-cross',        kw: ['monk','relic','convert','heal','monastery'] },
+  { key: 'cost',     icon: 'fa-arrow-down',   kw: ['cost','cheaper','free','discount','-50%','-25%','-20%','-15%','-10%','-5%'] },
+  { key: 'economy',  icon: 'fa-coins',        kw: ['farm','food','wood','gold','stone','trade','market','gather','mining','lumber','mill','shepherd','berry','forage','hunt','herd'] },
+  { key: 'speed',    icon: 'fa-bolt',         kw: ['faster','speed','rate','quickly','work rate','move'] },
+  { key: 'combat',   icon: 'fa-shield-halved',kw: ['hit point','attack','armor','pierce','melee','damage','resist','bonus damage','line of sight','range','accuracy','reload','fire rate'] },
+  { key: 'research', icon: 'fa-flask',        kw: ['research','blacksmith','university','technology','tech','age','upgrade'] },
+  { key: 'building', icon: 'fa-chess-rook',   kw: ['castle','tower','wall','krepost','fortif','stone defense','palisade','wonder','house','settlement'] },
+  { key: 'unlock',   icon: 'fa-lock-open',    kw: ['can recruit','can train','can build','can upgrade','replaces','recruitable','is available','be trained','be recruited','be built'] },
+  { key: 'default',  icon: 'fa-shield',       kw: [] },
 ];
 
 // Manually override auto-classification by bonus id: { 42: 'economy', 99: 'combat', ... }
 const _BONUS_CAT_OVERRIDES = {
-  21: 'building'
+  // combat
+   17: 'combat',  102: 'combat',  172: 'combat',  333: 'combat',
+  // economy
+   21: 'building', 132: 'economy', 140: 'building',
+  // naval
+  227: 'naval',
+  // research
+  223: 'combat',  261: 'research',
+  // unlock — unit/building availability bonuses
+   43: 'unlock',   50: 'unlock',   51: 'unlock',   52: 'unlock',
+   53: 'unlock',   61: 'unlock',   68: 'unlock',   69: 'unlock',
+   93: 'unlock',   98: 'unlock',   99: 'unlock',  103: 'unlock',
+  109: 'unlock',  193: 'unlock',  209: 'unlock',  213: 'unlock',
+  221: 'unlock',  239: 'unlock',  247: 'unlock',  252: 'unlock',
+  270: 'unlock',  282: 'unlock',  283: 'unlock',  286: 'unlock',
+  287: 'unlock',  295: 'unlock',  297: 'unlock',  298: 'unlock',
+  299: 'unlock',  300: 'unlock',  307: 'unlock',  308: 'unlock',
+  309: 'unlock',  310: 'unlock',  314: 'unlock',  316: 'unlock',
+  317: 'unlock',  318: 'unlock',  322: 'unlock',  329: 'unlock',
+  330: 'unlock',  332: 'unlock',  337: 'unlock',  343: 'unlock',
+  348: 'unlock',  352: 'unlock',  355: 'unlock',  356: 'unlock',
+  360: 'unlock',  361: 'unlock',
 };
 
 function _classifyBonus(id, label) {
@@ -1097,45 +1111,58 @@ function _extractBonusEntity(label) {
     [['cavalry archer','mounted archer','elephant archer'],              'archer'],
     [['hand cannoneer','slinger','arbalest','longbow','skirmisher','crossbow'], 'archer'],
     [['foot archer','archer'],                                           'archer'],
+    [['thumb ring','parthian','ballistics'],                             'archer'],
     // Gunpowder (distinct icon bucket — falls back to siege if no gunpowder key)
     [['gunpowder','hand cannon','cannon','bombard cannon','culverin'],   'siege'],
-    // Infantry
-    [['halberdier','pikeman','spearman'],                               'infantry'],
-    [['champion','militia','man-at-arms','infantry','foot soldier','swordsman'], 'infantry'],
+    // Infantry — plural forms listed explicitly (spearman≠spearmen as substrings)
+    [['halberdier','pikeman','pikemen','spearman','spearmen'],          'infantry'],
+    [['champion','militia','man-at-arms','infantry','foot soldier','swordsman','swordsmen','grenadier','legionary'], 'infantry'],
     [['shock infantry'],                                                 'infantry'],
+    [['barracks','soldier','melee'],                                     'infantry'],
     // Cavalry
-    [['steppe lancer','fire lancer'],                                    'cavalry'],
+    [['war chariot','steppe lancer','fire lancer'],                      'cavalry'],
     [['war elephant','battle elephant','elephant'],                      'cavalry'],
-    [['camel','knight','paladin','cavalier','hussar','light cavalry','mounted'], 'cavalry'],
+    [['shrivamsha','raider','camel','knight','paladin','cavalier','hussar','light cavalry','mounted'], 'cavalry'],
+    [['cavalry','stable','husbandry'],                                   'cavalry'],
     // Monk
-    [['monk','convert','relic'],                                         'monk'],
-    // Siege
+    [['monk','convert','relic','missionar','warrior priest'],            'monk'],
+    // Siege — compound forms before standalone 'siege'
     [['trebuchet','mangonel','scorpion','battering ram','petard','bombard'], 'siege'],
-    [['siege workshop'],                                                 'siege'],
+    [['siege tower'],                                                    'siege'],
+    [['siege workshop','siege'],                                         'siege'],
+    // Siege — extended
+    [['explosive'],                                                      'siege'],
     // Naval
     [['fire ship','demolition ship','longboat','galley','warship','transport ship'], 'ship'],
-    [['ship','dock','fleet','naval'],                                    'ship'],
+    [['ship','dock','fleet','naval','navy'],                             'ship'],
     // Economic
-    [['farm','mill','harvest','crop'],                                   'farm'],
+    [['folwark','livestock','herd animal','forage','sheep','farm','mill','harvest','crop'], 'farm'],
     [['forager','hunter','herder'],                                      'villager'],
-    [['villager','shepherd','builder','worker','lumberjack','miner','fisher'], 'villager'],
-    // Buildings
+    [['villager','shepherd','builder','worker','lumberjack','miner','fisher','repair'], 'villager'],
+    // Buildings & generic techs
+    [['age up','advanc'],                                                'town_center'],
+    [['loom','population','tcs'],                                        'town_center'],
     [['town center'],                                                    'town_center'],
+    [['technolog'],                                                      'university'],
     [['monastery'],                                                      'monastery'],
     [['donjon'],                                                         'castle'],
     [['feitoria'],                                                       'market'],
     [['castle','krepost'],                                               'castle'],
-    [['tower'],                                                          'tower'],
+    [['outpost','tower'],                                                'tower'],
     [['wall','palisade','fortif'],                                       'wall'],
     [['house'],                                                          'town_center'],
-    [['market','trade','caravan'],                                       'market'],
+    [['caravanseri','caravanserai','market','trade','caravan'],          'market'],
     [['university','blacksmith'],                                        'university'],
+    [['military building'],                                              'castle'],
+    [['military'],                                                       'castle'],
     [['building','structure'],                                           'castle'],
     // Resources
-    [['lumber','lumberjack'],                                            'wood'],
+    [['lumber','lumberjack','tree'],                                     'wood'],
     [['gold','mining'],                                                  'gold'],
     [['stone'],                                                          'stone'],
     [['food','wood','resource'],                                         'farm'],
+    // Healing — last so more specific entity matches win first
+    [['heal'],                                                           'monk'],
   ];
   for (const [kws, key] of map) {
     if (kws.some(k => s.includes(k))) return key;
@@ -1211,14 +1238,23 @@ function _extractAgeValues(label) {
 function _parseBonusCard(id, label) {
   const ov = _cardOverrides[String(id)];
 
-  // If override forces 'text' type, short-circuit immediately.
-  if (ov?.type === 'text') return { type: 'text', label };
+  if (ov?.hidden)          return { type: 'hidden' };
+  if (ov?.type === 'desc') {
+    const lines = ov.lines || label.split(';').map(s => s.trim()).filter(Boolean);
+    return _applyCardOverride({ type: 'desc', lines, entityKey: _extractBonusEntity(label) }, ov, label);
+  }
+
+  const _makeDesc = lbl => ({
+    type:      'desc',
+    lines:     lbl.split(';').map(s => s.trim()).filter(Boolean),
+    entityKey: _extractBonusEntity(lbl),
+  });
 
   let p;
   if (_isMultiEffect(label)) {
     const clauses = label.split(';').map(s => s.trim()).filter(Boolean);
     const isComplex = clauses.some(c => _isAgeScaled(c));
-    if (isComplex && !ov) return { type: 'text', label };
+    if (isComplex && !ov) return _makeDesc(label);
 
     const effects = clauses.map(clause => ({
       value:     _extractBonusValue(clause),
@@ -1240,18 +1276,18 @@ function _parseBonusCard(id, label) {
         entity2:   effects[1].entityKey,
       };
     } else {
-      p = isComplex ? { type: 'text', label } : { type: 'multi', effects };
+      p = isComplex ? _makeDesc(label) : { type: 'multi', effects };
     }
   } else if (_isAgeScaled(label)) {
     p = {
-      type:      'age-scaled',
+      type:      'progression',
       ageValues: _extractAgeValues(label),
       entityKey: _extractBonusEntity(label),
       attrKey:   _extractBonusAttr(label),
     };
   } else {
     p = {
-      type:      'simple',
+      type:      'value',
       value:     _extractBonusValue(label),
       entityKey: _extractBonusEntity(label),
       attrKey:   _extractBonusAttr(label),
@@ -1285,77 +1321,72 @@ function _renderBonusCardInner(p, cat, mult) {
       </div>
     </div>`;
 
-  // ── Text-only fallback (complex multi+age-scaled bonuses) ──────────────────
-  if (p.type === 'text') {
-    return `${header}
-    <div class="bc-text-body">
-      <p class="bc-text-label">${p.label}</p>
-    </div>`;
-  }
-
-  const whoInfo   = _WHO_ICONS[p.entityKey] || _WHO_ICONS.default;
-
-  // For multi-effect, pull value+attr from first clause; otherwise use top-level
+  const whoInfo        = _WHO_ICONS[p.entityKey] || _WHO_ICONS.default;
   const displayAttrKey = p.type === 'multi' ? (p.effects[0]?.attrKey || 'default') : p.attrKey;
   const attrInfo       = _ATTR_ICONS[displayAttrKey] || _ATTR_ICONS.default;
-  const displayVal     = p.type === 'age-scaled' ? (p.ageValues[0]?.value || '?')
-                       : p.type === 'multi'      ? (p.effects[0]?.value   || '?')
+  const displayVal     = p.type === 'progression' ? (p.ageValues[0]?.value || '?')
+                       : p.type === 'multi'       ? (p.effects[0]?.value   || '?')
                        : p.value;
 
-  // Override-aware display strings — run through token renderer for inline icons
   const valueLabel  = _renderTokens(displayVal        || '?');
   const attrLabel   = _renderTokens(p.attrOverride    || attrInfo.label);
   const footerLabel = _renderTokens(p.footerOverride  || whoInfo.label);
 
-  // WHO footer cell — shared between simple/multi/age-scaled layouts
-  const whoCell = `<div class="bc-who">
-    <img class="bc-who-icon" src="/static/icons/units/${p.entityKey}_sm.svg" alt="" ${err}>
-    <span class="bc-who-label">${footerLabel}</span>
+  const mainIconSrc = p.iconOverride
+    ? `/static/icons/units/${p.iconOverride}`
+    : `/static/icons/units/${p.entityKey}.png`;
+
+  const whoCell = `<div class="card-who">
+    <span class="card-who-label">${footerLabel}</span>
   </div>`;
 
-  const mainImage = `<img class="card-main-image" src="/static/icons/units/${p.entityKey}.png"
-             alt="${whoInfo.label}" ${err}>`;
-
-  // ── Dual-entity layout (two stacked icons, shared value + attr) ───────────
-  if (p.type === 'dual') {
-    const who2Info = _WHO_ICONS[p.entity2] || _WHO_ICONS.default;
-    const dualAttr = _ATTR_ICONS[p.attrKey] || _ATTR_ICONS.default;
-    const dualAttrLabel = _renderTokens(p.attrOverride || dualAttr.label);
-    // If an explicit footer override is set, show it as a single label; otherwise show both icons
-    const dualWho = p.footerOverride
-      ? `<div class="bc-who"><span class="bc-who-label">${footerLabel}</span></div>`
-      : `<div class="bc-who">
-          <img class="bc-who-icon" src="/static/icons/units/${p.entityKey}_sm.svg" alt="${whoInfo.label}" ${err}>
-          <span class="bc-who-label">${whoInfo.label}</span>
-          <span class="bc-who-sep">+</span>
-          <img class="bc-who-icon" src="/static/icons/units/${p.entity2}_sm.svg" alt="${who2Info.label}" ${err}>
-          <span class="bc-who-label">${who2Info.label}</span>
-        </div>`;
+  // ── Desc card (icon optional + stacked free-text lines) ─────────────────
+  if (p.type === 'desc') {
+    const lines   = p.lines || [p.label || ''];
+    const hasIcon = p.entityKey && p.entityKey !== 'default';
+    const whoInfo = _WHO_ICONS[p.entityKey] || _WHO_ICONS.default;
+    const iconSrc = p.iconOverride
+      ? `/static/icons/units/${p.iconOverride}`
+      : `/static/icons/units/${p.entityKey}.png`;
+    const linesHtml = lines.map(l => `<li class="desc-line">${_renderTokens(l)}</li>`).join('');
     return `${header}
-    <div class="card-grid">
-      <div class="card-col">
-        <div class="card-dual-stack">
-          <img class="card-main-image card-dual-back"  src="/static/icons/units/${p.entity2}.png"   alt="${who2Info.label}" ${err}>
-          <img class="card-main-image card-dual-front" src="/static/icons/units/${p.entityKey}.png" alt="${whoInfo.label}"  ${err}>
-        </div>
-      </div>
-      <div class="card-col card-right-col">
-        <div class="bc-what">${valueLabel}</div>
-        <div class="bc-attr-row">
-          <img class="bc-attr-icon" src="/static/icons/attrs/${p.attrKey}.svg" alt="${dualAttr.label}" ${err}>
-          <span class="bc-attr-label">${dualAttrLabel}</span>
-        </div>
-      </div>
-      <div class="card-col span-2">${dualWho}</div>
+    <div class="card-body">
+      ${hasIcon ? `<img class="card-icon" src="${iconSrc}" alt="${whoInfo.label}" ${err}>` : ''}
+      <ul class="card-desc-lines">${linesHtml}</ul>
+      ${whoCell}
     </div>`;
   }
 
-  // ── Age-scaled layout ─────────────────────────────────────────────────────
-  if (p.type === 'age-scaled' && p.ageValues?.length) {
+  // ── Dual layout (two side-by-side icons) ──────────────────────────────────
+  if (p.type === 'dual') {
+    const who2Info      = _WHO_ICONS[p.entity2] || _WHO_ICONS.default;
+    const dualAttr      = _ATTR_ICONS[p.attrKey] || _ATTR_ICONS.default;
+    const dualAttrLabel = _renderTokens(p.attrOverride || dualAttr.label);
+    const icon1Src = p.iconOverride  ? `/static/icons/units/${p.iconOverride}`  : `/static/icons/units/${p.entityKey}.png`;
+    const icon2Src = p.icon2Override ? `/static/icons/units/${p.icon2Override}` : `/static/icons/units/${p.entity2}.png`;
+    const dualWho = p.footerOverride
+      ? `<div class="card-who"><span class="card-who-label">${footerLabel}</span></div>`
+      : `<div class="card-who">
+          <span class="card-who-label">${whoInfo.label}</span>
+          <span class="card-who-sep">+</span>
+          <span class="card-who-label">${who2Info.label}</span>
+        </div>`;
+    return `${header}
+    <div class="card-body">
+      <div class="card-icon-row">
+        <img class="card-icon" src="${icon1Src}" alt="${whoInfo.label}" ${err}>
+        <img class="card-icon" src="${icon2Src}" alt="${who2Info.label}" ${err}>
+      </div>
+      <div class="card-heading">${valueLabel}</div>
+      <div class="card-stat">${dualAttrLabel}</div>
+      ${dualWho}
+    </div>`;
+  }
+
+  // ── Progression layout ────────────────────────────────────────────────────
+  if (p.type === 'progression' && p.ageValues?.length) {
     const ROMAN    = { dark: 'I', feudal: 'II', castle: 'III', imperial: 'IV' };
-    const leadText = _renderTokens(
-      p.leadOverride || `${whoInfo.label} ${attrInfo.label.toLowerCase()}:`
-    );
+    const leadText = _renderTokens(p.leadOverride || `${whoInfo.label} ${attrInfo.label.toLowerCase()}:`);
     const ageItems = p.ageValues.map(av => `
         <div class="age">
           <div class="bc-age-badge bc-age-${av.age}">
@@ -1363,37 +1394,34 @@ function _renderBonusCardInner(p, cat, mult) {
           </div>
           <div class="bc-age-text">${av.value}</div>
         </div>`).join('');
-
+    let progIconHtml;
+    if (p.entity2) {
+      const who2Info  = _WHO_ICONS[p.entity2] || _WHO_ICONS.default;
+      const icon2Src  = p.icon2Override ? `/static/icons/units/${p.icon2Override}` : `/static/icons/units/${p.entity2}.png`;
+      progIconHtml = `<div class="card-icon-row">
+        <img class="card-icon" src="${mainIconSrc}" alt="${whoInfo.label}" ${err}>
+        <img class="card-icon" src="${icon2Src}" alt="${who2Info.label}" ${err}>
+      </div>`;
+    } else {
+      progIconHtml = `<img class="card-icon" src="${mainIconSrc}" alt="${whoInfo.label}" ${err}>`;
+    }
     return `${header}
-    <div class="card-grid">
-      <div class="card-col">${mainImage}</div>
-      <div class="card-col card-right-col">
-        <div class="bc-what bc-what-text">${attrLabel}</div>
-        <div class="bc-attr-row">
-          <img class="bc-attr-icon" src="/static/icons/attrs/${displayAttrKey}.svg"
-               alt="${attrInfo.label}" ${err}>
-        </div>
-      </div>
-      <div class="card-col span-2 bc-age-scaled">
-        <div class="bc-age-lead">${leadText}</div>
-        <div class="age-bonus-table">${ageItems}</div>
-      </div>
+    <div class="card-body">
+      ${progIconHtml}
+      <div class="card-heading">${attrLabel}</div>
+      <div class="card-prog-label">${leadText}</div>
+      <div class="age-bonus-table">${ageItems}</div>
+      ${whoCell}
     </div>`;
   }
 
-  // ── Default layout (simple + multi) ───────────────────────────────────────
+  // ── Value / Multi layout ──────────────────────────────────────────────────
   return `${header}
-    <div class="card-grid">
-      <div class="card-col">${mainImage}</div>
-      <div class="card-col card-right-col">
-        <div class="bc-what">${valueLabel}</div>
-        <div class="bc-attr-row">
-          <img class="bc-attr-icon" src="/static/icons/attrs/${displayAttrKey}.svg"
-               alt="${attrInfo.label}" ${err}>
-          <span class="bc-attr-label">${attrLabel}</span>
-        </div>
-      </div>
-      <div class="card-col span-2">${whoCell}</div>
+    <div class="card-body">
+      <img class="card-icon" src="${mainIconSrc}" alt="${whoInfo.label}" ${err}>
+      <div class="card-heading">${valueLabel}</div>
+      <div class="card-stat">${attrLabel}</div>
+      ${whoCell}
     </div>`;
 }
 
@@ -1427,13 +1455,17 @@ let _cardOverrides     = {};   // {id: override} from bonus_cards.json
 
 // ── Resource / inline-icon token renderer ────────────────────────────────────
 const _TOKEN_ICONS = {
-  food:      '/static/icons/resources/food.png',
-  wood:      '/static/icons/resources/wood.png',
-  gold:      '/static/icons/resources/gold.png',
-  stone:     '/static/icons/resources/stone.png',
-  heart:     '/static/icons/resources/heart.png',
-  heartplus: '/static/icons/resources/heartplus.png',
-  plus:      '/static/icons/resources/plus.png',
+  food:         '/static/icons/resources/food.png',
+  wood:         '/static/icons/resources/wood.png',
+  gold:         '/static/icons/resources/gold.png',
+  stone:        '/static/icons/resources/stone.png',
+  heart:        '/static/icons/properties/heart.png',
+  heartplus:    '/static/icons/properties/heartplus.png',
+  plus:         '/static/icons/properties/plus.png',
+  reload:       '/static/icons/properties/reload_time.png',
+  workrate:     '/static/icons/properties/work_rate.png',
+  pierce_armor: '/static/icons/properties/pierce_armor.png',
+  attack:       '/static/icons/properties/attack.png'
 };
 function _renderTokens(str) {
   if (!str) return str;
@@ -1451,13 +1483,18 @@ function _applyCardOverride(p, ov, label) {
   if (ov.type)    p.type      = ov.type;
   if (ov.entity)  p.entityKey = ov.entity;
   if (ov.entity2) p.entity2   = ov.entity2;
-  if (ov.value !== undefined) p.value = ov.value;
-  if (ov.attr)    p.attrOverride   = ov.attr;
-  if (ov.footer)  p.footerOverride = ov.footer;
-  if (ov.lead)    p.leadOverride   = ov.lead;
-  // For age-scaled: use explicit ageValues if provided, otherwise (re)extract from label
-  if (p.type === 'age-scaled') {
-    p.ageValues = ov.ageValues || p.ageValues || _extractAgeValues(label);
+  // Auto-promote: if entity2 is set and type hasn't been explicitly locked, use dual layout
+  if (p.entity2 && p.type === 'value') p.type = 'dual';
+  if (ov.heading !== undefined) p.value = ov.heading;
+  if (ov.stat)        p.attrOverride   = ov.stat;
+  if (ov.description) p.footerOverride = ov.description;
+  if (ov.prog_label)  p.leadOverride   = ov.prog_label;
+  if (ov.icon)    p.iconOverride   = ov.icon;
+  if (ov.icon2)   p.icon2Override  = ov.icon2;
+  if (ov.lines)   p.lines          = ov.lines;
+  // For progression: use explicit ages if provided, otherwise (re)extract from label
+  if (p.type === 'progression') {
+    p.ageValues = ov.ages || p.ageValues || _extractAgeValues(label);
   }
   return p;
 }
@@ -1556,9 +1593,10 @@ function renderBonusGrid() {
     const mult = b ? b.multiplier : 1;
     const cat  = _classifyBonus(c.id, c.label);
     const p    = _parseBonusCard(c.id, c.label);
-    const typeClass = p.type !== 'simple' ? ` ${p.type}-bonus` : '';
+    if (p.type === 'hidden') return '';
+    const typeClass = p.type !== 'value' ? ` ${p.type}-bonus` : '';
     return `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${c.id}"
-                 style="--cat-color:${cat.color};" title="${c.label.replace(/"/g, '&quot;')}">
+                 style="--cat-color:var(--cat-${cat.key});" title="${c.label.replace(/"/g, '&quot;')}">
       ${_renderBonusCardInner(p, cat, mult)}
     <div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
   }).join('');
@@ -1618,9 +1656,10 @@ function renderTeamBonusGrid() {
     const mult = b ? b.multiplier : 1;
     const cat  = _classifyBonus(c.id, c.label);
     const p    = _parseBonusCard(c.id, c.label);
-    const typeClass = p.type !== 'simple' ? ` ${p.type}-bonus` : '';
+    if (p.type === 'hidden') return '';
+    const typeClass = p.type !== 'value' ? ` ${p.type}-bonus` : '';
     return `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${c.id}"
-                 style="--cat-color:${cat.color};" title="${c.label.replace(/"/g, '&quot;')}">
+                 style="--cat-color:var(--cat-${cat.key});" title="${c.label.replace(/"/g, '&quot;')}">
       ${_renderBonusCardInner(p, cat, mult)}
     </div>`;
   }).join('');
