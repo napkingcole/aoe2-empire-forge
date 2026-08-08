@@ -50,15 +50,15 @@
 
   /* Bonus card category colors */
   --cat-naval:    #0369a1;   /* ocean blue   */
-  --cat-monk:     #5423af;   /* purple       */
+  --cat-monk:     #2a0079;   /* purple       */
   --cat-cost:     #6b9e13;   /* warm sienna  */
   --cat-economy:  #013417;   /* green        */
-  --cat-speed:    #1f46aa;   /* blue         */
+  --cat-speed:    #0c318e;   /* blue         */
   --cat-combat:   #990707;   /* red          */
   --cat-research: #5e2900;   /* amber        */
   --cat-building: #525252;   /* stone gray   */
-  --cat-unlock:   #6f1766;   /* cyan         */
-  --cat-default:  #475569;   /* slate        */
+  --cat-unlock:   #32044a;   /* cyan         */
+  --cat-general:  #475569;   /* slate        */
 }
 
 /* ── Reset / base ────────────────────────────────────────────────────────── */
@@ -1052,8 +1052,9 @@ footer {
   color: #e7d7ae;
   box-shadow: 1px 1px 3px rgb(0 0 0 / 0.75);
   border-radius: 50%;
-  filter: brightness(0.65) sepia(1);
+  /* filter: brightness(0.65) sepia(1); */
   pointer-events: none;
+  visibility: hidden;
 
   .multiplier-amount {
     visibility: hidden;
@@ -1092,6 +1093,14 @@ img.card-main-image {
   display: inline-block;
   margin: 0 1px -1px;
 }
+.bonus-card {
+  .multiplier {
+    visibility: hidden;
+  }
+  .multiplier-amount::after {
+    visibility: hidden;
+  }
+}
 .bonus-card.selected {
   border-image: url('../bg-gold-border2.png') 33;
   .card-shadow {
@@ -1105,9 +1114,13 @@ img.card-main-image {
     background: url('../corner-2s.png') no-repeat 0 0 transparent;
     background-size: cover;
   }
+  .multiplier {
+    visibility: visible;
+  }
   .multiplier-circle {
     filter: brightness(1.25);
     pointer-events: all;
+    visibility: visible;
   }
   .multiplier-amount {
     visibility: visible;

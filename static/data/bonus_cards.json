@@ -101,8 +101,8 @@
   },
   "7": {
     "type": "dual",
-    "heading": "+Attack, Carry",
-    "stat": "",
+    "heading": "+[attack], Carry Capacity",
+    "stat": "Villagers +5 attack vs. wild boar; hunters carry +15 meat; hunt contains +20% meat",
     "entity": "villager",
     "entity2": "boar",
     "description": "Villagers"
@@ -160,8 +160,8 @@
   "14": {
     "type": "progression",
     "heading": "+1 Armor",
-    "stat": "+1 Armor per age",
-    "prog_label": "Armor:",
+    "stat": "+1 [armor] per age",
+    "prog_label": "Per Age:",
     "entity": "barracks",
     "entity2": "stable",
     "description": "Barracks + Stable",
@@ -492,9 +492,11 @@
     "description": "Camel Line"
   },
   "54": {
+    "type": "dual",
     "heading": "+10% [workrate]",
     "stat": "Fishermen work 10% faster",
     "entity": "villager",
+    "entity2": "fish",
     "description": "Fishermen"
   },
   "55": {
@@ -833,6 +835,7 @@
   },
   "89": {
     "type": "desc",
+    "description": "Map Vision",
     "lines": [
       "Enemy positions are revealed at the start of the game"
     ]
@@ -992,7 +995,11 @@
     "description": "Donjon"
   },
   "110": {
-    "type": "desc"
+    "type": "value",
+    "heading": "Upgrades Free",
+    "stat": "Requires Mill",
+    "entity": "farm",
+    "description": "Farm Upgrades"
   },
   "120": {
     "heading": "+15% [workrate]",
@@ -1074,9 +1081,11 @@
     ]
   },
   "132": {
+    "type": "dual",
     "heading": "Resources",
     "stat": "Last 15% longer",
-    "entity": "villager",
+    "entity": "food",
+    "entity2": "gold",
     "description": "All Resources"
   },
   "133": {
@@ -1147,6 +1156,7 @@
     "description": "Town Centers"
   },
   "140": {
+    "entity": "wonder",
     "type": "desc",
     "lines": [
       "Wonders cost no wood",
@@ -1204,7 +1214,10 @@
     "description": "Ballistics"
   },
   "146": {
-    "type": "desc"
+    "type": "value",
+    "heading": "Free Upgrades",
+    "stat": "Archer upgrades free",
+    "entity": "archer"
   },
   "171": {
     "heading": "+20% [workrate]",
@@ -1442,6 +1455,7 @@
   },
   "209": {
     "heading": "UNLOCKED",
+    "entity": "stone_gate",
     "stat": "Stone Walls can be built in the Dark Age",
     "entity": "tower",
     "description": "Stone Walls"
@@ -1733,20 +1747,18 @@
     "description": "Foot Archers"
   },
   "254": {
-    "type": "desc",
+    "type": "dual",
     "entity": "hand_cannoneer",
-    "description": "Gunpowder Units",
-    "lines": [
-      "Gunpowder units have bonus attack vs. Camels"
-    ]
+    "entity2": "camel_rider",
+    "heading": "Bonus vs. Camels",
+    "description": "Gunpowder Units"
   },
   "255": {
-    "type": "desc",
+    "type": "value",
     "entity": "fire_lancer",
     "description": "Shock Infantry",
-    "lines": [
-      "Shock Infantry have bonus attack vs. stone defenses"
-    ]
+    "heading": "Bonus vs. Stone",
+    "stat": "Shock Infantry have bonus attack vs. stone defenses"
   },
   "256": {
     "type": "desc",
@@ -2001,12 +2013,12 @@
     "description": "Starting Resources"
   },
   "295": {
-    "type": "desc",
+    "type": "dual",
     "entity": "mill",
-    "description": "Mills",
-    "lines": [
-      "Mills can be garrisoned with livestock to passively produce food"
-    ]
+    "entity2": "cow",
+    "heading": "Generate Food",
+    "stat":"Mills can be garrisoned with livestock to passively produce food",
+    "description": "Mills"
   },
   "296": {
     "type": "progression",
@@ -2131,9 +2143,11 @@
     ]
   },
   "313": {
+    "type": "dual",
     "heading": "Free Relic",
     "stat": "First Monastery gets a free relic",
     "entity": "monastery",
+    "entity2": "relic",
     "description": "Monastery"
   },
   "314": {

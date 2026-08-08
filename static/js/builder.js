@@ -988,33 +988,39 @@ const _BONUS_CATEGORIES = [
   { key: 'research', icon: 'fa-flask',        kw: ['research','blacksmith','university','technology','tech','age','upgrade'] },
   { key: 'building', icon: 'fa-chess-rook',   kw: ['castle','tower','wall','krepost','fortif','stone defense','palisade','wonder','house','settlement'] },
   { key: 'unlock',   icon: 'fa-lock-open',    kw: ['can recruit','can train','can build','can upgrade','replaces','recruitable','is available','be trained','be recruited','be built'] },
-  { key: 'default',  icon: 'fa-shield',       kw: [] },
+  { key: 'general',  icon: 'fa-shield',       kw: [] },
 ];
 
 // Manually override auto-classification by bonus id: { 42: 'economy', 99: 'combat', ... }
 const _BONUS_CAT_OVERRIDES = {
   // combat
-   17: 'combat',  102: 'combat',  172: 'combat',  333: 'combat',
+   17: 'combat',  102: 'combat',  172: 'combat',  333: 'combat', 243: 'combat', 255: 'combat', 256: 'combat', 260: 'combat', 340: 'combat', 354: 'combat',
   // economy
-   21: 'building', 132: 'economy', 140: 'building',
+   21: 'building', 132: 'economy', 140: 'building', 86: 'economy', 98: 'economy', 110: 'economy', 139: 'economy', 295: 'economy', 339: 'economy',
   // naval
   227: 'naval',
+  // cost
+  54: 'cost', 146: 'cost',
   // research
-  223: 'combat',  261: 'research',
+  223: 'combat',  261: 'research', 136: 'research', 239: 'research',
+  // speed
+  17: 'speed', 37: 'speed', 334: 'speed', 54: 'speed',
+  //general
+  80: 'general', 8: 'general', 25: 'general', 26: 'general', 62:'general', 213: 'general', 215: 'general', 224: 'general', 346: 'general',
   // unlock — unit/building availability bonuses
    43: 'unlock',   50: 'unlock',   51: 'unlock',   52: 'unlock',
    53: 'unlock',   61: 'unlock',   68: 'unlock',   69: 'unlock',
-   93: 'unlock',   98: 'unlock',   99: 'unlock',  103: 'unlock',
+   93: 'unlock',   99: 'unlock',  103: 'unlock',
   109: 'unlock',  193: 'unlock',  209: 'unlock',  213: 'unlock',
-  221: 'unlock',  239: 'unlock',  247: 'unlock',  252: 'unlock',
+  221: 'unlock',  247: 'unlock',  252: 'unlock',
   270: 'unlock',  282: 'unlock',  283: 'unlock',  286: 'unlock',
-  287: 'unlock',  295: 'unlock',  297: 'unlock',  298: 'unlock',
+  287: 'unlock',  297: 'unlock',  298: 'unlock',   91: 'unlock',
   299: 'unlock',  300: 'unlock',  307: 'unlock',  308: 'unlock',
   309: 'unlock',  310: 'unlock',  314: 'unlock',  316: 'unlock',
   317: 'unlock',  318: 'unlock',  322: 'unlock',  329: 'unlock',
   330: 'unlock',  332: 'unlock',  337: 'unlock',  343: 'unlock',
   348: 'unlock',  352: 'unlock',  355: 'unlock',  356: 'unlock',
-  360: 'unlock',  361: 'unlock',
+  360: 'unlock',  361: 'unlock',  72: 'unlock'
 };
 
 function _classifyBonus(id, label) {
@@ -1167,7 +1173,7 @@ function _extractBonusEntity(label) {
   for (const [kws, key] of map) {
     if (kws.some(k => s.includes(k))) return key;
   }
-  return 'default';
+  return 'general';
 }
 
 function _extractBonusAttr(label) {
@@ -1464,6 +1470,7 @@ const _TOKEN_ICONS = {
   plus:         '/static/icons/properties/plus.png',
   reload:       '/static/icons/properties/reload_time.png',
   workrate:     '/static/icons/properties/work_rate.png',
+  armor:        '/static/icons/properties/armor.png',
   pierce_armor: '/static/icons/properties/pierce_armor.png',
   attack:       '/static/icons/properties/attack.png'
 };
