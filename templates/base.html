@@ -24,10 +24,10 @@
       <img src="{{ url_for('static', filename='logo-horz-sm-alt.png') }}" alt="AOE2: Empire Forge" class="logo-header">
     </a>
     <div class="d-flex gap-3 align-items-center small">
+      <a href="{{ url_for('builder_landing') }}" class="nav-link">Build Civ</a>
+      <a href="{{ url_for('build_mod') }}" class="nav-link">Build Mod</a>
       <a href="{{ url_for('how_it_works') }}" class="nav-link">How It Works</a>
       <a href="{{ url_for('why') }}" class="nav-link">Why</a>
-      <a href="{{ url_for('builder_landing') }}" class="nav-link" style="color: var(--crimson) !important; font-weight: 600;">Build Civ</a>
-      <a href="{{ url_for('index') }}" class="nav-link">Build Mod</a>
       {% if session.get('civs') %}
       <a href="{{ url_for('configure') }}" class="nav-link">Configure</a>
       {% endif %}
@@ -38,9 +38,19 @@
       <a href="{{ url_for('changelog') }}" class="nav-link">Changelog</a>
       <a href="{{ url_for('reset') }}" class="nav-link text-secondary">Start Over</a>
       <span class="text-secondary">v{{ app_version }}</span>
+      {% if '-' in app_version %}
+      <span class="badge text-bg-warning">BETA</span>
+      {% endif %}
     </div>
   </div>
 </nav>
+
+{% if '-' in app_version %}
+<div class="alert alert-warning alert-dismissible fade show mb-0 rounded-0 py-2 text-center small" role="alert" style="border-left:none;border-right:none;border-radius:0!important;">
+  <strong>Pre-release beta</strong> — Empire Forge v{{ app_version }} is an early preview. Expect rough edges and report issues on <a href="https://github.com/NapKingCole/aoe2civbuilder/issues" target="_blank" rel="noopener" class="alert-link">GitHub</a>.
+  <button type="button" class="btn-close btn-sm py-2" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
 
 <main class="container py-4">
 
@@ -113,7 +123,8 @@
     var VERSION = {{ app_version | tojson }};
     var KEY = "ef_changelog_seen";
     var force = new URLSearchParams(window.location.search).get("modal") === "true";
-    if (force || localStorage.getItem(KEY) !== VERSION) {
+    var isBeta = VERSION.indexOf("-") !== -1;
+    if (!isBeta && (force || localStorage.getItem(KEY) !== VERSION)) {
       document.addEventListener("DOMContentLoaded", function () {
         new bootstrap.Modal(document.getElementById("changelogModal")).show();
         if (!force) localStorage.setItem(KEY, VERSION);

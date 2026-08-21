@@ -10,7 +10,7 @@
 <div class="row g-4 justify-content-center">
 
   <div class="col-md-4">
-    <a href="{{ url_for('builder_new') }}" class="text-decoration-none">
+    <a href="{{ url_for('builder_new') }}?fresh=1" class="text-decoration-none">
       <div class="card h-100 builder-option-card">
         <div class="card-body text-center py-5">
           <div class="builder-option-icon mb-3">
@@ -24,35 +24,74 @@
   </div>
 
   <div class="col-md-4">
-    <div class="card h-100 builder-option-card disabled" title="Coming soon">
+    <div class="card h-100 builder-option-card" id="card-edit-civ" role="button" title="Load a saved .civbuilder.json draft">
       <div class="card-body text-center py-5">
-        <div class="builder-option-icon mb-3" style="opacity: 0.35;">
+        <div class="builder-option-icon mb-3">
           <i class="fa-solid fa-pen-to-square"></i>
         </div>
-        <h4 class="fw-bold mb-2" style="opacity: 0.45;">Edit Civ</h4>
-        <p class="text-muted small mb-0" style="opacity: 0.45;">Load a saved civ draft and continue editing it.</p>
-        <span class="badge mt-3" style="background-color: var(--accent-1); color: var(--accent-3); border: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);">Coming Soon</span>
+        <h4 class="fw-bold mb-2">Edit Civ</h4>
+        <p class="text-muted small mb-0">Load a saved <code>.civbuilder.json</code> draft and continue editing it.</p>
+        <input type="file" id="input-load-draft" accept=".json,.civbuilder.json" class="d-none">
       </div>
     </div>
   </div>
 
   <div class="col-md-4">
-    <div class="card h-100 builder-option-card disabled" title="Coming soon">
-      <div class="card-body text-center py-5">
-        <div class="builder-option-icon mb-3" style="opacity: 0.35;">
-          <i class="fa-solid fa-eye"></i>
+    <a href="{{ url_for('builder_convert_km') }}" class="text-decoration-none">
+      <div class="card h-100 builder-option-card">
+        <div class="card-body text-center py-5">
+          <div class="builder-option-icon mb-3">
+            <i class="fa-solid fa-rotate"></i>
+          </div>
+          <h4 class="fw-bold mb-2">Convert KM Civ</h4>
+          <p class="text-muted small mb-0">Import a KrakenMeister <code>.json</code> file and convert it to Empire Forge format for editing and building.</p>
         </div>
-        <h4 class="fw-bold mb-2" style="opacity: 0.45;">View Civ</h4>
-        <p class="text-muted small mb-0" style="opacity: 0.45;">Browse and review saved civilizations before building.</p>
-        <span class="badge mt-3" style="background-color: var(--accent-1); color: var(--accent-3); border: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);">Coming Soon</span>
       </div>
-    </div>
+    </a>
   </div>
 
 </div>
 
-<p class="text-center text-muted small mt-5">
-  Looking to convert existing <strong>KrakenMeister</strong> civ JSONs?
-  <a href="{{ url_for('index') }}">Use the Upload tool instead.</a>
-</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const EF_DRAFT_KEY = "ef_builder_draft";
+  const card  = document.getElementById("card-edit-civ");
+  const input = document.getElementById("input-load-draft");
+  if (!card || !input) return;
+
+  card.addEventListener("click", () => input.click());
+
+  input.addEventListener("change", () => {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (typeof data !== "object" || !data) throw new Error("Not a valid JSON object.");
+        // Detect Empire Forge vs KrakenMeister format
+        const fmt = data.format || "";
+        const isEF = fmt === "empireforge_v2" || fmt === "civbuilder_v1";
+        if (isEF) {
+          // Empire Forge file — load directly into wizard
+          localStorage.setItem(EF_DRAFT_KEY, JSON.stringify(data));
+          window.location.href = "{{ url_for('builder_new') }}";
+        } else if (data.bonuses && Array.isArray(data.bonuses)) {
+          // Looks like a KM file — send to converter
+          localStorage.setItem("ef_km_pending", JSON.stringify(data));
+          window.location.href = "{{ url_for('builder_convert_km') }}";
+        } else {
+          throw new Error("Unrecognized file format.");
+        }
+      } catch (e) {
+        alert("Could not load draft: " + e.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+})();
+</script>
 {% endblock %}

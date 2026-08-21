@@ -369,9 +369,14 @@ class _LiveLogWriter(io.TextIOBase):
 
 @app.route("/")
 def index():
+    return render_template("index.html")
+
+
+@app.route("/build-mod")
+def build_mod():
     dat_path = find_game_dat()
     civtechtrees_path = str(find_civtechtrees(dat_path) or "") if dat_path else ""
-    return render_template("index.html",
+    return render_template("build_mod.html",
                            dat_path=str(dat_path or ""),
                            civtechtrees_path=civtechtrees_path)
 
@@ -388,10 +393,10 @@ def upload():
             dat_path_obj = candidate
         else:
             flash(f"That's a folder, not a DAT file. Point to empires2_x2_p1.dat directly.", "error")
-            return redirect(url_for("index"))
+            return redirect(url_for("build_mod"))
     if not dat_path_obj.exists():
         flash(f"DAT file not found: {dat_path}", "error")
-        return redirect(url_for("index"))
+        return redirect(url_for("build_mod"))
 
     # CivTechTrees path — optional; fall back to auto-detection from dat location.
     civtechtrees_path = request.form.get("civtechtrees_path", "").strip()
@@ -402,7 +407,7 @@ def upload():
     files = request.files.getlist("civ_files")
     if not files or all(f.filename == "" for f in files):
         flash("Please select at least one civ JSON file.", "error")
-        return redirect(url_for("index"))
+        return redirect(url_for("build_mod"))
 
     sd = _session_dir()
     session["dat_path"] = dat_path
@@ -431,7 +436,7 @@ def upload():
 
     if not civs:
         flash("No valid civ JSON files found.", "error")
-        return redirect(url_for("index"))
+        return redirect(url_for("build_mod"))
 
     # Load vanilla civ list here (alongside file uploads) so configure loads instantly.
     vanilla_civs = []
@@ -439,7 +444,7 @@ def upload():
         vanilla_civs = _get_vanilla_civs(dat_path)
     except Exception as e:
         flash(f"Could not read DAT file — check the path. ({e})", "error")
-        return redirect(url_for("index"))
+        return redirect(url_for("build_mod"))
 
     session["civs"]              = civs
     session["vanilla_civs"]      = vanilla_civs
@@ -452,7 +457,7 @@ def configure():
     civs         = session.get("civs")
     vanilla_civs = session.get("vanilla_civs", [])
     if not civs:
-        return redirect(url_for("index"))
+        return redirect(url_for("build_mod"))
 
     # Auto-assign: each uploaded civ gets the next available vanilla slot.
     # (Uses the DAT's own ordering — unrelated to the dropdown's display sort below.)
@@ -1661,6 +1666,99 @@ def builder_export():
         download_name=filename,
         mimetype="application/json",
     )
+
+
+@app.route("/builder/convert-km")
+def builder_convert_km():
+    return render_template("convert_km.html")
+
+
+@app.route("/api/builder/convert-km", methods=["POST"])
+def api_convert_km():
+    """Convert a KrakenMeister civ JSON into a wizard draft."""
+    import re
+    from civ_schema import is_km_format, is_empireforge, _DRAFT_VER
+
+    data   = request.get_json(silent=True) or {}
+    km_raw = data.get("km", {})
+
+    if not km_raw:
+        return jsonify({"error": "No JSON body provided."}), 400
+    if is_empireforge(km_raw):
+        return jsonify({"error": "This file is already in Empire Forge format — use Edit Civ instead."}), 400
+    if not is_km_format(km_raw):
+        return jsonify({"error": "File does not look like a KrakenMeister civ JSON."}), 400
+
+    try:
+        draft = _km_to_draft(km_raw)
+    except Exception as e:
+        return jsonify({"error": f"Conversion failed: {e}"}), 500
+
+    return jsonify({"draft": draft})
+
+
+def _km_to_draft(km: dict) -> dict:
+    """Convert a KrakenMeister civ JSON dict to a wizard draft dict."""
+    from civ_schema import _DRAFT_VER
+
+    raw_b = km.get("bonuses", [])
+    civ_bons  = raw_b[0] if len(raw_b) > 0 and isinstance(raw_b[0], list) else []
+    uu_part   = raw_b[1] if len(raw_b) > 1 else []
+    castle_fx = raw_b[2] if len(raw_b) > 2 and isinstance(raw_b[2], list) else []
+    imp_fx    = raw_b[3] if len(raw_b) > 3 and isinstance(raw_b[3], list) else []
+    team_bons = raw_b[4] if len(raw_b) > 4 and isinstance(raw_b[4], list) else []
+
+    km_uu_idx = uu_part[0] if uu_part and isinstance(uu_part[0], int) else None
+
+    def _norm(lst):
+        out = []
+        for e in lst:
+            if isinstance(e, (list, tuple)) and len(e) >= 1:
+                out.append({"id": int(e[0]), "multiplier": int(e[1]) if len(e) > 1 else 1})
+            elif isinstance(e, int):
+                out.append({"id": e, "multiplier": 1})
+        return out
+
+    def _ut(fx_list):
+        return {
+            "mode": "vanilla", "vanilla_id": None,
+            "name": "", "description": "",
+            "cost": {"food": 0, "wood": 0, "stone": 0, "gold": 0},
+            "time": 0,
+            "effects": _norm(fx_list),
+        }
+
+    raw_tree = km.get("tree", [[], [], []])
+    if isinstance(raw_tree, list) and len(raw_tree) >= 3:
+        tree = {
+            "units":     [int(x) for x in (raw_tree[0] or [])],
+            "buildings": [int(x) for x in (raw_tree[1] or [])],
+            "techs":     [int(x) for x in (raw_tree[2] or [])],
+        }
+    else:
+        tree = {"units": [], "buildings": [], "techs": []}
+
+    return {
+        "_draftVer":    _DRAFT_VER,
+        "alias":        km.get("alias", km.get("civName", "Converted Civ")),
+        "tagline":      "",
+        "description":  km.get("description", ""),
+        "architecture": km.get("architecture", 2),
+        "language":     km.get("language", 0),
+        "castle":       km.get("castle", -1),
+        "wonder":       km.get("wonder", -1),
+        "emblem":       km.get("customFlagData", "") if km.get("customFlag") else "",
+        "hero_unit":    None,
+        "unique_unit":  {
+            "km_idx": km_uu_idx, "name": "", "description": "",
+            "overrides": {}, "advanced_flags": {},
+        },
+        "bonuses":      _norm(civ_bons),
+        "team_bonuses": _norm(team_bons),
+        "castle_ut":    _ut(castle_fx),
+        "imperial_ut":  _ut(imp_fx),
+        "tree":         tree,
+    }
 
 
 # ── Startup prewarm ───────────────────────────────────────────────────────────

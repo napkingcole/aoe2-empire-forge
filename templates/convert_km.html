@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Convert KM Civ — AOE2: Empire Forge{% endblock %}
+
+{% block content %}
+<div class="text-center mb-5">
+  <h1 class="display-6 fw-bold">Convert KrakenMeister Civ</h1>
+  <p class="text-muted">Upload a KrakenMeister <code>.json</code> file and convert it to Empire Forge format for editing in the wizard.</p>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-md-7">
+
+    <div class="card mb-4" id="upload-card">
+      <div class="card-header fw-semibold">
+        <i class="fa-solid fa-file-import me-2" style="color:var(--accent-2)"></i>Upload KM JSON
+      </div>
+      <div class="card-body">
+        <div id="drop-zone" class="border rounded p-5 text-center mb-3"
+             style="border-style:dashed!important;cursor:pointer;transition:background .15s;">
+          <i class="fa-solid fa-upload fa-2x mb-3 text-muted"></i>
+          <div class="fw-semibold mb-1">Drop your KM <code>.json</code> file here</div>
+          <div class="text-muted small">or click to browse</div>
+          <input type="file" id="km-file-input" accept=".json" class="d-none">
+        </div>
+        <div id="convert-status" class="d-none"></div>
+      </div>
+    </div>
+
+    <div id="result-card" class="card d-none mb-4">
+      <div class="card-header fw-semibold text-success">
+        <i class="fa-solid fa-check-circle me-2"></i>Conversion complete
+      </div>
+      <div class="card-body">
+        <div id="km-detected-notice" class="d-none mb-3">
+          <h6 class="fw-bold mb-1">KrakenMeister JSON file detected</h6>
+          <p class="small text-muted mb-0">We noticed you uploaded a KrakenMeister JSON file. In order for it to work with Empire Forge, it has been automatically converted into an editable format.</p>
+        </div>
+        <p class="small mb-3">Your civ has been converted. Choose what to do with it:</p>
+        <div class="d-flex gap-2 flex-wrap">
+          <button id="btn-open-wizard" class="btn btn-primary">
+            <i class="fa-solid fa-pen-to-square me-2"></i>Open in Wizard
+          </button>
+          <button id="btn-download-converted" class="btn btn-outline-secondary">
+            <i class="fa-solid fa-download me-2"></i>Download .civbuilder.json
+          </button>
+        </div>
+        <div class="mt-3 small text-muted" id="result-notes"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header fw-semibold">
+        <i class="fa-solid fa-circle-info me-2" style="color:var(--accent-2)"></i>What gets converted
+      </div>
+      <div class="card-body small">
+        <ul class="mb-0">
+          <li><strong>Civ name &amp; architecture</strong> — carried over directly</li>
+          <li><strong>Tech tree</strong> — units, buildings, and researches preserved</li>
+          <li><strong>Civ bonuses &amp; team bonuses</strong> — IDs and multipliers preserved</li>
+          <li><strong>Unique unit</strong> — KM index mapped to wizard catalog</li>
+          <li><strong>Castle &amp; Imperial UTs</strong> — effect IDs and multipliers preserved</li>
+        </ul>
+        <hr class="my-2">
+        <ul class="mb-0 text-muted">
+          <li>Hero unit, emblem, stat overrides, and advanced flags — not in KM format; set them in the wizard after converting</li>
+          <li>UT names, descriptions, and costs — left blank; fill them in the wizard</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const EF_DRAFT_KEY = "ef_builder_draft";
+let _convertedDraft   = null;
+let _convertedAlias   = "";
+let _wasRedirected    = false;
+
+const dropZone  = document.getElementById("drop-zone");
+const fileInput = document.getElementById("km-file-input");
+const status    = document.getElementById("convert-status");
+const resultCard = document.getElementById("result-card");
+
+dropZone.addEventListener("click",     () => fileInput.click());
+dropZone.addEventListener("dragover",  e => { e.preventDefault(); dropZone.style.background = "oklch(from var(--body-bg) calc(l+0.06) c h)"; });
+dropZone.addEventListener("dragleave", () => { dropZone.style.background = ""; });
+dropZone.addEventListener("drop",      e => { e.preventDefault(); dropZone.style.background = ""; handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change",   () => handleFile(fileInput.files[0]));
+
+// Auto-convert if redirected here from Edit Civ with a pending KM file
+(function _checkPending() {
+  const raw = localStorage.getItem("ef_km_pending");
+  if (!raw) return;
+  localStorage.removeItem("ef_km_pending");
+  _wasRedirected = true;
+  document.getElementById("upload-card").classList.add("d-none");
+  try {
+    convertKm(JSON.parse(raw));
+  } catch(e) {
+    status.className = "alert alert-danger";
+    status.textContent = "Could not parse pending KM file: " + e.message;
+    status.classList.remove("d-none");
+  }
+})();
+
+async function handleFile(file) {
+  if (!file) return;
+  status.className = "alert alert-info";
+  status.textContent = "Reading file…";
+  status.classList.remove("d-none");
+  resultCard.classList.add("d-none");
+  let km;
+  try { km = JSON.parse(await file.text()); }
+  catch (e) { status.className = "alert alert-danger"; status.textContent = "Could not parse JSON: " + e.message; return; }
+  await convertKm(km);
+}
+
+async function convertKm(km) {
+  status.className = "alert alert-info";
+  status.textContent = "Converting…";
+  status.classList.remove("d-none");
+  resultCard.classList.add("d-none");
+  try {
+    const res  = await fetch("/api/builder/convert-km", {
+      method:  "POST",
+      headers: {"Content-Type": "application/json"},
+      body:    JSON.stringify({ km }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      status.className = "alert alert-danger";
+      status.textContent = data.error || "Conversion failed.";
+      return;
+    }
+    _convertedDraft = data.draft;
+    _convertedAlias = data.draft.alias || "converted_civ";
+    status.classList.add("d-none");
+    resultCard.classList.remove("d-none");
+    if (_wasRedirected) {
+      document.getElementById("km-detected-notice").classList.remove("d-none");
+    }
+    document.getElementById("result-notes").textContent =
+      `Converted "${_convertedAlias}" — review each step in the wizard to fill in UT names, costs, hero unit, and any stat overrides.`;
+  } catch (e) {
+    status.className = "alert alert-danger";
+    status.textContent = "Network error: " + e.message;
+  }
+}
+
+document.getElementById("btn-open-wizard").addEventListener("click", () => {
+  if (!_convertedDraft) return;
+  localStorage.setItem(EF_DRAFT_KEY, JSON.stringify(_convertedDraft));
+  window.location.href = "{{ url_for('builder_new') }}";
+});
+
+document.getElementById("btn-download-converted").addEventListener("click", () => {
+  if (!_convertedDraft) return;
+  const filename = (_convertedAlias.toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "converted_civ") + ".civbuilder.json";
+  const blob = new Blob([JSON.stringify(_convertedDraft, null, 2)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+{% endblock %}

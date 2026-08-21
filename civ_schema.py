@@ -15,9 +15,12 @@ to_draft() before passing it through the wizard_build pipeline.
 
 from __future__ import annotations
 
-FORMAT_KEY   = "civbuilder_v1"
-SCHEMA_VER   = 1
+FORMAT_KEY   = "empireforge_v2"
+SCHEMA_VER   = 2
 _DRAFT_VER   = 4   # current wizard draft version
+
+# Legacy format key accepted on read (but never written)
+_FORMAT_KEY_V1 = "civbuilder_v1"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -252,5 +255,15 @@ def from_draft(draft: dict) -> dict:
 
 # ── Format detection ──────────────────────────────────────────────────────────
 
+def is_empireforge(data: dict) -> bool:
+    """Return True for any Empire Forge format (current v2 or legacy v1)."""
+    fmt = data.get("format", "")
+    return fmt in (FORMAT_KEY, _FORMAT_KEY_V1)
+
 def is_civbuilder_v1(data: dict) -> bool:
-    return data.get("format") == FORMAT_KEY
+    """Backward-compat alias for build_all.py."""
+    return is_empireforge(data)
+
+def is_km_format(data: dict) -> bool:
+    """Return True if data looks like a KrakenMeister civ JSON (no 'format' key)."""
+    return not is_empireforge(data) and "bonuses" in data and isinstance(data.get("bonuses"), list)

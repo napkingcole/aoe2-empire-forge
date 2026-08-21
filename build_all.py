@@ -30,7 +30,7 @@ from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
 from version import __version__ as _APP_VERSION
-from civ_schema import is_civbuilder_v1, to_draft as _schema_to_draft
+from civ_schema import is_civbuilder_v1, is_empireforge, to_draft as _schema_to_draft
 from civ_overrides import _apply_uu_overrides, _apply_hero_unit, _override_ut_costs
 from civ_appender import (apply_civ, assign_all_languages,
     DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET,
@@ -438,7 +438,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         raw     = json.loads(json_path.read_text(encoding="utf-8"))
         if is_civbuilder_v1(raw):
             civ_def = _schema_to_draft(raw)
-            print(f"  (civbuilder_v1 format detected — converted via civ_schema)")
+            print(f"  (Empire Forge format detected — converted via civ_schema)")
         else:
             civ_def = raw
         alias = civ_def.get("alias", json_path.stem)

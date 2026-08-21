@@ -5,4 +5,4 @@ GitHub Actions workflow (.github/workflows/*.yml) builds + publishes the
 release that update_check.py polls for.
 """
 
-__version__ = "1.7.4"
+__version__ = "2.0.0-beta.1"

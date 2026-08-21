@@ -169,14 +169,20 @@ function validateStep(n) {
   }
   if (n === 6 || n === 7) {
     const { key, prefix } = UT_STEPS[n];
-    const utName = document.getElementById(`${prefix}-name`)?.value.trim() || draft[key]?.name || "";
-    if (!utName) {
-      const el = document.getElementById(`${prefix}-name`);
-      el?.classList.add("is-invalid");
-      el?.focus();
-      return false;
+    const ut = draft[key] || {};
+    // Vanilla mode with a tech selected is always valid (name populates on grid render)
+    if ((ut.mode || "vanilla") === "vanilla" && ut.vanilla_km_idx != null) {
+      document.getElementById(`${prefix}-name`)?.classList.remove("is-invalid");
+    } else {
+      const utName = document.getElementById(`${prefix}-name`)?.value.trim() || ut.name || "";
+      if (!utName) {
+        const el = document.getElementById(`${prefix}-name`);
+        el?.classList.add("is-invalid");
+        el?.focus();
+        return false;
+      }
+      document.getElementById(`${prefix}-name`)?.classList.remove("is-invalid");
     }
-    document.getElementById(`${prefix}-name`)?.classList.remove("is-invalid");
   }
   return true;
 }
@@ -554,6 +560,25 @@ document.getElementById("btn-export-json").addEventListener("click", async () =>
     btn.innerHTML = '<i class="fa-solid fa-file-export me-2"></i>Save Civilization';
   }
 });
+
+// ── Start Fresh ───────────────────────────────────────────────────────────────
+
+(function _initStartFresh() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("fresh")) return;
+  const existing = draft.alias || (draft.bonuses || []).length || draft.unique_unit;
+  if (!existing) return;
+  // Clean ?fresh from URL immediately so a bookmark/refresh doesn't re-show the modal
+  history.replaceState(null, "", window.location.pathname);
+  const modal = new bootstrap.Modal(document.getElementById("modal-start-fresh"));
+  modal.show();
+  document.getElementById("btn-confirm-fresh").addEventListener("click", () => {
+    localStorage.removeItem(EF_DRAFT_KEY);
+    draft = { bonuses: [], team_bonuses: [] };
+    modal.hide();
+    location.reload();
+  });
+})();
 
 // ── Hero Unit (Step 7) ────────────────────────────────────────────────────────
 
@@ -2222,7 +2247,14 @@ function initUTPanel(step) {
     if (hint)     hint.classList.add("d-none");
   }
 
-  loadUTCosts().then(() => renderUTGrid(step));
+  loadUTCosts().then(() => {
+    renderUTGrid(step);
+    // If vanilla mode + tech selected but name is empty (e.g. converted from KM), auto-populate
+    const ut2 = draft[key] || {};
+    if ((ut2.mode || "vanilla") === "vanilla" && ut2.vanilla_km_idx != null && !ut2.name) {
+      selectVanillaTech(step, ut2.vanilla_km_idx);
+    }
+  });
   renderUTEffectSlots(step);
   _updateUTCostPreview(step);
 }
@@ -2993,6 +3025,20 @@ async function init() {
     renderBonusGrid();
     renderTeamBonusGrid();
   });
+
+  // If loading a filled draft, unlock all step dots immediately so the user
+  // can jump directly to any step without clicking through the whole wizard
+  if (draft.alias && (
+    draft.bonuses?.length ||
+    draft.team_bonuses?.length ||
+    draft.unique_unit?.km_idx != null ||
+    draft.castle_ut?.vanilla_km_idx != null ||
+    draft.castle_ut?.effects?.length ||
+    draft.imperial_ut?.vanilla_km_idx != null ||
+    draft.imperial_ut?.effects?.length
+  )) {
+    maxStep = TOTAL_STEPS;
+  }
 
   showStep(1);
 }

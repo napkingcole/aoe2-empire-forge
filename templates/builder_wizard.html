@@ -826,10 +826,10 @@
     <div class="text-muted small">Loading summary…</div>
   </div>
 
-  {# Save button #}
+  {# Save #}
   <div class="card mb-3">
     <div class="card-header">
-      <span class="step-badge">9</span> Create Civilization
+      <span class="step-badge">9</span> Save Civilization
     </div>
     <div class="card-body">
       <div class="d-grid">
@@ -838,12 +838,33 @@
         </button>
       </div>
       <div class="form-text mt-2 text-center">
-        Save your civilization as a <code>.civbuilder.json</code> file for
-        batch building or sharing with the mod builder.
+        Saves your civ as a <code>.civbuilder.json</code> file. Open it in the
+        <a href="{{ url_for('builder_landing') }}">mod builder</a> to generate a
+        playable mod, or reload it here to keep editing.
       </div>
     </div>
   </div>
 
+</div>
+
+{# Start Fresh modal #}
+<div class="modal fade" id="modal-start-fresh" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">You have an existing civ in progress</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-1">Starting fresh will clear your current work.</p>
+        <p class="small text-muted mb-0">Tip: Save a draft first if you want to keep it.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-continue-existing" class="btn btn-outline-secondary" data-bs-dismiss="modal">Continue Existing</button>
+        <button id="btn-confirm-fresh" class="btn btn-danger">Start Fresh</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 {# ── Navigation ─────────────────────────────────────────────────────────────── #}
