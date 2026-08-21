@@ -9,12 +9,13 @@
     {% set steps = [
       (1, "Identity"),
       (2, "Tech Tree"),
-      (3, "Bonuses"),
-      (4, "Unique Unit"),
-      (5, "Castle UT"),
-      (6, "Imperial UT"),
-      (7, "Team Bonus"),
-      (8, "Review"),
+      (3, "Civ Bonuses"),
+      (4, "Team Bonus"),
+      (5, "Unique Unit"),
+      (6, "Castle UT"),
+      (7, "Imperial UT"),
+      (8, "Hero Unit"),
+      (9, "Review"),
     ] %}
     {% for num, label in steps %}
     <div class="wizard-step" id="wstep-{{ num }}" data-step="{{ num }}">
@@ -208,6 +209,8 @@
     <div class="card-body">
       <p class="text-muted small mb-3">Choose up to 6 civilization bonuses. Click a card to select it; click again to remove it.</p>
 
+      <div id="bonus-cat-pills" class="bonus-cat-pills mb-2"></div>
+
       <div class="input-group mb-3">
         <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
           <i class="fa-solid fa-magnifying-glass text-muted"></i>
@@ -221,13 +224,19 @@
     </div>
   </div>
 
-  {# Team bonus #}
+</div>
+
+{# Step 4 — Team Bonus #}
+<div class="wizard-panel d-none" id="panel-4">
   <div class="card mb-3">
     <div class="card-header">
+      <span class="step-badge">4</span>
       <i class="fa-solid fa-people-group me-1" style="color: var(--accent-2);"></i> Team Bonus
     </div>
     <div class="card-body">
       <p class="text-muted small mb-3">Choose one bonus that applies to all allied civilizations. Click to select, click again to remove.</p>
+
+      <div id="team-bonus-cat-pills" class="bonus-cat-pills mb-2"></div>
 
       <div class="input-group mb-3">
         <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
@@ -241,13 +250,12 @@
       </div>
     </div>
   </div>
-
 </div>
 
 {# Step 4 — Unique Unit #}
-<div class="wizard-panel d-none" id="panel-4">
+<div class="wizard-panel d-none" id="panel-5">
   <div class="card mb-3">
-    <div class="card-header"><span class="step-badge">4</span> Unique Unit</div>
+    <div class="card-header"><span class="step-badge">5</span> Unique Unit</div>
     <div class="card-body">
 
       <p class="text-muted small mb-3">
@@ -565,6 +573,7 @@
 
       {# ── Vanilla section: searchable card grid ── #}
       <div id="{{ prefix }}-vanilla-section">
+        <div id="{{ prefix }}-cat-pills" class="bonus-cat-pills mb-2"></div>
         <div class="input-group mb-3">
           <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);">
             <i class="fa-solid fa-magnifying-glass text-muted"></i>
@@ -572,7 +581,7 @@
           <input type="text" id="{{ prefix }}-vanilla-search" class="form-control"
                  placeholder="Search technologies… e.g. infantry, cavalry, monk" autocomplete="off">
         </div>
-        <div id="{{ prefix }}-vanilla-grid" class="ut-grid mb-3">
+        <div id="{{ prefix }}-vanilla-grid" class="bonus-grid ut-grid mb-3">
           <div class="text-muted small fst-italic">Loading…</div>
         </div>
         <div id="{{ prefix }}-vanilla-hint" class="text-center py-2 text-muted small fst-italic">
@@ -691,18 +700,18 @@
 </div>
 {% endmacro %}
 
-{# Step 5 — Castle UT #}
-{{ ut_panel(5, "cut", "fa-solid fa-chess-rook", "Castle Age") }}
+{# Step 6 — Castle UT #}
+{{ ut_panel(6, "cut", "fa-solid fa-chess-rook", "Castle Age") }}
 
-{# Step 6 — Imperial UT #}
-{{ ut_panel(6, "iut", "fa-solid fa-crown", "Imperial Age") }}
+{# Step 7 — Imperial UT #}
+{{ ut_panel(7, "iut", "fa-solid fa-crown", "Imperial Age") }}
 
-{# Step 7 — Hero Unit #}
-<div class="wizard-panel d-none" id="panel-7">
+{# Step 8 — Hero Unit #}
+<div class="wizard-panel d-none" id="panel-8">
   <div class="card mb-3">
     <div class="card-header">
       <i class="fa-solid fa-star me-1" style="color: var(--accent-2);"></i>
-      <span class="step-badge">7</span> Hero Unit
+      <span class="step-badge">8</span> Hero Unit
       <span class="badge bg-secondary ms-2" style="font-size:.65rem;font-weight:500;">Optional</span>
     </div>
     <div class="card-body">
@@ -720,7 +729,7 @@
       </div>
 
       {# Hero icon grid (populated by JS) #}
-      <div id="hero-grid" class="d-flex flex-wrap gap-2 mb-3" style="min-height:72px;">
+      <div id="hero-grid" class="uu-grid mb-3" style="min-height:72px;">
       </div>
 
       {# Selected banner + clear #}
@@ -809,79 +818,28 @@
   </div>
 </div>
 
-{# Step 8 — Review #}
-<div class="wizard-panel d-none" id="panel-8">
+{# Step 9 — Review #}
+<div class="wizard-panel d-none" id="panel-9">
 
   {# Summary sections (populated by JS) #}
   <div id="review-content" class="mb-3">
     <div class="text-muted small">Loading summary…</div>
   </div>
 
-  {# Replace slot #}
+  {# Save button #}
   <div class="card mb-3">
     <div class="card-header">
-      <i class="fa-solid fa-arrows-rotate me-1" style="color: var(--accent-2);"></i>
-      Replace Vanilla Slot
+      <span class="step-badge">9</span> Create Civilization
     </div>
     <div class="card-body">
-      <p class="text-muted small mb-2">
-        Your custom civ will overwrite this vanilla civ's DAT slot.
-        The original civ's name, art, and bonuses are replaced — only the game assets remain.
-      </p>
-      <div class="row g-2 align-items-center">
-        <div class="col-md-5">
-          <select id="replace-civ-select" class="form-select">
-            <option value="Goths">Goths (default)</option>
-          </select>
-        </div>
-        <div class="col text-muted small">
-          Pick a vanilla civ you don't mind overwriting in this save.
-        </div>
+      <div class="d-grid">
+        <button id="btn-export-json" class="btn btn-primary btn-lg">
+          <i class="fa-solid fa-file-export me-2"></i>Save Civilization
+        </button>
       </div>
-    </div>
-  </div>
-
-  {# Generate button #}
-  <div class="card mb-3">
-    <div class="card-header">
-      <span class="step-badge">8</span> Generate Mod
-    </div>
-    <div class="card-body">
-      <div id="build-error" class="alert alert-danger d-none mb-3 small"></div>
-      <div id="build-success" class="d-none">
-        <div class="alert alert-success small mb-3">
-          <i class="fa-solid fa-circle-check me-1"></i>
-          Mod built successfully!
-        </div>
-        <p class="text-muted small mb-3">
-          Your download contains two zip files — install both as AoE2 DE mods:
-          <br><strong>-data.zip</strong> contains the DAT changes.
-          <br><strong>-ui.zip</strong> contains strings, emblems, and voice files.
-        </p>
-        <a id="build-download-link" href="#" class="btn btn-primary">
-          <i class="fa-solid fa-download me-1"></i>
-          <span id="build-download-name">Download Mod</span>
-        </a>
-      </div>
-      <div id="build-form" class="">
-        <div class="d-grid">
-          <button id="btn-generate" class="btn btn-primary btn-lg">
-            <i class="fa-solid fa-hammer me-2"></i>Generate Mod
-          </button>
-        </div>
-        <div class="form-text mt-2 text-center">
-          Requires the DAT file path set in Step 1.
-        </div>
-        <hr class="my-3">
-        <div class="d-grid">
-          <button id="btn-export-json" class="btn btn-outline-secondary">
-            <i class="fa-solid fa-file-export me-2"></i>Export as JSON
-          </button>
-        </div>
-        <div class="form-text mt-1 text-center">
-          Save your civ definition as a <code>.civbuilder.json</code> file for
-          batch building or sharing.
-        </div>
+      <div class="form-text mt-2 text-center">
+        Save your civilization as a <code>.civbuilder.json</code> file for
+        batch building or sharing with the mod builder.
       </div>
     </div>
   </div>
@@ -893,7 +851,7 @@
   <button id="btn-prev" class="btn btn-outline-primary" disabled>
     <i class="fa-solid fa-arrow-left me-1"></i> Previous
   </button>
-  <div class="text-muted small" id="step-counter">Step 1 of 8</div>
+  <div class="text-muted small" id="step-counter">Step 1 of 9</div>
   <button id="btn-next" class="btn btn-primary">
     Next <i class="fa-solid fa-arrow-right ms-1"></i>
   </button>

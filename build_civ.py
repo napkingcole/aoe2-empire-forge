@@ -27,7 +27,7 @@ import zipfile
 from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
-from civ_appender import apply_civ, _KM_UU_TECHS, _KM_UU_NAMES
+from civ_appender import apply_civ, _KM_UU_TECHS, _KM_UU_NAMES, get_km_uu_index, get_civ_bonuses, get_team_bonuses
 import km_custom_uu
 
 # Languages KM ships string files for.
@@ -57,6 +57,21 @@ KM_TECHTREE_ORDER = [
     # South American DLC civs — positions 56-58, dat slots 57-59
     "Muisca", "Mapuche", "Tupi",
 ]
+
+
+def _tree_sets(civ_def: dict) -> tuple[set, set, set]:
+    """Return (unit_ids, building_ids, tech_ids) from either tree format.
+
+    Old KM format: tree = [[units], [buildings], [techs]]
+    Wizard format: tree = {"units": [...], "buildings": [...], "techs": [...]}
+    """
+    raw = civ_def.get("tree", {})
+    if isinstance(raw, dict):
+        return set(raw.get("units", [])), set(raw.get("buildings", [])), set(raw.get("techs", []))
+    u = set(raw[0]) if len(raw) > 0 and isinstance(raw[0], list) else set()
+    b = set(raw[1]) if len(raw) > 1 and isinstance(raw[1], list) else set()
+    t = set(raw[2]) if len(raw) > 2 and isinstance(raw[2], list) else set()
+    return u, b, t
 
 
 def _civ_file_name(civ_name: str) -> str:
@@ -90,7 +105,8 @@ def _find_civ_slot(dat, name: str) -> int | None:
 def _decode_flag(civ_def: dict) -> bytes | None:
     """Decode customFlagData base64 PNG/JPG, resize to 104×104, return PNG bytes."""
     import io
-    raw = civ_def.get("customFlagData", "")
+    # civbuilder_v1 wizard saves as "emblem"; old KM format used "customFlagData".
+    raw = civ_def.get("customFlagData") or civ_def.get("emblem") or ""
     if not raw:
         return None
     # Strip data-URI prefix for any image format.
@@ -246,10 +262,7 @@ def _patch_techtree_entry(data: dict, replaced_civ_id: str, civ_def: dict) -> in
     Returns the number of changed nodes, or -1 if the civ_id wasn't found.
     Mutates data in place — call json.dumps() when done with all civs.
     """
-    tree = civ_def.get("tree", [[], [], []])
-    unit_ids     = set(tree[0]) if len(tree) > 0 and isinstance(tree[0], list) else set()
-    building_ids = set(tree[1]) if len(tree) > 1 and isinstance(tree[1], list) else set()
-    tech_ids     = set(tree[2]) if len(tree) > 2 and isinstance(tree[2], list) else set()
+    unit_ids, building_ids, tech_ids = _tree_sets(civ_def)
 
     target_id = _canonical_techtree_id(replaced_civ_id)
     entry = None
@@ -342,9 +355,7 @@ def _resolve_uu_info(civ_def: dict, dat, slot: int,
         Without civ_result, custom UUs can't be resolved here at all — caller
         must pass it through (apply_civ's return value).
     """
-    bonuses = civ_def.get("bonuses", [])
-    uu_refs = bonuses[1] if len(bonuses) > 1 else []
-    km_uu_idx = uu_refs[0] if uu_refs and isinstance(uu_refs[0], int) else None
+    km_uu_idx = get_km_uu_index(civ_def)
     if km_uu_idx is None:
         return None
 
@@ -379,7 +390,8 @@ def _resolve_uu_info(civ_def: dict, dat, slot: int,
             # matches vanilla's own offset convention) and silently breaks
             # for KM-custom ones (pool ids aren't offset-related at all).
             "dll_help": u.language_dll_help,
-            "name":     _KM_UU_NAMES.get(km_uu_idx, "Unique Unit"),
+            # Custom name from wizard overrides the KM name table.
+            "name":     (civ_def.get("unique_unit") or {}).get("name") or _KM_UU_NAMES.get(km_uu_idx, "Unique Unit"),
         }
     except (IndexError, AttributeError):
         return None
@@ -405,10 +417,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
         print(f"  WARNING: Could not read {civ_json_path.name}: {e}")
         return None
 
-    tree = civ_def.get("tree", [[], [], []])
-    unit_ids     = set(tree[0]) if len(tree) > 0 and isinstance(tree[0], list) else set()
-    building_ids = set(tree[1]) if len(tree) > 1 and isinstance(tree[1], list) else set()
-    tech_ids     = set(tree[2]) if len(tree) > 2 and isinstance(tree[2], list) else set()
+    unit_ids, building_ids, tech_ids = _tree_sets(civ_def)
 
     uu_unit_info: dict | None = None
     if dat is not None and slot is not None:

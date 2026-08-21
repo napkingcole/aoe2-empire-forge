@@ -22,6 +22,16 @@ let _localtree = { units: [], buildings: [], techs: [] };
 let _currentCivName = null;
 // Reverse map: node_id → [civName, ...] — built once after data loads
 let _nodeIdToCivs = {};
+// node_id (number) → units_techs item — rebuilt each time civ() renders
+let _nodeIndex = {};
+let _successorIndex = {};
+// building_id → [units_techs items] — for cascade-disable when a building is toggled off
+let _buildingItems = {};
+// item.id → building object — fallback for highlight path when parentConnections has no entry
+let _itemToBuilding = {};
+
+// Buildings that are always enabled and cannot be toggled (TC, Mining/Lumber Camp, Mill)
+const ALWAYS_ON_BUILDINGS = new Set([109, 621, 584, 562, 68]);
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
@@ -39,7 +49,9 @@ function loadJson(file, callback) {
 
 function formatName(name) {
     if (name === undefined || name === null) return '?';
-    return name.replace(/<br\s*\/?>/gi, ' ').trim();
+    // Keep <br>\n as a plain \n so SVG.js creates two tspan lines for long names.
+    // Strip the HTML tag but preserve the newline character.
+    return name.replace(/<br\s*\/?>\n?/gi, '\n').trim();
 }
 
 function resetHighlightPath() {
@@ -50,18 +62,34 @@ function resetHighlightPath() {
 function unhighlightPath() {
     SVG.find('.node.is-highlight, .connection.is-highlight')
         .each((el) => el.removeClass('is-highlight'));
+    document.querySelectorAll('[id$="_bg"]').forEach(el => {
+        el.removeAttribute('stroke');
+        el.removeAttribute('stroke-width');
+    });
 }
 
 function highlightPath(caretId) {
+    const visited = new Set();
     recurse(caretId);
     function recurse(caretId) {
+        if (visited.has(caretId)) return;
+        visited.add(caretId);
         SVG('#' + caretId).addClass('is-highlight');
+        // Directly stroke the background rect — reliable in SVG where CSS outline may not render.
+        const bg = document.getElementById(caretId + '_bg');
+        if (bg) { bg.setAttribute('stroke', '#fff'); bg.setAttribute('stroke-width', '2'); }
         const parentIds = parentConnections.get(caretId);
-        if (!parentIds) return;
-        for (let parentId of parentIds) {
-            const line = SVG(`#connection_${parentId}_${caretId}`);
-            if (line) line.front().addClass('is-highlight');
-            recurse(parentId);
+        if (parentIds) {
+            for (let parentId of parentIds) {
+                const line = SVG(`#connection_${parentId}_${caretId}`);
+                if (line) line.front().addClass('is-highlight');
+                recurse(parentId);
+            }
+        } else {
+            // No explicit connection in the layout (item stacked under another in the same
+            // column with a now-broken chain). Climb to the owning building anyway.
+            const building = _itemToBuilding[caretId];
+            if (building) recurse(building.id);
         }
     }
 }
@@ -289,38 +317,122 @@ function _useTypeKey(useType) {
 }
 
 function _isSelected(item) {
+    if (item.use_type === 'Building' && ALWAYS_ON_BUILDINGS.has(item.node_id)) return true;
     const key = _useTypeKey(item.use_type);
     if (!key) return true;  // unknown types treated as always-selected
     return _localtree[key].includes(item.node_id);
 }
 
+// Walk the successor index to collect all items that depend on this one (BFS).
+function _getDescendants(item) {
+    const descendants = [];
+    const queue = [item];
+    const visited = new Set();
+    while (queue.length > 0) {
+        const current = queue.shift();
+        const key = `${current.building_id}_${current.node_id}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+        for (const child of (_successorIndex[key] || [])) {
+            descendants.push(child);
+            queue.push(child);
+        }
+    }
+    return descendants;
+}
+
+// Walk the link_id chain to collect all predecessor items (earliest first).
+function _getAncestors(item) {
+    const ancestors = [];
+    const visited = new Set();
+    let current = item;
+    while (true) {
+        let key;
+        if (current.use_type === 'Building') {
+            // Buildings chain via building_upgraded_from_id; both parent and child
+            // have node_id === building_id so keys are node_id_node_id.
+            const fromId = current.building_upgraded_from_id;
+            if (fromId === undefined || fromId === -1) break;
+            key = `${fromId}_${fromId}`;
+        } else {
+            const lid = current.link_id;
+            if (lid === null || lid === undefined || lid === -1) break;
+            key = `${current.building_id}_${lid}`;
+        }
+        if (visited.has(key)) break;
+        visited.add(key);
+        const ancestor = _nodeIndex[key];
+        if (!ancestor) break;
+        ancestors.push(ancestor);
+        current = ancestor;
+    }
+    return ancestors;
+}
+
+function _removeNodeCross(itemId) {
+    document.getElementById(`${itemId}_disabled_gray`)?.remove();
+    document.getElementById(`${itemId}_x`)?.remove();
+}
+
+function _addNodeCross(item, element_height) {
+    const group = SVG('#' + item.id);
+    if (!group) return;
+    group.rect(element_height, element_height)
+        .attr({ fill: '#000', opacity: 0.2, id: `${item.id}_disabled_gray` })
+        .move(item.x, item.y);
+    group.image(_imgroot + '/cross.png')
+        .size(element_height * 0.7, element_height * 0.7)
+        .attr({ id: item.id + '_x' })
+        .addClass('cross')
+        .move(item.x + element_height * 0.15, item.y - element_height * 0.04);
+    // Keep overlay on top so it continues receiving clicks.
+    const overlayDom = document.getElementById(`${item.id}_overlay`);
+    if (overlayDom) overlayDom.parentNode.appendChild(overlayDom);
+}
+
+function _disableSingle(item, element_height) {
+    const key = _useTypeKey(item.use_type);
+    if (!key) return;
+    const arr = _localtree[key];
+    const idx = arr.indexOf(item.node_id);
+    if (idx !== -1) { arr.splice(idx, 1); _addNodeCross(item, element_height); }
+}
+
+function _disableBuildingItems(building, element_height) {
+    for (const child of (_buildingItems[building.node_id] || [])) {
+        _disableSingle(child, element_height);
+    }
+}
+
 function _toggleNode(item, element_height) {
+    // Always-on buildings cannot be toggled.
+    if (item.use_type === 'Building' && ALWAYS_ON_BUILDINGS.has(item.node_id)) return;
+
     const key = _useTypeKey(item.use_type);
     if (!key) return;
     const arr = _localtree[key];
     const idx = arr.indexOf(item.node_id);
     if (idx === -1) {
-        // add — remove cross overlay via native DOM (SVG.js selector is unreliable here)
+        // Enable: add this item, then cascade-enable all ancestors in the upgrade chain.
         arr.push(item.node_id);
-        document.getElementById(`${item.id}_disabled_gray`)?.remove();
-        document.getElementById(`${item.id}_x`)?.remove();
+        _removeNodeCross(item.id);
+        for (const ancestor of _getAncestors(item)) {
+            if (ancestor.use_type === 'Building' && ALWAYS_ON_BUILDINGS.has(ancestor.node_id)) continue;
+            const aKey = _useTypeKey(ancestor.use_type);
+            if (!aKey) continue;
+            const aArr = _localtree[aKey];
+            if (!aArr.includes(ancestor.node_id)) {
+                aArr.push(ancestor.node_id);
+                _removeNodeCross(ancestor.id);
+            }
+        }
     } else {
-        // remove — add cross overlay, then move the click-capture rect back on top
-        arr.splice(idx, 1);
-        const group = SVG('#' + item.id);
-        if (group) {
-            group.rect(element_height, element_height)
-                .attr({ fill: '#000', opacity: 0.2, id: `${item.id}_disabled_gray` })
-                .move(item.x, item.y);
-            group.image(_imgroot + '/cross.png')
-                .size(element_height * 0.7, element_height * 0.7)
-                .attr({ id: item.id + '_x' })
-                .addClass('cross')
-                .move(item.x + element_height * 0.15, item.y - element_height * 0.04);
-            // Gray rect + cross were appended after the overlay, covering it.
-            // Move the overlay DOM node to the end so it stays on top and receives clicks.
-            const overlayDom = document.getElementById(`${item.id}_overlay`);
-            if (overlayDom) overlayDom.parentNode.appendChild(overlayDom);
+        // Disable: cascade to upgrade-chain successors; also clear all items in any disabled building.
+        _disableSingle(item, element_height);
+        if (item.use_type === 'Building') _disableBuildingItems(item, element_height);
+        for (const desc of _getDescendants(item)) {
+            _disableSingle(desc, element_height);
+            if (desc.use_type === 'Building') _disableBuildingItems(desc, element_height);
         }
     }
 }
@@ -337,6 +449,19 @@ function _buildNodeIdToCivs() {
             }
         }
     }
+}
+
+function _helpText(item) {
+    const helpId = item.name_string_id + (item.use_type === 'Tech' ? 11000 : 12000);
+    let raw = data.strings[String(helpId)];
+    if (!raw) return '';
+    // Drop placeholder tokens (‹cost›, ‹hp›, ‹attack›, etc.)
+    raw = raw.replace(/‹[^›]*›/g, '').replace(/‹DEFAULT›/g, '');
+    // The first line repeats the name/action — skip it; show only the description body.
+    const brMatch = raw.match(/<br\s*\/?>\n?/i);
+    if (brMatch) raw = raw.slice(brMatch.index + brMatch[0].length);
+    // Collapse whitespace and trim
+    return raw.replace(/\s+/g, ' ').trim();
 }
 
 function _costHtml(costObj) {
@@ -379,7 +504,12 @@ function _showEditTooltip(itemToDraw, svgX, svgY) {
         ? `<div style="margin-top:4px;font-size:11px;opacity:.7;">${haveCivs} / ${totalCivs} civs</div>`
         : '';
 
-    content.innerHTML = `<div style="font-weight:700;font-size:13px;">${name}</div>${costLine}${statsLine}${civLine}`;
+    const desc = _helpText(itemToDraw);
+    const descLine = desc
+        ? `<div style="margin-top:5px;font-size:11px;line-height:1.4;opacity:.88;">${desc}</div>`
+        : '';
+
+    content.innerHTML = `<div style="font-weight:700;font-size:13px;">${name}</div>${costLine}${statsLine}${descLine}${civLine}`;
     document.getElementById('helptext__advanced_stats').innerHTML = '';
     panel.style.display = 'block';
 
@@ -389,10 +519,16 @@ function _showEditTooltip(itemToDraw, svgX, svgY) {
     const scrollX = wrap ? wrap.scrollLeft : 0;
     const offsetX = treeEl ? treeEl.getBoundingClientRect().left - (wrap?.getBoundingClientRect().left || 0) + scrollX : 0;
     let left = svgX + offsetX + 10;
-    let top  = svgY + 10;
-    const pw = panel.offsetWidth || 180;
-    const ww = wrap ? wrap.offsetWidth : window.innerWidth;
+    const pw = panel.offsetWidth  || 260;
+    const ph = panel.offsetHeight || 80;
+    const ww = wrap ? wrap.offsetWidth  : window.innerWidth;
+    const wh = wrap ? wrap.getBoundingClientRect().height : window.innerHeight;
+    // Flip horizontally if the tooltip would overflow the right edge.
     if (left + pw > ww + scrollX) left = svgX + offsetX - pw - 10;
+    // Flip vertically: grow upward when the tooltip would go below the fold.
+    let top = svgY + 10;
+    if (top + ph > wh) top = svgY - ph - 5;
+    top = Math.max(5, top);  // clamp so it never clips the top edge
     panel.style.left = left + 'px';
     panel.style.top  = top  + 'px';
 }
@@ -428,20 +564,25 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
     }).move(itemToDraw.x, itemToDraw.y);
 
     const name = formatName(data.strings[itemToDraw.name_string_id]);
+    // Text anchored near the card bottom. SVG.js splits on \n → two tspans stacking downward,
+    // so position the first line high enough that the second line still clears the card edge.
     item.text(name.toString())
-        .font({ size: 9, weight: 'bold' })
-        .attr({ fill: '#1a1a1a', opacity: 0.9, 'text-anchor': 'middle', id: itemToDraw.id + '_text' })
+        .font({ size: 11, weight: '500', leading: 0.85 })
+        .attr({ fill: '#fff', opacity: 1, 'text-anchor': 'middle', id: itemToDraw.id + '_text' })
         .cx(itemToDraw.x + element_height / 2)
-        .y(itemToDraw.y + element_height / 1.5);
+        .y(itemToDraw.y + element_height * 0.67);
 
-    item.rect(element_height * 0.6, element_height * 0.6)
+    // Image occupies the top 58% of the card, centered horizontally.
+    const imgSize = element_height * 0.58;
+    const imgX = itemToDraw.x + (element_height - imgSize) / 2;
+    item.rect(imgSize, imgSize)
         .attr({ fill: '#ffffff', opacity: 0.3, id: itemToDraw.id + '_imgph' })
-        .move(itemToDraw.x + element_height * 0.2, itemToDraw.y);
+        .move(imgX, itemToDraw.y + 2);
 
     item.image(_imgroot + '/' + itemToDraw.use_type + '/' + itemToDraw.picture_index + '.png')
-        .size(element_height * 0.6, element_height * 0.6)
+        .size(imgSize, imgSize)
         .attr({ id: itemToDraw.id + '_img' })
-        .move(itemToDraw.x + element_height * 0.2, itemToDraw.y);
+        .move(imgX, itemToDraw.y + 2);
 
     // In edit mode: show cross if not in localtree; otherwise use node_status
     const disabled = _canEdit ? !_isSelected(itemToDraw) : (itemToDraw.node_status === 'NotAvailable');
@@ -487,23 +628,80 @@ function shiftKeyIsNotPressed(e) { return !e.shiftKey; }
 
 // ── civ() — load and render a per-civ tree ────────────────────────────────────
 
+// Common (non-civ-specific) castle tech node_ids that are always shown.
+const COMMON_CASTLE_TECH_IDS = new Set([315, 379, 408, 321]); // Conscription, Hoardings, Spies, Sappers
+
+function _stripCastleUuAndUt(treeData) {
+    const utIndex = {};
+    for (const ut of treeData.units_techs) utIndex[ut.id] = ut;
+    for (const b of treeData.buildings) {
+        if (b.name !== 'Castle') continue;
+        for (let r = 0; r < b.grid.length; r++) {
+            for (let c = 0; c < b.grid[r].length; c++) {
+                const id = b.grid[r][c];
+                if (!id) continue;
+                const ut = utIndex[id];
+                if (!ut) continue;
+                if (ut.node_type === 'UniqueUnit') { b.grid[r][c] = null; continue; }
+                if (ut.use_type === 'Tech' && !COMMON_CASTLE_TECH_IDS.has(ut.node_id)) {
+                    b.grid[r][c] = null;
+                }
+            }
+        }
+    }
+}
+
 function civ(civName) {
     _currentCivName = civName;
     const era = (data.civs && data.civs[civName]) ? data.civs[civName].era : 'base';
 
     loadJson(_treeroot + '/' + civName.toUpperCase() + '.json', function (treeData) {
+        _stripCastleUuAndUt(treeData);
         const root = document.getElementById('root');
         if (root) document.getElementById('techtree').removeChild(root);
 
         const tree_height = Math.max(window.innerHeight - 80, 100);
         const row_height  = tree_height / 4;
-        const element_height = row_height / 3;
+        const element_height = row_height * 0.38;
 
         const connections = [];
         const index = {};
-        for (const building of treeData.buildings) index[building.id] = building;
+        _nodeIndex = {};
+        _successorIndex = {};
+        _buildingItems = {};
+        _itemToBuilding = {};
+        // Guarantee always-on buildings are present in _localtree regardless of saved state.
+        for (const id of ALWAYS_ON_BUILDINGS) {
+            if (!_localtree.buildings.includes(id)) _localtree.buildings.push(id);
+        }
+        for (const building of treeData.buildings) {
+            index[building.id] = building;
+            // Buildings are keyed as node_id_node_id (since building_id === node_id for buildings).
+            _nodeIndex[`${building.node_id}_${building.node_id}`] = building;
+            // Use building_upgraded_from_id (not link_id) to determine the real
+            // upgrade chain, avoiding false dependencies like Outpost→Watch Tower.
+            const fromId = building.building_upgraded_from_id;
+            if (fromId !== undefined && fromId !== -1) {
+                const parentKey = `${fromId}_${fromId}`;
+                if (!_successorIndex[parentKey]) _successorIndex[parentKey] = [];
+                _successorIndex[parentKey].push(building);
+            }
+        }
         for (const item of treeData.units_techs) {
             index[item.id] = item;
+            // Key by building_id+node_id to avoid conflicts when different buildings
+            // share a node_id (e.g. node 93 = Spearman in Barracks AND a University tech).
+            _nodeIndex[`${item.building_id}_${item.node_id}`] = item;
+            if (item.link_id !== null && item.link_id !== undefined && item.link_id !== -1) {
+                const parentKey = `${item.building_id}_${item.link_id}`;
+                if (!_successorIndex[parentKey]) _successorIndex[parentKey] = [];
+                _successorIndex[parentKey].push(item);
+            }
+            if (!_buildingItems[item.building_id]) _buildingItems[item.building_id] = [];
+            _buildingItems[item.building_id].push(item);
+            // Used by highlightPath to climb to the parent building even when no
+            // visual connection line exists (e.g. Caravan/Guilds stacked below Trade Cart).
+            _itemToBuilding[item.id] = index[`Building_${item.building_id}_${item.building_id}`] || null;
             item.y = item.row * row_height / 2 + TOP_PADDING;
         }
 
@@ -690,18 +888,18 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
     const ttStyle = document.createElement('style');
     ttStyle.id = 'tt-tree-styles';
     ttStyle.textContent = `
-        .connection.is-highlight { stroke: #8b4000 !important; stroke-width: 2.5px !important; }
-        .node.is-highlight .node__overlay { outline: 2px solid rgba(139,64,0,0.5); border-radius: 2px; }
+        .connection.is-highlight { stroke: #fff !important; stroke-width: 2px !important; }
+        .node.is-highlight .node__overlay { outline: 2px solid #fff; border-radius: 2px; }
         #helptext {
             background: rgba(245,225,170,0.97);
             border: 1px solid #8b6d35;
             border-radius: 6px;
             padding: 9px 12px;
-            font-size: 12px;
+            font-size: 14px;
             color: #2a1a05;
             pointer-events: none;
             box-shadow: 2px 3px 10px rgba(0,0,0,0.25);
-            max-width: 200px;
+            width: 400px;
             line-height: 1.4;
         }
         #helptext details { display: none; }
@@ -728,12 +926,12 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
     document.body.appendChild(container);
 
     // Scroll-to-horizontal with mouse wheel
-    treeWrap.addEventListener('wheel', function (e) {
-        if (e.deltaX !== 0) return;
-        if (!e.shiftKey && treeEl.scrollHeight <= treeEl.clientHeight) {
-            treeWrap.scrollLeft += e.deltaY > 0 ? 150 : -150;
-        }
-    });
+    // treeWrap.addEventListener('wheel', function (e) {
+    //     if (e.deltaX !== 0) return;
+    //     if (!e.shiftKey && treeEl.scrollHeight <= treeEl.clientHeight) {
+    //         treeWrap.scrollLeft += e.deltaY > 0 ? 150 : -150;
+    //     }
+    // });
 
     // Load data then render
     const dataUrl = relativepath + '/aoe2techtree/data/data.json';
@@ -787,6 +985,6 @@ function _fillAll() {
 }
 
 function _disableAll() {
-    _localtree = { units: [], buildings: [], techs: [] };
+    _localtree = { units: [], buildings: [...ALWAYS_ON_BUILDINGS], techs: [] };
     if (_currentCivName) civ(_currentCivName);
 }

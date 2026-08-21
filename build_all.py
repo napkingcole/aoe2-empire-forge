@@ -33,7 +33,8 @@ from version import __version__ as _APP_VERSION
 from civ_schema import is_civbuilder_v1, to_draft as _schema_to_draft
 from civ_overrides import _apply_uu_overrides, _apply_hero_unit, _override_ut_costs
 from civ_appender import (apply_civ, assign_all_languages,
-    DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET)
+    DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET,
+    get_civ_bonuses, get_team_bonuses, get_ut_entries, get_km_uu_index)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
@@ -102,6 +103,15 @@ _UNIQUE_CASTLE_STRINGS = [
     "Replaceable Parts (Siege units +1/+1P armor, repairing siege is free)",
     "Silk Road (Trade units cost -50%)",
     "Coiled Serpent Array (Spearman-line and Unique Unit gain HP when near each other)",
+    # Chinese DLC (slots 56-59)
+    "Red Cliffs Tactics (Demolition Ships and Fire Archers deal fire damage to ships and buildings)",
+    "Tuntian (Soldiers passively produce food)",
+    "Fortified Bastions (Fortifications regenerate 500 HP per minute)",
+    "Lamellar Armor (Infantry and Skirmishers reflect 25% melee damage back to the attacker)",
+    # Mesoamerican DLC — Mapuche, Tupi, Muisca (slots 60-62)
+    "Malon (Bolas Riders, Slingers and Skirmishers deal pass through damage)",
+    "Caciques (Champi Warriors and Slingers attack +25% faster)",
+    "Herbalism (Archer-line and Champi Warriors move +15% faster)",
 ]
 
 _UNIQUE_IMP_STRINGS = [
@@ -164,6 +174,10 @@ _UNIQUE_IMP_STRINGS = [
     "Ming Guang Armor (Mounted units +4 melee armor)",
     "Thunderclap Bombs (Rocket Carts, Grenadiers detonate when defeated)",
     "Ordo Cavalry (Cavalry regenerates HP in combat)",
+    # Mesoamerican DLC — Mapuche, Tupi, Muisca (slots 59-61)
+    "Butalmapu (Team: Castle Unique Units and Bolas Riders cost -15%)",
+    "Curare (Foot Archers and Fortifications deal poison damage)",
+    "Huaracas (Slingers +1 range; train +50% faster)",
 ]
 
 _BONUS_NAMES: dict[str, str] = json.loads(
@@ -224,14 +238,10 @@ def _ut_name(bonus_id: int | None, castle: bool) -> str:
 
 
 def _ut_bonus_id(civ_def: dict, group: int) -> int | None:
-    """Extract bonus ID from bonuses[group][0][0], or None if absent."""
-    bonuses = civ_def.get("bonuses", [])
-    if len(bonuses) <= group:
-        return None
-    grp = bonuses[group]
-    if not grp or not isinstance(grp[0], list):
-        return None
-    return int(grp[0][0])
+    """Return the first bonus ID for a UT group, or None if absent."""
+    which = "castle_ut" if group == 2 else "imperial_ut"
+    entries = get_ut_entries(civ_def, which)
+    return int(entries[0][0]) if entries else None
 
 
 def _build_combined_data_zip(dat,
@@ -531,11 +541,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
 
         # Build civ selection screen description.
         description = civ_def.get("description", "")
-        bonuses_raw  = civ_def.get("bonuses", [])
-        civ_bonuses  = bonuses_raw[0] if bonuses_raw and isinstance(bonuses_raw[0], list) else []
-        team_bonus_entries = (bonuses_raw[4]
-                              if len(bonuses_raw) > 4 and isinstance(bonuses_raw[4], list)
-                              else [])
+        civ_bonuses        = get_civ_bonuses(civ_def)
+        team_bonus_entries = get_team_bonuses(civ_def)
 
         # Strict vanilla format (verified against game's key-value-strings-utf8.txt
         # 2026-06-12): spaces appear ONLY after `<b>Section:<b>` tags before \n.
@@ -621,11 +628,9 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 desc = paren.rstrip(")") if paren else ""
                 string_lines[lang].append(f'{name_sid_ut} "{short}"')
                 # lang_desc in the DAT tech points to name_sid+DLL_CREATION_OFFSET
-                # (name_sid+1000). UT_POOL_OFFSET now uses the 44000-range so +1000
-                # lands in the 45000-range (safe empty vanilla slots). The Castle
-                # button description area reads this SID and shows "Name (effect)".
-                desc_text = f"{short} ({desc})" if desc else short
-                string_lines[lang].append(f'{name_sid_ut + DLL_CREATION_OFFSET} "{desc_text}"')
+                # (name_sid+1000). The Castle research button reads this SID.
+                # Use just the short name so the button label fits on one line.
+                string_lines[lang].append(f'{name_sid_ut + DLL_CREATION_OFFSET} "Research {short}"')
                 # Castle UI reads name_sid+21000 for UT button hover tooltips.
                 # UT_POOL_OFFSET uses 44000-range SIDs so +21000 = 65000-range, which
                 # is safe and overridable (unlike the old 70000-range where +21000
@@ -696,6 +701,17 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
             # rather than cross-wiring the two independently-evolved paths.
             if uu_info:
                 uu_dll = uu_info["dll_name"]
+                # +1000 is the Castle "Create <Unit>" button label (language_dll_creation).
+                # Only write for renamed UUs to avoid unnecessarily overwriting vanilla strings
+                # that other civs' units may share. For KM-custom UUs this is a harmless
+                # duplicate of the extra_unit_strings "Create {name}" entry.
+                is_renamed = uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)
+                if is_renamed:
+                    # Base string ID: unit name in selection panel. Writing here affects
+                    # any vanilla civ that shares this unit (e.g. Mongols opponents for
+                    # Mangudai). Acceptable trade-off; proper fix needs unit cloning.
+                    string_lines[lang].append(f'{uu_dll} "{uu_display}"')
+                    string_lines[lang].append(f'{uu_dll + DLL_CREATION_OFFSET} "Create {uu_display}"')
                 string_lines[lang].append(f'{uu_dll + 10000} "{uu_display}"')
                 string_lines[lang].append(f'{uu_dll + DLL_HELP_OFFSET} "{uu_display}"')
                 # Castle train-button hover reads name+21000. KM-custom UUs
@@ -703,6 +719,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 # it written here or a stale campaign string bleeds through.
                 string_lines[lang].append(f'{uu_dll + 21000} "{uu_display}"')
             if uu_elite_dll and uu_elite_name:
+                string_lines[lang].append(f'{uu_elite_dll} "{uu_elite_name}"')
+                string_lines[lang].append(f'{uu_elite_dll + DLL_CREATION_OFFSET} "Create {uu_elite_name}"')
                 string_lines[lang].append(f'{uu_elite_dll + 10000} "{uu_elite_name}"')
                 string_lines[lang].append(f'{uu_elite_dll + DLL_HELP_OFFSET} "{uu_elite_name}"')
                 string_lines[lang].append(f'{uu_elite_dll + 21000} "{uu_elite_name}"')

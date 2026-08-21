@@ -1,0 +1,32 @@
+{
+  "_note": [
+    "Per-UT display overrides. Keys are string catalog IDs.",
+    "multiplier: false hides the multiplier selector for non-scalable UTs.",
+    "Auto-detected (DAT scan) + user review. Edit freely.",
+    "",
+    "Confirmed scalable (multiplier ENABLED): Hul'che Javelineers, Double Crossbow,",
+    "Sitting Tiger, Maghrebi Camels, Logistica, Druzhina, Lechitic Legacy, Ordo Cavalry,",
+    "Burgundian Vineyards, Tigui, Bimaristan, Coiled Serpent Array, Arquebus."
+  ],
+  "castle": {
+    "1":  { "multiplier": false, "_label": "Kasbah — type=15 team effect, non-scalable" },
+    "12": { "multiplier": false, "_label": "Anarchy — EC_SET + EC_ENABLE (unit unlock)" },
+    "13": { "multiplier": false, "_label": "Marauders — EC_SET + EC_ENABLE (unit unlock)" },
+    "21": { "multiplier": false, "_label": "Corvinian Army — EC_SET cost conversion, idempotent" },
+    "22": { "multiplier": false, "_label": "Thalassocracy — EC_UPGRADE unit swap, idempotent" },
+    "25": { "multiplier": false, "_label": "Nomads — EC_UPGRADE house remove, idempotent" },
+    "26": { "multiplier": false, "_label": "Kamandaran — EC_ADD on gold/wood cost; negative costs at high mult" },
+    "28": { "multiplier": false, "_label": "Madrasah — EC_UPGRADE monk gold-on-death, idempotent" },
+    "29": { "multiplier": false, "_label": "First Crusade — conversion resistance binary; TC spawn non-scalable" }
+  },
+  "imperial": {
+    "4":  { "multiplier": false, "_label": "Flemish Revolution — EC_ENABLE + EC_UPGRADE unit conversion" },
+    "59": { "multiplier": false, "_label": "Butalmapu — type=15 team effect (cost reduction), non-scalable" },
+    "22": { "multiplier": false, "_label": "Forced Levy — EC_ADD on costs; would produce negative (resource-granting) costs at high mult" },
+    "38": { "multiplier": false, "_label": "Hussite Reforms — EC_SET + EC_TECH_COST cost swap, idempotent" },
+    "44": { "multiplier": false, "_label": "Wootz Steel — EC_ADD on armor-ignore attribute; already maxed at x1" },
+    "45": { "multiplier": false, "_label": "Mahayana — EC_SET pop space flag, idempotent" },
+    "49": { "multiplier": false, "_label": "Aznauri Cavalry — EC_SET pop space flag, idempotent" },
+    "57": { "multiplier": false, "_label": "Thunderclap Bombs — EC_SET detonate flag, idempotent" }
+  }
+}

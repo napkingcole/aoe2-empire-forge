@@ -78,5 +78,8 @@
   "76": "Foot archers +2 LOS",
   "77": "Cavalry +2 attack vs. siege weapons",
   "78": "Gunpowder units +2 LOS",
-  "79": "Infantry +2 attack vs. Ranged Soldiers"
+  "79": "Infantry +2 attack vs. Ranged Soldiers",
+  "81": "Units have +15% Conversion Resistance; Monks convert slightly faster",
+  "82": "Skirmishers and Spearmen +2 LOS and +2 attack range",
+  "83": "Towers and Castles provide +10 population space"
 }

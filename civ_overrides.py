@@ -13,8 +13,8 @@ since they share the same key schema.  KM-format civ_defs have none of these
 keys so both functions are safe no-ops when called on them.
 """
 
-from genieutils.effect import EffectCommand
-from genieutils.tech import ResearchResourceCost
+from genieutils.effect import Effect, EffectCommand
+from genieutils.tech import ResearchLocation, ResearchResourceCost, Tech
 from genieutils.unit import AttackOrArmor
 
 
@@ -235,26 +235,72 @@ def _apply_hero_unit(dat, slot: int, draft: dict) -> None:
     """
     hero    = draft.get("hero_unit") or {}
     base_id = hero.get("base_unit_id")
+    print(f"       Hero unit: hero_unit key present={bool(draft.get('hero_unit'))} base_unit_id={base_id!r}")
     if base_id is None:
         return
 
-    if base_id >= len(dat.civs[slot].units):
+    unit_count = len(dat.civs[slot].units)
+    if base_id >= unit_count:
+        print(f"       Hero unit: base_unit_id={base_id} out of range (civ has {unit_count} units) — skipping")
         return
     unit = dat.civs[slot].units[base_id]
     if unit is None:
+        print(f"       Hero unit: unit slot {base_id} is None — skipping")
         return
 
-    # EC_ENABLE — make the unit visible/trainable
+    print(f"       Hero unit: applying base_unit_id={base_id} ({getattr(unit, 'name', '?')!r})"
+          f"  creatable={'yes' if unit.creatable else 'NO — will be invisible'}")
+
     tt_eff = dat.effects[dat.civs[slot].tech_tree_id]
-    tt_eff.effect_commands.append(EffectCommand(type=2, a=base_id, b=1, c=-1, d=0.0))
+
+    # Gate hero to Imperial Age: create a civ-specific auto-fire tech that requires
+    # tech 101 (Imperial Age) and fires EC_ENABLE(b=1).  The always-on TT effect does
+    # NOT enable the hero, so it stays hidden during Castle Age.
+    zero_costs = (
+        ResearchResourceCost(type=-1, amount=0, flag=0),
+        ResearchResourceCost(type=-1, amount=0, flag=0),
+        ResearchResourceCost(type=-1, amount=0, flag=0),
+    )
+    imp_eff = Effect(
+        name=f"__hero_imp_enable_{slot}",
+        effect_commands=[EffectCommand(type=2, a=base_id, b=1, c=-1, d=0.0)],
+    )
+    new_eff_id = len(dat.effects)
+    dat.effects.append(imp_eff)
+
+    imp_tech = Tech(
+        required_techs=(101, -1, -1, -1, -1, -1),
+        resource_costs=zero_costs,
+        required_tech_count=1,
+        civ=slot,
+        full_tech_mode=0,
+        language_dll_name=-1,
+        language_dll_description=-1,
+        effect_id=new_eff_id,
+        type=0,
+        icon_id=-1,
+        language_dll_help=-1,
+        language_dll_tech_tree=-1,
+        name=f"__hero_imp_enable_{slot}",
+        repeatable=0,
+        research_locations=[ResearchLocation(location_id=-1, research_time=0, button_id=0, hot_key_id=-1)],
+    )
+    new_tech_id = len(dat.techs)
+    dat.techs.append(imp_tech)
+    print(f"       Hero unit: Imperial Age enable tech id={new_tech_id} eff_id={new_eff_id} (hero hidden in Castle Age)")
+
+    # Disable the standard Trebuchet: tech 256 enables unit 331 (PTREB) at Castle btn 2
+    # on Imperial Age, which would overwrite the hero at the same button.
+    tt_eff.effect_commands.append(EffectCommand(type=102, a=-1, b=-1, c=-1, d=256.0))
+    print("       Hero unit: disabled Trebuchet tech 256 (frees Castle btn 2)")
 
     if unit.creatable:
         # ── Train location: always Castle btn 2 ──────────────────────────────
         if unit.creatable.train_locations:
             loc = unit.creatable.train_locations[0]
-            loc.building_id = 82
-            loc.button_id   = 2
-            loc.train_time  = _HERO_TRAIN_TIME
+            loc.unit_id   = 82  # Castle
+            loc.button_id = 2
+            loc.train_time = _HERO_TRAIN_TIME
 
         # ── Cost: 500 Food / 500 Gold ─────────────────────────────────────────
         rc = unit.creatable.resource_costs
@@ -268,8 +314,7 @@ def _apply_hero_unit(dat, slot: int, draft: dict) -> None:
             rc[1].type = 3; rc[1].amount = _HERO_COST_GOLD; rc[1].flag = 1
 
         # ── hero_mode ─────────────────────────────────────────────────────────
-        unit.creatable.hero_mode      = 1 | 2   # one-at-a-time + cannot convert
-        unit.creatable.creatable_type = 1
+        unit.creatable.hero_mode = 1 | 2   # one-at-a-time + cannot convert
 
     # ── HP floor ──────────────────────────────────────────────────────────────
     if unit.hit_points < _HERO_HP_FLOOR:

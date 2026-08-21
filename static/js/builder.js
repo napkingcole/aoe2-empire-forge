@@ -6,7 +6,7 @@
  */
 
 const EF_DRAFT_KEY = "ef_builder_draft";
-const TOTAL_STEPS  = 8;
+const TOTAL_STEPS  = 9;
 
 // ── Draft helpers ─────────────────────────────────────────────────────────────
 
@@ -54,6 +54,7 @@ if ((draft._draftVer || 0) < 4) {
   saveDraft();
 }
 let currentStep = 1;
+let maxStep     = 1;  // highest step ever reached — gates nav dot clicks
 
 // ── Step navigation ───────────────────────────────────────────────────────────
 
@@ -61,24 +62,27 @@ function showStep(n) {
   document.querySelectorAll(".wizard-panel").forEach(p => p.classList.add("d-none"));
   document.getElementById(`panel-${n}`).classList.remove("d-none");
 
+  maxStep = Math.max(maxStep, n);
+
   document.querySelectorAll(".wizard-step").forEach(dot => {
     const s = parseInt(dot.dataset.step, 10);
     dot.classList.toggle("active",    s === n);
-    dot.classList.toggle("completed", s < n);
-    dot.classList.remove("active");
-    if (s === n)   dot.classList.add("active");
-    if (s < n)     dot.classList.add("completed");
+    dot.classList.toggle("completed", s !== n && s <= maxStep);
   });
+
+  // Step-specific side effects — fired regardless of navigation direction
+  if (n === 5) renderUUGrid();
+  if (n === 6 || n === 7) initUTPanel(n);
 
   const btnPrev = document.getElementById("btn-prev");
   const btnNext = document.getElementById("btn-next");
   btnPrev.disabled = (n === 1);
 
   if (n === TOTAL_STEPS) {
-    btnNext.innerHTML = '<i class="fa-solid fa-download me-1"></i> Generate Mod';
-    btnNext.disabled  = true; // disabled until pipeline is wired up
+    btnNext.style.display = 'none';
     populateReview();
   } else {
+    btnNext.style.display = '';
     btnNext.innerHTML = 'Next <i class="fa-solid fa-arrow-right ms-1"></i>';
     btnNext.disabled  = false;
   }
@@ -86,7 +90,7 @@ function showStep(n) {
   document.getElementById("step-counter").textContent = `Step ${n} of ${TOTAL_STEPS}`;
   currentStep = n;
 
-  if (n === 7) { renderHeroGrid(); _heroRefreshUI(); }
+  if (n === 8) { renderHeroGrid(); _heroRefreshUI(); }
 
   // Scroll to top of wizard area on step change
   document.getElementById(`panel-${n}`).scrollIntoView({ behavior: "smooth", block: "start" });
@@ -99,12 +103,12 @@ document.getElementById("btn-prev").addEventListener("click", () => {
 document.getElementById("btn-next").addEventListener("click", async () => {
   if (!validateStep(currentStep)) return;
   try {
-    if (currentStep === 2) {
-      await loadBonusCatalog();
-    }
-    if (currentStep === 3) {
+    if (currentStep === 2) await loadBonusCatalog();
+    if (currentStep === 5 || currentStep === 6) await loadBonusCatalog();
+
+    if (currentStep === 4) {
+      // showStep triggers the initial renderUUGrid(); also kick off async stat load
       showStep(currentStep + 1);
-      renderUUGrid();                                              // immediate: icons+names from fast catalog
       const statsNotice = document.getElementById("uu-stats-loading");
       if (!_uuCatalogHasStats) {
         if (statsNotice) statsNotice.classList.remove("d-none");
@@ -112,7 +116,6 @@ document.getElementById("btn-next").addEventListener("click", async () => {
           .then(() => {
             renderUUGrid();
             if (statsNotice) statsNotice.classList.add("d-none");
-            // Refresh stat defaults under overrides inputs if a unit is already selected.
             const selIdx = draft.unique_unit?.km_idx;
             if (selIdx != null) {
               const u = _uuCatalog.find(u => u.km_idx === selIdx);
@@ -123,13 +126,7 @@ document.getElementById("btn-next").addEventListener("click", async () => {
       }
       return;
     }
-    const nextStep = currentStep + 1;
-    if (nextStep === 5 || nextStep === 6) {
-      await loadBonusCatalog();
-      showStep(nextStep);
-      initUTPanel(nextStep);
-      return;
-    }
+
     if (currentStep < TOTAL_STEPS) showStep(currentStep + 1);
   } catch (err) {
     console.error("btn-next error:", err);
@@ -137,15 +134,11 @@ document.getElementById("btn-next").addEventListener("click", async () => {
   }
 });
 
-// Clicking a completed dot lets you jump back
+// Clicking any visited dot lets you jump to it
 document.querySelectorAll(".wizard-step").forEach(dot => {
   dot.addEventListener("click", () => {
     const target = parseInt(dot.dataset.step, 10);
-    if (target < currentStep) {
-      showStep(target);
-      if (target === 5 || target === 6) initUTPanel(target);
-      if (target === 7) { renderHeroGrid(); _heroRefreshUI(); }
-    }
+    if (target !== currentStep && target <= maxStep) showStep(target);
   });
 });
 
@@ -167,14 +160,14 @@ function validateStep(n) {
     }
     showArchError(false);
   }
-  if (n === 4) {
+  if (n === 5) {
     if (!draft.unique_unit || draft.unique_unit.km_idx == null) {
       showUUError(true);
       return false;
     }
     showUUError(false);
   }
-  if (n === 5 || n === 6) {
+  if (n === 6 || n === 7) {
     const { key, prefix } = UT_STEPS[n];
     const utName = document.getElementById(`${prefix}-name`)?.value.trim() || draft[key]?.name || "";
     if (!utName) {
@@ -524,55 +517,12 @@ function _populateReplaceCivSelect() {
   sel.dataset.populated = "1";
 }
 
-// ── Generate Mod ──────────────────────────────────────────────────────────────
-
-document.getElementById("btn-generate").addEventListener("click", async () => {
-  const replaceCiv  = document.getElementById("replace-civ-select")?.value || "Goths";
-  const errEl       = document.getElementById("build-error");
-  const successEl   = document.getElementById("build-success");
-  const formEl      = document.getElementById("build-form");
-  const btn         = document.getElementById("btn-generate");
-
-  errEl.classList.add("d-none");
-  successEl.classList.add("d-none");
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Building…';
-
-  try {
-    const res  = await fetch("/builder/build", {
-      method:  "POST",
-      headers: {"Content-Type": "application/json"},
-      body:    JSON.stringify({ draft, replace_civ: replaceCiv, dat_path: draft.dat_path || "" }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      errEl.textContent = data.error || "Build failed.";
-      errEl.classList.remove("d-none");
-      return;
-    }
-    // Show download section
-    const link = document.getElementById("build-download-link");
-    link.href  = data.url;
-    document.getElementById("build-download-name").textContent = data.filename || "Download Mod";
-    successEl.classList.remove("d-none");
-    formEl.classList.add("d-none");
-  } catch (e) {
-    errEl.textContent = `Network error: ${e.message}`;
-    errEl.classList.remove("d-none");
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-hammer me-2"></i>Generate Mod';
-  }
-});
-
 // ── Export JSON ───────────────────────────────────────────────────────────────
 
 document.getElementById("btn-export-json").addEventListener("click", async () => {
-  const btn   = document.getElementById("btn-export-json");
-  const errEl = document.getElementById("build-error");
+  const btn = document.getElementById("btn-export-json");
   btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Exporting…';
-  errEl.classList.add("d-none");
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Saving…';
 
   try {
     const res = await fetch("/api/builder/export", {
@@ -582,8 +532,7 @@ document.getElementById("btn-export-json").addEventListener("click", async () =>
     });
     if (!res.ok) {
       const data = await res.json();
-      errEl.textContent = data.error || "Export failed.";
-      errEl.classList.remove("d-none");
+      alert(data.error || "Export failed.");
       return;
     }
     const blob     = await res.blob();
@@ -599,11 +548,10 @@ document.getElementById("btn-export-json").addEventListener("click", async () =>
     a.click();
     URL.revokeObjectURL(url);
   } catch (e) {
-    errEl.textContent = `Network error: ${e.message}`;
-    errEl.classList.remove("d-none");
+    alert(`Network error: ${e.message}`);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-file-export me-2"></i>Export as JSON';
+    btn.innerHTML = '<i class="fa-solid fa-file-export me-2"></i>Save Civilization';
   }
 });
 
@@ -819,23 +767,12 @@ function renderHeroGrid(filter) {
   if (!container) return;
 
   container.innerHTML = heroes.map(h => {
-    const sel = h.id === curId;
-    return `<div class="hero-grid-card" data-hero-id="${h.id}"
-               style="cursor:pointer;width:86px;text-align:center;" title="${h.name}">
-      <div class="card p-1"
-           style="border:2px solid ${sel ? 'var(--accent-2)' : 'transparent'};
-                  background:${sel ? 'rgba(255,200,50,.1)' : ''};
-                  transition:border-color .12s,background .12s;">
-        <img src="/static/icons/heroes/${h.id}.webp"
-             style="width:48px;height:48px;object-fit:contain;display:block;margin:0 auto;
-                    border-radius:4px;
-                    background:oklch(from var(--body-bg) calc(l + 0.06) c h);"
-             loading="lazy">
-        <div style="font-size:.62rem;font-weight:600;line-height:1.2;margin-top:3px;
-                    word-break:break-word;">${h.name}</div>
-        ${h.faction
-          ? `<div style="font-size:.55rem;color:var(--bs-secondary);line-height:1.3;">${h.faction}</div>`
-          : ""}
+    const sel = h.id === curId ? ' selected' : '';
+    return `<div class="hero-grid-card${sel}" data-hero-id="${h.id}" title="${h.name}">
+      <div class="hero-card-inner">
+        <img class="hero-card-img" src="/static/icons/heroes/${h.id}.webp" loading="lazy">
+        <div class="hero-card-name">${h.name}</div>
+        ${h.faction ? `<div class="hero-card-faction">${h.faction}</div>` : ""}
       </div>
     </div>`;
   }).join("") ||
@@ -916,11 +853,7 @@ function _heroRefreshUI() {
 
   // Update card highlights without full re-render
   document.querySelectorAll(".hero-grid-card").forEach(el => {
-    const cid   = parseInt(el.dataset.heroId, 10);
-    const inner = el.querySelector(".card");
-    if (!inner) return;
-    inner.style.borderColor = cid === id ? "var(--accent-2)"     : "transparent";
-    inner.style.background  = cid === id ? "rgba(255,200,50,.1)" : "";
+    el.classList.toggle("selected", parseInt(el.dataset.heroId, 10) === id);
   });
 
   // Filter button active state
@@ -978,6 +911,19 @@ document.getElementById("hero-flag-regen")?.addEventListener("change", _heroSave
 // ── Bonuses ───────────────────────────────────────────────────────────────────
 
 // Category definitions — first keyword match wins (order matters)
+const _UT_CATEGORIES = [
+  { key: 'infantry',  icon: 'fa-shield' },
+  { key: 'cavalry',   icon: 'fa-horse' },
+  { key: 'archers',   icon: 'fa-bullseye' },
+  { key: 'siege',     icon: 'fa-bomb' },
+  { key: 'naval',     icon: 'fa-anchor' },
+  { key: 'monk',      icon: 'fa-cross' },
+  { key: 'gunpowder', icon: 'fa-fire' },
+  { key: 'economy',   icon: 'fa-coins' },
+  { key: 'building',  icon: 'fa-chess-rook' },
+  { key: 'unique',    icon: 'fa-star' },
+];
+
 const _BONUS_CATEGORIES = [
   { key: 'naval',    icon: 'fa-anchor',       kw: ['fire ship','warship','galley','ship','dock','transport','naval','fishing'] },
   { key: 'monk',     icon: 'fa-cross',        kw: ['monk','relic','convert','heal','monastery'] },
@@ -994,19 +940,26 @@ const _BONUS_CATEGORIES = [
 // Manually override auto-classification by bonus id: { 42: 'economy', 99: 'combat', ... }
 const _BONUS_CAT_OVERRIDES = {
   // combat
-   17: 'combat',  102: 'combat',  172: 'combat',  333: 'combat', 243: 'combat', 255: 'combat', 256: 'combat', 260: 'combat', 340: 'combat', 354: 'combat',
+   17: 'combat',  102: 'combat',  172: 'combat',  333: 'combat', 243: 'combat', 255: 'combat', 256: 'combat', 260: 'combat', 340: 'combat', 354: 'combat', 369: 'combat', 377: 'combat',
+   T11: 'combat', T25: 'combat',
   // economy
    21: 'building', 132: 'economy', 140: 'building', 86: 'economy', 98: 'economy', 110: 'economy', 139: 'economy', 295: 'economy', 339: 'economy',
+   T14: 'economy',
   // naval
   227: 'naval',
+  // monks
+  T58: 'monks',
   // cost
   54: 'cost', 146: 'cost',
   // research
-  223: 'combat',  261: 'research', 136: 'research', 239: 'research',
+  223: 'combat',  261: 'research', 136: 'research', 239: 'research', T3: 'research', T23: 'research', T27: 'research',
   // speed
   17: 'speed', 37: 'speed', 334: 'speed', 54: 'speed',
+  // building
+  267: 'building', 367: 'building', 371: 'building', 374: 'building', 400: 'building',
   //general
-  80: 'general', 8: 'general', 25: 'general', 26: 'general', 62:'general', 213: 'general', 215: 'general', 224: 'general', 346: 'general',
+  80: 'general', 8: 'general', 25: 'general', 26: 'general', 62:'general', 213: 'general', 215: 'general', 224: 'general', 346: 'general', 372: 'general',
+  T19: 'general', T33: 'general', T42: 'general', T62: 'general',
   // unlock — unit/building availability bonuses
    43: 'unlock',   50: 'unlock',   51: 'unlock',   52: 'unlock',
    53: 'unlock',   61: 'unlock',   68: 'unlock',   69: 'unlock',
@@ -1020,7 +973,8 @@ const _BONUS_CAT_OVERRIDES = {
   317: 'unlock',  318: 'unlock',  322: 'unlock',  329: 'unlock',
   330: 'unlock',  332: 'unlock',  337: 'unlock',  343: 'unlock',
   348: 'unlock',  352: 'unlock',  355: 'unlock',  356: 'unlock',
-  360: 'unlock',  361: 'unlock',  72: 'unlock'
+  360: 'unlock',  361: 'unlock',  72: 'unlock', 280: 'unlock',
+  T1: 'unlock', T16: 'unlock', T35: 'unlock', T72: 'unlock', T73: 'unlock'
 };
 
 function _classifyBonus(id, label) {
@@ -1314,17 +1268,19 @@ function _renderBonusCardInner(p, cat, mult) {
   const catLabel  = cat.key.charAt(0).toUpperCase() + cat.key.slice(1);
   const err = `onerror="this.style.display='none'"`;
 
+  const multWidget = p.noMultiplier ? '' : `<div class="multiplier">
+        <button class="multiplier-circle" data-mult="${mult}" title="Multiplier">
+          <span class="multiplier-amount">×${mult}</span>
+        </button>
+      </div>`;
+
   const header = `
     <div class="card-header">
       <div>
         <i class="fa-solid ${cat.icon}"></i>
         <span class="bonus-type">${catLabel}</span>
       </div>
-      <div class="multiplier">
-        <button class="multiplier-circle" data-mult="${mult}" title="Multiplier">
-          <span class="multiplier-amount">×${mult}</span>
-        </button>
-      </div>
+      ${multWidget}
     </div>`;
 
   const whoInfo        = _WHO_ICONS[p.entityKey] || _WHO_ICONS.default;
@@ -1442,7 +1398,7 @@ function _wireBonusGridEvents(grid, toggleFn, getDraftEntry) {
       e.stopPropagation();
       const b = getDraftEntry(parseInt(el.dataset.bonusId, 10));
       if (!b) return; // only cycle when selected
-      const next = (b.multiplier || 1) >= 3 ? 1 : (b.multiplier || 1) + 1;
+      const next = (b.multiplier || 1) >= 10 ? 1 : (b.multiplier || 1) + 1;
       b.multiplier = next;
       e.currentTarget.dataset.mult = next;
       e.currentTarget.querySelector(".multiplier-amount").textContent = "×" + next;
@@ -1454,6 +1410,14 @@ function _wireBonusGridEvents(grid, toggleFn, getDraftEntry) {
 const MAX_CIV_BONUSES = 6;
 let _bonusCatalog      = [];   // [{id, label}]
 let _teamCatalog       = [];
+let _utOverrides       = { castle: {}, imperial: {} };
+let _utCards           = { castle: {}, imperial: {} };  // {tier: {id: {icon, category}}}
+let _bonusCardNodes    = new Map();  // id → DOM element
+let _teamCardNodes     = new Map();  // id → DOM element
+let _bonusCatFilter    = new Set();  // active category keys; empty = all
+let _teamCatFilter     = new Set();
+let _cutCatFilter      = new Set();  // castle UT category filter
+let _iutCatFilter      = new Set();  // imperial UT category filter
 let _voiceOptions      = [];   // [{value, label}] stored from meta for review lookup
 let _castleUtCatalog   = [];   // [{id, label}] — UT slot IDs for castle UT effects
 let _imperialUtCatalog = [];   // [{id, label}] — UT slot IDs for imperial UT effects
@@ -1465,6 +1429,7 @@ const _TOKEN_ICONS = {
   wood:         '/static/icons/resources/wood.png',
   gold:         '/static/icons/resources/gold.png',
   stone:        '/static/icons/resources/stone.png',
+  relic:        '/static/icons/resources/relic.png',
   heart:        '/static/icons/properties/heart.png',
   heartplus:    '/static/icons/properties/heartplus.png',
   plus:         '/static/icons/properties/plus.png',
@@ -1472,7 +1437,11 @@ const _TOKEN_ICONS = {
   workrate:     '/static/icons/properties/work_rate.png',
   armor:        '/static/icons/properties/armor.png',
   pierce_armor: '/static/icons/properties/pierce_armor.png',
-  attack:       '/static/icons/properties/attack.png'
+  attack:       '/static/icons/properties/attack.png',
+  pierce_attack:'/static/icons/properties/pierce_attack.png',
+  speed:        '/static/icons/properties/speed.png',
+  blast_radius: '/static/icons/properties/blast_radius.png',
+  range:        '/static/icons/properties/range.png'
 };
 function _renderTokens(str) {
   if (!str) return str;
@@ -1499,6 +1468,7 @@ function _applyCardOverride(p, ov, label) {
   if (ov.icon)    p.iconOverride   = ov.icon;
   if (ov.icon2)   p.icon2Override  = ov.icon2;
   if (ov.lines)   p.lines          = ov.lines;
+  if (ov.multiplier === false) p.noMultiplier = true;
   // For progression: use explicit ages if provided, otherwise (re)extract from label
   if (p.type === 'progression') {
     p.ageValues = ov.ages || p.ageValues || _extractAgeValues(label);
@@ -1509,14 +1479,18 @@ function _applyCardOverride(p, ov, label) {
 async function loadBonusCatalog() {
   if (_bonusCatalog.length) return;
   try {
-    const [catalogRes, cardsRes] = await Promise.all([
+    const [catalogRes, cardsRes, teamCardsRes] = await Promise.all([
       fetch("/api/builder/bonuses/catalog"),
       fetch("/static/data/bonus_cards.json"),
+      fetch("/static/data/team_bonus_cards.json"),
     ]);
     const data = await catalogRes.json();
     _bonusCatalog = data.civ;
     _teamCatalog  = data.team;
-    _cardOverrides = await cardsRes.json();
+    _cardOverrides = {
+      ...await cardsRes.json(),
+      ...await teamCardsRes.json(),
+    };
   } catch (e) {
     console.warn("Could not load bonus catalog:", e);
   }
@@ -1525,10 +1499,18 @@ async function loadBonusCatalog() {
 async function loadUTCatalog() {
   if (_castleUtCatalog.length) return;
   try {
-    const r = await fetch("/api/builder/ut/catalog");
-    const d = await r.json();
+    const [catalogRes, overridesRes, cardsRes] = await Promise.all([
+      fetch("/api/builder/ut/catalog"),
+      fetch("/static/data/ut_overrides.json"),
+      fetch("/static/data/ut_cards.json"),
+    ]);
+    const d = await catalogRes.json();
     _castleUtCatalog.push(...d.castle);
     _imperialUtCatalog.push(...d.imperial);
+    const ov = await overridesRes.json();
+    _utOverrides = { castle: ov.castle || {}, imperial: ov.imperial || {} };
+    const cards = await cardsRes.json();
+    _utCards = { castle: cards.castle || {}, imperial: cards.imperial || {} };
   } catch (e) {
     console.warn("Could not load UT catalog:", e);
   }
@@ -1573,45 +1555,185 @@ function wireSearchPicker({ inputId, resultsId, catalog, onSelect }) {
   }, true);
 }
 
+function _makeBonusCardEl(c, mult, isSelected, toggleFn, getDraftEntry, prefix = '') {
+  const idStr = prefix + c.id;  // e.g. '' + 5 = '5', or 'T' + 5 = 'T5'
+  const cat = _classifyBonus(idStr, c.label);
+  const p   = _parseBonusCard(idStr, c.label);
+  if (p.type === 'hidden') return null;
+  const typeClass = p.type !== 'value' ? ` ${p.type}-bonus` : '';
+  const el = document.createElement('div');
+  el.className       = `bonus-card${isSelected ? ' selected' : ''}${typeClass}`;
+  el.dataset.bonusId = idStr;
+  el.dataset.cat     = cat.key;
+  el.style.cssText   = `--cat-color:var(--cat-${cat.key});`;
+  el.title           = c.label.replace(/"/g, '&quot;');
+  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
+  // Use c.id directly in closures — no need to parse data-bonus-id
+  el.addEventListener('click', e => {
+    if (e.target.closest('.multiplier-circle')) return;
+    toggleFn(c.id);
+  });
+  el.querySelector('.multiplier-circle')?.addEventListener('click', e => {
+    e.stopPropagation();
+    const b = getDraftEntry(c.id);
+    if (!b) return;
+    const next = (b.multiplier || 1) >= 10 ? 1 : (b.multiplier || 1) + 1;
+    b.multiplier = next;
+    e.currentTarget.dataset.mult = next;
+    e.currentTarget.querySelector('.multiplier-amount').textContent = '×' + next;
+    saveDraft();
+  });
+  return el;
+}
+
+const _rootStyle = getComputedStyle(document.documentElement);
+
+function _renderCatPills(containerId, filterSet, filterFn, categories = _BONUS_CATEGORIES) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  for (const cat of categories) {
+    const pill = document.createElement('button');
+    pill.className = 'cat-pill';
+    // Resolve to actual hex so relative color syntax (hsl(from ...)) works in CSS
+    const resolvedColor = _rootStyle.getPropertyValue(`--cat-${cat.key}`).trim()
+                       || `var(--cat-${cat.key})`;
+    pill.style.setProperty('--pill-bg', resolvedColor);
+    pill.dataset.cat = cat.key;
+    pill.innerHTML = `<i class="fa-solid ${cat.icon}"></i> ${cat.key.charAt(0).toUpperCase() + cat.key.slice(1)}`;
+    pill.addEventListener('click', () => {
+      if (filterSet.has(cat.key)) {
+        filterSet.delete(cat.key);
+        pill.classList.remove('active');
+      } else {
+        filterSet.add(cat.key);
+        pill.classList.add('active');
+      }
+      filterFn();
+    });
+    container.appendChild(pill);
+  }
+}
+
+function _updateBonusDivider(selSection, divider) {
+  if (!divider || !selSection) return;
+  const hasVisible = Array.from(selSection.children).some(el => el.style.display !== 'none');
+  divider.style.display = hasVisible ? '' : 'none';
+}
+
+// Build the HTML string for all cards in a catalog, split by selected/available.
+// idPrefix is '' for civ bonuses, 'T' for team bonuses (namespaces data-bonus-id).
+function _buildGridHtml(catalog, selIds, bonuses, q, idPrefix) {
+  let selHtml = '', availHtml = '', anyVisible = false;
+  const all = [
+    ...catalog.filter(c => selIds.has(c.id)),
+    ...catalog.filter(c => !selIds.has(c.id)),
+  ];
+  for (const c of all) {
+    const idStr  = idPrefix + c.id;
+    const cat    = _classifyBonus(idStr, c.label);
+    const p      = _parseBonusCard(idStr, c.label);
+    if (p.type === 'hidden') continue;
+    const b         = bonuses.find(b => b.id === c.id);
+    const sel       = selIds.has(c.id);
+    const mult      = b ? b.multiplier : 1;
+    const visible   = !q || c.label.toLowerCase().includes(q);
+    if (visible) anyVisible = true;
+    const typeClass = p.type !== 'value' ? ` ${p.type}-bonus` : '';
+    const styleAttr = `--cat-color:var(--cat-${cat.key})${visible ? '' : ';display:none'}`;
+    const html = `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${idStr}" data-cat="${cat.key}" style="${styleAttr}" title="${c.label.replace(/"/g, '&quot;')}">${_renderBonusCardInner(p, cat, mult)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
+    if (sel) selHtml += html;
+    else availHtml += html;
+  }
+  return { selHtml, availHtml, anyVisible };
+}
+
+// Wire click and multiplier events on already-created .bonus-card DOM nodes.
+// parseId converts data-bonus-id string back to the integer used by toggleFn/getDraftEntry.
+function _wireGridEvents(container, nodeMap, toggleFn, getDraftEntry, parseId) {
+  container.querySelectorAll('.bonus-card').forEach(el => {
+    const id = parseId(el.dataset.bonusId);
+    nodeMap.set(id, el);
+    el.addEventListener('click', e => {
+      if (e.target.closest('.multiplier-circle')) return;
+      toggleFn(id);
+    });
+    el.querySelector('.multiplier-circle')?.addEventListener('click', e => {
+      e.stopPropagation();
+      const b = getDraftEntry(id);
+      if (!b) return;
+      const next = (b.multiplier || 1) >= 10 ? 1 : (b.multiplier || 1) + 1;
+      b.multiplier = next;
+      e.currentTarget.dataset.mult = next;
+      e.currentTarget.querySelector('.multiplier-amount').textContent = '×' + next;
+      saveDraft();
+    });
+  });
+}
+
+function _buildGridSkeleton(grid) {
+  grid.innerHTML = '';
+  const selSection   = document.createElement('div');
+  selSection.className = 'bonus-section bonus-section-selected';
+  const divider = document.createElement('div');
+  divider.className = 'bonus-section-divider';
+  divider.textContent = 'Available';
+  const availSection = document.createElement('div');
+  availSection.className = 'bonus-section bonus-section-available';
+  const emptyMsg = document.createElement('div');
+  emptyMsg.className = 'bonus-empty-state text-muted small fst-italic';
+  emptyMsg.textContent = 'No bonuses match your search.';
+  emptyMsg.style.display = 'none';
+  grid.append(selSection, divider, availSection, emptyMsg);
+  return { selSection, divider, availSection, emptyMsg };
+}
+
 function renderBonusGrid() {
   const grid = document.getElementById("bonus-grid");
   if (!grid) return;
-  const q       = (document.getElementById("bonus-search")?.value || "").toLowerCase();
+
   const bonuses = draft.bonuses || [];
-  const selIds  = bonuses.map(b => b.id);
+  const selIds  = new Set(bonuses.map(b => b.id));
+  const q       = (document.getElementById("bonus-search")?.value || "").toLowerCase();
 
-  let filtered = _bonusCatalog.filter(c => !q || c.label.toLowerCase().includes(q));
+  _bonusCardNodes.clear();
+  const { selSection, divider, availSection, emptyMsg } = _buildGridSkeleton(grid);
 
-  if (!filtered.length) {
-    grid.innerHTML = '<div class="text-muted small fst-italic">No bonuses match your search.</div>';
-    _updateBonusCountBadge();
-    return;
-  }
+  const { selHtml, availHtml, anyVisible } = _buildGridHtml(_bonusCatalog, selIds, bonuses, q, '');
+  selSection.innerHTML   = selHtml;
+  availSection.innerHTML = availHtml;
 
-  // Selected bonuses float to the top
-  filtered = [
-    ...filtered.filter(c => selIds.includes(c.id)),
-    ...filtered.filter(c => !selIds.includes(c.id)),
-  ];
+  _wireGridEvents(grid, _bonusCardNodes, toggleCivBonus,
+    id => (draft.bonuses || []).find(b => b.id === id),
+    idStr => parseInt(idStr, 10));
 
-  grid.innerHTML = filtered.map(c => {
-    const b    = bonuses.find(b => b.id === c.id);
-    const sel  = !!b;
-    const mult = b ? b.multiplier : 1;
-    const cat  = _classifyBonus(c.id, c.label);
-    const p    = _parseBonusCard(c.id, c.label);
-    if (p.type === 'hidden') return '';
-    const typeClass = p.type !== 'value' ? ` ${p.type}-bonus` : '';
-    return `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${c.id}"
-                 style="--cat-color:var(--cat-${cat.key});" title="${c.label.replace(/"/g, '&quot;')}">
-      ${_renderBonusCardInner(p, cat, mult)}
-    <div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
-  }).join('');
-
-  _wireBonusGridEvents(grid, toggleCivBonus,
-    id => (draft.bonuses || []).find(b => b.id === id));
-
+  emptyMsg.style.display = anyVisible ? 'none' : '';
+  _updateBonusDivider(selSection, divider);
   _updateBonusCountBadge();
+}
+
+function _cardVisible(el, id, catalog, q, catFilter) {
+  const c = catalog.find(c => c.id === id);
+  const textMatch = !q || (c && c.label.toLowerCase().includes(q));
+  const catMatch  = catFilter.size === 0 || catFilter.has(el.dataset.cat);
+  return textMatch && catMatch;
+}
+
+function _filterBonusGrid(q) {
+  const grid = document.getElementById("bonus-grid");
+  if (!grid) return;
+  const selSection = grid.querySelector('.bonus-section-selected');
+  const divider    = grid.querySelector('.bonus-section-divider');
+  const emptyMsg   = grid.querySelector('.bonus-empty-state');
+  if (!selSection) { renderBonusGrid(); return; }
+  let anyVisible = false;
+  _bonusCardNodes.forEach((el, id) => {
+    const visible = _cardVisible(el, id, _bonusCatalog, q, _bonusCatFilter);
+    el.style.display = visible ? '' : 'none';
+    if (visible) anyVisible = true;
+  });
+  if (emptyMsg) emptyMsg.style.display = anyVisible ? 'none' : '';
+  _updateBonusDivider(selSection, divider);
 }
 
 function _updateBonusCountBadge() {
@@ -1628,63 +1750,129 @@ function _updateBonusCountBadge() {
 function toggleCivBonus(id) {
   if (!draft.bonuses) draft.bonuses = [];
   const idx = draft.bonuses.findIndex(b => b.id === id);
-  if (idx === -1) {
+  const isNowSelected = idx === -1;
+  if (isNowSelected) {
     draft.bonuses.push({ id, multiplier: 1 });
   } else {
     draft.bonuses.splice(idx, 1);
   }
   saveDraft();
-  renderBonusGrid();
+  _moveBonusCard(id, isNowSelected);
+}
+
+function _moveBonusCard(id, isSelected) {
+  const grid = document.getElementById("bonus-grid");
+  if (!grid) return;
+  const el = _bonusCardNodes.get(id);
+  if (!el) { renderBonusGrid(); return; }
+  const selSection   = grid.querySelector('.bonus-section-selected');
+  const availSection = grid.querySelector('.bonus-section-available');
+  const divider      = grid.querySelector('.bonus-section-divider');
+  if (!selSection || !availSection) { renderBonusGrid(); return; }
+
+  el.classList.toggle('selected', isSelected);
+
+  if (isSelected) {
+    const circle = el.querySelector('.multiplier-circle');
+    if (circle) {
+      circle.dataset.mult = 1;
+      circle.querySelector('.multiplier-amount').textContent = '×1';
+    }
+    selSection.appendChild(el);
+  } else {
+    const catalogIdx = _bonusCatalog.findIndex(c => c.id === id);
+    const insertBefore = Array.from(availSection.querySelectorAll('.bonus-card')).find(card => {
+      return _bonusCatalog.findIndex(c => c.id === parseInt(card.dataset.bonusId, 10)) > catalogIdx;
+    });
+    availSection.insertBefore(el, insertBefore || null);
+  }
+
+  _updateBonusDivider(selSection, divider);
+  _updateBonusCountBadge();
 }
 
 function renderTeamBonusGrid() {
   const grid = document.getElementById("team-bonus-grid");
   if (!grid) return;
-  const q    = (document.getElementById("team-bonus-search")?.value || "").toLowerCase();
-  const tbs  = draft.team_bonuses || [];
-  const selIds = tbs.map(b => b.id);
 
-  let filtered = _teamCatalog.filter(c => !q || c.label.toLowerCase().includes(q));
+  const tbs    = draft.team_bonuses || [];
+  const selIds = new Set(tbs.map(b => b.id));
+  const q      = (document.getElementById("team-bonus-search")?.value || "").toLowerCase();
 
-  if (!filtered.length) {
-    grid.innerHTML = '<div class="text-muted small fst-italic">No bonuses match your search.</div>';
-    return;
-  }
+  _teamCardNodes.clear();
+  const { selSection, divider, availSection, emptyMsg } = _buildGridSkeleton(grid);
 
-  // Selected bonuses float to top
-  filtered = [
-    ...filtered.filter(c => selIds.includes(c.id)),
-    ...filtered.filter(c => !selIds.includes(c.id)),
-  ];
+  const { selHtml, availHtml, anyVisible } = _buildGridHtml(_teamCatalog, selIds, tbs, q, 'T');
+  selSection.innerHTML   = selHtml;
+  availSection.innerHTML = availHtml;
 
-  grid.innerHTML = filtered.map(c => {
-    const b    = tbs.find(b => b.id === c.id);
-    const sel  = !!b;
-    const mult = b ? b.multiplier : 1;
-    const cat  = _classifyBonus(c.id, c.label);
-    const p    = _parseBonusCard(c.id, c.label);
-    if (p.type === 'hidden') return '';
-    const typeClass = p.type !== 'value' ? ` ${p.type}-bonus` : '';
-    return `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${c.id}"
-                 style="--cat-color:var(--cat-${cat.key});" title="${c.label.replace(/"/g, '&quot;')}">
-      ${_renderBonusCardInner(p, cat, mult)}
-    </div>`;
-  }).join('');
+  _wireGridEvents(grid, _teamCardNodes, toggleTeamBonus,
+    id => (draft.team_bonuses || []).find(b => b.id === id),
+    idStr => parseInt(idStr.replace(/^T/, ''), 10));
 
-  _wireBonusGridEvents(grid, toggleTeamBonus,
-    id => (draft.team_bonuses || []).find(b => b.id === id));
+  emptyMsg.style.display = anyVisible ? 'none' : '';
+  _updateBonusDivider(selSection, divider);
+}
+
+function _filterTeamBonusGrid(q) {
+  const grid = document.getElementById("team-bonus-grid");
+  if (!grid) return;
+  const selSection = grid.querySelector('.bonus-section-selected');
+  const divider    = grid.querySelector('.bonus-section-divider');
+  const emptyMsg   = grid.querySelector('.bonus-empty-state');
+  if (!selSection) { renderTeamBonusGrid(); return; }
+  let anyVisible = false;
+  _teamCardNodes.forEach((el, id) => {
+    const visible = _cardVisible(el, id, _teamCatalog, q, _teamCatFilter);
+    el.style.display = visible ? '' : 'none';
+    if (visible) anyVisible = true;
+  });
+  if (emptyMsg) emptyMsg.style.display = anyVisible ? 'none' : '';
+  _updateBonusDivider(selSection, divider);
 }
 
 function toggleTeamBonus(id) {
   if (!draft.team_bonuses) draft.team_bonuses = [];
   const idx = draft.team_bonuses.findIndex(b => b.id === id);
-  if (idx === -1) {
+  const isNowSelected = idx === -1;
+  if (isNowSelected) {
     draft.team_bonuses.push({ id, multiplier: 1 });
   } else {
     draft.team_bonuses.splice(idx, 1);
   }
   saveDraft();
-  renderTeamBonusGrid();
+  _moveTeamBonusCard(id, isNowSelected);
+}
+
+function _moveTeamBonusCard(id, isSelected) {
+  const grid = document.getElementById("team-bonus-grid");
+  if (!grid) return;
+  const el = _teamCardNodes.get(id);
+  if (!el) { renderTeamBonusGrid(); return; }
+  const selSection   = grid.querySelector('.bonus-section-selected');
+  const availSection = grid.querySelector('.bonus-section-available');
+  const divider      = grid.querySelector('.bonus-section-divider');
+  if (!selSection || !availSection) { renderTeamBonusGrid(); return; }
+
+  el.classList.toggle('selected', isSelected);
+
+  if (isSelected) {
+    const circle = el.querySelector('.multiplier-circle');
+    if (circle) {
+      circle.dataset.mult = 1;
+      circle.querySelector('.multiplier-amount').textContent = '×1';
+    }
+    selSection.appendChild(el);
+  } else {
+    const catalogIdx = _teamCatalog.findIndex(c => c.id === id);
+    const insertBefore = Array.from(availSection.querySelectorAll('.bonus-card')).find(card => {
+      const cardId = parseInt(card.dataset.bonusId.replace(/^T/, ''), 10);
+      return _teamCatalog.findIndex(c => c.id === cardId) > catalogIdx;
+    });
+    availSection.insertBefore(el, insertBefore || null);
+  }
+
+  _updateBonusDivider(selSection, divider);
 }
 
 // ── Unique Technologies (Castle + Imperial) ───────────────────────────────────
@@ -1693,8 +1881,8 @@ const MAX_UT_EFFECTS = 5;
 
 // Maps wizard step → { draft key, input prefix }
 const UT_STEPS = {
-  5: { key: "castle_ut",   prefix: "cut" },
-  6: { key: "imperial_ut", prefix: "iut" },
+  6: { key: "castle_ut",   prefix: "cut" },
+  7: { key: "imperial_ut", prefix: "iut" },
 };
 
 // Vanilla tech costs loaded from DAT (keyed by km_idx string)
@@ -1789,52 +1977,80 @@ function _getUTTooltip() {
 
 function renderUTGrid(step) {
   const { prefix } = UT_STEPS[step];
-  const catalog = step === 5 ? _castleUtCatalog : _imperialUtCatalog;
-  const costs   = step === 5 ? _castleUtCosts   : _imperialUtCosts;
-  const grid    = document.getElementById(`${prefix}-vanilla-grid`);
+  const tier      = step === 6 ? 'castle' : 'imperial';
+  const catalog   = tier === 'castle' ? _castleUtCatalog : _imperialUtCatalog;
+  const grid      = document.getElementById(`${prefix}-vanilla-grid`);
   if (!grid) return;
 
-  const query = (document.getElementById(`${prefix}-vanilla-search`)?.value || "").toLowerCase();
-  const ut    = draft[UT_STEPS[step].key] || {};
-  const selId = ut.vanilla_km_idx ?? null;
-
-  let items = catalog;
-  if (query) items = items.filter(t => t.name.toLowerCase().includes(query) || t.desc.toLowerCase().includes(query));
-
-  if (!items.length) {
-    grid.innerHTML = '<div class="text-muted small fst-italic py-2">No results found.</div>';
+  if (!catalog.length) {
+    grid.innerHTML = '<div class="text-muted small fst-italic py-2">Loading…</div>';
     return;
   }
 
-  grid.innerHTML = items.map(t => {
-    const sel = t.id === selId ? " selected" : "";
-    return `<div class="ut-card${sel}" data-id="${t.id}" data-name="${_esc(t.name)}" data-desc="${_esc(t.desc)}">
-      <div class="ut-card-name">${t.name}</div>
-      <div class="ut-card-desc">${t.desc}</div>
+  const q         = (document.getElementById(`${prefix}-vanilla-search`)?.value || "").toLowerCase();
+  const catFilter = tier === 'castle' ? _cutCatFilter : _iutCatFilter;
+  const ut        = draft[UT_STEPS[step].key] || {};
+  const selId     = ut.vanilla_km_idx ?? ut.effects?.[0]?.id ?? null;
+  const selMult   = ut.effects?.[0]?.multiplier || 1;
+  const utOvPool  = _utOverrides[tier] || {};
+
+  let html = '', anyVisible = false;
+  for (const t of catalog) {
+    const card      = _utCards[tier][String(t.id)] || {};
+    const cat       = _UT_CATEGORIES.find(c => c.key === card.category) || _UT_CATEGORIES.at(-1);
+    const catLabel  = cat.key.charAt(0).toUpperCase() + cat.key.slice(1);
+    const iconFile  = card.icon;
+    const textMatch = !q || t.name.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q);
+    const catMatch  = catFilter.size === 0 || catFilter.has(cat.key);
+    const visible   = textMatch && catMatch;
+    if (visible) anyVisible = true;
+    const isSel     = t.id === selId;
+    const sel       = isSel ? ' selected' : '';
+    const iconHtml  = iconFile
+      ? `<img class="card-icon" src="/static/icons/units/${iconFile}" alt="${catLabel}" onerror="this.style.display='none'">`
+      : '';
+    const noMult    = utOvPool[String(t.id)]?.multiplier === false;
+    const multWidget = (isSel && !noMult)
+      ? `<div class="multiplier"><button class="multiplier-circle" data-mult="${selMult}" title="Multiplier"><span class="multiplier-amount">×${selMult}</span></button></div>`
+      : '';
+    html += `<div class="bonus-card${sel}" data-ut-id="${t.id}" data-cat="${cat.key}"
+      style="--cat-color:var(--cat-${cat.key})${visible ? '' : ';display:none'}"
+      title="${_esc(t.label)}">
+      <div class="card-header">
+        <div><i class="fa-solid ${cat.icon}"></i><span class="bonus-type">${catLabel}</span></div>
+        ${multWidget}
+      </div>
+      <div class="card-body">
+        ${iconHtml}
+        <div class="ut-card-name">${t.name}</div>
+        <div class="card-who"><span class="card-who-label">${t.desc}</span></div>
+      </div>
+      <div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>
     </div>`;
-  }).join("");
+  }
 
-  const tooltip = _getUTTooltip();
+  grid.innerHTML = `<div class="bonus-section">${html}</div>` +
+    (anyVisible ? '' : '<div class="text-muted small fst-italic py-2">No results found.</div>');
 
-  grid.querySelectorAll(".ut-card").forEach(card => {
-    card.addEventListener("click", () => {
-      selectVanillaTech(step, parseInt(card.dataset.id, 10));
+  grid.querySelectorAll('.bonus-card[data-ut-id]').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('.multiplier-circle')) return;
+      selectVanillaTech(step, parseInt(el.dataset.utId, 10));
     });
-    card.addEventListener("mouseenter", e => {
-      const id   = parseInt(card.dataset.id, 10);
-      const name = card.dataset.name;
-      const desc = card.dataset.desc;
-      const c    = costs[String(id)];
-      const cStr = c ? _formatCostStr(c.cost, c.time) : "";
-      tooltip.innerHTML = `
-        <div class="tip-name">${name}</div>
-        <div class="tip-desc">${desc}</div>
-        ${cStr ? `<div class="tip-cost">${cStr}</div>` : ""}`;
-      tooltip.style.display = "block";
-      _positionTooltip(tooltip, e);
+  });
+
+  grid.querySelectorAll('.multiplier-circle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const ut   = _utDraft(step);
+      const cur  = ut.effects?.[0]?.multiplier || 1;
+      const next = cur >= 10 ? 1 : cur + 1;
+      if (ut.effects?.[0]) ut.effects[0].multiplier = next;
+      saveDraft();
+      btn.dataset.mult = next;
+      btn.querySelector('.multiplier-amount').textContent = '×' + next;
+      renderUTEffectSlots(step);
     });
-    card.addEventListener("mousemove", e => _positionTooltip(tooltip, e));
-    card.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
   });
 }
 
@@ -1854,8 +2070,8 @@ function _esc(s) {
 
 function selectVanillaTech(step, id) {
   const { key, prefix } = UT_STEPS[step];
-  const catalog = step === 5 ? _castleUtCatalog : _imperialUtCatalog;
-  const costs   = step === 5 ? _castleUtCosts   : _imperialUtCosts;
+  const catalog = step === 6 ? _castleUtCatalog : _imperialUtCatalog;
+  const costs   = step === 6 ? _castleUtCosts   : _imperialUtCosts;
   const tech    = catalog.find(t => t.id === id);
   if (!tech) return;
 
@@ -1906,6 +2122,13 @@ function initUTPanel(step) {
   const { key, prefix } = UT_STEPS[step];
   const ut = draft[key] || {};
   const mode = ut.mode || "vanilla";
+
+  // Migrate drafts that saved vanilla_id instead of vanilla_km_idx,
+  // or that have an effects entry but no selection key.
+  if (mode === "vanilla" && ut.vanilla_km_idx == null && ut.effects?.[0]?.id != null) {
+    ut.vanilla_km_idx = ut.effects[0].id;
+    saveDraft();
+  }
 
   // Restore name + desc
   const nameEl = document.getElementById(`${prefix}-name`);
@@ -1972,7 +2195,7 @@ function initUTPanel(step) {
     });
 
     // Effect search picker (custom mode)
-    const utCatalog = step === 5 ? _castleUtCatalog : _imperialUtCatalog;
+    const utCatalog = step === 6 ? _castleUtCatalog : _imperialUtCatalog;
     wireSearchPicker({
       inputId:   `${prefix}-effect-search`,
       resultsId: `${prefix}-effect-results`,
@@ -1980,6 +2203,11 @@ function initUTPanel(step) {
       onSelect:  (id) => addUTEffect(step, id),
     });
   }
+
+  // Render category pills (every visit, not just first wiring)
+  const _utTier      = step === 6 ? 'castle' : 'imperial';
+  const _utCatFilter = _utTier === 'castle' ? _cutCatFilter : _iutCatFilter;
+  _renderCatPills(`${prefix}-cat-pills`, _utCatFilter, () => renderUTGrid(step), _UT_CATEGORIES);
 
   // Set initial mode (shows/hides sections) + render grid
   _setUTMode(step, mode);
@@ -2009,21 +2237,24 @@ function renderUTEffectSlots(step) {
   container.querySelectorAll(".bonus-slot").forEach(el => el.remove());
   hint.style.display = effects.length ? "none" : "";
 
-  const utCatalog = step === 5 ? _castleUtCatalog : _imperialUtCatalog;
+  const utCatalog  = step === 6 ? _castleUtCatalog : _imperialUtCatalog;
+  const utOvPool   = step === 6 ? _utOverrides.castle : _utOverrides.imperial;
   effects.forEach((b, idx) => {
-    const label = (utCatalog.find(c => c.id === b.id) || {}).label || `Effect #${b.id}`;
+    const label    = (utCatalog.find(c => c.id === b.id) || {}).label || `Effect #${b.id}`;
+    const noMult   = utOvPool[String(b.id)]?.multiplier === false;
+    const multWidget = noMult
+      ? `<span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h); font-size:.75rem; color:var(--accent-3); border-radius: var(--bs-border-radius-sm);">×1</span>`
+      : `<div class="input-group input-group-sm" style="width:auto;">
+        <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h); font-size:.75rem; color:var(--accent-3)">×</span>
+        <select class="form-select form-select-sm ut-eff-mult" data-idx="${idx}" style="width:4.5rem;">
+          ${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}" ${b.multiplier===n?'selected':''}>${n}</option>`).join('')}
+        </select>
+      </div>`;
     const slot  = document.createElement("div");
     slot.className = "bonus-slot d-flex align-items-center gap-2";
     slot.innerHTML = `
       <span class="bonus-slot-label flex-grow-1 small">${label}</span>
-      <div class="input-group input-group-sm" style="width:auto;">
-        <span class="input-group-text" style="background: oklch(from var(--body-bg) calc(l + 0.04) c h); border-color: oklch(from var(--body-bg) calc(l + 0.18) c h); font-size:.75rem; color:var(--accent-3)">×</span>
-        <select class="form-select form-select-sm ut-eff-mult" data-idx="${idx}" style="width:4.5rem;">
-          <option value="1" ${b.multiplier===1?'selected':''}>1</option>
-          <option value="2" ${b.multiplier===2?'selected':''}>2</option>
-          <option value="3" ${b.multiplier===3?'selected':''}>3</option>
-        </select>
-      </div>
+      ${multWidget}
       <button class="btn btn-sm ut-eff-remove" data-idx="${idx}"
         style="background:transparent; border:1px solid oklch(from var(--body-bg) calc(l + 0.2) c h); color:var(--accent-3); padding:2px 7px; line-height:1.5;"
         title="Remove effect">✕</button>
@@ -2607,7 +2838,7 @@ document.getElementById("btn-open-tree").addEventListener("click", async () => {
   // New SE architecture: showTechtree(civName, [[units],[buildings],[techs]], relativepath)
   // The civ name drives which per-civ layout JSON to load.
   // The initialTree drives which nodes start enabled.
-  let civName    = (templateVal === "full" || templateVal === "_current") ? "Britons" : templateVal;
+  let civName    = (templateVal === "full" || templateVal === "_current") ? "Full" : templateVal;
   let treeToLoad = null;  // null → showTechtree uses the civ's own defaults
 
   if (draft.tree && draft.tree.units && templateVal === "_current") {
@@ -2746,13 +2977,18 @@ async function init() {
 
   Promise.all([loadBonusCatalog(), loadUTCatalog()]).then(() => {
     // Restore UT panels if user had already filled them in a previous session
-    if (draft.castle_ut)   initUTPanel(5);
-    if (draft.imperial_ut) initUTPanel(6);
+    if (draft.castle_ut)   initUTPanel(6);
+    if (draft.imperial_ut) initUTPanel(7);
+    // Render category filter pills
+    const _getBonusQ = () => (document.getElementById("bonus-search")?.value || "").toLowerCase();
+    const _getTeamQ  = () => (document.getElementById("team-bonus-search")?.value || "").toLowerCase();
+    _renderCatPills("bonus-cat-pills",      _bonusCatFilter, () => _filterBonusGrid(_getBonusQ()));
+    _renderCatPills("team-bonus-cat-pills", _teamCatFilter,  () => _filterTeamBonusGrid(_getTeamQ()));
     // Wire search inputs to filter the grids
     document.getElementById("bonus-search")
-      .addEventListener("input", renderBonusGrid);
+      .addEventListener("input", e => _filterBonusGrid(e.target.value.toLowerCase()));
     document.getElementById("team-bonus-search")
-      .addEventListener("input", renderTeamBonusGrid);
+      .addEventListener("input", e => _filterTeamBonusGrid(e.target.value.toLowerCase()));
     // Populate grids (restores any saved bonuses)
     renderBonusGrid();
     renderTeamBonusGrid();

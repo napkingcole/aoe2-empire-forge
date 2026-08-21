@@ -97,6 +97,13 @@ _KM_UU_TECHS: dict[int, tuple[int, int]] = {
     45: (881, 882),   # Centurion — real vanilla DE unit (Romans, civ 43),
                       # not a KM-custom creation despite sitting inside the
                       # 39-77 custom-UU index range.
+    # Mesoamerican DLC unique units (confirmed DAT enable/elite tech IDs)
+    88: (1375, 1376), # Kona (Mapuche)
+    89: (1377, 1378), # Bolas Rider (Mapuche)
+    90: (1388, 1389), # Blackwood Archer (Tupi)
+    91: (1390, 1391), # Ibirapema Warrior (Tupi)
+    92: (1363, 1364), # Guecha Warrior (Muisca)
+    93: (1400, 1401), # Temple Guard (Muisca)
 }
 
 # Display names for KM UU indices. Vanilla indices (0-38, 78-87) are creatable
@@ -192,6 +199,13 @@ _KM_UU_NAMES: dict[int, str] = {
     85: "Tiger Cavalry",
     86: "Iron Pagoda",
     87: "Liao Dao",
+    # Mesoamerican DLC
+    88: "Kona",
+    89: "Bolas Rider",
+    90: "Blackwood Archer",
+    91: "Ibirapema Warrior",
+    92: "Guecha Warrior",
+    93: "Temple Guard",
 }
 
 # ── String ID allocation ──────────────────────────────────────────────────────
@@ -678,10 +692,15 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     tree[1] = building IDs the civ can build.
     tree[2] = research tech IDs the civ can research.
     """
-    tree = civ_def.get("tree", [[], [], []])
-    tree_units     = set(tree[0] if len(tree) > 0 and isinstance(tree[0], list) else [])
-    tree_buildings = set(tree[1] if len(tree) > 1 and isinstance(tree[1], list) else [])
-    tree_techs     = set(tree[2] if len(tree) > 2 and isinstance(tree[2], list) else [])
+    raw_tree = civ_def.get("tree", [[], [], []])
+    if isinstance(raw_tree, dict):
+        tree_units     = set(raw_tree.get("units", []))
+        tree_buildings = set(raw_tree.get("buildings", []))
+        tree_techs     = set(raw_tree.get("techs", []))
+    else:
+        tree_units     = set(raw_tree[0] if len(raw_tree) > 0 and isinstance(raw_tree[0], list) else [])
+        tree_buildings = set(raw_tree[1] if len(raw_tree) > 1 and isinstance(raw_tree[1], list) else [])
+        tree_techs     = set(raw_tree[2] if len(raw_tree) > 2 and isinstance(raw_tree[2], list) else [])
 
     if not tree_units and not tree_buildings and not tree_techs:
         return
@@ -2418,28 +2437,74 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
     return False  # not handled
 
 
+# ── Format-agnostic civ_def accessors ─────────────────────────────────────────
+# Wizard format uses named top-level keys with flat lists of {"id","multiplier"}
+# dicts.  Old KM format packs everything into a single nested bonuses list.
+# All internal code uses these helpers so neither format needs special-casing
+# at each call site.
+
+def _norm_entry(e) -> list:
+    """Convert {"id": X, "multiplier": Y} or [X, Y] to [X, Y]."""
+    if isinstance(e, dict):
+        return [int(e["id"]), int(e.get("multiplier", 1))]
+    return [int(e[0]), int(e[1]) if len(e) > 1 else 1]
+
+def get_civ_bonuses(civ_def: dict) -> list:
+    """Return civ bonus entries as [[id, mult], ...] from either format."""
+    raw = civ_def.get("bonuses", [])
+    if not raw:
+        return []
+    if isinstance(raw[0], dict):
+        return [_norm_entry(e) for e in raw]
+    return raw[0] if isinstance(raw[0], list) else []
+
+def get_team_bonuses(civ_def: dict) -> list:
+    """Return team bonus entries as [[id, mult], ...] from either format."""
+    if "team_bonuses" in civ_def:
+        return [_norm_entry(e) for e in civ_def["team_bonuses"]]
+    raw = civ_def.get("bonuses", [])
+    return raw[4] if len(raw) > 4 and isinstance(raw[4], list) else []
+
+def get_ut_entries(civ_def: dict, which: str) -> list:
+    """Return UT bonus entries as [[id, mult], ...].
+
+    which: 'castle_ut' or 'imperial_ut'
+    Wizard format: civ_def[which]["effects"] list of dicts.
+    Old KM format: bonuses[2] for castle, bonuses[3] for imperial.
+    """
+    if which in civ_def:
+        ut = civ_def[which] or {}
+        return [_norm_entry(e) for e in ut.get("effects", [])]
+    raw = civ_def.get("bonuses", [])
+    idx = 2 if which == "castle_ut" else 3
+    return raw[idx] if len(raw) > idx and isinstance(raw[idx], list) else []
+
+def get_km_uu_index(civ_def: dict) -> int | None:
+    """Return KM UU index from either format, or None if absent."""
+    uu = civ_def.get("unique_unit")
+    if isinstance(uu, dict) and uu.get("km_idx") is not None:
+        return int(uu["km_idx"])
+    raw = civ_def.get("bonuses", [])
+    if len(raw) > 1 and isinstance(raw[1], list) and raw[1] and isinstance(raw[1][0], int):
+        return raw[1][0]
+    return None
+
+
 def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                    tb_eff_id: int) -> dict:
     """
     Apply civ bonuses and team bonus from civ_def to the DAT.
 
-    bonuses[0] → civ bonuses:  [[id, multiplier], ...]
-    bonuses[1] → UU reference: [id] bare int list (not processed here)
-    bonuses[2] → castle UT:    [[id, multiplier], ...]
-    bonuses[3] → imperial UT:  [[id, multiplier], ...]
-    bonuses[4] → team bonus:   [[id, multiplier], ...]
+    Reads bonuses via get_civ_bonuses / get_team_bonuses — handles both
+    wizard format (flat dicts) and old KM format (nested lists).
 
     Each civ bonus is implemented by allocating a civ-owned copy of the
     corresponding vanilla auto-fire tech(s) and applying the multiplier.
     Team bonuses go directly into the team_bonus effect as EC_ENABLE commands
     targeting the tech's own effect commands.
     """
-    raw = civ_def.get("bonuses", [])
-    if not raw:
-        return {}
-
-    # ── Civ bonuses (index 0) ─────────────────────────────────────────────────
-    civ_bonuses = raw[0] if len(raw) > 0 and isinstance(raw[0], list) else []
+    # ── Civ bonuses ───────────────────────────────────────────────────────────
+    civ_bonuses = get_civ_bonuses(civ_def)
 
     # Enforce dependency ordering: some bonuses must run before their dependents.
     # 309 (create Royal Battle Elephant tech) must precede 155 (make it free).
@@ -2487,7 +2552,35 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                             ec for ec in dat.effects[eff_id].effect_commands
                             if ec.type not in (EC_ENABLE, EC_UPGRADE)
                         ]
-                        # For multiplier=1 the global already fires for our civ.
+                        # For multiplier=1 the global already fires for our civ —
+                        # UNLESS the tech is opt-in (enabled=0 globally, activated
+                        # by type=8 in individual civs' TT effects, like Slinger
+                        # tech 528). Detect this by checking whether any vanilla
+                        # civ's TT effect has a type=8 pointing to this tech_id.
+                        # If so, add the same type=8 to our civ's TT effect so the
+                        # unit actually becomes available.
+                        tt_eff = dat.effects[dat.civs[civ_index].tech_tree_id]
+                        already_ec8 = any(
+                            c.type == 8 and int(c.a) == tech_id
+                            for c in tt_eff.effect_commands
+                        )
+                        if not already_ec8:
+                            ec8_tmpl = None
+                            for vc in dat.civs:
+                                vtti = vc.tech_tree_id
+                                if 0 <= vtti < len(dat.effects):
+                                    for vc_cmd in dat.effects[vtti].effect_commands:
+                                        if vc_cmd.type == 8 and int(vc_cmd.a) == tech_id:
+                                            ec8_tmpl = vc_cmd
+                                            break
+                                if ec8_tmpl:
+                                    break
+                            if ec8_tmpl:
+                                tt_eff.effect_commands.append(
+                                    EffectCommand(type=8, a=ec8_tmpl.a, b=ec8_tmpl.b,
+                                                  c=ec8_tmpl.c, d=ec8_tmpl.d)
+                                )
+                                print(f"       Bonus {bonus_id}: added type=8 opt-in unlock for tech {tech_id}")
                         # For multiplier>1 build a scaled supplement that fires
                         # the *additional* delta (d scaled by multiplier-1) so
                         # total effect across both firings equals multiplier*base.
@@ -2531,8 +2624,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     bonus_result = {"applied": applied, "skipped": skipped, "extra_tech_strings": extra_strings,
                     "extra_unit_strings": extra_unit_strings, "bonus_tech_map": bonus_tech_map}
 
-    # ── Team bonus (index 4) ──────────────────────────────────────────────────
-    team_entries = raw[4] if len(raw) > 4 and isinstance(raw[4], list) else []
+    # ── Team bonus ────────────────────────────────────────────────────────────
+    team_entries = get_team_bonuses(civ_def)
     team_applied = 0
     for entry in team_entries:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
@@ -2744,13 +2837,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     #    so they don't bleed into the new civ (ghost Castle buttons, old bonuses).
     has_custom_uu = civ_def.get("unique_unit", {}).get("base_unit_id") is not None
 
-    # Detect KM vanilla UU from bonuses[1][0].  Vanilla indices (0-38, 78-87) are
-    # fully supported; KM-custom indices (39-77, 88+) fall back to vanilla UU preserve.
-    _bonuses_raw_pre = civ_def.get("bonuses", [])
-    _uu_ref = (_bonuses_raw_pre[1]
-               if len(_bonuses_raw_pre) > 1 and isinstance(_bonuses_raw_pre[1], list)
-               else [])
-    km_uu_index = _uu_ref[0] if _uu_ref and isinstance(_uu_ref[0], int) else None
+    # Detect KM vanilla UU index. Vanilla indices (0-38, 78-87) fully supported;
+    # KM-custom indices (39-77, 88+) fall back to vanilla UU preserve.
+    km_uu_index = get_km_uu_index(civ_def)
     km_uu_is_vanilla = km_uu_index is not None and km_uu_index in _KM_UU_TECHS
     km_uu_is_custom = km_uu_index is not None and km_uu_index in km_custom_uu.PRESETS
 
@@ -2844,15 +2933,20 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     else:
         new_civ.name = alias
     # Castle graphic: copy units[82] from the chosen source civ (0-indexed KM value → DAT civ N+1).
-    castle_src = civ_def.get("castle", 0) + 1
-    if castle_src != 1 and castle_src < len(dat.civs):
+    # Falls back to "castle_model" so raw civbuilder_v1 files (before _schema_to_draft) also work.
+    castle_raw = civ_def.get("castle") if "castle" in civ_def else civ_def.get("castle_model", -1)
+    castle_src = (castle_raw + 1) if isinstance(castle_raw, int) else 0
+    if castle_src > 1 and castle_src < len(dat.civs):
         src_units = dat.civs[castle_src].units
+        castle_civ_name = dat.civs[castle_src].name
+        print(f"       Castle: copying from DAT civ {castle_src} ({castle_civ_name!r})")
         if len(src_units) > 82 and src_units[82] is not None:
             new_civ.units[82] = deepcopy(src_units[82])
 
     # Wonder graphic: copy units[276] from the chosen source civ.
-    wonder_src = civ_def.get("wonder", 0) + 1
-    if wonder_src != 1 and wonder_src < len(dat.civs):
+    wonder_raw = civ_def.get("wonder") if "wonder" in civ_def else civ_def.get("wonder_model", -1)
+    wonder_src = (wonder_raw + 1) if isinstance(wonder_raw, int) else 0
+    if wonder_src > 1 and wonder_src < len(dat.civs):
         src_units = dat.civs[wonder_src].units
         if len(src_units) > 276 and src_units[276] is not None:
             new_civ.units[276] = deepcopy(src_units[276])
@@ -2895,14 +2989,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     if uu_id >= 0 and elite_uu_id >= 0:
         _append_elite_upgrade_tech(dat, civ_index, alias, uu_id, elite_uu_id)
 
-    # 4. Castle UT and Imperial UT — from bonuses[2] and bonuses[3].
-    _bonuses_raw       = civ_def.get("bonuses", [])
-    castle_ut_entries  = (_bonuses_raw[2]
-                          if len(_bonuses_raw) > 2 and isinstance(_bonuses_raw[2], list)
-                          else [])
-    imperial_ut_entries = (_bonuses_raw[3]
-                           if len(_bonuses_raw) > 3 and isinstance(_bonuses_raw[3], list)
-                           else [])
+    # 4. Castle UT and Imperial UT.
+    castle_ut_entries   = get_ut_entries(civ_def, "castle_ut")
+    imperial_ut_entries = get_ut_entries(civ_def, "imperial_ut")
     _ut_pool_base      = UT_POOL_OFFSET      + civ_index * UT_POOL_SLOTS_PER_CIV
     _ut_help_pool_base = UT_HELP_POOL_OFFSET + civ_index * UT_HELP_SLOTS_PER_CIV
     castle_ut_sid      = _campaign_sid(_ut_pool_base + 0)
@@ -2953,13 +3042,16 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # per-civ by _apply_bonuses below.  tree[1] membership is a secondary
     # signal.  Computed here so both km_uu_is_vanilla and km_uu_is_custom can
     # use it (previously only the custom path checked).
-    _bonuses_pre = civ_def.get("bonuses", [[]])
-    _civ_bonuses_pre = _bonuses_pre[0] if _bonuses_pre and isinstance(_bonuses_pre[0], list) else []
-    has_krepost_bonus = any(isinstance(e, (list, tuple)) and e and e[0] == 93
-                            for e in _civ_bonuses_pre)
+    has_krepost_bonus = any(
+        isinstance(e, (list, tuple)) and e and int(e[0]) == 93
+        for e in get_civ_bonuses(civ_def)
+    )
     _tree_pre = civ_def.get("tree", [[], [], []])
-    has_krepost_tree = (len(_tree_pre) > 1 and isinstance(_tree_pre[1], list)
-                        and 1251 in _tree_pre[1])
+    if isinstance(_tree_pre, dict):
+        _tree_buildings_pre = _tree_pre.get("buildings", [])
+    else:
+        _tree_buildings_pre = _tree_pre[1] if len(_tree_pre) > 1 and isinstance(_tree_pre[1], list) else []
+    has_krepost_tree = 1251 in _tree_buildings_pre
     has_krepost = has_krepost_bonus or has_krepost_tree
     if km_uu_is_vanilla:
         km_uu_make_avail_tech_id, km_uu_elite_tech_id = _apply_km_uu(dat, civ_index, km_uu_index)
@@ -3319,6 +3411,8 @@ _KM_CASTLE_UT_TECHS: dict[int, int] = {
     36: 463, 37: 782, 38: 784, 44: 831, 45: 833, 46: 835, 47: 455,
     48: 9, 49: 883, 50: 28, 51: 922, 52: 923, 54: 499, 55: 1070,
     56: 1080, 57: 1061, 58: 996, 59: 1006,
+    # Mesoamerican DLC — Mapuche: Malon, Tupi: Caciques, Muisca: Herbalism
+    60: 1379, 61: 1392, 62: 1365,
 }
 
 _KM_IMP_UT_TECHS: dict[int, int] = {
@@ -3329,6 +3423,8 @@ _KM_IMP_UT_TECHS: dict[int, int] = {
     30: 513, 31: 440, 32: 688, 33: 11, 34: 10, 35: 629, 36: 49,
     37: 783, 38: 785, 44: 832, 45: 834, 46: 836, 47: 884, 48: 921,
     49: 924, 54: 1069, 55: 1081, 56: 1062, 57: 997, 58: 1007,
+    # Mesoamerican DLC — Mapuche: Butalmapu, Tupi: Curare, Muisca: Huaracas
+    59: 1380, 60: 1393, 61: 1366,
 }
 
 
@@ -3392,6 +3488,37 @@ def _setup_mercenary_uu_unit(dat: DatFile, civ_index: int, elite_uu_id: int) -> 
     dat.civs[civ_index].units[_MERCENARY_UU_SLOT] = clone
 
 
+def _src_civ_uu_ids(dat: DatFile, civ_idx: int) -> tuple[set[int], set[int]]:
+    """Return (base_unit_ids, elite_unit_ids) for a vanilla civ's unique unit.
+
+    Resolves by scanning _KM_UU_TECHS for the make-avail tech that belongs to
+    civ_idx, then reading EC_ENABLE(b=1) for the base UU and EC_UPGRADE.b for
+    the elite UU. Used by _build_ut_effect_cmds to identify UU unit IDs in
+    stat-buff UTs (Bearded Axe, Royal Heirs, Corvinian Army) that lack their
+    own EC_ENABLE commands.
+    """
+    base_ids:  set[int] = set()
+    elite_ids: set[int] = set()
+    for make_avail_id, elite_tech_id in _KM_UU_TECHS.values():
+        if make_avail_id < 0 or make_avail_id >= len(dat.techs):
+            continue
+        if dat.techs[make_avail_id].civ != civ_idx:
+            continue
+        eff_id = dat.techs[make_avail_id].effect_id
+        if 0 <= eff_id < len(dat.effects):
+            for ec in dat.effects[eff_id].effect_commands:
+                if ec.type == EC_ENABLE and int(ec.b) == 1:
+                    base_ids.add(int(ec.a))
+        if 0 <= elite_tech_id < len(dat.techs):
+            eff2_id = dat.techs[elite_tech_id].effect_id
+            if 0 <= eff2_id < len(dat.effects):
+                for ec in dat.effects[eff2_id].effect_commands:
+                    if ec.type == EC_UPGRADE:
+                        elite_ids.add(int(ec.b))
+        break
+    return base_ids, elite_ids
+
+
 def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                           lookup: dict[int, int]) -> tuple[list, list, list]:
     """Collect effect commands for a UT's bonus entries.
@@ -3442,6 +3569,9 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         # EC_ENABLE(b=1) command targeting their own UU: identify the source
         # civ's base and elite UU unit IDs so we can substitute them with the
         # destination civ's own UU ids rather than blindly copying wrong ids.
+        # For stat-buff UTs with no EC_ENABLE (Bearded Axe, Royal Heirs,
+        # Corvinian Army), fall back to _src_civ_uu_ids which reads the source
+        # civ's UU from the make-avail tech in _KM_UU_TECHS.
         src_base_uu_ids: set[int] = set()
         src_elite_uu_ids: set[int] = set()
         if source_tech.civ != -1:
@@ -3449,9 +3579,23 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                 if ec.type == EC_ENABLE and int(ec.b) == 1:
                     src_base_uu_ids.add(int(ec.a))
             if src_base_uu_ids:
+                # Anarchy/Marauders style: derive elite as remainder of unit refs
                 all_unit_refs = {int(ec.a) for ec in all_cmds
                                  if ec.type in (EC_SET, EC_ADD, EC_MULTIPLY) and ec.a >= 0}
                 src_elite_uu_ids = all_unit_refs - src_base_uu_ids
+            else:
+                # Stat-buff UT: look up source civ's UU from _KM_UU_TECHS.
+                src_base_uu_ids, src_elite_uu_ids = _src_civ_uu_ids(dat, source_tech.civ)
+                # Only log when at least one effect command actually targets a
+                # UU unit ID (i.e. will be deferred). Avoids false-positive
+                # messages for UTs like Ordo Cavalry (EC_RESOURCE only).
+                if src_base_uu_ids:
+                    targeted = {int(ec.a) for ec in all_cmds
+                                if ec.type in (EC_SET, EC_ADD, EC_MULTIPLY) and ec.a >= 0}
+                    if targeted & (src_base_uu_ids | src_elite_uu_ids):
+                        print(f"       {label} bonus {bonus_id}: UU retargeting "
+                              f"base={sorted(src_base_uu_ids)} elite={sorted(src_elite_uu_ids)}"
+                              f" → will substitute with dest civ's UU")
 
         for ec in all_cmds:
             a = int(ec.a)

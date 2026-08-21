@@ -1,33 +1,33 @@
 {
   "_note": [
-    "Single-column layout — fields map top to bottom:",
+    "Single-column layout \u2014 fields map top to bottom:",
     "",
-    "  ┌── HEADER (auto: category color + name) ──────┐",
-    "  │  [icon]          ← entity, icon               │",
-    "  │  [icon]  [icon]  ← dual only (icon + icon2)   │",
-    "  │  [heading]       ← heading                    │",
-    "  │  [stat]          ← stat                       │",
-    "  │  [prog_label]    ← progression only           │",
-    "  │  [age table]     ← progression only (ages)    │",
-    "  │ ─────────────────────────────────────         │",
-    "  │  [who] [description] ← entity + description   │",
-    "  └───────────────────────────────────────────────┘",
+    "  \u250c\u2500\u2500 HEADER (auto: category color + name) \u2500\u2500\u2500\u2500\u2500\u2500\u2510",
+    "  \u2502  [icon]          \u2190 entity, icon               \u2502",
+    "  \u2502  [icon]  [icon]  \u2190 dual only (icon + icon2)   \u2502",
+    "  \u2502  [heading]       \u2190 heading                    \u2502",
+    "  \u2502  [stat]          \u2190 stat                       \u2502",
+    "  \u2502  [prog_label]    \u2190 progression only           \u2502",
+    "  \u2502  [age table]     \u2190 progression only (ages)    \u2502",
+    "  \u2502 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500         \u2502",
+    "  \u2502  [who] [description] \u2190 entity + description   \u2502",
+    "  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518",
     "",
     "  type:        value | progression | dual | multi | desc | hidden",
-    "  heading:     Big bold text — '+20%', 'FREE', 'CAN', 'Building Damage'",
-    "  stat:        Smaller label below heading — 'HP', 'Cost', 'Work Rate'",
-    "  description: Bottom label (who/what is affected) — 'Shepherds', 'Infantry'",
-    "  entity:      Unit/building key — drives icon, small who-icon, default description",
+    "  heading:     Big bold text \u2014 '+20%', 'FREE', 'CAN', 'Building Damage'",
+    "  stat:        Smaller label below heading \u2014 'HP', 'Cost', 'Work Rate'",
+    "  description: Bottom label (who/what is affected) \u2014 'Shepherds', 'Infantry'",
+    "  entity:      Unit/building key \u2014 drives icon, small who-icon, default description",
     "  entity2:     Second entity for 'dual' cards (shown side-by-side with entity)",
-    "  icon:        Filename in /static/icons/units/ — overrides main image only",
+    "  icon:        Filename in /static/icons/units/ \u2014 overrides main image only",
     "  icon2:       Filename for second image in 'dual'",
     "  prog_label:  Small label above the age table (progression only)",
-    "  ages:        [{age, value}] — age: dark|feudal|castle|imperial; Roman numerals auto",
-    "  lines:       ['...','...'] — desc card lines (auto-split on ; if omitted)",
-    "  hidden:      true → card not rendered",
-    "  _label:      Human note, ignored by parser — documents which bonus this is",
+    "  ages:        [{age, value}] \u2014 age: dark|feudal|castle|imperial; Roman numerals auto",
+    "  lines:       ['...','...'] \u2014 desc card lines (auto-split on ; if omitted)",
+    "  hidden:      true \u2192 card not rendered",
+    "  _label:      Human note, ignored by parser \u2014 documents which bonus this is",
     "",
-    "  Tokens in any string field: [food][wood][gold][stone][pop] → inline resource icons",
+    "  Tokens in any string field: [food][wood][gold][stone][pop] \u2192 inline resource icons",
     "  Omitted fields fall back to auto-parse."
   ],
   "0": {
@@ -97,7 +97,8 @@
     "entity": "town_center",
     "entity2": "loom",
     "stat": "Loom can be researched instantly",
-    "description": "Villagers"
+    "description": "Villagers",
+    "multiplier": false
   },
   "7": {
     "type": "dual",
@@ -142,7 +143,7 @@
     "description": "Infantry"
   },
   "11": {
-    "heading": "×2 Range",
+    "heading": "\u00d72 Range",
     "stat": "Monks have double the standard healing range",
     "entity": "monk",
     "description": "Monks"
@@ -243,7 +244,7 @@
   },
   "25": {
     "type": "dual",
-    "heading": "×2 HP",
+    "heading": "\u00d72 [heart]",
     "stat": "Town Center, Dock 2x hit points",
     "entity": "town_center",
     "entity2": "dock",
@@ -405,13 +406,15 @@
     "lines": [
       "Can steal enemy sheep",
       "Sheep within one unit's LoS cannot be stolen"
-    ]
+    ],
+    "multiplier": false
   },
   "43": {
     "heading": "UNLOCKED",
     "stat": "Missionaries can be trained at the Monastery",
     "entity": "missionary",
-    "description": "Missionaries"
+    "description": "Missionaries",
+    "multiplier": false
   },
   "44": {
     "heading": "+50 [gold]",
@@ -427,7 +430,7 @@
   },
   "46": {
     "type": "dual",
-    "heading": "+1 / −50 [food]",
+    "heading": "+1 / \u221250 [food]",
     "stat": "Extra villager, -50 starting food",
     "entity": "villager",
     "entity2": "food",
@@ -464,19 +467,22 @@
     "stat": "Archer Armor Upgrades",
     "entity": "archer",
     "entity2": "archer_armor",
-    "description": "Archers"
+    "description": "Archers",
+    "multiplier": false
   },
   "50": {
     "heading": "UNLOCKED",
     "stat": "Train Turtle Ships at Docks",
     "entity": "turtle_ship",
-    "description": "Turtle Ships"
+    "description": "Turtle Ships",
+    "multiplier": false
   },
   "51": {
     "heading": "UNLOCKED",
     "stat": "Train Longboats at Docks",
     "entity": "longboat",
-    "description": "Longboats"
+    "description": "Longboats",
+    "multiplier": false
   },
   "52": {
     "heading": "-20%",
@@ -489,7 +495,8 @@
     "heading": "UPGRADE",
     "stat": "Imperial Camel Rider Available",
     "entity": "imperial_camel",
-    "description": "Camel Line"
+    "description": "Camel Line",
+    "multiplier": false
   },
   "54": {
     "type": "dual",
@@ -591,7 +598,8 @@
     "heading": "UNLOCKED",
     "stat": "Slingers from Archery Range",
     "entity": "slinger",
-    "description": "Slingers"
+    "description": "Slingers",
+    "multiplier": false
   },
   "62": {
     "type": "desc",
@@ -637,13 +645,15 @@
     "heading": "UNLOCKED",
     "stat": "Build Feitoria (Imperial Age)",
     "entity": "feitoria",
-    "description": "Feitoria"
+    "description": "Feitoria",
+    "multiplier": false
   },
   "69": {
     "heading": "UNLOCKED",
     "stat": "Build Caravels at Docks",
     "entity": "caravel",
-    "description": "Caravels"
+    "description": "Caravels",
+    "multiplier": false
   },
   "70": {
     "heading": "+18% [reload]",
@@ -663,7 +673,8 @@
     "heading": "FREE",
     "stat": "Pikeman Upgrade",
     "entity": "spearman",
-    "description": "Spearmen"
+    "description": "Spearmen",
+    "multiplier": false
   },
   "73": {
     "heading": "-15% [wood]",
@@ -718,7 +729,7 @@
     ]
   },
   "77": {
-    "heading": "+10% Speed",
+    "heading": "+10% [speed]",
     "stat": "All Ships +10% Speed",
     "entity": "ship",
     "description": "Ships"
@@ -741,18 +752,19 @@
     ]
   },
   "79": {
-    "heading": "+10% Speed",
+    "heading": "+10% [speed]",
     "stat": "Melee Elephant Movement Speed",
     "entity": "battle_elephant",
     "description": "Battle Elephants"
   },
   "80": {
-    "type": "desc",
+    "type": "dual",
     "entity": "house",
+    "entity2": "villager_garrison",
+    "heading": "Villagers Garrison",
+    "stat": "Villagers can garrison in Houses",
     "description": "Villagers",
-    "lines": [
-      "Villagers can garrison in Houses"
-    ]
+    "multiplier": false
   },
   "81": {
     "type": "desc",
@@ -804,7 +816,8 @@
     "heading": "FREE",
     "stat": "Lumber Camp Upgrades",
     "entity": "lumber_camp",
-    "description": "Lumberjacks"
+    "description": "Lumberjacks",
+    "multiplier": false
   },
   "87": {
     "type": "progression",
@@ -838,7 +851,8 @@
     "description": "Map Vision",
     "lines": [
       "Enemy positions are revealed at the start of the game"
-    ]
+    ],
+    "multiplier": false
   },
   "90": {
     "type": "dual",
@@ -852,7 +866,8 @@
     "heading": "FREE",
     "stat": "Militia-line Upgrades",
     "entity": "infantry",
-    "description": "Militia Line"
+    "description": "Militia Line",
+    "multiplier": false
   },
   "92": {
     "heading": "-50% [stone]",
@@ -864,7 +879,8 @@
     "heading": "UNLOCKED",
     "stat": "Build Krepost",
     "entity": "krepost",
-    "description": "Krepost"
+    "description": "Krepost",
+    "multiplier": false
   },
   "94": {
     "heading": "+50%",
@@ -873,13 +889,11 @@
     "description": "Livestock"
   },
   "95": {
-    "type": "dual",
-    "entity": "barracks",
-    "entity2": "stable",
+    "type": "value",
+    "entity": "elevation",
     "description": "All Units",
-    "lines": [
-      "Units deal +25% damage when fighting from higher elevation"
-    ]
+    "heading": "+25% [attack]",
+    "stat": "When fighting from higher elevation"
   },
   "96": {
     "type": "dual",
@@ -887,7 +901,8 @@
     "stat": "Thumb Ring + Parthian Tactics",
     "entity": "thumb_ring",
     "entity2": "parthian_tactics",
-    "description": "Archery Range Techs"
+    "description": "Archery Range Techs",
+    "multiplier": false
   },
   "97": {
     "type": "progression",
@@ -924,7 +939,8 @@
     "stat": "Siege Workshop and Battering Ram available in the Feudal Age; Capped Ram upgrade available in Castle Age",
     "entity": "siege_workshop",
     "entity2": "battering_ram",
-    "description": "Siege Workshop"
+    "description": "Siege Workshop",
+    "multiplier": false
   },
   "100": {
     "heading": "+100 [food]",
@@ -934,7 +950,7 @@
   },
   "101": {
     "type": "dual",
-    "heading": "+10% Speed",
+    "heading": "+10% [speed]",
     "stat": "Movement Speed",
     "entity": "spearman",
     "entity2": "skirmisher",
@@ -951,7 +967,8 @@
     "heading": "UNLOCKED",
     "stat": "Cavalier upgrade available in Castle Age",
     "entity": "cavalier",
-    "description": "Cavalier Upgrade"
+    "description": "Cavalier Upgrade",
+    "multiplier": false
   },
   "104": {
     "type": "dual",
@@ -992,14 +1009,16 @@
     "heading": "UNLOCKED",
     "stat": "Build Donjon",
     "entity": "donjon",
-    "description": "Donjon"
+    "description": "Donjon",
+    "multiplier": false
   },
   "110": {
     "type": "value",
     "heading": "Upgrades Free",
     "stat": "Requires Mill",
     "entity": "farm",
-    "description": "Farm Upgrades"
+    "description": "Farm Upgrades",
+    "multiplier": false
   },
   "120": {
     "heading": "+15% [workrate]",
@@ -1039,7 +1058,8 @@
     "heading": "FREE [gold]",
     "stat": "Blacksmith upgrades cost no gold",
     "entity": "blacksmith",
-    "description": "Blacksmith"
+    "description": "Blacksmith",
+    "multiplier": false
   },
   "126": {
     "heading": "+18% [reload]",
@@ -1078,7 +1098,8 @@
     "lines": [
       "Villagers do not require Houses",
       "Start with -100 [wood]"
-    ]
+    ],
+    "multiplier": false
   },
   "132": {
     "type": "dual",
@@ -1131,7 +1152,8 @@
     "lines": [
       "Economic upgrades cost no wood",
       "Researched faster than normal"
-    ]
+    ],
+    "multiplier": false
   },
   "137": {
     "type": "dual",
@@ -1193,7 +1215,7 @@
   },
   "143": {
     "type": "dual",
-    "heading": "2× Speed",
+    "heading": "2\u00d7 Build Speed",
     "stat": "Barracks, Stable, and Archery Range build 100% faster",
     "entity": "barracks",
     "entity2": "stable",
@@ -1201,23 +1223,26 @@
   },
   "144": {
     "type": "dual",
-    "heading": "+5 Pop",
+    "heading": "+5 Population",
     "stat": "Each drop-off building provides +5 population",
     "entity": "lumber_camp",
     "entity2": "mining_camp",
-    "description": "Drop-off Sites"
+    "description": "Drop-off Sites",
+    "multiplier": false
   },
   "145": {
     "heading": "Instant",
     "stat": "Ballistics is researched instantly for free",
     "entity": "university",
-    "description": "Ballistics"
+    "description": "Ballistics",
+    "multiplier": false
   },
   "146": {
     "type": "value",
     "heading": "Free Upgrades",
     "stat": "Archer upgrades free",
-    "entity": "archer"
+    "entity": "archer",
+    "multiplier": false
   },
   "171": {
     "heading": "+20% [workrate]",
@@ -1288,7 +1313,7 @@
     "description": "Cavalry Archers"
   },
   "181": {
-    "heading": "3× Speed",
+    "heading": "3\u00d7 Faster",
     "stat": "Petards train 200% faster",
     "entity": "petard",
     "description": "Petards"
@@ -1301,10 +1326,11 @@
   },
   "183": {
     "type": "desc",
-    "hidden": true
+    "hidden": true,
+    "multiplier": false
   },
   "184": {
-    "heading": "+1 Range",
+    "heading": "+1 [range]",
     "stat": "Galley-line +1 attack range",
     "entity": "galley",
     "description": "Galleys"
@@ -1319,7 +1345,8 @@
   },
   "187": {
     "type": "desc",
-    "hidden": true
+    "hidden": true,
+    "multiplier": false
   },
   "188": {
     "type": "desc",
@@ -1341,8 +1368,8 @@
     ]
   },
   "191": {
-    "heading": "×2 HP",
-    "stat": "Explosive units have 2× hit points",
+    "heading": "\u00d72 HP",
+    "stat": "Explosive units have 2\u00d7 hit points",
     "entity": "demolition_ship",
     "description": "Explosive Units"
   },
@@ -1356,7 +1383,8 @@
     "heading": "UNLOCKED",
     "stat": "Warrior Priests can be trained at Monasteries",
     "entity": "warrior_priest",
-    "description": "Warrior Priests"
+    "description": "Warrior Priests",
+    "multiplier": false
   },
   "194": {
     "heading": "+2000 [heart]",
@@ -1442,23 +1470,23 @@
     "description": "Steppe Lancers"
   },
   "207": {
-    "heading": "+33% Attack",
+    "heading": "+33% [reload]",
     "stat": "Steppe Lancers attack 33% faster",
     "entity": "steppe_lancer",
     "description": "Steppe Lancers"
   },
   "208": {
-    "heading": "+25% Attack",
+    "heading": "+25% [reload]",
     "stat": "Elephant units have +25% attack",
     "entity": "battle_elephant",
     "description": "Elephant Units"
   },
   "209": {
     "heading": "UNLOCKED",
-    "entity": "stone_gate",
-    "stat": "Stone Walls can be built in the Dark Age",
     "entity": "tower",
-    "description": "Stone Walls"
+    "stat": "Stone Walls can be built in the Dark Age",
+    "description": "Stone Walls",
+    "multiplier": false
   },
   "210": {
     "type": "desc",
@@ -1481,7 +1509,8 @@
     "entity": "mangonel",
     "description": "Mangonels",
     "heading": "Cut Trees",
-    "stat": "Mangonels can cut trees"
+    "stat": "Mangonels can cut trees",
+    "multiplier": false
   },
   "214": {
     "type": "desc",
@@ -1497,13 +1526,14 @@
     "heading": "+15 Pop",
     "stat": "Per Tower",
     "entity": "tower",
-    "description": "Towers"
+    "description": "Towers",
+    "multiplier": false
   },
   "217": {
-    "heading": "+20% Speed",
+    "heading": "+20% [speed]",
     "stat": "Gunpowder units move 20% faster",
     "entity": "hand_cannoneer",
-    "entity2": "chemistry",
+    "entity2": "bombard_cannon",
     "description": "Gunpowder Units"
   },
   "218": {
@@ -1513,14 +1543,14 @@
     "description": "Castles"
   },
   "219": {
-    "heading": "+20% Speed",
+    "heading": "+20% [speed]",
     "stat": "Monks move 20% faster",
     "entity": "monk",
     "description": "Monks"
   },
   "220": {
     "type": "dual",
-    "heading": "+2 vs Skirms",
+    "heading": "+2 [attack] vs Skirms",
     "stat": "Melee Cavalry bonus damage vs. Skirmishers",
     "entity": "cavalry",
     "entity2": "skirmisher",
@@ -1532,7 +1562,8 @@
     "stat": "Spearman + Militia-line upgrades",
     "entity": "spearman",
     "entity2": "infantry",
-    "description": "Spearman + Militia Lines"
+    "description": "Spearman + Militia Lines",
+    "multiplier": false
   },
   "222": {
     "type": "desc",
@@ -1541,20 +1572,21 @@
     "description": "Mills",
     "lines": [
       "Mills spawn Cows which can be slaughtered for food"
-    ]
+    ],
+    "multiplier": false
   },
   "223": {
     "type": "desc",
     "hidden": true
   },
   "224": {
-    "heading": "×2 HP",
-    "stat": "Siege Towers have 2× hit points",
+    "heading": "\u00d72 [heart]",
+    "stat": "Siege Towers have 2\u00d7 hit points",
     "entity": "siege_tower",
     "description": "Siege Towers"
   },
   "225": {
-    "heading": "2× Training Speed",
+    "heading": "2\u00d7 Training Speed",
     "stat": "Siege Towers train 100% faster",
     "entity": "siege_tower",
     "description": "Siege Towers"
@@ -1570,14 +1602,15 @@
     "entity": "cannon_galleon",
     "description": "Cannon Galleons",
     "stat": "Cannon Galleons benefit from Ballistics research",
-    "heading":"Ballistics"
+    "heading": "Ballistics",
+    "multiplier": false
   },
   "228": {
     "type": "value",
     "entity": "galley",
-    "stat":"Warships have bonus attack vs. Villagers",
+    "stat": "Warships have bonus attack vs. Villagers",
     "description": "Warships",
-    "heading":"Villager Damage"
+    "heading": "Villager Damage"
   },
   "229": {
     "type": "desc",
@@ -1615,10 +1648,11 @@
     "heading": "FREE [gold]",
     "stat": "Market technologies cost no gold",
     "entity": "market",
-    "description": "Market Techs"
+    "description": "Market Techs",
+    "multiplier": false
   },
   "235": {
-    "heading": "2× Duration",
+    "heading": "2\u00d7 Duration",
     "stat": "Trees last 100% longer",
     "entity": "wood",
     "description": "Forests"
@@ -1643,38 +1677,39 @@
   },
   "239": {
     "type": "desc",
-    "entity": "tower",
+    "entity": "stone_wall",
     "description": "City Walls",
     "lines": [
       "Can upgrade Fortified Walls to City Walls in the Imperial Age"
-    ]
+    ],
+    "multiplier": false
   },
   "240": {
     "heading": "+35% [food]",
     "stat": "Fish contain +35% more food",
-    "entity": "fishing_ship",
+    "entity": "fish",
     "description": "Fish"
   },
   "241": {
-    "heading": "Faster Heal",
+    "heading": "Faster Healing",
     "stat": "All units heal at a faster rate",
     "entity": "monk",
     "description": "All Units"
   },
   "242": {
-    "heading": "2× Speed",
+    "heading": "2\u00d7 [workrate]",
     "stat": "Buildings repair 100% faster",
     "entity": "villager",
     "description": "Builders"
   },
   "243": {
-    "heading": "+1 vs Infantry",
+    "heading": "+1 [attack] vs Infantry",
     "stat": "Skirmishers have +1 bonus attack vs. Infantry",
     "entity": "skirmisher",
     "description": "Skirmishers"
   },
   "244": {
-    "heading": "+1 Attack",
+    "heading": "+1 [attack]",
     "stat": "Archery Range units have +1 attack",
     "entity": "archery_range",
     "description": "Archery Range"
@@ -1691,27 +1726,27 @@
     "heading": "UNLOCKED",
     "stat": "Parthian Tactics can be researched in the Castle Age",
     "entity": "parthian_tactics",
-    "description": "Cavalry Archers"
+    "description": "Cavalry Archers",
+    "multiplier": false
   },
   "248": {
     "heading": "-25%",
     "stat": "Castle Age advance costs -25% less",
-    "entity": "town_center",
+    "entity": "castle_age",
     "description": "Castle Age"
   },
   "249": {
-    "heading": "+1 Attack",
+    "heading": "+1 [attack]",
     "stat": "Cavalry have +1 attack",
     "entity": "cavalry",
     "description": "Cavalry"
   },
   "250": {
-    "type": "desc",
+    "type": "value",
     "entity": "blacksmith",
-    "description": "Forging Upgrades",
-    "lines": [
-      "Forging, Iron Casting, and Blast Furnace each add +1 bonus damage vs. buildings"
-    ]
+    "heading": "+Bonus Damage",
+    "stat": "Forging, Iron Casting, and Blast Furnace each add +1 bonus damage vs. buildings",
+    "description": "Blacksmith Upgrades"
   },
   "251": {
     "heading": "+3 [pierce_armor]",
@@ -1754,19 +1789,20 @@
     "description": "Gunpowder Units"
   },
   "255": {
-    "type": "value",
+    "type": "dual",
     "entity": "fire_lancer",
+    "entity2": "stone_wall",
     "description": "Shock Infantry",
     "heading": "Bonus vs. Stone",
     "stat": "Shock Infantry have bonus attack vs. stone defenses"
   },
   "256": {
-    "type": "desc",
-    "entity": "scout_cavalry",
-    "description": "Scout Cavalry",
-    "lines": [
-      "Scout Cavalry line have bonus attack vs. stone defenses"
-    ]
+    "type": "dual",
+    "entity": "scout",
+    "entity2": "stone_wall",
+    "heading": "Bonus vs. Stone",
+    "stat": "Scout Cavalry line have bonus attack vs. stone defenses",
+    "description": "Scout Cavalry"
   },
   "257": {
     "heading": "+5% [workrate]",
@@ -1779,13 +1815,13 @@
     "hidden": true
   },
   "259": {
-    "heading": "10× HP",
-    "stat": "Farms have 10× hit points",
+    "heading": "10\u00d7 HP",
+    "stat": "Farms have 10\u00d7 hit points",
     "entity": "farm",
     "description": "Farms"
   },
   "260": {
-    "heading": "+2 vs Cav",
+    "heading": "+2 vs Cavalry",
     "stat": "Militia-line has +2 bonus attack vs. Cavalry",
     "entity": "infantry",
     "description": "Militia Line"
@@ -1794,7 +1830,8 @@
     "heading": "FREE",
     "stat": "Elite Steppe Lancer upgrade is free",
     "entity": "steppe_lancer",
-    "description": "Steppe Lancers"
+    "description": "Steppe Lancers",
+    "multiplier": false
   },
   "262": {
     "heading": "+2 [pierce_armor]",
@@ -1805,9 +1842,9 @@
   "263": {
     "type": "value",
     "entity": "castle",
-    "heading":"+[attack] vs Buildings",
+    "heading": "+[attack] vs Buildings",
     "description": "Castles",
-    "stat":"Castles have bonus attack vs. buildings"
+    "stat": "Castles have bonus attack vs. buildings"
   },
   "264": {
     "type": "desc",
@@ -1827,7 +1864,7 @@
     "description": "Builders"
   },
   "267": {
-    "heading": "+50 Pop",
+    "heading": "+50 Population",
     "stat": "Castles and Kreposts provide +50 population",
     "entity": "castle",
     "description": "Castles + Kreposts",
@@ -1841,12 +1878,11 @@
     "stat": "Bombard Towers have bonus attack vs. Rams"
   },
   "269": {
-    "type": "desc",
+    "type": "value",
     "entity": "tower",
+    "heading": "Extra Damage",
     "description": "Towers",
-    "lines": [
-      "Towers deal extra damage to Cavalry"
-    ]
+    "stat": "Towers deal extra damage to Cavalry"
   },
   "270": {
     "type": "desc",
@@ -1876,25 +1912,23 @@
     "description": "Trebuchets"
   },
   "274": {
-    "type": "desc",
+    "type": "value",
     "entity": "demolition_ship",
-    "description": "Explosive Units",
-    "lines": [
-      "Explosive units have increased blast radius"
-    ]
+    "heading": "Larger Blast Radius",
+    "stat": "Explosive units have increased blast radius",
+    "description": "Explosive Units"
   },
   "275": {
-    "type": "desc",
+    "type": "value",
     "entity": "hand_cannoneer",
-    "description": "Gunpowder Units",
-    "lines": [
-      "Gunpowder units have bonus attack vs. buildings"
-    ]
+    "heading": "+[attack] vs. Buildings",
+    "stat": "Gunpowder units have bonus attack vs. buildings",
+    "description": "Gunpowder Units"
   },
   "276": {
     "heading": "+1 [pierce_armor]",
     "stat": "Shock Infantry have +1 pierce armor",
-    "entity": "infantry",
+    "entity": "fire_lancer",
     "description": "Shock Infantry"
   },
   "277": {
@@ -1910,12 +1944,12 @@
     "hidden": true
   },
   "280": {
-    "type": "desc",
-    "entity": "mill",
+    "type": "value",
+    "entity": "folwark",
     "description": "Folwark",
-    "lines": [
-      "Folwark replaces the Mill; also functions as a farm drop-off site"
-    ]
+    "heading": "Unlocked",
+    "stat": "Folwark replaces the Mill; also functions as a farm drop-off site",
+    "multiplier": false
   },
   "281": {
     "type": "dual",
@@ -1929,7 +1963,8 @@
     "heading": "UPGRADE",
     "stat": "Winged Hussar is available, replacing the Hussar",
     "entity": "hussar",
-    "description": "Hussar Line"
+    "description": "Hussar Line",
+    "multiplier": false
   },
   "283": {
     "type": "dual",
@@ -1937,7 +1972,8 @@
     "stat": "Chemistry + Hand Cannoneer in Castle Age",
     "entity": "chemistry",
     "entity2": "hand_cannoneer",
-    "description": "Castle Age"
+    "description": "Castle Age",
+    "multiplier": false
   },
   "284": {
     "heading": "+25%",
@@ -1946,24 +1982,27 @@
     "description": "Spearmen"
   },
   "285": {
-    "type": "desc",
+    "type": "dual",
     "entity": "monastery",
+    "entity2": "villager",
+    "heading": "Research Benefits Villagers",
+    "stat": "Fervor and Sanctity research also benefits Villagers",
     "description": "Villagers",
-    "lines": [
-      "Fervor and Sanctity research also benefits Villagers"
-    ]
+    "multiplier": false
   },
   "286": {
     "heading": "UPGRADE",
     "stat": "Houfnice available (Imperial Age)",
-    "entity": "bombard_cannon",
-    "description": "Bombard Cannons"
+    "entity": "houfnice",
+    "description": "Bombard Cannons",
+    "multiplier": false
   },
   "287": {
     "heading": "UNLOCKED",
     "stat": "Build Caravanserai (Imperial Age)",
-    "entity": "market",
-    "description": "Caravanserai"
+    "entity": "caravanserai",
+    "description": "Caravanserai",
+    "multiplier": false
   },
   "288": {
     "heading": "+1/+1 Armor",
@@ -2001,7 +2040,7 @@
     ]
   },
   "293": {
-    "heading": "15 HP/min",
+    "heading": "Regenerate HP [heartplus]",
     "stat": "Ships regenerate 15 HP per minute",
     "entity": "ship",
     "description": "Ships"
@@ -2017,8 +2056,9 @@
     "entity": "mill",
     "entity2": "cow",
     "heading": "Generate Food",
-    "stat":"Mills can be garrisoned with livestock to passively produce food",
-    "description": "Mills"
+    "stat": "Mills can be garrisoned with livestock to passively produce food",
+    "description": "Mills",
+    "multiplier": false
   },
   "296": {
     "type": "progression",
@@ -2049,19 +2089,22 @@
     "heading": "UNLOCKED",
     "stat": "Thirisadai can be trained at Docks",
     "entity": "thirisadai",
-    "description": "Thirisadai"
+    "description": "Thirisadai",
+    "multiplier": false
   },
   "299": {
     "heading": "UNLOCKED",
     "stat": "Shrivamsha Riders can be recruited",
     "entity": "shrivamsha_rider",
-    "description": "Shrivamsha Riders"
+    "description": "Shrivamsha Riders",
+    "multiplier": false
   },
   "300": {
     "heading": "UNLOCKED",
     "stat": "Camel Scouts can be recruited in the Feudal Age",
     "entity": "camel_rider",
-    "description": "Camel Scouts"
+    "description": "Camel Scouts",
+    "multiplier": false
   },
   "301": {
     "heading": "+20 [gold]",
@@ -2089,7 +2132,7 @@
   },
   "305": {
     "type": "dual",
-    "heading": "2× Effect",
+    "heading": "2\u00d7 Effect",
     "stat": "Infantry Blacksmith armor bonuses doubled",
     "entity": "blacksmith",
     "entity2": "infantry",
@@ -2107,28 +2150,32 @@
     "heading": "UNLOCKED",
     "stat": "Legionary replaces the Two-Handed Swordsman and Champion",
     "entity": "legionary",
-    "description": "Militia Line"
+    "description": "Militia Line",
+    "multiplier": false
   },
   "308": {
     "heading": "UPGRADE",
     "stat": "Imperial Scorpion upgrade is available",
     "entity": "scorpion",
-    "description": "Scorpions"
+    "description": "Scorpions",
+    "multiplier": false
   },
   "309": {
     "heading": "UPGRADE",
     "stat": "Royal Battle Elephant upgrade is available",
     "entity": "battle_elephant",
-    "description": "Battle Elephants"
+    "description": "Battle Elephants",
+    "multiplier": false
   },
   "310": {
     "heading": "UPGRADE",
     "stat": "Royal Steppe Lancer upgrade is available",
     "entity": "steppe_lancer",
-    "description": "Steppe Lancers"
+    "description": "Steppe Lancers",
+    "multiplier": false
   },
   "311": {
-    "heading": "+2 vs Archers",
+    "heading": "+2 [attack] vs Archers",
     "stat": "Cavalry Archers have +2 bonus attack vs. Archers",
     "entity": "cavalry_archer",
     "description": "Cavalry Archers"
@@ -2148,13 +2195,15 @@
     "stat": "First Monastery gets a free relic",
     "entity": "monastery",
     "entity2": "relic",
-    "description": "Monastery"
+    "description": "Monastery",
+    "multiplier": false
   },
   "314": {
     "heading": "UNLOCKED",
     "stat": "Savar replaces the Paladin",
     "entity": "savar",
-    "description": "Cavalry"
+    "description": "Cavalry",
+    "multiplier": false
   },
   "315": {
     "heading": "+1 Projectile",
@@ -2166,7 +2215,8 @@
     "heading": "UNLOCKED",
     "stat": "Fortified Church replaces the Monastery",
     "entity": "monastery",
-    "description": "Monastery"
+    "description": "Monastery",
+    "multiplier": false
   },
   "317": {
     "type": "dual",
@@ -2174,13 +2224,15 @@
     "stat": "Mule Carts replace Lumber Camps and Mining Camps",
     "entity": "mule_cart",
     "entity2": "mining_camp",
-    "description": "Drop-off Sites"
+    "description": "Drop-off Sites",
+    "multiplier": false
   },
   "318": {
     "heading": "FREE",
     "stat": "Start with a free Mule Cart",
     "entity": "mule_cart",
-    "description": "Starting Resources"
+    "description": "Starting Resources",
+    "multiplier": false
   },
   "319": {
     "heading": "+10% [workrate]",
@@ -2192,7 +2244,7 @@
   "320": {
     "heading": "-15% Damage",
     "stat": "Taken from higher elevation",
-    "entity": "tower",
+    "entity": "elevation",
     "description": "All Units + Buildings"
   },
   "321": {
@@ -2220,7 +2272,8 @@
     "heading": "UNLOCKED",
     "stat": "Flaming Camels can be trained at Siege Workshops (Imperial Age)",
     "entity": "flaming_camel",
-    "description": "Flaming Camels"
+    "description": "Flaming Camels",
+    "multiplier": false
   },
   "323": {
     "type": "desc",
@@ -2235,7 +2288,8 @@
     "entity": "villager",
     "heading": "+Work Rate",
     "stat": "Villagers work faster when near other villagers",
-    "description": "Villagers"
+    "description": "Villagers",
+    "multiplier": false
   },
   "325": {
     "type": "value",
@@ -2265,27 +2319,31 @@
     "description": "Cavalry Archers",
     "lines": [
       "Cavalry Archers have a chance to dodge incoming projectiles"
-    ]
+    ],
+    "multiplier": false
   },
   "329": {
     "type": "value",
     "entity": "farm",
     "heading": "No Mills",
     "stat": "Farmers don't require mills or town centers to drop off food",
-    "description": "Farmers"
+    "description": "Farmers",
+    "multiplier": false
   },
   "330": {
     "type": "value",
     "entity": "farm",
     "heading": "2x2 Farms",
-    "stat": "Farms are 2×2 tiles (half standard size)",
-    "description": "Farms"
+    "stat": "Farms are 2\u00d72 tiles (half standard size)",
+    "description": "Farms",
+    "multiplier": false
   },
   "332": {
     "heading": "UNLOCKED",
     "stat": "Knights can be recruited in the Feudal Age (30 HP)",
     "entity": "knight",
-    "description": "Feudal Knights"
+    "description": "Feudal Knights",
+    "multiplier": false
   },
   "333": {
     "type": "value",
@@ -2342,7 +2400,8 @@
     "heading": "UNLOCKED",
     "stat": "War Chariots can be recruited",
     "entity": "war_chariot",
-    "description": "War Chariots"
+    "description": "War Chariots",
+    "multiplier": false
   },
   "338": {
     "hidden": true
@@ -2377,8 +2436,8 @@
     ]
   },
   "341": {
-    "type":"dual",
-    "heading": "+2 Attack",
+    "type": "dual",
+    "heading": "+2 [attack]",
     "stat": "Jian Swordsmen + Hei Guang Cavalry +2 attack",
     "entity": "jian_swordsman",
     "entity2": "hei_guang",
@@ -2397,7 +2456,8 @@
     "heading": "UNLOCKED",
     "stat": "Jian Swordsmen can be recruited",
     "entity": "jian_swordsman",
-    "description": "Jian Swordsmen"
+    "description": "Jian Swordsmen",
+    "multiplier": false
   },
   "344": {
     "hidden": true
@@ -2410,7 +2470,7 @@
   },
   "346": {
     "type": "progression",
-    "stat": "Hit Points",
+    "stat": "+[heart] Increase",
     "entity": "hei_guang",
     "entity2": "xianbei_raider",
     "description": "Hei Guang Cavalry + Xianbei Raiders",
@@ -2438,7 +2498,8 @@
     "heading": "UNLOCKED",
     "stat": "Xianbei Raiders can be recruited",
     "entity": "xianbei_raider",
-    "description": "Xianbei Raiders"
+    "description": "Xianbei Raiders",
+    "multiplier": false
   },
   "349": {
     "hidden": true
@@ -2448,7 +2509,8 @@
     "entity": "boar",
     "heading": "No Decay",
     "stat": "Meat from hunted animals and livestock does not decay",
-    "description": "Hunt + Livestock"
+    "description": "Hunt + Livestock",
+    "multiplier": false
   },
   "351": {
     "type": "dual",
@@ -2462,7 +2524,8 @@
     "heading": "UNLOCKED",
     "stat": "Siege Engineers can be researched in the Castle Age",
     "entity": "siege_engineers",
-    "description": "Siege"
+    "description": "Siege",
+    "multiplier": false
   },
   "353": {
     "type": "desc",
@@ -2483,7 +2546,8 @@
     "heading": "UNLOCKED",
     "stat": "Grenadiers can be recruited",
     "entity": "grenadier",
-    "description": "Grenadiers"
+    "description": "Grenadiers",
+    "multiplier": false
   },
   "356": {
     "type": "desc",
@@ -2491,7 +2555,8 @@
     "description": "Pastures",
     "lines": [
       "Pastures replace Farms and also provide Mill upgrades"
-    ]
+    ],
+    "multiplier": false
   },
   "357": {
     "heading": "+10% [food]",
@@ -2501,7 +2566,7 @@
     "description": "Shepherds + Herders"
   },
   "358": {
-    "heading": "2× Effect",
+    "heading": "2\u00d7 Effect",
     "stat": "Melee attack upgrades have double effect",
     "entity": "blacksmith",
     "description": "Melee Upgrades"
@@ -2524,7 +2589,8 @@
     "heading": "UNLOCKED",
     "stat": "Mounted Trebuchets can be trained",
     "entity": "mounted_trebuchet",
-    "description": "Mounted Trebuchets"
+    "description": "Mounted Trebuchets",
+    "multiplier": false
   },
   "362": {
     "type": "desc",
@@ -2546,5 +2612,141 @@
   },
   "331": {
     "hidden": true
+  },
+  "363": {
+    "heading": "-50% [gold]",
+    "stat": "Age advancement costs 50% less Gold",
+    "entity": "town_center",
+    "description": "Age Advancement"
+  },
+  "364": {
+    "type": "progression",
+    "entity": "archer",
+    "entity2": "champi",
+    "description": "Archery Range Units & Champi Warriors",
+    "prog_label": "+1 Melee Armor per age",
+    "heading": "+1 melee armor",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "+1"
+      },
+      {
+        "age": "castle",
+        "value": "+2"
+      },
+      {
+        "age": "imperial",
+        "value": "+3"
+      }
+    ]
+  },
+  "365": {
+    "heading": "FREE",
+    "stat": "Caravan and Guilds can be researched for free",
+    "entity": "market",
+    "description": "Market Technologies"
+  },
+  "366": {
+    "heading": "+50% Faith Rate",
+    "stat": "Monks regain faith 50% faster",
+    "entity": "monk",
+    "description": "Monks"
+  },
+  "367": {
+    "type": "desc",
+    "entity": "settlement_building",
+    "description": "Settlements",
+    "lines": [
+      "Settlements cost 33% less; heal nearby units"
+    ]
+  },
+  "368": {
+    "type": "dual",
+    "heading": "+25%",
+    "stat": "Foragers work 25% faster",
+    "entity": "villager",
+    "entity2": "berries",
+    "description": "Foragers"
+  },
+  "369": {
+    "type": "progression",
+    "entity": "skirmisher",
+    "entity2": "spearman",
+    "description": "Spearmen, Slingers & Skirmishers",
+    "prog_label": "+5 HP per age",
+    "stat": "[heart] Bonus",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "+5"
+      },
+      {
+        "age": "castle",
+        "value": "+10"
+      },
+      {
+        "age": "imperial",
+        "value": "+15"
+      }
+    ]
+  },
+  "370": {
+    "type": "desc",
+    "entity": "castle",
+    "description": "Enemy Castles",
+    "lines": [
+      "Enemy Castles are revealed on the map"
+    ]
+  },
+  "371": {
+    "type": "dual",
+    "entity": "skirmisher",
+    "entity2": "spearman",
+    "heading": "Unlocked",
+    "stat": "Can be trained at Settlements; training speed improves per age",
+    "description": "Skirmishers & Spearmen"
+  },
+  "372": {
+    "type": "value",
+    "entity": "resources",
+    "heading":"+25 Each Resource",
+    "stat": "Start with +25 [food][wood][stone][gold]; gain +25 more per age-up",
+    "description": "Starting Resources"
+  },
+  "373": {
+    "type": "dual",
+    "heading": "-50% [food]",
+    "stat": "Barracks and Range upgrades cost 50% less Food",
+    "entity": "barracks",
+    "entity2": "archery_range",
+    "description": "Military Upgrades"
+  },
+  "374": {
+    "heading": "Garrison",
+    "stat": "Villagers can garrison in Settlements",
+    "entity": "settlement_building",
+    "entity2": "villager_garrison",
+    "description": "Villagers"
+  },
+  "375": {
+    "heading": "15% Refund",
+    "stat": "Fallen units return 15% of their cost",
+    "entity": "rip_gold",
+    "description": "Fallen Units"
+  },
+  "376": {
+    "type": "dual",
+    "heading": "+10 Pop Space",
+    "stat": "Towers and Castles provide +10 population space (team effect via type=10)",
+    "entity": "watch_tower",
+    "entity2": "castle",
+    "description": "Team: Towers & Castles"
+  },
+  "377": {
+    "heading": "+3 [gold]",
+    "stat": "Mounted Units generate +3 gold when defeating military units",
+    "entity": "scout",
+    "description": "Mounted Units"
   }
 }

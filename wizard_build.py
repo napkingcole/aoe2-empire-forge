@@ -142,6 +142,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
 
     # Apply UU stat overrides and advanced flags before string building
     uu_info = _resolve_uu_info(civ_def, dat, slot, civ_result)
+    print(f"       UU overrides: uu_info={uu_info}", flush=True)
     _apply_uu_overrides(dat, slot, uu_info, draft)
     _apply_hero_unit(dat, slot, draft)
 

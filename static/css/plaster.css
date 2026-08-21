@@ -3,14 +3,22 @@
 
 /* Fonts loaded via <link> in base.html for better performance */
 
+.btn-check:checked+.btn, .btn.active, .btn.show, .btn:first-child:active, :not(.btn-check)+.btn:active {
+  border-color: #0c318e;
+  background-color: #0c318e;
+}
+
 /* ── Design tokens ───────────────────────────────────────────────────────── */
 :root {
+  --bs-btn-active-bg:  #0c318e;
+  --bs-btn-active-border-color: #0c318e;
+
   /* Surfaces */
   --parchment:    url('../bg-parchment.jpg') repeat 0 0 #FAF6EC;   /* page background — warm plaster cream */
   --parch-light:  #FAF6EC;   /* lightest section bg */
   --parch-mid:    #E4D5AD;   /* inset / card bg */
   --parch-deep:   #D5C49A;   /* pressed / well bg */
-  --bg-plaster: url('../bg-plaster2-desaturated.jpg') repeat 0 0 transparent;
+  --bg-plaster: url('../bg-plaster3.jpg') repeat 0 0 #f3f3f3;
 
   /* Dark surfaces */
   --walnut:       #1C1508;   /* nav, footer, dark section bg */
@@ -59,6 +67,14 @@
   --cat-building: #525252;   /* stone gray   */
   --cat-unlock:   #32044a;   /* cyan         */
   --cat-general:  #475569;   /* slate        */
+
+  /* UT card category colors */
+  --cat-infantry:  #7b1717;  /* dark maroon  */
+  --cat-cavalry:   #6b4c11;  /* saddle brown */
+  --cat-archers:   #145a32;  /* forest green */
+  --cat-siege:     #8b3a00;  /* rust orange  */
+  --cat-gunpowder: #9a2a00;  /* fire red     */
+  --cat-unique:    #4a006e;  /* deep violet  */
 }
 
 /* ── Reset / base ────────────────────────────────────────────────────────── */
@@ -72,10 +88,7 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 16px;
   line-height: 1.6;
-  background-color: #e8dcc8;
-  background-image: url('../bg-plaster2-desaturated.jpg');
-  background-repeat: repeat;
-  background-blend-mode: luminosity;
+  background: var(--bg-plaster);
   color: var(--ink-mid);
   margin: 0;
   /* Sticky footer */
@@ -532,9 +545,15 @@ img { max-width: 100%; height: auto; display: block; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 0.75rem 1rem;
+  min-height: 54px;
 }
 .card-body { padding: 1rem; }
 
+.hero-grid-card {
+  cursor:pointer;
+  width:86px;
+  text-align:center;
+}
 /* ── Step badge ──────────────────────────────────────────────────────────── */
 .step-badge {
   display: inline-flex;
@@ -919,13 +938,73 @@ footer {
 .arch-card-example { color: var(--ash); }
 
 .bonus-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 150vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+.bonus-section {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
   column-gap: 8px;
   row-gap: 8px;
-  max-height: 660px;
-  overflow-y: auto;
-  padding: 2px;
+}
+.bonus-section-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ash);
+  font-family: 'Cinzel', serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.bonus-section-divider::before,
+.bonus-section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.bonus-empty-state {
+  padding: 0.5rem 0;
+}
+.bonus-cat-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.cat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #fff;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: opacity 0.12s, border-color 0.12s, box-shadow 0.12s;
+  user-select: none;
+  line-height: 1.4;
+  background-color: color-mix(in srgb, var(--pill-bg) 75%, black);
+}
+.cat-pill:hover {
+  background-color: var(--pill-bg);
+}
+.cat-pill.active {
+  opacity: 1;
+  border-color: rgba(255,255,255,0.55);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  background-color: color-mix(in srgb, var(--pill-bg) 80%, white);
 }
 .bonus-card {
   border-style: solid;
@@ -978,6 +1057,11 @@ footer {
   height: 66px;
   object-fit: contain;
   filter: drop-shadow(1px 1px 1px black);
+}
+.bonus-card[data-bonus-id="95"] .card-icon,
+.bonus-card[data-bonus-id="320"] .card-icon {
+  filter: none;
+
 }
 /* Dual: two icons side by side on one line */
 .card-icon-row {
@@ -1040,9 +1124,9 @@ footer {
   transform: rotate(-180deg);
 }
 .multiplier-circle {
-  width: 35px;
-  height: 35px;
-  font-size: 22px;
+  width: 30px;
+  height: 30px;
+  font-size: 20px;
   border: none;
   background: url('../circle-badge.png') no-repeat center transparent;
   background-size: cover;
@@ -1056,7 +1140,7 @@ footer {
   pointer-events: none;
   visibility: hidden;
 
-  .multiplier-amount {
+  /* .multiplier-amount {
     visibility: hidden;
     position: relative;
     &::after {
@@ -1066,7 +1150,7 @@ footer {
       position: absolute;
       inset: 0;
     }
-  }
+  } */
 }
 img.card-main-image {
     filter: sepia(0.75) drop-shadow(0px 2px 2px black);
@@ -1093,14 +1177,14 @@ img.card-main-image {
   display: inline-block;
   margin: 0 1px -1px;
 }
-.bonus-card {
+/* .bonus-card {
   .multiplier {
     visibility: hidden;
   }
   .multiplier-amount::after {
     visibility: hidden;
   }
-}
+} */
 .bonus-card.selected {
   border-image: url('../bg-gold-border2.png') 33;
   .card-shadow {
@@ -1114,19 +1198,10 @@ img.card-main-image {
     background: url('../corner-2s.png') no-repeat 0 0 transparent;
     background-size: cover;
   }
-  .multiplier {
-    visibility: visible;
-  }
   .multiplier-circle {
     filter: brightness(1.25);
     pointer-events: all;
     visibility: visible;
-  }
-  .multiplier-amount {
-    visibility: visible;
-    &::after {
-      display: none;
-    }
   }
   img.card-main-image {
     filter: sepia(0.4) drop-shadow(0px 2px 2px black);
@@ -1136,33 +1211,409 @@ img.card-main-image {
   width: 20px;
   height: 20px;
 }
-
+.bonus-section.bonus-section-selected .card-prog-label,
+.bonus-section.bonus-section-selected .age-bonus-table,
+.bonus-section.bonus-section-selected .card-stat {
+    display: none;
+}
+.bonus-card.selected:not([data-ut-id]) {
+  .card-icon {
+    height: 45px;
+  }
+  .card-header {
+    font-size: 12px;
+  }
+  .card-heading {
+    font-size: clamp(10px, 2vw, 14px);
+  }
+  .desc-line {
+    line-height: 1;
+    font-size: 11px;
+  }
+  .card-body {
+    padding: 5px 5px 10px;
+  }
+}
+.bonus-section.bonus-section-selected {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
 /* ── UU cards ────────────────────────────────────────────────────────────── */
 .uu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+  max-height: 450px;
+  overflow-y: auto;
+  padding: 2px;
 }
-.uu-card {
-  border-color: var(--border);
-  background: var(--parch-light);
+.hero-grid-card {
+  width: 86px;
+  cursor: pointer;
+  text-align: center;
+  flex-shrink: 0;
 }
-.uu-card:hover { border-color: var(--gold); background: var(--parch-mid); }
-.uu-card.selected { border-color: var(--crimson); background: rgba(140,32,32,0.05); }
-.uu-card-name { color: var(--ink-mid); }
-.uu-card.selected .uu-card-name { color: var(--crimson); }
-
-/* ── UT cards ────────────────────────────────────────────────────────────── */
+.hero-card-inner {
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 4px 5px;
+  background: #f1e5d1;
+  transition: border-color 0.12s, background 0.12s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.hero-grid-card:hover .hero-card-inner {
+  border-color: var(--crimson);
+  background: rgba(140,32,32,0.15);
+}
+.hero-grid-card.selected .hero-card-inner {
+  border-color: var(--crimson);
+  background: var(--crimson);
+  color: #fff;
+}
+.hero-card-img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+  border-radius: 4px;
+  background: oklch(from var(--body-bg) calc(l + 0.06) c h);
+}
+.hero-card-name {
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.2;
+  word-break: break-word;
+}
+.hero-card-faction {
+  font-size: 0.55rem;
+  color: var(--ash);
+  line-height: 1.3;
+}
+.hero-grid-card.selected .hero-card-faction {
+  color: rgba(255,255,255,0.75);
+}
+.uu-card,
 .ut-card {
+  position: relative;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 6px 6px;
+  cursor: pointer;
+  text-align: center;
+  background: #f1e5d1;
+  transition: border-color 0.12s, background 0.12s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+/* .uu-card {
   border-color: var(--border);
   background: var(--parch-light);
+} */
+.uu-card:hover,
+.ut-card:hover {
+  border-color: var(--crimson);
+  background: rgba(140,32,32,0.15);
 }
-.ut-card:hover { border-color: var(--gold); background: var(--parch-mid); }
-.ut-card.selected { border-color: var(--crimson); background: rgba(140,32,32,0.05); }
-.ut-card-name { color: var(--ink); }
-.ut-card.selected .ut-card-name { color: var(--crimson); }
-.ut-card-desc { color: var(--ash); }
+.uu-card.selected,
+.ut-card.selected {
+  border-color: var(--crimson);
+  background: var(--crimson);
+  color: #fff;
+}
+.uu-card-icon {
+  width: 64px;
+  height: 64px;
+}
+.uu-card-name {
+  font-size: 0.75rem;
+  line-height: 1.15;
+  color: var(--body-text);
+  word-break: break-word;
+  max-width: 100%;
+}
+.uu-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+.uu-badge-vanilla {
+  background: #0c318e;
+  color: #fff;
+  border: 1px solid oklch(from #0c318e l c h / 0.5);
+}
+.uu-badge-custom {
+  background: #d0e00e;
+  color: #000;
+  border: 1px solid oklch(from #d0e00e l c h / 0.5);
+}
+.uu-card .uu-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+}
 
+/* ── Tech-tree helptext: force dark text on light background ─────────────── */
+#helptext { color: #000 !important; }
+#helptext h3 { color: #4d3617 !important; }
+
+/* ── UU stat popup ───────────────────────────────────────────────────────── */
+#uu-stat-popup {
+  position: fixed;
+  display: none;
+  z-index: 9999;
+  background: oklch(from var(--body-bg) calc(l + 0.14) c h);
+  border: 1px solid var(--accent-2);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.75rem;
+  color: var(--body-text);
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  min-width: 170px;
+  max-width: 260px;
+}
+#uu-stat-popup .pop-name {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--accent-2);
+  margin-bottom: 2px;
+}
+#uu-stat-popup .pop-type {
+  font-size: 0.68rem;
+  color: var(--accent-3);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 5px;
+}
+#uu-stat-popup .pop-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+  border-bottom: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);
+}
+#uu-stat-popup .pop-row:last-child { border-bottom: none; }
+#uu-stat-popup .pop-label { color: var(--accent-3); flex-shrink: 0; }
+#uu-stat-popup .pop-val   { font-weight: 600; text-align: right; }
+#uu-stat-popup .pop-elite { font-weight: 400; opacity: 0.7; }
+#uu-stat-popup .pop-section-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--accent-3);
+  margin-top: 6px;
+  margin-bottom: 2px;
+  border-top: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);
+  padding-top: 5px;
+}
+#uu-stat-popup .pop-bonus-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0;
+}
+#uu-stat-popup .pop-bonus-name { color: var(--accent-3); }
+#uu-stat-popup .pop-bonus-val  { font-weight: 600; text-align: right; }
+#uu-stat-popup .pop-trait {
+  font-style: italic;
+  color: oklch(from var(--accent-2) calc(l + 0.05) c h);
+  padding: 2px 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+/* ── Hero stat popup (mirrors UU popup rules) ────────────────────────────── */
+#hero-stat-popup {
+  position: fixed;
+  display: none;
+  z-index: 9999;
+  background: oklch(from var(--body-bg) calc(l + 0.14) c h);
+  border: 1px solid goldenrod;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.75rem;
+  color: var(--body-text);
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  min-width: 180px;
+  max-width: 270px;
+}
+#hero-stat-popup .pop-name {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: goldenrod;
+  margin-bottom: 2px;
+}
+#hero-stat-popup .pop-type {
+  font-size: 0.68rem;
+  color: var(--accent-3);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 5px;
+}
+#hero-stat-popup .pop-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+  border-bottom: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);
+}
+#hero-stat-popup .pop-row:last-child { border-bottom: none; }
+#hero-stat-popup .pop-label { color: var(--accent-3); flex-shrink: 0; }
+#hero-stat-popup .pop-val   { font-weight: 600; text-align: right; }
+#hero-stat-popup .pop-section-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--accent-3);
+  margin-top: 6px;
+  margin-bottom: 2px;
+  border-top: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);
+  padding-top: 5px;
+}
+#hero-stat-popup .pop-bonus-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0;
+}
+#hero-stat-popup .pop-bonus-name { color: var(--accent-3); }
+#hero-stat-popup .pop-bonus-val  { font-weight: 600; text-align: right; }
+#hero-stat-popup .pop-trait {
+  color: goldenrod;
+  padding: 2px 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+/* ── Bonus picker (UT effects still use .bonus-results / .bonus-result-item) ─── */
+.bonus-search-wrap {
+  position: relative;
+}
+.bonus-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  border: 1px solid var(--crimson);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.bonus-result-item {
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.35;
+}
+.bonus-result-item:last-child { border-bottom: none; }
+.bonus-result-item:hover {
+  background: var(--crimson);
+  color: #fff;
+}
+
+/* ── UT tech grid ────────────────────────────────────────────────────────── */
+/* .ut-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  max-height: 150vh;
+  overflow-y: auto;
+  padding: 2px;
+} */
+
+.ut-grid {
+  .bonus-section:has(.bonus-card.selected) .bonus-card:not(.selected) {
+    filter: brightness(0.95);
+  }
+  .bonus-section:has(.bonus-card.selected) .bonus-card:not(.selected):hover {
+    filter: none;
+  }
+  .bonus-card.selected {order: -1;}
+}
+.ut-card-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--body-text);
+  line-height: 1.2;
+  margin-bottom: 3px;
+}
+/* ut-card-name inside a bonus-card (new card-style UT picker) */
+.bonus-card .ut-card-name {
+  font-size: .85rem;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-bottom: .2rem;
+  color: var(--body-text);
+}
+.ut-card-desc {
+  font-size: 0.8rem;
+}
+
+/* Shared floating tooltip for UT cards */
+#ut-card-tooltip {
+  position: fixed;
+  display: none;
+  z-index: 9999;
+  background: oklch(from var(--body-bg) calc(l + 0.14) c h);
+  border: 1px solid var(--accent-2);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.75rem;
+  color: var(--body-text);
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  min-width: 200px;
+  max-width: 280px;
+}
+#ut-card-tooltip .tip-name {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--accent-2);
+  margin-bottom: 4px;
+}
+#ut-card-tooltip .tip-desc {
+  color: var(--body-text);
+  opacity: 0.85;
+  line-height: 1.4;
+}
+#ut-card-tooltip .tip-cost {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid oklch(from var(--body-bg) calc(l + 0.2) c h);
+  color: var(--accent-3);
+  font-size: 0.7rem;
+}
+/* ── UU Stat Overrides panel ────────────────────────────────────────────────── */
+.uo-def {
+  font-size: .7rem;
+  color: var(--accent-3);
+  opacity: .8;
+  min-height: 1rem;
+  margin-top: 2px;
+}
+#uu-overrides-card .input-group-text {
+  background: oklch(from var(--body-bg) calc(l + 0.06) c h);
+  border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);
+  color: var(--accent-3);
+  font-size: .75rem;
+}
+#uu-overrides-card .uo-input:not(:placeholder-shown) {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
 /* ── Build log ───────────────────────────────────────────────────────────── */
 .build-log {
   background: var(--walnut);

@@ -1,0 +1,629 @@
+{
+  "_note": [
+    "Team bonus card overrides — keys are 'T' + catalog ID.",
+    "Same field schema as bonus_cards.json; merged into _cardOverrides at load time.",
+    "",
+    "  type:        value | progression | dual | multi | desc | hidden",
+    "  heading:     Big bold text — '+20%', 'FREE', 'CAN', etc.",
+    "  stat:        Smaller label below heading",
+    "  description: Bottom label (who/what is affected)",
+    "  entity:      Unit/building key — drives icon",
+    "  entity2:     Second entity for 'dual' cards",
+    "  lines:       ['...','...'] — desc card lines",
+    "  multiplier:  false → hide multiplier control (unlock/binary bonuses)",
+    "  hidden:      true → card not rendered"
+  ],
+
+  "T0": {
+    "_label": "Relics generate +33% gold",
+    "heading": "+33% [gold]",
+    "stat": "Relic Gold Income",
+    "entity": "relic",
+    "description": "Relics"
+  },
+  "T1": {
+    "_label": "Genitour available in the Archery Range starting in the Castle Age",
+    "type": "value",
+    "entity": "genitour",
+    "heading": "Unlocked",
+    "stat": "Genitour available in the Archery Range starting in the Castle Age",
+    "multiplier": false
+  },
+  "T2": {
+    "_label": "Archery Ranges work 10% faster",
+    "heading": "+10% [workrate]",
+    "stat": "Archery Ranges work 10% faster",
+    "entity": "archery_range",
+    "description": "Archery Ranges"
+  },
+  "T3": {
+    "_label": "Blacksmiths work 80% faster",
+    "heading": "+80% [workrate]",
+    "stat": "Blacksmiths work 80% faster",
+    "entity": "blacksmith",
+    "description": "Blacksmiths"
+  },
+  "T4": {
+    "_label": "Relics generate both Gold and Food",
+    "type": "value",
+    "heading":"[gold] and [food]",
+    "stat":"Relics generate both Gold and Food",
+    "entity": "relic"
+  },
+  "T5": {
+    "_label": "Relics visible on the map at the start of the game",
+    "type": "dual",
+    "entity": "relic",
+    "entity2": "spies",
+    "heading": "Visible on start",
+    "stat": "Relics visible on the map at the start of the game",
+    "multiplier": false
+  },
+  "T6": {
+    "_label": "Monks +100% heal speed",
+    "heading": "+100% [reload]",
+    "stat": "Heal Speed",
+    "entity": "monk",
+    "description": "Monks"
+  },
+  "T7": {
+    "_label": "Siege Workshops work 20% faster",
+    "heading": "+20% [workrate]",
+    "stat": "Siege Workshops work 20% faster",
+    "entity": "siege_workshop",
+    "description": "Siege Workshops"
+  },
+  "T8": {
+    "_label": "Farms +10% food",
+    "heading": "+10% [food]",
+    "stat": "Food Output",
+    "entity": "farm",
+    "description": "Farms"
+  },
+  "T9": {
+    "_label": "Palisade Walls +33% HP",
+    "heading": "+33% [heart]",
+    "stat": "HP",
+    "entity": "stone_gate",
+    "description": "Palisade Walls"
+  },
+  "T10": {
+    "_label": "Outposts +3 LOS and cost no stone",
+    "type": "value",
+    "entity": "outpost",
+    "heading": "+3 LOS, No [stone]",
+    "stat": "Outposts +3 LOS and cost no stone"
+  },
+  "T11": {
+    "_label": "Knights +2 LOS",
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "knight",
+    "description": "Knights"
+  },
+  "T12": {
+    "_label": "Barracks work 20% faster",
+    "heading": "+20% [workrate]",
+    "stat": "Barracks work 20% faster",
+    "entity": "barracks",
+    "description": "Barracks"
+  },
+  "T13": {
+    "_label": "Stables work 20% faster",
+    "heading": "+20% [workrate]",
+    "stat": "Stables work 20% faster",
+    "entity": "stable",
+    "description": "Stables"
+  },
+  "T14": {
+    "_label": "Start with a free Llama",
+    "type": "value",
+    "entity": "llama",
+    "heading": "Free",
+    "stat": "Start with a free Llama",
+    "multiplier": false
+  },
+  "T15": {
+    "_label": "Camel and light cavalry units +2 attack vs. buildings",
+    "type": "dual",
+    "entity": "camel_rider",
+    "entity2": "scout",
+    "heading": "+2 [attack]",
+    "stat": "Attack vs. Buildings",
+    "description": "Camel & Light Cavalry"
+  },
+  "T16": {
+    "_label": "Condottiero available in the Barracks in Imperial Age",
+    "type": "value",
+    "entity": "condottiero",
+    "heading": "Unlocked",
+    "stat": "Condottiero available in the Barracks in Imperial Age",
+    "multiplier": false
+  },
+  "T17": {
+    "_label": "Galleys +4 LOS",
+    "heading": "+4 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "galley",
+    "description": "Galleys"
+  },
+  "T18": {
+    "_label": "Scorpions +1 range",
+    "heading": "+1 Range",
+    "stat": "Attack Range",
+    "entity": "scorpion",
+    "description": "Scorpions"
+  },
+  "T19": {
+    "_label": "Villagers +3 LOS",
+    "heading": "+3 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "villager",
+    "description": "Villagers"
+  },
+  "T20": {
+    "_label": "Monasteries work 20% faster",
+    "heading": "+20% [workrate]",
+    "stat": "Monasteries work 20% faster",
+    "entity": "monastery",
+    "description": "Monasteries"
+  },
+  "T21": {
+    "_label": "Cavalry Archers trained 25% faster",
+    "heading": "-25% Train Time",
+    "stat": "Cavalry Archers trained 25% faster",
+    "entity": "cavalry_archer",
+    "description": "Cavalry Archers"
+  },
+  "T22": {
+    "_label": "Docks +6 LOS",
+    "heading": "+6 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "dock",
+    "description": "Docks"
+  },
+  "T23": {
+    "_label": "Universities work 80% faster",
+    "heading": "+80% [workrate]",
+    "stat": "Universities work 80% faster",
+    "entity": "university",
+    "description": "Universities"
+  },
+  "T24": {
+    "_label": "Walls cost -50%",
+    "heading": "-50%",
+    "stat": "Walls cost less",
+    "entity": "stone_wall",
+    "description": "Walls"
+  },
+  "T25": {
+    "_label": "Scout Cavalry, Light Cavalry, Hussar +2 LOS",
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "scout",
+    "description": "Scout Line"
+  },
+  "T26": {
+    "_label": "Knights +2 attack vs. Archers",
+    "heading": "+2 [attack]",
+    "stat": "Knights +2 attack vs. Archers",
+    "entity": "knight",
+    "description": "Knights"
+  },
+  "T27": {
+    "_label": "Technologies research 25% faster (excluding Age Up)",
+    "type": "value",
+    "entity": "university",
+    "heading": "+25% Faster Research",
+    "stat": "Technologies research 25% faster (excluding Age Up)"
+  },
+  "T28": {
+    "_label": "Foot archers and skirmisher-line +2 attack vs. buildings",
+    "type": "dual",
+    "entity": "archer",
+    "entity2": "skirmisher",
+    "heading": "+2 [attack]",
+    "stat": "Foot archers and skirmisher-line +2 attack vs. buildings",
+    "description": "Archers & Skirmishers"
+  },
+  "T29": {
+    "_label": "Transport Ships +5 LOS and cost -50%",
+    "type": "value",
+    "entity": "transport_ship",
+    "heading": "+5 LOS, -50% Cost",
+    "stat": "Transport Ships +5 LOS and cost -50%"
+  },
+  "T30": {
+    "_label": "Military buildings provide +5 population room",
+    "heading": "+5 Pop",
+    "stat": "Per Military Building",
+    "entity": "barracks",
+    "description": "Military Buildings"
+  },
+  "T31": {
+    "_label": "Trade units generate +25% gold",
+    "heading": "+25% [gold]",
+    "stat": "Trade units generate +25% gold",
+    "entity": "trade_cart",
+    "description": "Trade Units"
+  },
+  "T32": {
+    "_label": "Cavalry Archers +2 LOS",
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "cavalry_archer",
+    "description": "Cavalry Archers"
+  },
+  "T33": {
+    "_label": "Units resist conversion",
+    "type": "value",
+    "entity": "monk",
+    "heading": "Conversion Resistance",
+    "stat": "Units resist conversion",
+    "multiplier": false
+  },
+  "T34": {
+    "_label": "Gunpowder units created 25% faster",
+    "heading": "-25%",
+    "stat": "Train Time",
+    "entity": "hand_cannoneer",
+    "description": "Gunpowder Units"
+  },
+  "T35": {
+    "_label": "Imperial Skirmisher upgrade available in the Imperial Age",
+    "type": "value",
+    "entity": "skirmisher",
+    "heading": "Unlocked",
+    "stat": "Imperial Skirmisher upgrade available in the Imperial Age",
+    "multiplier": false
+  },
+  "T36": {
+    "_label": "Docks cost -15%",
+    "heading": "-15%",
+    "stat": "Cost",
+    "entity": "dock",
+    "description": "Docks"
+  },
+  "T37": {
+    "_label": "Scout Cavalry, Light Cavalry, Hussar +1 attack vs. Ranged Soldiers",
+    "heading": "+1 [attack]",
+    "stat": "Attack vs. Ranged",
+    "entity": "scout",
+    "description": "Scout Line"
+  },
+  "T38": {
+    "_label": "Scorpion-line minimum range reduced",
+    "type": "value",
+    "entity": "scorpion",
+    "heading":"Min Range",
+    "stat": "Scorpion-line minimum range reduced",
+    "multiplier": false
+  },
+  "T39": {
+    "_label": "Trade units +50 HP",
+    "heading": "+50 [heart]",
+    "stat": "Trade units +50 HP",
+    "entity": "trade_cart",
+    "description": "Trade Units"
+  },
+  "T40": {
+    "_label": "Houses built 100% faster",
+    "heading": "2× Build Speed",
+    "stat": "Houses built 100% faster",
+    "entity": "house",
+    "description": "Houses"
+  },
+  "T41": {
+    "_label": "Monks +2 LOS",
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "monk",
+    "description": "Monks"
+  },
+  "T42": {
+    "_label": "Herdables +2 LOS",
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "sheep",
+    "description": "Herdables"
+  },
+  "T43": {
+    "_label": "Mills, Lumber Camps, Mining Camps built 100% faster",
+    "type": "dual",
+    "entity": "mill",
+    "entity2": "lumber_camp",
+    "heading": "2× Build Speed",
+    "stat": "Mills, Lumber Camps, Mining Camps built 100% faster",
+    "description": "Resource Buildings"
+  },
+  "T44": {
+    "_label": "Unique Units +5% HP",
+    "heading": "+5% [heart]",
+    "stat": "Unique Units +5% HP",
+    "entity": "unique_unit",
+    "description": "Unique Units"
+  },
+  "T45": {
+    "_label": "Skirmishers, Spearmen, and Scout-lines train 20% faster",
+    "type": "dual",
+    "entity": "skirmisher",
+    "entity2": "spearman",
+    "heading": "-20% [workrate]",
+    "stat": "Skirmishers, Spearmen, and Scout-lines train 20% faster",
+    "description": "Skirmisher, Spearman & Scout-lines"
+  },
+  "T46": {
+    "_label": "Fishing ships +2 LOS",
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "fishing_ship",
+    "description": "Fishing Ships"
+  },
+  "T47": {
+    "_label": "Scout-line +2 attack vs. gunpowder units",
+    "heading": "+2 [attack]",
+    "stat": "Scout-line +2 attack vs. gunpowder units",
+    "entity": "scout",
+    "description": "Scout Line"
+  },
+  "T48": {
+    "_label": "Infantry +5 attack vs. Elephant units",
+    "heading": "+5 [attack]",
+    "stat": "Attack vs. Elephants",
+    "entity": "infantry",
+    "description": "Infantry"
+  },
+  "T49": {
+    "_label": "Explosive units +20% speed",
+    "heading": "+20% [speed]",
+    "stat": "Explosive units +20% speed",
+    "entity": "petard",
+    "description": "Explosive Units"
+  },
+  "T50": {
+    "_label": "All resources last 5% longer",
+    "type": "dual",
+    "heading": "+5%",
+    "stat": "All resources last 5% longer",
+    "entity": "gold",
+    "entity2": "food",
+    "description": "All Resources"
+  },
+  "T51": {
+    "_label": "Castles, Kreposts, Donjons work 10% faster",
+    "type": "dual",
+    "entity": "castle",
+    "entity2": "krepost",
+    "heading": "+10% [workrate]",
+    "stat": "Work Rate",
+    "description": "Castles, Kreposts & Donjons"
+  },
+  "T52": {
+    "_label": "Markets work 80% faster",
+    "heading": "+80% [workrate]",
+    "stat": "Markets work 80% faster",
+    "entity": "market",
+    "description": "Markets"
+  },
+  "T53": {
+    "_label": "Steppe Lancers +3 LOS",
+    "heading": "+3 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "steppe_lancer",
+    "description": "Steppe Lancers"
+  },
+  "T54": {
+    "_label": "Spearmen +3 attack vs. cavalry",
+    "heading": "+3 [attack]",
+    "stat": "Attack vs. Cavalry",
+    "entity": "spearman",
+    "description": "Spearmen"
+  },
+  "T55": {
+    "_label": "Elephant units +4 attack vs. buildings",
+    "heading": "+4 [attack]",
+    "stat": "Attack vs. Buildings",
+    "entity": "battle_elephant",
+    "description": "Elephant Units"
+  },
+  "T56": {
+    "_label": "Shock Infantry +2 LOS",
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "fire_lancer",
+    "description": "Shock Infantry"
+  },
+  "T57": {
+    "_label": "Docks work 20% faster",
+    "heading": "+20% [workrate]",
+    "stat": "Docks work 20% faster",
+    "entity": "dock",
+    "description": "Docks"
+  },
+  "T58": {
+    "_label": "Monasteries 3x HP",
+    "heading": "×3 [heart]",
+    "stat": "Monasteries 3x HP",
+    "entity": "monastery",
+    "description": "Monasteries"
+  },
+  "T59": {
+    "_label": "Markets 3x HP",
+    "heading": "×3 [heart]",
+    "stat": "Markets 3x HP",
+    "entity": "market",
+    "description": "Markets"
+  },
+  "T60": {
+    "_label": "Explosive units +6 LOS",
+    "heading": "+6 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "demolition_ship",
+    "description": "Explosive Units"
+  },
+  "T61": {
+    "_label": "Outposts and towers constructed faster",
+    "type": "dual",
+    "entity": "outpost",
+    "entity2": "tower",
+    "heading": "Build Faster",
+    "stat": "Outposts and towers constructed faster"
+  },
+  "T62": {
+    "_label": "Siege towers +50% garrison capacity",
+    "heading": "+50%",
+    "stat": "Garrison Capacity",
+    "entity": "siege_tower",
+    "description": "Siege Towers"
+  },
+  "T63": {
+    "_label": "Docks built 100% faster",
+    "heading": "2× Build Speed",
+    "stat": "Docks built 100% faster",
+    "entity": "dock",
+    "description": "Docks"
+  },
+  "T64": {
+    "_label": "Infantry +2 LOS",
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "infantry",
+    "description": "Infantry"
+  },
+  "T65": {
+    "_label": "Trade carts 20% faster when empty",
+    "heading": "+20% [speed]",
+    "stat": "Trade carts 20% faster when empty",
+    "entity": "trade_cart",
+    "description": "Trade Carts"
+  },
+  "T66": {
+    "_label": "All explosive units +40% HP",
+    "heading": "+40% [heart]",
+    "stat": "All explosive units +40% HP",
+    "entity": "demolition_ship",
+    "description": "Explosive Units"
+  },
+  "T67": {
+    "_label": "Town Centers +4 LOS",
+    "heading": "+4 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "town_center",
+    "description": "Town Centers"
+  },
+  "T68": {
+    "_label": "Upgrading Unique Units to Elite costs -20%",
+    "heading": "-20%",
+    "stat": "Elite Upgrade Cost",
+    "entity": "unique_unit",
+    "description": "Unique Units"
+  },
+  "T69": {
+    "_label": "Docks provide +5 population room",
+    "heading": "+5 Pop",
+    "stat": "Per Dock",
+    "entity": "dock",
+    "description": "Docks"
+  },
+  "T70": {
+    "_label": "Trade units yield 10% food in addition to gold",
+    "type": "dual",
+    "entity": "trade_cart",
+    "entity2": "food",
+    "heading": "Trade Adds Food",
+    "stat": "Trade units yield 10% food in addition to gold"
+  },
+  "T71": {
+    "_label": "Camel and elephant units created 25% faster",
+    "type": "dual",
+    "entity": "camel_rider",
+    "entity2": "battle_elephant",
+    "heading": "-25%",
+    "stat": "Train Time",
+    "description": "Camels & Elephants"
+  },
+  "T72": {
+    "_label": "Can train spearmen from Town Centers",
+    "type": "value",
+    "entity": "spearman",
+    "heading": "Unlocked",
+    "stat": "Can train spearmen from Town Centers",
+    "multiplier": false
+  },
+  "T73": {
+    "_label": "Can train Canoes from docks",
+    "type": "value",
+    "entity": "dock",
+    "heading":"Unlocked",
+    "stat":"Can train Canoes from docks",
+    "multiplier": false
+  },
+  "T74": {
+    "_label": "Buildings cost 25% fewer resources to repair",
+    "heading": "-25%",
+    "stat": "Repair Cost",
+    "entity": "house",
+    "description": "All Buildings"
+  },
+  "T75": {
+    "_label": "Mounted archers -50% frame delay",
+    "heading": "-50%",
+    "stat": "Frame Delay",
+    "entity": "cavalry_archer",
+    "description": "Mounted Archers"
+  },
+  "T76": {
+    "_label": "Foot archers +2 LOS",
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "archer",
+    "description": "Foot Archers"
+  },
+  "T77": {
+    "_label": "Cavalry +2 attack vs. siege weapons",
+    "heading": "+2 [attack]",
+    "stat": "Attack vs. Siege",
+    "entity": "cavalry",
+    "description": "Cavalry"
+  },
+  "T78": {
+    "_label": "Gunpowder units +2 LOS",
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "entity": "hand_cannoneer",
+    "description": "Gunpowder Units"
+  },
+  "T79": {
+    "_label": "Infantry +2 attack vs. Ranged Soldiers",
+    "heading": "+2 [attack]",
+    "stat": "Attack vs. Ranged Soliders",
+    "entity": "infantry",
+    "description": "Infantry"
+  },
+  "T81": {
+    "_label": "Units have +15% Conversion Resistance; Monks convert slightly faster",
+    "type": "dual",
+    "entity": "monk",
+    "heading": "Conversion Resistance",
+    "stat": "Units have +15% Conversion Resistance; Monks convert slightly faster",
+    "description": "Monks & Units"
+  },
+  "T82": {
+    "_label": "Skirmishers and Spearmen +2 LOS and +2 attack range",
+    "type": "dual",
+    "entity": "archer",
+    "entity2": "skirmisher",
+    "heading": "+2 LOS, +2 [range]",
+    "stat": "Skirmishers and Spearmen +2 LOS and +2 attack range",
+    "description": "Archers & Skirmishers"
+  },
+  "T83": {
+    "_label": "Towers and Castles provide +10 population space",
+    "type": "dual",
+    "entity": "tower",
+    "entity2": "castle",
+    "heading": "+10 Population",
+    "stat": "Towers and Castles provide +10 population space",
+    "description": "Towers and Castles"
+  }
+}
