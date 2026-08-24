@@ -71,7 +71,26 @@ function showStep(n) {
   });
 
   // Step-specific side effects — fired regardless of navigation direction
-  if (n === 5) renderUUGrid();
+  if (n === 5) {
+    renderUUGrid();
+    // Kick off stats load if not already done (covers direct nav-dot jumps and
+    // loaded drafts where the user never passed through step 4 via Next).
+    if (!_uuCatalogHasStats) {
+      const statsNotice = document.getElementById("uu-stats-loading");
+      if (statsNotice) statsNotice.classList.remove("d-none");
+      loadUUCatalog()
+        .then(() => {
+          renderUUGrid();
+          if (statsNotice) statsNotice.classList.add("d-none");
+          const selIdx = draft.unique_unit?.km_idx;
+          if (selIdx != null) {
+            const u = _uuCatalog.find(u => u.km_idx === selIdx);
+            if (u) populateUUOverrides(u);
+          }
+        })
+        .catch(console.error);
+    }
+  }
   if (n === 6 || n === 7) initUTPanel(n);
 
   const btnPrev = document.getElementById("btn-prev");
@@ -107,23 +126,8 @@ document.getElementById("btn-next").addEventListener("click", async () => {
     if (currentStep === 5 || currentStep === 6) await loadBonusCatalog();
 
     if (currentStep === 4) {
-      // showStep triggers the initial renderUUGrid(); also kick off async stat load
+      // showStep(5) handles renderUUGrid() and loadUUCatalog() with the loading notice
       showStep(currentStep + 1);
-      const statsNotice = document.getElementById("uu-stats-loading");
-      if (!_uuCatalogHasStats) {
-        if (statsNotice) statsNotice.classList.remove("d-none");
-        loadUUCatalog()
-          .then(() => {
-            renderUUGrid();
-            if (statsNotice) statsNotice.classList.add("d-none");
-            const selIdx = draft.unique_unit?.km_idx;
-            if (selIdx != null) {
-              const u = _uuCatalog.find(u => u.km_idx === selIdx);
-              if (u) populateUUOverrides(u);
-            }
-          })
-          .catch(console.error);
-      }
       return;
     }
 
@@ -1967,19 +1971,26 @@ function _setUTMode(step, mode) {
   const sharedSec   = document.getElementById(`${prefix}-shared-section`);
   const effectsSec  = document.getElementById(`${prefix}-effects-section`);
 
+  const hintVanilla = document.getElementById(`${prefix}-mode-hint-vanilla`);
+  const hintCustom  = document.getElementById(`${prefix}-mode-hint-custom`);
+
   if (mode === "vanilla") {
-    if (vanillaSec) vanillaSec.style.display = "";
-    if (customSec)  customSec.style.display  = "none";
-    if (effectsSec) effectsSec.style.display = "none";
+    if (vanillaSec)  vanillaSec.style.display  = "";
+    if (customSec)   customSec.style.display   = "none";
+    if (effectsSec)  effectsSec.style.display  = "none";
+    if (hintVanilla) hintVanilla.style.display = "";
+    if (hintCustom)  hintCustom.style.display  = "none";
     // Show shared only if a tech is already selected
     if (ut.vanilla_km_idx != null) {
       if (sharedSec) sharedSec.classList.remove("d-none");
     }
   } else {
-    if (vanillaSec) vanillaSec.style.display = "none";
-    if (customSec)  customSec.style.display  = "";
-    if (effectsSec) effectsSec.style.display = "";
-    if (sharedSec)  sharedSec.classList.remove("d-none");
+    if (vanillaSec)  vanillaSec.style.display  = "none";
+    if (customSec)   customSec.style.display   = "";
+    if (effectsSec)  effectsSec.style.display  = "";
+    if (hintVanilla) hintVanilla.style.display = "none";
+    if (hintCustom)  hintCustom.style.display  = "";
+    if (sharedSec)   sharedSec.classList.remove("d-none");
   }
 
   // Sync radio button state
@@ -2060,7 +2071,29 @@ function renderUTGrid(step) {
   grid.querySelectorAll('.bonus-card[data-ut-id]').forEach(el => {
     el.addEventListener('click', e => {
       if (e.target.closest('.multiplier-circle')) return;
-      selectVanillaTech(step, parseInt(el.dataset.utId, 10));
+      const clickedId = parseInt(el.dataset.utId, 10);
+      const ut2 = draft[UT_STEPS[step].key] || {};
+      const curId = ut2.vanilla_km_idx ?? ut2.effects?.[0]?.id ?? null;
+      if (clickedId === curId) {
+        // Click-off: deselect the card
+        const { prefix } = UT_STEPS[step];
+        const ut3 = _utDraft(step);
+        delete ut3.vanilla_km_idx;
+        ut3.effects = [];
+        ut3.name = "";
+        ut3.description = "";
+        saveDraft();
+        document.getElementById(`${prefix}-vanilla-selected`)?.classList.add("d-none");
+        document.getElementById(`${prefix}-vanilla-hint`)?.classList.remove("d-none");
+        document.getElementById(`${prefix}-shared-section`)?.classList.add("d-none");
+        const nameEl = document.getElementById(`${prefix}-name`);
+        const descEl = document.getElementById(`${prefix}-desc`);
+        if (nameEl) nameEl.value = "";
+        if (descEl) descEl.value = "";
+        renderUTGrid(step);
+      } else {
+        selectVanillaTech(step, clickedId);
+      }
     });
   });
 
@@ -2349,16 +2382,23 @@ async function loadUUCatalogFast() {
 
 // Stats-enriched catalog load — re-fetches even if the fast version is already
 // loaded, to overlay the hover popup stats. Fast when prewarm is done, slow if not.
+let _uuCatalogLoadingPromise = null;
 async function loadUUCatalog() {
   if (_uuCatalogHasStats) return;
-  try {
-    const datPath = draft.dat_path || "";
-    const res  = await fetch(`/api/builder/uu/catalog?dat_path=${encodeURIComponent(datPath)}`);
-    _uuCatalog = await res.json();
-    _uuCatalogHasStats = true;
-  } catch (e) {
-    console.warn("Could not load UU catalog:", e);
-  }
+  if (_uuCatalogLoadingPromise) return _uuCatalogLoadingPromise;
+  _uuCatalogLoadingPromise = (async () => {
+    try {
+      const datPath = draft.dat_path || "";
+      const res  = await fetch(`/api/builder/uu/catalog?dat_path=${encodeURIComponent(datPath)}`);
+      _uuCatalog = await res.json();
+      _uuCatalogHasStats = true;
+    } catch (e) {
+      console.warn("Could not load UU catalog:", e);
+    } finally {
+      _uuCatalogLoadingPromise = null;
+    }
+  })();
+  return _uuCatalogLoadingPromise;
 }
 
 // Update the cost preview line below the UU description textarea
@@ -2381,10 +2421,14 @@ function _buildUUPopupHTML(unit) {
   const s = unit.stats;
   const badge = unit.vanilla ? "Vanilla" : "Custom";
 
-  // No stats loaded yet (no dat_path at catalog time)
+  // Stats not loaded yet — show a loading indicator if we're still fetching
   if (!s) {
+    const loadingLine = _uuCatalogHasStats
+      ? `<div class="pop-row" style="opacity:.6;font-style:italic;">No stats available</div>`
+      : `<div class="pop-row" style="opacity:.6;"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading stats…</div>`;
     return `<div class="pop-name">${unit.name}</div>
-            <div class="pop-row"><span class="pop-label">Type</span><span class="pop-val">${badge}</span></div>`;
+            <div class="pop-row"><span class="pop-label">Type</span><span class="pop-val">${badge}</span></div>
+            ${loadingLine}`;
   }
 
   const b = s.base || {};

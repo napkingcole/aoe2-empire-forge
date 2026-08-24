@@ -58,7 +58,7 @@ _UNIQUE_CASTLE_STRINGS = [
     "Great Wall (Walls and towers +30% HP)",
     "Steppe Husbandry (Light Cavalry, Steppe Lancers and Cavalry Archers trained 100% faster)",
     "Royal Heirs (Unique Unit and Camels receive -3 damage from Mounted Units)",
-    "Bearded Axe (Unique Unit +1 range)",
+    "Bearded Axe (Unique Unit +2 range)",
     "Anarchy (create Unique Unit at Barracks)",
     "Marauders (create Unique Unit at Stables)",
     "Andean Sling (Skirmishers and Slingers no minimum range, Slingers +1 attack)",

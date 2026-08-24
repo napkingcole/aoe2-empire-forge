@@ -397,6 +397,104 @@ def _resolve_uu_info(civ_def: dict, dat, slot: int,
         return None
 
 
+# Maps opt-in regional unit_id → preferred source civ JSON filename.
+# These units use the "RegionalUnit" Node Type and are only present in the
+# CivTechTrees JSON of the civs that natively have them.  Custom civs that
+# include these units via tree[0] need the nodes injected so the F2 viewer
+# shows them.  First entry in each list is preferred; others are fallbacks.
+_OPT_IN_UNIT_NODE_SOURCES: dict[int, list[str]] = {
+    185:  ["INCAS.json"],                # Slinger
+    873:  ["DRAVIDIANS.json",  "BENGALIS.json"],  # Elephant Archer
+    875:  ["DRAVIDIANS.json",  "BENGALIS.json"],  # Elite Elephant Archer
+    1132: ["BURMESE.json",     "BENGALIS.json"],  # Battle Elephant
+    1133: ["BURMESE.json",     "BENGALIS.json"],  # Elite Battle Elephant
+    1370: ["MONGOLS.json",     "CUMANS.json"],     # Steppe Lancer
+    1371: ["MONGOLS.json",     "CUMANS.json"],     # Elite Steppe Lancer
+    1744: ["BENGALIS.json",    "DRAVIDIANS.json"], # Armored Elephant
+    1745: ["BENGALIS.json",    "DRAVIDIANS.json"], # Elite Armored Elephant
+    1795: ["BYZANTINES.json"],            # Dromon
+    1901: ["CHINESE.json",     "KOREANS.json"],    # Fire Lancer
+    1904: ["CHINESE.json",     "KOREANS.json"],    # Rocket Cart
+    1942: ["SHU.json",         "WEI.json"],        # Traction Trebuchet
+    1948: ["CHINESE.json",     "SHU.json"],        # Lou Chuan
+    2150: ["ACHAEMENIDS.json"],           # War Chariot
+    2550: ["INCAS.json"],                # Champi Scout
+    2633: ["AZTECS.json",      "INCAS.json"],      # Catapult Galleon
+    1302: ["CHINESE.json"],                 # Dragon Ship
+}
+
+
+def _inject_regional_unit_nodes(data: dict, tree_units: set,
+                                  civ_json_dir: Path) -> int:
+    """
+    Inject RegionalUnit nodes for opt-in units in tree_units that are not yet
+    present in data["civ_techs_units"].  Sources nodes from native civ JSONs.
+    Returns number of nodes injected.
+    """
+    # Index existing unit node IDs so we don't duplicate.
+    existing_ids: set[int] = set()
+    for node in data.get("civ_techs_units", []):
+        nid = node.get("Node ID")
+        if nid is not None and node.get("Use Type") == "Unit":
+            existing_ids.add(int(nid))
+
+    def _collect_regional_nodes(src_data: dict, uid: int) -> list[dict]:
+        """Recursively find RegionalUnit nodes with Node ID == uid."""
+        results: list[dict] = []
+        if isinstance(src_data, dict):
+            if (src_data.get("Node ID") == uid
+                    and src_data.get("Node Type") == "RegionalUnit"
+                    and src_data.get("Use Type") == "Unit"):
+                results.append(dict(src_data))
+            for v in src_data.values():
+                results.extend(_collect_regional_nodes(v, uid))
+        elif isinstance(src_data, list):
+            for item in src_data:
+                results.extend(_collect_regional_nodes(item, uid))
+        return results
+
+    # Cache loaded source JSONs to avoid re-reading the same file.
+    _src_cache: dict[str, dict] = {}
+
+    def _load_src(fname: str) -> dict | None:
+        if fname not in _src_cache:
+            path = civ_json_dir / fname
+            if not path.exists():
+                return None
+            try:
+                with open(path, encoding="utf-8") as f:
+                    _src_cache[fname] = json.load(f)
+            except Exception:
+                return None
+        return _src_cache[fname]
+
+    injected = 0
+    STATUS_OK  = "ResearchedCompleted"
+    STATUS_OFF = "NotAvailable"
+
+    for uid in sorted(_OPT_IN_UNIT_NODE_SOURCES):
+        if uid in existing_ids:
+            continue  # already has a node
+        if uid not in tree_units:
+            continue  # civ doesn't have this unit
+
+        for src_fname in _OPT_IN_UNIT_NODE_SOURCES[uid]:
+            src_data = _load_src(src_fname)
+            if src_data is None:
+                continue
+            nodes = _collect_regional_nodes(src_data, uid)
+            if not nodes:
+                continue
+            for node in nodes:
+                node["Node Status"] = STATUS_OK if uid in tree_units else STATUS_OFF
+            data.setdefault("civ_techs_units", []).extend(nodes)
+            existing_ids.add(uid)
+            injected += len(nodes)
+            break  # found in preferred source; stop trying fallbacks
+
+    return injected
+
+
 def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                              dat=None, slot: int | None = None,
                              civ_result: dict | None = None) -> bytes | None:
@@ -610,6 +708,15 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
 
     changed  = patch_nodes(data.get("civ_techs_buildings", []))
     changed += patch_nodes(data.get("civ_techs_units",     []))
+
+    # Inject RegionalUnit nodes for opt-in units (Elephant Archer, Slinger,
+    # Steppe Lancer, etc.) that are in tree_units but absent from this civ's
+    # CivTechTrees JSON.  Without this they never appear in the F2 tech tree.
+    injected = _inject_regional_unit_nodes(data, unit_ids, civ_json_path.parent)
+    if injected:
+        changed += injected
+        print(f"  CivTechTrees/{civ_json_path.name}: {injected} regional unit nodes injected")
+
     print(f"  CivTechTrees/{civ_json_path.name}: {changed} nodes updated")
     return json.dumps(data, separators=(",", ":")).encode("utf-8")
 

@@ -1024,13 +1024,14 @@ _ARCH_OPTIONS = [
     {"value": 2,  "label": "Western European",        "example": "Britons, Franks, Celts"},
     {"value": 3,  "label": "East Asian",              "example": "Japanese, Chinese, Koreans"},
     {"value": 4,  "label": "Middle Eastern",          "example": "Persians, Saracens, Turks"},
-    {"value": 5,  "label": "Mesoamerican",            "example": "Aztecs, Mayans, Incas"},
+    {"value": 5,  "label": "Mesoamerican",            "example": "Aztecs, Mayans"},
     {"value": 6,  "label": "Mediterranean",           "example": "Byzantines, Italians, Spanish"},
     {"value": 7,  "label": "South Asian",             "example": "Hindustanis, Dravidians"},
     {"value": 8,  "label": "Eastern European",        "example": "Magyars, Slavs, Bulgarians"},
     {"value": 9,  "label": "African",                 "example": "Ethiopians, Malians"},
     {"value": 10, "label": "Southeast Asian",         "example": "Khmer, Malay, Burmese"},
     {"value": 11, "label": "Central Asian / Nomadic", "example": "Tatars, Cumans, Mongols"},
+    {"value": 12, "label": "South American",           "example": "Inca, Mapuche, Muisca, Tupi"},
 ]
 
 

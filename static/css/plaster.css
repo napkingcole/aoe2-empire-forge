@@ -1712,3 +1712,54 @@ img.card-main-image {
   color: var(--ink);
 }
 .uo-def { color: var(--ash); }
+
+/* ── Civ cards (configure page) ──────────────────────────────────────────── */
+#civ-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.civ-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: oklch(from var(--body-bg) calc(l + 0.04) c h);
+  border: 1px solid oklch(from var(--body-bg) calc(l + 0.14) c h);
+  border-radius: 6px;
+  padding: 10px 12px;
+  transition: background-color 0.15s;
+}
+.civ-card:hover {
+  background: oklch(from var(--body-bg) calc(l + 0.08) c h);
+}
+
+.drag-handle {
+  color: var(--accent-3);
+  font-size: 1.1rem;
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+.drag-handle:hover { opacity: 1; }
+.drag-handle:active { cursor: grabbing; }
+
+.civ-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.civ-card-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.replace-select {
+  min-width: 160px;
+  background-color: oklch(from var(--body-bg) calc(l + 0.04) c h);
+  border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);
+  color: var(--body-text);
+}

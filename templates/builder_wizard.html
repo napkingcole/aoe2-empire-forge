@@ -560,7 +560,7 @@
     <div class="card-body">
 
       {# ── Mode toggle ── #}
-      <div class="btn-group w-100 mb-3" role="group" id="{{ prefix }}-mode-group">
+      <div class="btn-group w-100 mb-1" role="group" id="{{ prefix }}-mode-group">
         <input type="radio" class="btn-check" name="{{ prefix }}-mode" id="{{ prefix }}-mode-vanilla" value="vanilla" autocomplete="off">
         <label class="btn btn-outline-primary" for="{{ prefix }}-mode-vanilla">
           <i class="fa-solid fa-scroll me-1"></i> Pick Vanilla Tech
@@ -569,6 +569,10 @@
         <label class="btn btn-outline-primary" for="{{ prefix }}-mode-custom">
           <i class="fa-solid fa-flask me-1"></i> Build Custom
         </label>
+      </div>
+      <div id="{{ prefix }}-mode-hint" class="text-muted small mb-3" style="font-size:.72rem;">
+        <span id="{{ prefix }}-mode-hint-vanilla"><i class="fa-solid fa-info-circle me-1"></i><strong>Pick Vanilla</strong>: selects an existing tech as your UT — its effect fires as-is. Name and description can be overridden below.</span>
+        <span id="{{ prefix }}-mode-hint-custom" style="display:none"><i class="fa-solid fa-info-circle me-1"></i><strong>Build Custom</strong>: compose a UT from bonus effects in the catalog. Any vanilla tech you already picked is still included — effects stack.</span>
       </div>
 
       {# ── Vanilla section: searchable card grid ── #}
@@ -590,19 +594,8 @@
         </div>
       </div>
 
-      {# ── Custom section: name input ── #}
-      <div id="{{ prefix }}-custom-section" style="display:none">
-        <div class="row g-3 mb-3">
-          <div class="col-md-6">
-            <label class="form-label fw-semibold" for="{{ prefix }}-name">
-              Tech Name <span class="text-danger">*</span>
-            </label>
-            <input type="text" id="{{ prefix }}-name" class="form-control"
-                   placeholder="e.g. Steel Stirrups" maxlength="40" autocomplete="off">
-            <div class="form-text">Displayed on the tech button in-game.</div>
-          </div>
-        </div>
-      </div>
+      {# ── Custom section: effects only (name moved to shared) ── #}
+      <div id="{{ prefix }}-custom-section" style="display:none"></div>
 
       {# ── Shared: fields shown after tech selection or in custom mode ── #}
       <div id="{{ prefix }}-shared-section" class="d-none">
@@ -613,10 +606,23 @@
           <div class="d-flex align-items-center gap-2">
             <i class="fa-solid fa-check-circle" style="color: var(--accent-2);"></i>
             <span class="fw-semibold small">Selected: <span id="{{ prefix }}-vanilla-name" class="text-accent-2" style="color: var(--accent-2);"></span></span>
+            <span class="text-muted small ms-1" style="font-size:.72rem;">(click card again to deselect)</span>
             <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" style="font-size:.7rem;padding:2px 8px;"
                     id="{{ prefix }}-vanilla-change">
               Change
             </button>
+          </div>
+        </div>
+
+        {# Name — editable in both vanilla and custom modes #}
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold" for="{{ prefix }}-name">
+              Tech Name <span class="text-danger">*</span>
+            </label>
+            <input type="text" id="{{ prefix }}-name" class="form-control"
+                   placeholder="e.g. Steel Stirrups" maxlength="40" autocomplete="off">
+            <div class="form-text">Override the displayed name in-game.</div>
           </div>
         </div>
 

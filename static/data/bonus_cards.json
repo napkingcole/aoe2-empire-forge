@@ -594,13 +594,6 @@
     "entity2": "villager",
     "description": "Villagers"
   },
-  "61": {
-    "heading": "UNLOCKED",
-    "stat": "Slingers from Archery Range",
-    "entity": "slinger",
-    "description": "Slingers",
-    "multiplier": false
-  },
   "62": {
     "type": "desc",
     "entity": "villager",
@@ -2710,7 +2703,7 @@
   "372": {
     "type": "value",
     "entity": "resources",
-    "heading":"+25 Each Resource",
+    "heading": "+25 Each Resource",
     "stat": "Start with +25 [food][wood][stone][gold]; gain +25 more per age-up",
     "description": "Starting Resources"
   },
@@ -2748,5 +2741,14 @@
     "stat": "Mounted Units generate +3 gold when defeating military units",
     "entity": "scout",
     "description": "Mounted Units"
+  },
+  "112": {
+    "type": "dual",
+    "heading": "FREE",
+    "stat": "Arson + Gambesons",
+    "entity": "arson",
+    "entity2": "gambesons",
+    "description": "Military Technologies",
+    "multiplier": false
   }
 }

@@ -33,7 +33,7 @@ BUILDING_BLACKSMITH  = 103
 # KM architecture value is 1-based; maps to a representative vanilla DAT civ
 # whose building graphics are copied to the custom civ.
 # Source: KM civbuilder.cpp repArch[] = {3,1,5,8,15,7,20,22,25,28,33}
-_ARCH_REP_CIVS = [3, 1, 5, 8, 15, 7, 20, 22, 25, 28, 33]
+_ARCH_REP_CIVS = [3, 1, 5, 8, 15, 7, 20, 22, 25, 28, 33, 21]  # 12 = South American (Inca)
 _ARCH_BUILDING_CLASSES = frozenset({3, 52, 27, 39})   # Building, Wall, Gate, Tower
 _ARCH_MOBILE_CLASSES   = frozenset({59, 18, 43, 19, 22})
 
@@ -854,6 +854,32 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
           f"{len(keep_enabled & all_disableable)} unit-line techs kept"
           + (f", {n_unlocked} type=8 unlocks" if n_unlocked else ""))
 
+    # ── Step 5: Dragon Ship — replicate tech 1010 (civ=6 only) for this civ.
+    # Tech 1010 is Chinese-exclusive and won't fire for custom civs.  When unit
+    # 1302 is in the tree we append a new auto-fire tech that triggers on the
+    # same prerequisites (Imperial Age + Galleon) and applies the same upgrades.
+    _DRAGON_SHIP_UNIT = 1302
+    _DRAGON_SHIP_REQS = (103, 35)   # Imperial Age tech, Galleon tech
+    _DRAGON_SHIP_UPGRADES = ((1103, _DRAGON_SHIP_UNIT),  # Fire Galley → Dragon Ship
+                             (529,  _DRAGON_SHIP_UNIT),  # Fire Ship   → Dragon Ship
+                             (532,  _DRAGON_SHIP_UNIT))  # Fast Fire   → Dragon Ship
+    if _DRAGON_SHIP_UNIT in tree_units:
+        from genieutils.effect import Effect as _Effect
+        ds_cmds = [
+            EffectCommand(type=3, a=src, b=dst, c=-1, d=0.0)
+            for src, dst in _DRAGON_SHIP_UPGRADES
+        ]
+        ds_eff = _Effect(name="Dragon Ship Upgrade", effect_commands=ds_cmds)
+        dat.effects.append(ds_eff)
+        ds_eff_id = len(dat.effects) - 1
+        ds_tech = _make_tech(name="Dragon Ship", effect_id=ds_eff_id,
+                             civ_index=civ_index)
+        ds_tech.required_techs = (*_DRAGON_SHIP_REQS, -1, -1, -1, -1)
+        ds_tech.required_tech_count = len(_DRAGON_SHIP_REQS)
+        ds_tech.repeatable = 1
+        dat.techs.append(ds_tech)
+        print("       Dragon Ship upgrade tech added (replicates tech 1010 for this civ)")
+
 
 # ── Bonus application ────────────────────────────────────────────────────────
 
@@ -1017,7 +1043,7 @@ def _apply_ec_list_entry(dat: DatFile, civ_index: int, ec_entry: dict,
         language_dll_help=-1,
         language_dll_tech_tree=-1,
         name="C-Bonus EC-list",
-        repeatable=0,
+        repeatable=1,
         research_locations=[ResearchLocation(location_id=-1, research_time=0,
                                              button_id=0, hot_key_id=-1)],
     )

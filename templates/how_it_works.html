@@ -3,22 +3,21 @@
 
 {% block content %}
 <h2 class="fw-bold mb-1" style="color: var(--accent-2);">How It Works</h2>
-<p class="text-muted mb-4">A quick guide to building your first custom civilization mod.</p>
+<p class="text-muted mb-4">A quick guide to building and installing your first custom civilization mod.</p>
 
 <!-- What is this? -->
 <div class="card mb-4">
   <div class="card-header">What is AOE2: Empire Forge?</div>
   <div class="card-body">
     <p class="mb-2">
-      <strong>AOE2: Empire Forge</strong> converts civilization designs made in
-      <a href="https://krakenmeister.com/civbuilder" target="_blank" rel="noopener" style="color: var(--accent-2);">KrakenMeister's Civ Builder</a>
-      into fully playable <strong>Age of Empires II: Definitive Edition</strong> mods — no manual file editing required.
+      <strong>AOE2: Empire Forge</strong> is a standalone civ builder for
+      <strong>Age of Empires II: Definitive Edition</strong>. Design a civilization from scratch —
+      name, architecture, tech tree, unique unit, bonuses, and unique techs — then generate a fully
+      playable mod, right from your browser. No Python knowledge, no manual file editing, no third-party tools required.
     </p>
     <p class="mb-0">
-      KrakenMeister's builder lets you design civs in your browser (tech tree, unique unit, bonuses, etc.) and export a
-      <code>.json</code> file per civ. Empire Forge reads those JSON files, patches them into the game's
-      internal data (<code>empires2_x2_p1.dat</code>), and packages everything into a mod you can drop straight
-      into AoE2:DE.
+      Empire Forge reads your game's data file (<code>empires2_x2_p1.dat</code>) directly and patches your
+      custom civ into it, so it stays up to date with whatever version of AoE2:DE you have installed.
     </p>
   </div>
 </div>
@@ -29,66 +28,46 @@
   <div class="card-body">
     <ul class="mb-0" style="line-height: 2;">
       <li>
-        <strong>One or more KrakenMeister civ JSON files</strong> — design your civs at
-        <a href="https://krakenmeister.com/civbuilder" target="_blank" rel="noopener" style="color: var(--accent-2);">krakenmeister.com/civbuilder</a>,
-        then use the <em>Export JSON</em> button on each civ's page.
+        <strong>Age of Empires II: Definitive Edition</strong> installed on your machine
+        (Steam or Microsoft Store). Empire Forge will find your game data automatically.
       </li>
       <li>
-        <strong>Your AoE2:DE DAT file</strong> — <code>empires2_x2_p1.dat</code>, found inside your game
-        installation under <code>resources/_common/dat/</code>. Empire Forge will try to find it automatically.
-        (Steam: <code>…/Steam/steamapps/common/AoE2DE/resources/_common/dat/</code>;
-        Microsoft Store: <code>C:\Program Files\WindowsApps\Microsoft.MSPhoenix_[version]\resources\_common\dat\</code>)
-      </li>
-      <li>
-        <strong>That's it.</strong> No Python knowledge, no modding experience, no manual file editing needed.
+        <strong>That's it.</strong> No extra tools, no modding experience, no manual file editing.
       </li>
     </ul>
   </div>
 </div>
 
-<!-- Three-step workflow -->
+<!-- Two paths -->
 <div class="card mb-4">
-  <div class="card-header">The Three Steps</div>
-  <div class="card-body pb-2">
+  <div class="card-header">Two Ways to Get Started</div>
+  <div class="card-body pb-1">
 
     <div class="d-flex gap-3 mb-4">
       <div class="flex-shrink-0">
-        <span class="step-badge" style="width:32px;height:32px;font-size:1rem;">1</span>
+        <span class="step-badge" style="width:32px;height:32px;font-size:1rem;">A</span>
       </div>
       <div>
-        <h6 class="fw-bold mb-1">Upload</h6>
+        <h6 class="fw-bold mb-1">Build a New Civ from Scratch <span class="badge text-bg-success ms-1" style="font-size:.7rem;">Recommended</span></h6>
         <p class="mb-0 text-muted">
-          Drop your KrakenMeister civ JSON files onto the upload page and confirm the path to your DAT file.
-          You can upload as many civs as you like in one go — there's no hard limit, though AoE2:DE
-          has a finite number of available civ slots to replace.
-        </p>
-      </div>
-    </div>
-
-    <div class="d-flex gap-3 mb-4">
-      <div class="flex-shrink-0">
-        <span class="step-badge" style="width:32px;height:32px;font-size:1rem;">2</span>
-      </div>
-      <div>
-        <h6 class="fw-bold mb-1">Configure</h6>
-        <p class="mb-0 text-muted">
-          Drag your civs into the order you want them to appear in-game, and choose which vanilla
-          civ slot each one replaces. Any vanilla civ can be a replacement target — the original
-          will be overwritten in the mod (your actual game files are never touched).
+          Click <strong>Build Civ</strong> in the nav and step through the wizard.
+          You'll name your civ, pick an architecture set, configure the tech tree, design a unique unit,
+          select bonuses, and set up unique technologies. Each step is self-contained and saves automatically.
+          When you're done, take the generated <code>.civbuilder.json</code> to <strong>Build Mod</strong> to generate the game file.
         </p>
       </div>
     </div>
 
     <div class="d-flex gap-3 mb-2">
       <div class="flex-shrink-0">
-        <span class="step-badge" style="width:32px;height:32px;font-size:1rem;">3</span>
+        <span class="step-badge" style="width:32px;height:32px;font-size:1rem;">B</span>
       </div>
       <div>
-        <h6 class="fw-bold mb-1">Build &amp; Download</h6>
+        <h6 class="fw-bold mb-1">Convert a KrakenMeister Civ</h6>
         <p class="mb-0 text-muted">
-          Click <strong>Build Mod</strong>. Empire Forge processes each civ — applying tech trees,
-          bonuses, unique units, and unique techs — then packages the result into a <code>.zip</code>
-          you can download and install directly into AoE2:DE's mod folder.
+          Have an existing civ from KrakenMeister's builder? Use
+          <strong>Convert KM Civ</strong> on the Build Civ page to import it into Empire Forge format,
+          then edit and extend it in the wizard before building your mod.
         </p>
       </div>
     </div>
@@ -96,49 +75,99 @@
   </div>
 </div>
 
-<!-- Installing the mod -->
+<!-- Wizard steps -->
 <div class="card mb-4">
-  <div class="card-header">Installing the Mod</div>
+  <div class="card-header">Inside the Wizard</div>
+  <div class="card-body pb-2">
+
+    {% set steps = [
+      ("Identity",        "Name your civ, pick its language pack, architecture set, wonder, and castle style."),
+      ("Bonuses",         "Choose up to five civilization bonuses from the catalog — passive stat boosts, free upgrades, economic advantages, and more."),
+      ("Team Bonus",      "Pick the bonus your civ grants to all allies."),
+      ("Tech Tree",       "Select which units, buildings, and technologies your civ can access. Regional units like Elephant Archers and Slingers can be added here too."),
+      ("Unique Unit",     "Choose a base unit from the catalog and configure its name, stats overrides, and training cost."),
+      ("Castle UT",       "Set the unique technology researched at the Castle. Pick a vanilla tech or compose one from bonus effects."),
+      ("Imperial UT",     "Set the unique technology researched at the Imperial Age Castle."),
+      ("Heroes",          "Optionally assign hero units to your civ.")
+    ] %}
+
+    {% for name, desc in steps %}
+    <div class="d-flex gap-3 mb-3">
+      <div class="flex-shrink-0">
+        <span class="step-badge" style="width:28px;height:28px;font-size:.85rem;">{{ loop.index }}</span>
+      </div>
+      <div>
+        <h6 class="fw-bold mb-1">{{ name }}</h6>
+        <p class="mb-0 text-muted small">{{ desc }}</p>
+      </div>
+    </div>
+    {% endfor %}
+
+  </div>
+</div>
+
+<!-- Build Mod -->
+<div class="card mb-4">
+  <div class="card-header">Building the Mod</div>
+  <div class="card-body">
+    <p class="mb-3">
+      Once you have one or more <code>.civbuilder.json</code> files from the wizard, go to <strong>Build Mod</strong>:
+    </p>
+    <ol class="mb-0" style="line-height: 2;">
+      <li><strong>Upload</strong> — drop your <code>.civbuilder.json</code> files onto the upload page. Empire Forge will auto-detect the path to your game's DAT file.</li>
+      <li><strong>Configure</strong> — drag civs into the order you want, and choose which vanilla civ slot each one replaces. Any vanilla civ can be a target — the original is overwritten <em>in the mod only</em>; your game files are never touched.</li>
+      <li><strong>Build &amp; Download</strong> — click <strong>Build Mod</strong>. Processing takes a few seconds, then you get a <code>.zip</code> ready to install.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- Installing -->
+<div class="card mb-4">
+  <div class="card-header">Installing the Mod (Locally)</div>
   <div class="card-body">
     <p class="small mb-2">
-      The exe will output a zip file that contains two separate mod ZIPs.
-      You must install <em>both</em> as separate mods — the game needs each one active at the same time.
+      The download contains two mod ZIPs — both must be installed and active at the same time.
     </p>
     <ol class="small mb-3">
-      <li class="mb-1">Unzip your mod download and you'll find two files inside:
+      <li class="mb-2">
+        Unzip the download — inside you'll find:
         <ul class="mt-1">
-          <li><code>yourmodname-data.zip</code> — modified game data (DAT, tech trees)</li>
+          <li><code>yourmodname-data.zip</code> — modified game data (DAT file, tech trees)</li>
           <li><code>yourmodname-ui.zip</code> — civ names, icons, AI stubs</li>
         </ul>
       </li>
-      <li class="mb-1">Unzip both of these to your local mods folder - usually located in <code>C:\Users\yourname\Games\Age of Empires 2 DE\12345678\mods\local</code>, where '12345678' is the folder for profile. You may have to test. <br/>
-        <strong>Pro Tip:</strong> Create a shortcut for this folder and pin it to your File Explorer sidebar</li>
-      <li class="mb-1">Make sure <strong>both</strong> mods show a green checkmark (active) before launching a game.</li>
+      <li class="mb-2">
+        Unzip both into your local mods folder:
+        <code>C:\Users\yourname\Games\Age of Empires 2 DE\[profileid]\mods\local\</code><br>
+        <span class="text-muted">Each mod should land in its own subfolder inside <code>local\</code>.</span>
+      </li>
+      <li>In the AoE2:DE in-game mod manager, make sure your UI mod is enabled. When creating a game (skirmish), select <code>Your Mod Name</code> as the data mod. The UI mod is automatically enabled.</li>
     </ol>
     <div class="alert alert-warning py-2 small mb-0">
-      If only the data mod is active, your civs will play correctly but show their old vanilla names and icons in the selection screen. Both mods must be active together.
+      If only the data mod is active, your civs will play correctly but show their original vanilla names and icons on the civ selection screen. Both mods must be active together.
     </div>
   </div>
 </div>
 
-<!-- Limitations callout -->
+<!-- Limitations -->
 <div class="card mb-4" style="border-color: oklch(from var(--accent-2) l c h / 0.4);">
   <div class="card-header">Limitations</div>
   <div class="card-body">
     <p class="mb-2">
-      Most KrakenMeister bonuses are fully supported, but a small number aren't implemented. See the
-      <a href="{{ url_for('limitations') }}" style="color: var(--accent-2);">Known Limitations</a> page
-      for a complete list of what's skipped and why.
+      Most bonuses and tech tree configurations are fully supported. A small number of exotic
+      bonus effects aren't implemented yet. See the
+      <a href="{{ url_for('limitations') }}" style="color: var(--accent-2);">Known Limitations</a>
+      page for the full list.
     </p>
     <p class="mb-0">
-      If a bonus your civ uses isn't supported, it's silently skipped — the rest of the civ builds
-      normally. The Results page will tell you exactly which bonuses were applied and which were skipped.
+      Unsupported bonuses are silently skipped — the rest of the civ builds normally.
+      The Results page will show exactly what was applied and what was skipped.
     </p>
   </div>
 </div>
 
 <div class="text-center mt-2">
-  <a href="{{ url_for('build_mod') }}" class="btn btn-primary btn-lg px-5">Get Started →</a>
+  <a href="{{ url_for('builder_landing') }}" class="btn btn-primary btn-lg px-5">Start Building →</a>
 </div>
 
 {% endblock %}

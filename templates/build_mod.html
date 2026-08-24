@@ -23,7 +23,7 @@
             <i class="fa-solid fa-folder-open icon-hover"></i>
             <i class="fa-solid fa-folder-closed icon-closed"></i>
           </div>
-          <p class="mb-1 fw-semibold body-text">Drop All Your KrakenMeister civ JSON files here</p>
+          <p class="mb-1 fw-semibold body-text">Drop your Empire Forge civ files here</p>
           <p class="small mb-3">or click to browse</p>
           <input type="file" id="civ_files" name="civ_files"
                  accept=".json" multiple class="d-none">
@@ -34,6 +34,12 @@
         </div>
       </div>
       <div id="file-list" class="text-secondary"></div>
+      <div id="km-warning" class="alert alert-warning d-none mt-2 py-2 small">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>
+        <strong>KrakenMeister file detected.</strong>
+        These files need to be converted to Empire Forge format first.
+        <a href="{{ url_for('builder_convert_km') }}" class="alert-link ms-1">Convert them here →</a>
+      </div>
     </div>
   </div>
 
@@ -104,13 +110,39 @@
   const dropZone = document.getElementById("drop-zone");
   const fileInput = document.getElementById("civ_files");
   const fileList  = document.getElementById("file-list");
+  const kmWarning = document.getElementById("km-warning");
   const uploadIconWrap = document.getElementById("upload-icon-wrap");
+
+  const EF_FORMATS = new Set(["empireforge_v2", "civbuilder_v1"]);
+
+  function isKMFile(text) {
+    try {
+      const d = JSON.parse(text);
+      if (EF_FORMATS.has(d.format)) return false;
+      // KM files have a `bonuses` array but no EF format tag
+      return Array.isArray(d.bonuses);
+    } catch { return false; }
+  }
+
+  function checkForKMFiles(files) {
+    kmWarning.classList.add("d-none");
+    const readers = Array.from(files).map(f => new Promise(resolve => {
+      const r = new FileReader();
+      r.onload = e => resolve(isKMFile(e.target.result));
+      r.onerror = () => resolve(false);
+      r.readAsText(f);
+    }));
+    Promise.all(readers).then(results => {
+      if (results.some(Boolean)) kmWarning.classList.remove("d-none");
+    });
+  }
 
   function updateFileList(files) {
     uploadIconWrap.classList.toggle("has-files", files.length > 0);
-    if (!files.length) { fileList.textContent = ""; return; }
+    if (!files.length) { fileList.textContent = ""; kmWarning.classList.add("d-none"); return; }
     fileList.innerHTML = `<strong>${files.length} file${files.length > 1 ? "s" : ""} selected:</strong> `
       + Array.from(files).map(f => f.name).join(", ");
+    checkForKMFiles(files);
   }
 
   fileInput.addEventListener("change", () => updateFileList(fileInput.files));
