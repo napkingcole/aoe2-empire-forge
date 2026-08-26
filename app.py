@@ -667,9 +667,15 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             imp_ut_sid    = result.get("imp_ut_sid")    or _str_id(slot, STR_IMPERIAL_UT)
             castle_ut_desc_sid = result.get("castle_ut_desc_sid") or castle_ut_sid
             imp_ut_desc_sid    = result.get("imp_ut_desc_sid")    or imp_ut_sid
+            castle_ut_help_sid = result.get("castle_ut_help_sid")
+            imp_ut_help_sid    = result.get("imp_ut_help_sid")
+            castle_ut_desc_text = ((civ_def.get("castle_ut") or {}).get("description") or "").strip()
+            imp_ut_desc_text    = ((civ_def.get("imperial_ut") or {}).get("description") or "").strip()
 
             # uu_info was already resolved inside the log context above.
             uu_info = uu_info_resolved
+            uu_override_name = ((civ_def.get("unique_unit") or {}).get("name") or "").strip()
+            uu_override_desc = ((civ_def.get("unique_unit") or {}).get("description") or "").strip()
             # See build_all.py's identical block for why civilizations.json's own
             # UU metadata block (unique_unit_id/elite_unique_unit_id/
             # unique_unit_string_ids/unique_unit_upgrade_id) needs explicit
@@ -693,9 +699,31 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     try:
                         eu = dat.civs[slot].units[elite_uid]
                         uu_elite_dll  = eu.language_dll_name
-                        uu_elite_name = f"Elite {uu_info['name']}"
+                        uu_elite_name = f"Elite {uu_override_name or uu_info['name']}"
                     except (IndexError, AttributeError):
                         pass
+
+            # Hero unit string IDs — read after _apply_hero_unit has set language_dll_name.
+            _hero_raw  = (civ_def.get("hero_unit") or {})
+            _hero_bid  = _hero_raw.get("base_unit_id")
+            _hero_name = (_hero_raw.get("name") or "").strip()
+            _hero_desc = (_hero_raw.get("description") or "").strip()
+            _hero_dll  = -1
+            _hero_cost_str = ""
+            if _hero_bid is not None and _hero_name:
+                try:
+                    _hu = dat.civs[slot].units[_hero_bid]
+                    _hero_dll = _hu.language_dll_name or -1
+                    _RES = {0: "F", 1: "W", 2: "S", 3: "G"}
+                    _cost_parts = [
+                        f"{int(rc.amount)}{_RES[rc.type]}"
+                        for rc in _hu.creatable.resource_costs
+                        if rc.type in _RES and rc.amount > 0
+                    ]
+                    if _cost_parts:
+                        _hero_cost_str = "Costs: " + " ".join(_cost_parts)
+                except (IndexError, TypeError, AttributeError):
+                    pass
 
             # Build civ selection screen description with bonuses + UT names.
             description   = civ_def.get("description", "")
@@ -714,7 +742,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 suffix = f" [x{mult}]" if mult > 1 else ""
                 desc_parts.append(f"• {txt}{suffix} \\n")
             desc_parts.append("\\n<b>Unique Unit:<b> \\n")
-            uu_display = uu_info["name"] if uu_info else "Unique Unit"
+            uu_display = uu_override_name or (uu_info["name"] if uu_info else "Unique Unit")
             desc_parts.append(f"{uu_display} \\n")
             desc_parts.append("\\n<b>Unique Techs:<b> \\n")
             desc_parts.append(f"• {castle_ut_name} \\n")
@@ -736,32 +764,43 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     f'{name_sid + 80000} "Click to play as {alias}."')
                 string_lines[lang].append(
                     f'{name_sid + 109879} "{full_desc}"')
-                # In-game Castle UT button: name_sid covers the label;
-                # name_sid+DLL_CREATION_OFFSET/+DLL_TECH_TREE_OFFSET are what the
-                # tech's language_dll_description/tech_tree fields actually point
-                # at (vanilla offset convention — see
-                # civ_appender._creation_sid/_tech_tree_sid) and MUST be written
-                # explicitly, or the engine falls back to whatever vanilla
-                # content already lives at that id instead of leaving it blank
-                # (confirmed live — a Castle UT button showed an unrelated
-                # campaign dialogue line at name+1000 until this was added).
+
+                # Hero unit name + Castle train-button tooltip.
+                if _hero_dll > 0 and _hero_name:
+                    _hero_hover = f"Create <b>{_hero_name}<b>"
+                    if _hero_desc:
+                        _hero_hover += f"\\n{_hero_desc}"
+                    if _hero_cost_str:
+                        _hero_hover += f"\\n{_hero_cost_str}"
+                    string_lines[lang].append(f'{_hero_dll} "{_hero_name}"')
+                    string_lines[lang].append(f'{_hero_dll + DLL_CREATION_OFFSET} "{_hero_hover}"')
+                    string_lines[lang].append(f'{_hero_dll + 21000} "{_hero_hover}"')
+                    string_lines[lang].append(f'{_hero_dll + DLL_HELP_OFFSET} "{_hero_hover}"')
+
+                # Castle UT: language_dll_help (60xxx pool SID) drives the research-button
+                # hover tooltip — NOT name+21000, which is the unit-train-button slot.
                 string_lines[lang].append(f'{castle_ut_sid} "{castle_ut_name_short}"')
                 string_lines[lang].append(
                     f'{castle_ut_sid + DLL_CREATION_OFFSET} "Research {castle_ut_name_short}"')
-                string_lines[lang].append(f'{castle_ut_sid + 21000} "{castle_ut_name_short}"')
-                string_lines[lang].append(
-                    f'{castle_ut_desc_sid} '
-                    f'"Research <b>{castle_ut_name_short}<b> (<cost>)\\n{castle_ut_name_short}"')
+                _castle_ut_help = f"Research <b>{castle_ut_name_short}<b> (<cost>)"
+                if castle_ut_desc_text:
+                    _castle_ut_help += f"\\n{castle_ut_desc_text}"
+                # language_dll_help = name_sid+21000 (same slot KM uses; 60xxx pool range
+                # is overwritten by campaign string files loaded after the mod).
+                string_lines[lang].append(f'{castle_ut_sid + 21000} "{_castle_ut_help}"')
+                string_lines[lang].append(f'{castle_ut_desc_sid} "{_castle_ut_help}"')
                 string_lines[lang].append(
                     f'{castle_ut_sid + DLL_TECH_TREE_OFFSET} "{castle_ut_name_short}"')
-                # In-game Imperial UT button
+
+                # Imperial UT
                 string_lines[lang].append(f'{imp_ut_sid} "{imp_ut_name_short}"')
                 string_lines[lang].append(
                     f'{imp_ut_sid + DLL_CREATION_OFFSET} "Research {imp_ut_name_short}"')
-                string_lines[lang].append(f'{imp_ut_sid + 21000} "{imp_ut_name_short}"')
-                string_lines[lang].append(
-                    f'{imp_ut_desc_sid} '
-                    f'"Research <b>{imp_ut_name_short}<b> (<cost>)\\n{imp_ut_name_short}"')
+                _imp_ut_help = f"Research <b>{imp_ut_name_short}<b> (<cost>)"
+                if imp_ut_desc_text:
+                    _imp_ut_help += f"\\n{imp_ut_desc_text}"
+                string_lines[lang].append(f'{imp_ut_sid + 21000} "{_imp_ut_help}"')
+                string_lines[lang].append(f'{imp_ut_desc_sid} "{_imp_ut_help}"')
                 string_lines[lang].append(
                     f'{imp_ut_sid + DLL_TECH_TREE_OFFSET} "{imp_ut_name}"')
                 # Bonus-specific research buttons (Imperial Scorpion, Royal Battle
@@ -773,9 +812,12 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     sid, name = ext["sid"], ext["name"]
                     string_lines[lang].append(f'{sid} "{name}"')
                     string_lines[lang].append(f'{sid + DLL_CREATION_OFFSET} "Research {name}"')
-                    string_lines[lang].append(
-                        f'{sid + DLL_HELP_OFFSET} "Research <b>{name}<b> (<cost>)"')
+                    _ext_help = f"Research <b>{name}<b> (<cost>)"
+                    string_lines[lang].append(f'{sid + DLL_HELP_OFFSET} "{_ext_help}"')
                     string_lines[lang].append(f'{sid + 150000} "{name}"')
+                    # language_dll_help = name+21000 (same slot used for UTs; 60xxx
+                    # pool range is overwritten by campaign files loaded after the mod).
+                    string_lines[lang].append(f'{sid + 21000} "{_ext_help}"')
                 # KM-custom UU units' OWN name/help strings — see build_all.py's
                 # identical block for why this is separate from the dll_name+10000
                 # tech-tree-viewer block right below.
@@ -803,15 +845,20 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 # UU name strings for civ selection tech tree display and Castle button.
                 if uu_info:
                     uu_dll = uu_info["dll_name"]
-                    # Write +1000 (Castle "Create" button) only for renamed UUs to
-                    # avoid overwriting vanilla strings that other civs share.
-                    is_renamed = uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)
+                    _eus = result["bonus_results"].get("extra_unit_strings", [])
+                    _ext_sid_taken = any(e.get("ext_sid") == uu_dll + 21000 for e in _eus)
+                    is_renamed = bool(uu_override_name) or (
+                        uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display))
                     if is_renamed:
                         string_lines[lang].append(f'{uu_dll} "{uu_display}"')
                         string_lines[lang].append(f'{uu_dll + DLL_CREATION_OFFSET} "Create {uu_display}"')
                     string_lines[lang].append(f'{uu_dll + 10000} "{uu_display}"')
-                    string_lines[lang].append(f'{uu_dll + DLL_HELP_OFFSET} "{uu_display}"')
-                    string_lines[lang].append(f'{uu_dll + 21000} "{uu_display}"')
+                    _uu_hover = f"Create <b>{uu_display}<b>"
+                    if uu_override_desc:
+                        _uu_hover += f"\\n{uu_override_desc}"
+                    string_lines[lang].append(f'{uu_dll + DLL_HELP_OFFSET} "{_uu_hover}"')
+                    if not _ext_sid_taken:
+                        string_lines[lang].append(f'{uu_dll + 21000} "{_uu_hover}"')
                 if uu_elite_dll and uu_elite_name:
                     string_lines[lang].append(f'{uu_elite_dll} "{uu_elite_name}"')
                     string_lines[lang].append(f'{uu_elite_dll + DLL_CREATION_OFFSET} "Create {uu_elite_name}"')
@@ -1061,11 +1108,13 @@ def api_builder_detect_dat():
 
 @app.route("/api/builder/meta")
 def api_builder_meta():
-    # value = dat_index - 1 (KM 0-based convention; 0 = Britons)
+    # value = dat_index - 1 (KM 0-based convention; 0 = Britons).
+    # Antiquity / Chronicles civs are excluded: their wonder and castle models
+    # are not available to base-game civs.
     civ_options = sorted([
         {"value": i - 1, "label": c.get("internal_name", "")}
         for i, c in enumerate(_civ_list)
-        if i > 0
+        if i > 0 and c.get("era", "base") != "antiquity"
     ], key=lambda x: x["label"])
     # Only the 43 voice folders that exist on disk (0-42)
     voice_options = sorted([

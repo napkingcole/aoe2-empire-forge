@@ -2603,6 +2603,22 @@
       "Infantry and Cavalry Blacksmith upgrades also increase damage vs. buildings"
     ]
   },
+  "402": {
+    "heading": "REPLACES",
+    "stat": "Fire Ships upgraded to Dragon Ships in Imperial Age",
+    "entity": "dragon_ship",
+    "description": "Fire Ship line",
+    "multiplier": false
+  },
+  "403": {
+    "type": "desc",
+    "entity": "settlement_building",
+    "description": "Settlement",
+    "lines": [
+      "Replaces Mill, Lumber Camp, and Mining Camp",
+      "All resource camp upgrades researchable from Settlement"
+    ]
+  },
   "331": {
     "hidden": true
   },

@@ -6,8 +6,10 @@ Two public functions:
   to_draft(schema)   → wizard draft dict   (saveable file → build pipeline)
 
 The wizard draft format is a superset of civbuilder_v1: it adds UI-only keys
-(_draftVer, dat_path) that don't belong in a shareable civ file. Everything
-else maps 1-to-1, so the two formats stay tightly coupled by design.
+(dat_path) that don't belong in a shareable civ file.  _draftVer IS included
+in the schema to prevent stale builder.js migrations when a saved file is
+loaded back into localStorage as the live draft.  Everything else maps 1-to-1,
+so the two formats stay tightly coupled by design.
 
 build_all.py detects "format": "civbuilder_v1" in a JSON file and calls
 to_draft() before passing it through the wizard_build pipeline.
@@ -77,12 +79,12 @@ def to_draft(schema: dict) -> dict:
     def _ut(raw: dict | None) -> dict:
         raw = _clean(raw or {})
         ut: dict = {
-            "mode":       raw.get("mode", "vanilla"),
-            "vanilla_id": raw.get("vanilla_id"),
-            "name":       raw.get("name",        ""),
-            "description":raw.get("description", ""),
-            "cost":       _cost_dict(raw.get("cost")),
-            "time":       int(raw.get("time") or 0),
+            "mode":            raw.get("mode", "vanilla"),
+            "vanilla_km_idx":  raw.get("vanilla_km_idx"),
+            "name":            raw.get("name",        ""),
+            "description":     raw.get("description", ""),
+            "cost":            _cost_dict(raw.get("cost")),
+            "time":            int(raw.get("time") or 0),
             "effects": [
                 {"id": int(e["id"]), "multiplier": int(e.get("multiplier", 1))}
                 for e in (raw.get("effects") or [])
@@ -131,8 +133,8 @@ def to_draft(schema: dict) -> dict:
         # Appearance
         "architecture": s.get("architecture", 2),
         "language":     s.get("language",     0),
-        "wonder":       s.get("wonder_model", -1),
-        "castle":       s.get("castle_model", -1),
+        "wonder": s["wonder"] if "wonder" in s else s.get("wonder_model", -1),
+        "castle": s["castle"] if "castle" in s else s.get("castle_model", -1),
         "emblem":       s.get("emblem",       ""),
 
         # Core content
@@ -143,6 +145,8 @@ def to_draft(schema: dict) -> dict:
         "castle_ut":    _ut(s.get("castle_ut")),
         "imperial_ut":  _ut(s.get("imperial_ut")),
         "tree":         tree,
+        "long_range_ship":       s.get("long_range_ship"),
+        "long_range_ship_elite": s.get("long_range_ship_elite", True),
 
         # Phase Two pass-throughs (not yet consumed by build pipeline)
         "second_uu":              s.get("second_uu"),
@@ -170,12 +174,12 @@ def from_draft(draft: dict) -> dict:
     def _ut_out(ut_raw: dict | None) -> dict:
         ut_raw = ut_raw or {}
         return {
-            "mode":        ut_raw.get("mode",        "vanilla"),
-            "vanilla_id":  ut_raw.get("vanilla_id"),
-            "name":        ut_raw.get("name",        ""),
-            "description": ut_raw.get("description", ""),
-            "cost":        _cost_dict(ut_raw.get("cost")),
-            "time":        int(ut_raw.get("time") or 0),
+            "mode":           ut_raw.get("mode",        "vanilla"),
+            "vanilla_km_idx": ut_raw.get("vanilla_km_idx"),
+            "name":           ut_raw.get("name",        ""),
+            "description":    ut_raw.get("description", ""),
+            "cost":           _cost_dict(ut_raw.get("cost")),
+            "time":           int(ut_raw.get("time") or 0),
             "effects": [
                 {"id": int(e["id"]), "multiplier": int(e.get("multiplier", 1))}
                 for e in (ut_raw.get("effects") or [])
@@ -221,6 +225,7 @@ def from_draft(draft: dict) -> dict:
     schema: dict = {
         "format":         FORMAT_KEY,
         "schema_version": SCHEMA_VER,
+        "_draftVer":      _DRAFT_VER,   # prevents stale builder.js migrations on reload
 
         "alias":       draft.get("alias",       ""),
         "tagline":     draft.get("tagline",      ""),
@@ -228,8 +233,12 @@ def from_draft(draft: dict) -> dict:
 
         "architecture": draft.get("architecture", 2),
         "language":     draft.get("language",     0),
+        # wonder_model / castle_model: canonical schema names (for build pipeline via to_draft).
+        # wonder / castle:             wizard draft names (for direct localStorage load in browser).
         "wonder_model": draft.get("wonder",  -1),
         "castle_model": draft.get("castle",  -1),
+        "wonder":       draft.get("wonder",  -1),
+        "castle":       draft.get("castle",  -1),
         "emblem":       draft.get("emblem",  ""),
 
         "hero_unit":    hero_out,
@@ -243,6 +252,8 @@ def from_draft(draft: dict) -> dict:
         "imperial_ut":  _ut_out(draft.get("imperial_ut")),
 
         "tree": tree_out,
+        "long_range_ship":         draft.get("long_range_ship"),
+        "long_range_ship_elite":   draft.get("long_range_ship_elite", True),
 
         "unit_overrides":          draft.get("unit_overrides",          []),
         "button_moves":            draft.get("button_moves",            []),

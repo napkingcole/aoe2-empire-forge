@@ -80,6 +80,8 @@ def _draft_to_civ_def(draft: dict) -> dict:
             (draft.get("tree") or {}).get("buildings", []),
             (draft.get("tree") or {}).get("techs", []),
         ],
+        "long_range_ship":       draft.get("long_range_ship"),
+        "long_range_ship_elite": draft.get("long_range_ship_elite", True),
     }
 
     # UU name override — passed under unique_unit.name so km_custom_uu can
@@ -87,10 +89,10 @@ def _draft_to_civ_def(draft: dict) -> dict:
     if uu.get("name"):
         civ_def["unique_unit"] = {"name": uu["name"]}
 
-    # Add hero unit ID to the trainable units list so it appears in the tech tree
-    hero_id = (draft.get("hero_unit") or {}).get("base_unit_id")
-    if hero_id is not None and hero_id not in civ_def["tree"][0]:
-        civ_def["tree"][0] = list(civ_def["tree"][0]) + [hero_id]
+    # Hero unit is NOT added to tree[0] — adding it would create a vanilla type=8
+    # in the TT effect, making the hero immediately trainable from Castle Age.
+    # Instead, _apply_hero_unit creates an Imperial Age auto-fire tech (full_tech_mode=1)
+    # that fires EC_ENABLE(hero_id, 1) only when Imperial Age is reached.
 
     # Emblem: wizard stores a data-URI under draft.emblem;
     # _decode_flag expects it under civ_def["customFlagData"].
@@ -153,7 +155,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     # ── String building ──────────────────────────────────────────────────────
     string_lines: dict[str, list[str]] = {lang: [] for lang in LANGUAGES}
 
-    # UT display names — prefer wizard draft, fall back to _ut_name default
+    # UT display names and descriptions — prefer wizard draft, fall back to _ut_name default
     castle_ut_name = (
         ((draft.get("castle_ut") or {}).get("name") or "").strip()
         or _ut_name(None, castle=True)
@@ -162,6 +164,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         ((draft.get("imperial_ut") or {}).get("name") or "").strip()
         or _ut_name(None, castle=False)
     )
+    castle_ut_desc_text = ((draft.get("castle_ut") or {}).get("description") or "").strip()
+    imp_ut_desc_text    = ((draft.get("imperial_ut") or {}).get("description") or "").strip()
 
     # UU info for icon + string IDs (resolved earlier, before _apply_uu_overrides)
     uu_override_name = (draft.get("unique_unit") or {}).get("name", "").strip()
@@ -180,8 +184,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             ]
             if cost_parts:
                 _uu_cost_str = "Costs: " + " ".join(cost_parts)
-        except Exception:
-            pass
+        except Exception as _e:
+            print(f"       WARNING: could not read UU cost: {_e}", flush=True)
     uu_display = (
         uu_override_name or (uu_info["name"] if uu_info else "Unique Unit")
     )
@@ -235,6 +239,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     imp_ut_sid         = civ_result["imp_ut_sid"]
     castle_ut_desc_sid = civ_result["castle_ut_desc_sid"]
     imp_ut_desc_sid    = civ_result["imp_ut_desc_sid"]
+    castle_ut_help_sid = civ_result.get("castle_ut_help_sid")
+    imp_ut_help_sid    = civ_result.get("imp_ut_help_sid")
 
     # Elite UU label for string writes
     uu_elite_dll:  int | None = None
@@ -248,30 +254,65 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             except (IndexError, AttributeError):
                 pass
 
+    # Hero unit string IDs — resolved once, written inside the language loop below.
+    _hero_raw  = draft.get("hero_unit") or {}
+    _hero_bid  = _hero_raw.get("base_unit_id")
+    _hero_name = _hero_raw.get("name", "").strip()
+    _hero_desc = _hero_raw.get("description", "").strip()
+    _hero_dll  = -1
+    if _hero_bid is not None and _hero_name:
+        try:
+            _hero_dll = dat.civs[slot].units[_hero_bid].language_dll_name or -1
+        except (IndexError, TypeError, AttributeError):
+            pass
+        if _hero_dll <= 0:
+            print(f"       WARNING: hero unit {_hero_bid} has no language_dll_name"
+                  " — name/desc won't appear in tooltip", flush=True)
+
     for lang in LANGUAGES:
         # Civ name + click-to-play + description
         string_lines[lang].append(f'{name_sid} "{alias}"')
         string_lines[lang].append(f'{name_sid + 80000} "Click to play as {alias}."')
         string_lines[lang].append(f'{name_sid + 109879} "{full_desc}"')
 
+        # Hero unit name + Castle train-button tooltip.
+        # +1000  = language_dll_creation (bottom bar text on hover)
+        # +21000 = Castle floating hover tooltip (confirmed load-bearing for units)
+        # +100000 = language_dll_help (additional hover tooltip path)
+        if _hero_dll > 0 and _hero_name:
+            # AoE2 uses <b>text<b> (no slash) for bold.
+            # +1000 = language_dll_creation (bottom-bar text when cursor is on button)
+            # +21000 = Castle hover tooltip (floating panel with stats/cost/description)
+            # +100000 = language_dll_help (same hover panel, belt-and-suspenders)
+            _hero_hover = f"Create <b>{_hero_name}<b>"
+            if _hero_desc:
+                _hero_hover += f"\\n{_hero_desc}"
+            string_lines[lang].append(f'{_hero_dll} "{_hero_name}"')
+            string_lines[lang].append(
+                f'{_hero_dll + DLL_CREATION_OFFSET} "{_hero_hover}"')
+            string_lines[lang].append(
+                f'{_hero_dll + 21000} "{_hero_hover}"')
+            string_lines[lang].append(
+                f'{_hero_dll + DLL_HELP_OFFSET} "{_hero_hover}"')
+
         # UT name + tooltip strings
-        for ut_sid, desc_sid, full_name in (
-            (castle_ut_sid, castle_ut_desc_sid, castle_ut_name),
-            (imp_ut_sid,    imp_ut_desc_sid,    imp_ut_name),
+        for ut_sid, desc_sid, ut_help_sid, full_name, ut_desc_text in (
+            (castle_ut_sid, castle_ut_desc_sid, castle_ut_help_sid, castle_ut_name, castle_ut_desc_text),
+            (imp_ut_sid,    imp_ut_desc_sid,    imp_ut_help_sid,    imp_ut_name,    imp_ut_desc_text),
         ):
             short, _, paren = full_name.partition(" (")
-            desc = paren.rstrip(")") if paren else ""
+            # Prefer the wizard's explicit description field; fall back to any
+            # parenthetical embedded in the tech name (legacy format).
+            desc = ut_desc_text or (paren.rstrip(")") if paren else "")
             string_lines[lang].append(f'{ut_sid} "{short}"')
             string_lines[lang].append(
                 f'{ut_sid + DLL_CREATION_OFFSET} "Research {short}"')
-            # The Castle UI reads name_sid+21000 for UT buttons (same slot as the
-            # unit train-button widget). Override it so vanilla content at that
-            # offset (e.g. 70202+21000=91202 "Click to enter a filename...") can't
-            # bleed through and overwrite the correct UT name on screen.
-            string_lines[lang].append(f'{ut_sid + 21000} "{short}"')
             help_body = f"Research <b>{short}<b> (<cost>)"
             if desc:
                 help_body += f"\\n{desc}"
+            # language_dll_help = name_sid+21000 (same slot KM uses; 60xxx pool range
+            # is overwritten by campaign string files that load after the mod).
+            string_lines[lang].append(f'{ut_sid + 21000} "{help_body}"')
             string_lines[lang].append(f'{desc_sid} "{help_body}"')
             string_lines[lang].append(f'{ut_sid + DLL_TECH_TREE_OFFSET} "{short}"')
 
@@ -280,9 +321,15 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             sid, name = ext["sid"], ext["name"]
             string_lines[lang].append(f'{sid} "{name}"')
             string_lines[lang].append(f'{sid + DLL_CREATION_OFFSET} "Research {name}"')
-            string_lines[lang].append(
-                f'{sid + DLL_HELP_OFFSET} "Research <b>{name}<b> (<cost>)"')
+            _ext_help = f"Research <b>{name}<b> (<cost>)"
+            string_lines[lang].append(f'{sid + DLL_HELP_OFFSET} "{_ext_help}"')
             string_lines[lang].append(f'{sid + 150000} "{name}"')
+            # Some bonus techs (e.g. City Walls) use a separate help_sid from
+            # UT_HELP_POOL_OFFSET so that language_dll_help points to a valid,
+            # overridable vanilla string ID in the 60000s range.
+            # language_dll_help = name+21000 (same slot as UTs; 60xxx pool is
+            # overwritten by campaign files).
+            string_lines[lang].append(f'{sid + 21000} "{_ext_help}"')
 
         # Extra unit strings (KM-custom UU names / Castle train-button text)
         for ext in civ_result["bonus_results"].get("extra_unit_strings", []):
@@ -299,27 +346,34 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         # UU display name strings
         if uu_info:
             dll = uu_info["dll_name"]
+            # Check if extra_unit_strings already wrote a richer Castle hover tooltip
+            # to dll+21000 (KM-custom UU path uses ext_sid = name_sid + 21000 with
+            # auto-generated stats). Skip writing here to avoid overwriting it.
+            _eus = civ_result["bonus_results"].get("extra_unit_strings", [])
+            _ext_sid_taken = any(ext.get("ext_sid") == dll + 21000 for ext in _eus)
             # Tech-tree viewer (cosmetic)
             string_lines[lang].append(f'{dll + 10000} "{uu_display}"')
             if uu_override_name:
-                # In-game overrides: base name, create button text, castle hover tooltip, help
+                # In-game overrides: base name, create button text, castle hover tooltip, help.
+                # language_dll_help points to dll+100000; the game reads that for hover content.
+                # Also write to dll+21000 unless extra_unit_strings already put stats there.
                 desc_body = uu_override_desc or ""
                 if _uu_cost_str:
                     desc_body = (desc_body + "\\n" + _uu_cost_str) if desc_body else _uu_cost_str
+                _uu_hover = f"Create <b>{uu_display}<b>" + (f"\\n{desc_body}" if desc_body else "")
                 string_lines[lang].append(f'{dll} "{uu_display}"')
                 string_lines[lang].append(f'{dll + DLL_CREATION_OFFSET} "Create {uu_display}"')
-                string_lines[lang].append(
-                    f'{dll + 21000} "Create <b>{uu_display}<b>'
-                    + (f'\\n{desc_body}' if desc_body else '')
-                    + '"')
-                string_lines[lang].append(f'{dll + DLL_HELP_OFFSET} "{uu_display}"')
+                if not _ext_sid_taken:
+                    string_lines[lang].append(f'{dll + 21000} "{_uu_hover}"')
+                string_lines[lang].append(f'{dll + DLL_HELP_OFFSET} "{_uu_hover}"')
             elif _uu_cost_str:
-                # No name override but still write cost to the Castle hover tooltip
-                string_lines[lang].append(
-                    f'{dll + 21000} "Create <b>{uu_display}<b>\\n{_uu_cost_str}"')
-                string_lines[lang].append(f'{dll + DLL_HELP_OFFSET} "{uu_display}"')
+                # No name override but write cost to Castle hover tooltip.
+                _uu_hover = f"Create <b>{uu_display}<b>\\n{_uu_cost_str}"
+                if not _ext_sid_taken:
+                    string_lines[lang].append(f'{dll + 21000} "{_uu_hover}"')
+                string_lines[lang].append(f'{dll + DLL_HELP_OFFSET} "{_uu_hover}"')
             else:
-                string_lines[lang].append(f'{dll + DLL_HELP_OFFSET} "{uu_display}"')
+                string_lines[lang].append(f'{dll + DLL_HELP_OFFSET} "Create <b>{uu_display}<b>"')
         if uu_elite_dll and uu_elite_name:
             string_lines[lang].append(f'{uu_elite_dll + 10000} "{uu_elite_name}"')
             if uu_override_name:

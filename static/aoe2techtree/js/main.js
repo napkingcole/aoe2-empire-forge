@@ -33,6 +33,18 @@ let _itemToBuilding = {};
 // Buildings that are always enabled and cannot be toggled (TC, Mining/Lumber Camp, Mill)
 const ALWAYS_ON_BUILDINGS = new Set([109, 621, 584, 562, 68]);
 
+// ── Regional unit mutual-exclusivity ─────────────────────────────────────────
+// Each pair: select one group's units → the other group is evicted.
+// "Select All" keeps the standard side and excludes the regional side.
+const _REGIONAL_PAIRS = [
+    { a: [74, 75, 77, 473, 567],  b: [2550, 2588, 2552, 2554], bldg: 12,  nameA: "Militia line",       nameB: "Champi line"           },
+    { a: [38, 283, 569],           b: [1944, 1946],              bldg: 101, nameA: "Knight line",        nameB: "Hei Guang Cavalry"     },
+    { a: [280, 550, 588],          b: [1904, 1907],              bldg: 49,  nameA: "Mangonel line",      nameB: "Rocket Cart"           },
+    { a: [1258, 422, 548],         b: [1744, 1746],              bldg: 49,  nameA: "Battering Ram line", nameB: "Armored Elephant line" },
+];
+// Flat set of all regional-side unit IDs — excluded from "Select All"
+const _REGIONAL_UNIT_IDS = new Set([2550, 2588, 2552, 2554, 1944, 1946, 1904, 1907, 1744, 1746]);
+
 // ── Utility ───────────────────────────────────────────────────────────────────
 
 function loadJson(file, callback) {
@@ -334,6 +346,7 @@ function _getDescendants(item) {
         if (visited.has(key)) continue;
         visited.add(key);
         for (const child of (_successorIndex[key] || [])) {
+            if (child.independent) continue; // layout-only link, not an upgrade chain
             descendants.push(child);
             queue.push(child);
         }
@@ -343,6 +356,7 @@ function _getDescendants(item) {
 
 // Walk the link_id chain to collect all predecessor items (earliest first).
 function _getAncestors(item) {
+    if (item.independent) return []; // layout-only link, not an upgrade chain
     const ancestors = [];
     const visited = new Set();
     let current = item;
@@ -426,6 +440,30 @@ function _toggleNode(item, element_height) {
                 _removeNodeCross(ancestor.id);
             }
         }
+        // Regional mutual exclusivity: evict the opposing group if any of its units are present.
+        const pair = _REGIONAL_PAIRS.find(p =>
+            p.bldg === item.building_id &&
+            (p.a.includes(item.node_id) || p.b.includes(item.node_id))
+        );
+        if (pair) {
+            const inA     = pair.a.includes(item.node_id);
+            const evictIds = inA ? pair.b : pair.a;
+            const evictName = inA ? pair.nameB : pair.nameA;
+            const myName    = inA ? pair.nameA : pair.nameB;
+            let evicted = false;
+            for (const uid of evictIds) {
+                const oItem = _nodeIndex[`${pair.bldg}_${uid}`];
+                if (oItem && _localtree.units.includes(uid)) {
+                    _disableSingle(oItem, element_height);
+                    evicted = true;
+                }
+            }
+            if (evicted && typeof window.showToast === 'function') {
+                window.showToast(
+                    `${evictName} removed — only one of ${myName} or ${evictName} may be selected at a time.`
+                );
+            }
+        }
     } else {
         // Disable: cascade to upgrade-chain successors; also clear all items in any disabled building.
         _disableSingle(item, element_height);
@@ -474,7 +512,8 @@ function _costHtml(costObj) {
     return parts.join(' · ');
 }
 
-function _showEditTooltip(itemToDraw, svgX, svgY) {
+function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
+    const svgX = svgNodeRight; // keep existing references below working
     const panel = document.getElementById('helptext');
     const content = document.getElementById('helptext__content');
     if (!panel || !content) return;
@@ -524,7 +563,8 @@ function _showEditTooltip(itemToDraw, svgX, svgY) {
     const ww = wrap ? wrap.offsetWidth  : window.innerWidth;
     const wh = wrap ? wrap.getBoundingClientRect().height : window.innerHeight;
     // Flip horizontally if the tooltip would overflow the right edge.
-    if (left + pw > ww + scrollX) left = svgX + offsetX - pw - 10;
+    // Use the node's LEFT edge so the popup opens clear of the card.
+    if (left + pw > ww + scrollX) left = svgNodeLeft + offsetX - pw - 10;
     // Flip vertically: grow upward when the tooltip would go below the fold.
     let top = svgY + 10;
     if (top + ph > wh) top = svgY - ph - 5;
@@ -604,7 +644,7 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
         .data({ type: itemToDraw.node_type, caret: itemToDraw, name: itemToDraw.name, id: itemToDraw.id })
         .mouseover(function (e) {
             highlightPath(itemToDraw.id);
-            if (_canEdit) _showEditTooltip(itemToDraw, itemToDraw.x + element_height, itemToDraw.y);
+            if (_canEdit) _showEditTooltip(itemToDraw, itemToDraw.x, itemToDraw.x + element_height, itemToDraw.y);
         })
         .mouseout(function () {
             resetHighlightPath();
@@ -969,7 +1009,9 @@ function _closeTreeOverlay() {
 }
 
 function _fillAll() {
-    // Re-render with all items enabled: gather all node_ids from the current civ tree
+    // Re-render with all items enabled: gather all node_ids from the current civ tree.
+    // Regional replacement units (Champi, Hei Guang, Rocket Cart, Armored/Siege Elephant)
+    // are excluded — standard lines (Militia, Knight, Mangonel, Ram) are kept.
     if (!_currentCivName) return;
     loadJson(_treeroot + '/' + _currentCivName.toUpperCase() + '.json', function (treeData) {
         _localtree = { units: [], buildings: [], techs: [] };
@@ -978,6 +1020,7 @@ function _fillAll() {
         }
         for (const item of treeData.units_techs) {
             const key = _useTypeKey(item.use_type);
+            if (key === 'units' && _REGIONAL_UNIT_IDS.has(item.node_id)) continue;
             if (key) _localtree[key].push(item.node_id);
         }
         civ(_currentCivName);

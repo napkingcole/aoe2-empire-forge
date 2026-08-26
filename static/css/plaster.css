@@ -1763,3 +1763,47 @@ img.card-main-image {
   border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);
   color: var(--body-text);
 }
+/* ── Long-range ship picker ─────────────────────────────────────── */
+.lrs-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  min-width: 90px;
+  background: oklch(from var(--body-bg) calc(l + 0.04) c h);
+  border: 1.5px solid oklch(from var(--body-bg) calc(l + 0.18) c h);
+  border-radius: 8px;
+  color: var(--body-text);
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  line-height: 1.2;
+}
+.lrs-chip:hover {
+  border-color: var(--accent-2);
+  background: oklch(from var(--body-bg) calc(l + 0.08) c h);
+}
+.lrs-chip--selected {
+  border-color: var(--crimson);
+  background: rgba(140, 32, 32, 0.10);
+  box-shadow: 0 0 0 2px rgba(140, 32, 32, 0.20);
+  color: var(--crimson);
+}
+.lrs-chip-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.lrs-chip-none-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  opacity: 0.4;
+}
+.lrs-chip--selected .lrs-chip-none-icon { opacity: 0.7; }

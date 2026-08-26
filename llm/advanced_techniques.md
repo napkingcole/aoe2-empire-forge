@@ -64,10 +64,13 @@ The "only one castle at a time" pattern:
 
 | Value | Effect |
 |-------|--------|
-| 1     | One-at-a-time (gold border portrait, can't train another while alive) |
+| 1     | Hero status — gold border portrait, passive regen, conversion immunity |
 | 2     | Cannot be converted |
 | 4     | HP regeneration |
 | 6     | Cannot be converted AND regenerates (2+4) |
+
+`hero_mode = 1` does **not** limit how many can be alive at once — see
+[Hero Units (One-at-a-Time)](#hero-units-one-at-a-time) for the attribute pair that does.
 
 Full list on the [AoE2DE UGC Guide](https://ugc.aoe2.rocks/).
 
@@ -129,12 +132,35 @@ Use a serialization round-trip (to_bytes → from_bytes) rather than `deepcopy` 
 
 ## Hero Units (One-at-a-Time)
 
+`hero_mode` does **not** cap the unit count. It grants hero *status* — gold portrait
+border, passive regen, conversion immunity — and nothing more. Plenty of vanilla units
+carry `hero_mode = 1` and can be trained without limit.
+
+The cap is a pair of **effect commands**, not DAT fields:
+
 ```python
-unit.creatable.creatable_type = 1
-unit.creatable.hero_mode      = 1
+EffectCommand(type=EC_SET, a=unit_id, b=-1, c=126, d=1.0)   # Available Unit Flag  = 1
+EffectCommand(type=EC_ADD, a=unit_id, b=-1, c=127, d=4.0)   # Disabled Unit Flag  += 4
 ```
 
-Hero mode enforces one-at-a-time spawn enforcement and draws the gold border around the portrait.
+| Attr | Name | Meaning |
+|------|------|---------|
+| 126 | Available Unit Flag | Number of trainable units. Only honoured once flag 2 or 4 is set on 127. Units paired in `LinkedUnits.json` count together. |
+| 127 | Disabled Unit Flag | `1` = disabled · `2` = limited, **cannot** be retrained after death · `4` = limited, **can** be retrained after death |
+
+This is exactly and only what vanilla effect 1066 "Liu Bei (make avail)" contains
+(same for Cao Cao 1038 / Sun Jian 1083) — two commands, no `EC_ENABLE`. Those are the
+only three uses of attributes 126/127 in the entire shipped DAT.
+
+Notes:
+- Put the pair in the same auto-fire tech that gates the hero by age. Vanilla tech 1066
+  is `civ=<slot>`, `full_tech_mode=0`, `repeatable=1`, zero cost,
+  `research_locations=[(-1, 0)]`, `required_techs=(103,)` — it fires once, so `repeatable=1`
+  is safe alongside the `EC_ADD`.
+- Set `unit.disabled = 0` first so the `EC_ADD` on 127 lands on a clean base.
+- `unit.enabled` is irrelevant here — Liu Bei ships with `enabled = 0`.
+- Do **not** overwrite `creatable_type`; it is the unit's combat class
+  (1 cavalry / 2 infantry / 3 archer / 5 monk) and drives bonus-damage matchups.
 
 ---
 

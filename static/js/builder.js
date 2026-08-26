@@ -91,6 +91,7 @@ function showStep(n) {
         .catch(console.error);
     }
   }
+  if (n === 2) { renderLRSPicker(); renderDemoShipNotice(); }
   if (n === 6 || n === 7) initUTPanel(n);
 
   const btnPrev = document.getElementById("btn-prev");
@@ -1780,7 +1781,23 @@ function toggleCivBonus(id) {
   if (!draft.bonuses) draft.bonuses = [];
   const idx = draft.bonuses.findIndex(b => b.id === id);
   const isNowSelected = idx === -1;
+
   if (isNowSelected) {
+    // Selecting a unique ship from the exclusive group: deselect the others
+    if (_EXCLUSIVE_SHIP_GROUP.has(id)) {
+      const evicted = draft.bonuses
+        .filter(b => _EXCLUSIVE_SHIP_GROUP.has(b.id) && b.id !== id)
+        .map(b => b.id);
+      draft.bonuses = draft.bonuses.filter(b => !_EXCLUSIVE_SHIP_GROUP.has(b.id) || b.id === id);
+      evicted.forEach(eid => _moveBonusCard(eid, false));
+      if (evicted.length) {
+        showToast(
+          "Only one unique ship (Turtle Ship, Longboat, or Caravel) may be selected — " +
+          "your previous selection has been removed. " +
+          "You can also add the Thirisadai alongside any of these."
+        );
+      }
+    }
     draft.bonuses.push({ id, multiplier: 1 });
   } else {
     draft.bonuses.splice(idx, 1);
@@ -2859,12 +2876,135 @@ function _wireUUAdvanced() {
     ?.addEventListener("hide.bs.collapse",  () => document.getElementById("ua-chevron")?.classList.remove("fa-rotate-180"));
 }
 
+// ── Long-range ship picker ────────────────────────────────────────────────────
+
+const _LRS_OPTIONS = [
+  { id: "none",             label: "None",             img: null },
+  { id: "cannon_galleon",   label: "Cannon Galleon",   img: "/static/aoe2techtree/img/Unit/55.png" },
+  { id: "catapult_galleon", label: "Catapult Galleon",  img: "/static/aoe2techtree/img/Unit/591.png" },
+  { id: "dromon",           label: "Dromon",            img: "/static/aoe2techtree/img/Unit/406.png" },
+  { id: "lou_chuan",        label: "Lou Chuan",         img: "/static/aoe2techtree/img/Unit/431.png" },
+];
+
+const _LRS_NOTES = {
+  none:             "Your civ will have no siege ship.",
+  cannon_galleon:   "Standard Cannon Galleon. Use the elite checkbox to include the Elite upgrade.",
+  catapult_galleon: "Catapult Galleon replaces Cannon Galleon. No elite upgrade.",
+  dromon:           "Byzantine-style Dromon. No elite upgrade.",
+  lou_chuan:        "Chinese-style Lou Chuan. No elite upgrade.",
+};
+
+// Only Cannon Galleon has an elite upgrade (unit 691 — Elite Cannon Galleon)
+const _LRS_HAS_ELITE = new Set(["cannon_galleon"]);
+
+// Unique ship bonuses that lock the Demo Ship line.
+// Thirisadai (298) is excluded — it sits in dock position 15 (row 3, col 5),
+// well clear of the demo line (positions 8 and 13), so it can coexist.
+const _UNIQUE_SHIP_BONUS_IDS   = new Set([50, 51, 69]);
+const _DEMO_SHIP_UNITS         = new Set([1104, 527, 528]);
+const _UNIQUE_SHIP_BONUS_NAMES = { 50: "Turtle Ship", 51: "Longboat", 69: "Caravel" };
+
+// Mutual-exclusivity group: only one of {50,51,69} may be selected at a time.
+// Thirisadai (298) may coexist with one member of this group.
+const _EXCLUSIVE_SHIP_GROUP = new Set([50, 51, 69]);
+
+function showToast(message) {
+  const body = document.getElementById("wizard-toast-body");
+  const el   = document.getElementById("wizard-toast");
+  if (!body || !el) return;
+  body.textContent = message;
+  bootstrap.Toast.getOrCreateInstance(el, { delay: 6000 }).show();
+}
+
+function _hasUniqueShipBonus() {
+  const bonuses = draft.bonuses || [];
+  return bonuses.some(b => _UNIQUE_SHIP_BONUS_IDS.has(Number(b.id ?? b[0])));
+}
+
+function _uniqueShipBonusName() {
+  const bonuses = draft.bonuses || [];
+  for (const b of bonuses) {
+    const id = Number(b.id ?? b[0]);
+    if (_UNIQUE_SHIP_BONUS_NAMES[id]) return _UNIQUE_SHIP_BONUS_NAMES[id];
+  }
+  return "unique ship";
+}
+
+function renderDemoShipNotice() {
+  const notice  = document.getElementById("demo-ship-notice");
+  const textEl  = document.getElementById("demo-ship-notice-text");
+  if (!notice) return;
+  if (_hasUniqueShipBonus()) {
+    textEl.textContent =
+      `Civs with ${_uniqueShipBonusName()}s can't use Demolition Ships (shared UI buttons) — ` +
+      `the Demo Raft, Demo Ship, and Heavy Demo Ship have been removed from your tech tree.`;
+    notice.classList.remove("d-none");
+  } else {
+    notice.classList.add("d-none");
+  }
+}
+
+function renderLRSPicker() {
+  const container  = document.getElementById("lrs-chips");
+  const eliteRow   = document.getElementById("lrs-elite-row");
+  const eliteCheck = document.getElementById("lrs-elite-check");
+  const noteEl     = document.getElementById("lrs-note");
+  if (!container) return;
+
+  const current  = draft.long_range_ship || null;
+  const hasElite = _LRS_HAS_ELITE.has(current || "cannon_galleon");
+
+  container.innerHTML = _LRS_OPTIONS.map(opt => {
+    const sel = opt.id === current || (opt.id === "cannon_galleon" && current === null);
+    const imgHtml = opt.img
+      ? `<img src="${opt.img}" class="lrs-chip-img" alt="${opt.label}">`
+      : `<span class="lrs-chip-none-icon"><i class="fa-solid fa-ban"></i></span>`;
+    return `<button type="button" class="lrs-chip${sel ? " lrs-chip--selected" : ""}"
+               data-lrs="${opt.id}">${imgHtml}<span>${opt.label}</span></button>`;
+  }).join("");
+
+  container.querySelectorAll(".lrs-chip").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const val = btn.dataset.lrs;
+      draft.long_range_ship = (val === "cannon_galleon") ? null : val;
+      // Default elite to true when switching to a type that has one
+      if (_LRS_HAS_ELITE.has(val || "cannon_galleon") && draft.long_range_ship_elite == null) {
+        draft.long_range_ship_elite = true;
+      }
+      saveDraft();
+      renderLRSPicker();
+    });
+  });
+
+  // Elite checkbox: show only for Cannon Galleon, hide otherwise
+  if (eliteRow) eliteRow.classList.toggle("d-none", !hasElite);
+  if (eliteCheck && hasElite) {
+    eliteCheck.checked = draft.long_range_ship_elite !== false; // default true
+    eliteCheck.onchange = () => {
+      draft.long_range_ship_elite = eliteCheck.checked;
+      saveDraft();
+    };
+  }
+
+  const noteKey = current || "cannon_galleon";
+  if (noteEl) {
+    noteEl.textContent = _LRS_NOTES[noteKey] || "";
+    noteEl.classList.toggle("d-none", !_LRS_NOTES[noteKey]);
+  }
+
+  renderDemoShipNotice();
+}
+
 // ── Tech tree ─────────────────────────────────────────────────────────────────
 
 // KM's main.js calls this when the user clicks "Save Tech Tree"
 window.setTechTree = function (localtree) {
+  let units = localtree[0];
+  if (_hasUniqueShipBonus()) {
+    units = units.filter(id => !_DEMO_SHIP_UNITS.has(id));
+  }
   draft.tree = {
-    units:     localtree[0],
+    units,
     buildings: localtree[1],
     techs:     localtree[2],
   };
@@ -2927,7 +3067,11 @@ document.getElementById("btn-open-tree").addEventListener("click", async () => {
         : `/api/builder/techtree?civ=${encodeURIComponent(templateVal)}`;
       const res  = await fetch(url);
       const data = await res.json();
-      treeToLoad = [data.units, data.buildings, data.techs];
+      const _regional = typeof _REGIONAL_UNIT_IDS !== 'undefined' ? _REGIONAL_UNIT_IDS : new Set();
+      // Always strip regional units (Settlements, regional buildings) from any
+      // loaded template — they should only be selected via a dedicated bonus card.
+      const filteredUnits = data.units.filter(id => !_regional.has(id));
+      treeToLoad = [filteredUnits, data.buildings, data.techs];
     } catch (e) {
       alert("Failed to load tech tree data. Please try again.");
       return;

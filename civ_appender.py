@@ -590,6 +590,16 @@ UT_HELP_SLOTS_PER_CIV = 2  # 0=Castle UT help, 1=Imperial UT help
 IMP_SCORPION_NAME_SID      = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 0)
 ROYAL_ELEPHANT_NAME_SID    = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 1)
 ROYAL_LANCER_NAME_SID      = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 2)
+CITY_WALLS_NAME_SID        = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 3)
+
+# City Walls help SID: first pool slot AFTER the per-civ UT_HELP block.
+# Comes from the 60000-68999 safe range (confirmed working as language_dll_help for techs).
+CITY_WALLS_HELP_SID        = _campaign_sid(UT_HELP_POOL_OFFSET + MAX_TOTAL_CIVS * UT_HELP_SLOTS_PER_CIV)
+
+# Hero unit name SIDs: one per civ from the 44000-range pool.
+# _apply_hero_unit sets unit.language_dll_name = hero_name_sid so wizard_build
+# can write the custom strings at hero_name_sid, +1000, +21000.
+HERO_POOL_OFFSET = BONUS_FIXED_POOL_OFFSET + 4   # 4 fixed bonus slots before hero block
 
 # (sid, text) pairs callers should write UNCONDITIONALLY, once per build —
 # not per-civ-looped, since these are the fixed/shared strings above.
@@ -704,6 +714,46 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
 
     if not tree_units and not tree_buildings and not tree_techs:
         return
+
+    # ── Long-range ship override ──────────────────────────────────────────────
+    # The picker controls which long-range ship the civ gets at the Dock.
+    # CG (420) and Elite CG (691) are no longer in FULL.json, so they are
+    # added here based on long_range_ship + long_range_ship_elite.
+    _LRS_UNIT_MAP = {
+        None:               420,    # default: Cannon Galleon
+        "cannon_galleon":   420,    # upgrades to Elite CG (691)
+        "catapult_galleon": 2633,   # no vanilla elite upgrade
+        "dromon":           1795,
+        "lou_chuan":        1948,
+        "none":             None,   # explicitly no long-range ship
+    }
+    _LRS_HAS_ELITE = {None, "cannon_galleon"}   # only CG has an elite upgrade
+    _ELITE_CG = 691
+    _lrs      = civ_def.get("long_range_ship")           # None → CG default
+    _lrs_elite = civ_def.get("long_range_ship_elite", True)
+
+    # Remove all LRS variants the user may have toggled in the SVG tree;
+    # the picker controls which one is added back below.
+    for _lrs_uid in (420, 691, 2633, 1795, 1948):
+        tree_units.discard(_lrs_uid)
+
+    # Demo ships are excluded when the civ has a unique ship bonus (50/51/69)
+    _UNIQUE_SHIP_BONUS_IDS = {50, 51, 69}
+    _DEMO_SHIP_UNITS = {1104, 527, 528}
+    _civ_bonus_ids_early = {e[0] for e in get_civ_bonuses(civ_def)}
+    if _UNIQUE_SHIP_BONUS_IDS & _civ_bonus_ids_early:
+        for _u in _DEMO_SHIP_UNITS:
+            tree_units.discard(_u)
+
+    base_unit = _LRS_UNIT_MAP.get(_lrs, 420)
+    if base_unit is not None:
+        tree_units.add(base_unit)
+        if _lrs in _LRS_HAS_ELITE and _lrs_elite:
+            tree_units.add(_ELITE_CG)
+        print(f"       Long-range ship: {_lrs or 'cannon_galleon'} (unit {base_unit})"
+              + (f" + elite ({_ELITE_CG})" if _lrs in _LRS_HAS_ELITE and _lrs_elite else ""))
+    else:
+        print(f"       Long-range ship: none")
 
     # ── Step 0: Build EC type=8 'unlock' map from all civ TT effects.
     # ec8_info[tech_id] = (a, b, c, d) template for the type=8 command.
@@ -830,12 +880,35 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         for tech_id in ec8_unit_techs.get(uid, []):
             ec8_to_add.add(tech_id)
 
-    # ── Step 3c: Mutual exclusions.
+    # ── Step 3c: Mutual exclusions and bonus-driven keep-alive.
     # Armored Elephants replace the ram-line for Indian civs — disable rams when present.
     _ARMORED_ELEPHANT_MAKE_AVAIL = 837
     _RAM_TECHS = {162, 712}  # Bat Ram (make avail), Upgrade Rams
     if _ARMORED_ELEPHANT_MAKE_AVAIL in keep_enabled:
         keep_enabled -= _RAM_TECHS
+
+    # City Walls (bonus 400) requires Fortified Wall (tech 194) to be researchable.
+    # Keep 194 out of to_disable so City Walls can appear and be researched at the
+    # University even if the user didn't explicitly add it to tree_techs.
+    _FORTIFIED_WALL_TECH_ID = 194
+    if 400 in _civ_bonus_ids_early and _FORTIFIED_WALL_TECH_ID in all_disableable:
+        keep_enabled.add(_FORTIFIED_WALL_TECH_ID)
+
+    # ── Step 3d: Directly disable always-enabled units that have no make-avail tech.
+    # Militia (74) is enabled for every civ by default (unit.enabled=1 in the DAT
+    # deepcopy source).  Because no vanilla civ's TT effect contains a type=8 or
+    # type=102 entry for it, the type=102 mechanism can't touch it.  Setting
+    # unit.enabled=0 directly is the only reliable way to prevent it appearing in
+    # the Barracks training panel for civs that don't include it in tree[0].
+    _ALWAYS_ENABLED_UNITS = {74}   # Militia — add others here if needed
+    for _uid in _ALWAYS_ENABLED_UNITS:
+        if _uid not in tree_units:
+            try:
+                u = dat.civs[civ_index].units[_uid]
+                if u is not None:
+                    u.enabled = 0
+            except IndexError:
+                pass
 
     # ── Step 4: Write type=8 unlock + type=102 disable commands into TT effect.
     to_disable = all_disableable - keep_enabled
@@ -855,15 +928,15 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
           + (f", {n_unlocked} type=8 unlocks" if n_unlocked else ""))
 
     # ── Step 5: Dragon Ship — replicate tech 1010 (civ=6 only) for this civ.
-    # Tech 1010 is Chinese-exclusive and won't fire for custom civs.  When unit
-    # 1302 is in the tree we append a new auto-fire tech that triggers on the
-    # same prerequisites (Imperial Age + Galleon) and applies the same upgrades.
+    # Tech 1010 is Chinese-exclusive and won't fire for custom civs.  Triggered
+    # by civ bonus 402 (Dragon Ship) rather than tree_units.
     _DRAGON_SHIP_UNIT = 1302
     _DRAGON_SHIP_REQS = (103, 35)   # Imperial Age tech, Galleon tech
     _DRAGON_SHIP_UPGRADES = ((1103, _DRAGON_SHIP_UNIT),  # Fire Galley → Dragon Ship
                              (529,  _DRAGON_SHIP_UNIT),  # Fire Ship   → Dragon Ship
                              (532,  _DRAGON_SHIP_UNIT))  # Fast Fire   → Dragon Ship
-    if _DRAGON_SHIP_UNIT in tree_units:
+    _civ_bonus_ids = {e[0] for e in get_civ_bonuses(civ_def)}
+    if 402 in _civ_bonus_ids:
         from genieutils.effect import Effect as _Effect
         ds_cmds = [
             EffectCommand(type=3, a=src, b=dst, c=-1, d=0.0)
@@ -879,6 +952,27 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         ds_tech.repeatable = 1
         dat.techs.append(ds_tech)
         print("       Dragon Ship upgrade tech added (replicates tech 1010 for this civ)")
+
+    # ── Step 5b: Settlement unlock — enable Settlement (2556) and hide the
+    # three standard resource-gathering buildings it replaces.
+    # Bonus 403 is the explicit "Settlement replaces Mill/Lumber/Mining Camp" card.
+    # We also trigger this for any other Settlement bonus (367/371/374) so the
+    # buildings are hidden whenever Settlement is part of the civ's identity.
+    _SETTLEMENT_BUILDING = 2556
+    _SETTLEMENT_BONUS_IDS = {403, 367, 371, 374}
+    _RESOURCE_CAMPS = (68, 562, 584)   # Mill, Lumber Camp, Mining Camp
+    if _SETTLEMENT_BONUS_IDS & _civ_bonus_ids:
+        for _tid in ec8_unit_techs.get(_SETTLEMENT_BUILDING, []):
+            if _tid in ec8_info:
+                a, b, c, d = ec8_info[_tid]
+                dat.effects[tt_eff_id].effect_commands.append(
+                    EffectCommand(type=8, a=a, b=b, c=c, d=d)
+                )
+        for _uid in _RESOURCE_CAMPS:
+            dat.effects[tt_eff_id].effect_commands.append(
+                EffectCommand(type=2, a=_uid, b=0, c=-1, d=0.0)
+            )
+        print("       Settlement unlock: type=8 added, Mill/Lumber Camp/Mining Camp hidden")
 
 
 # ── Bonus application ────────────────────────────────────────────────────────
@@ -1169,7 +1263,7 @@ def format_unit_tooltip_help(unit, name: str, verb: str = "Train",
     return f"{verb} <b>{name}<b> (<cost>) \\n{line2}"
 
 
-def format_unit_extended_tooltip(unit, name: str, tag: str = "") -> str:
+def format_unit_extended_tooltip(unit, name: str, tag: str = "", desc: str = "") -> str:
     """Build the Castle train-button EXTENDED hover tooltip (name+21000).
 
     This is a SEPARATE string slot from format_unit_tooltip_help's name+
@@ -1179,6 +1273,7 @@ def format_unit_extended_tooltip(unit, name: str, tag: str = "") -> str:
     own format precisely: verb "Create" (not "Train" — different from
     format_unit_tooltip_help), no "Cost:" breakdown line, ends with a
     bracketed tag instead (e.g. "[Budget Bois unique unit]").
+    `desc` appends the wizard's custom description after the tag line.
     """
     melee = getattr(unit.type_50, "displayed_melee_armour", None) if unit.type_50 else None
     pierce = getattr(unit.creatable, "displayed_pierce_armour", None) if unit.creatable else None
@@ -1187,6 +1282,8 @@ def format_unit_extended_tooltip(unit, name: str, tag: str = "") -> str:
     line2 = f"{unit.hit_points} HP | {attack if attack is not None else 0} attack | {armor_text} armor."
     if tag:
         line2 += f" [{tag}]"
+    if desc:
+        line2 += f"\\n{desc}"
     return f"Create <b>{name}<b> (<cost>) \\n{line2}"
 
 
@@ -1506,6 +1603,8 @@ HANDLED_BONUS_IDS = {
     239, 400,
     222, 356, 401,
     286,
+    402,   # Dragon Ship (handled via Step 5 of _apply_tree_wiring)
+    403,   # Settlement unlock (handled via Step 5b of _apply_tree_wiring)
 }
 
 
@@ -2230,11 +2329,92 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
 
     if bonus_id == 400:          # City Walls — researchable Imperial Age upgrade for Fortified Walls/Gates
         _FORTIFIED_WALL_TECH = 194  # cloned for button/hotkey/icon/location inheritance
-        _CITY_WALL_NAME_SID  = 5754  # vanilla string "City Wall"
-        cmds = [
-            EffectCommand(type=EC_MULTIPLY, a=155, b=-1, c=0, d=1.5),  # Fortified Wall ×1.5 HP
-            EffectCommand(type=EC_MULTIPLY, a=-1,  b=39, c=0, d=1.5),  # Gates (class 39) ×1.5 HP
-        ]
+
+        # City Wall (370) and the 16 City Gate variants (1579-1594) are real vanilla
+        # units that no shipped civ can build.  The upgrade works exactly the way
+        # tech 194 (Fortified Wall) does: one EC_UPGRADE per wall/gate orientation,
+        # from BOTH the Stone-Wall-tier and Fortified-Wall-tier source unit onto the
+        # city-tier unit.  EC_UPGRADE converts placed instances AND redirects the
+        # villager build button, because the target unit's train_location points at
+        # the same (villager 118, button) slot as the unit it replaces — which is why
+        # the prep block below is required: vanilla City Wall has no train location
+        # at all, so without it the upgrade fires and nothing becomes buildable.
+        # Source: KM civbuilder.cpp "Create City Walls" + CIV_BONUS_239.
+        _WALL_UPGRADES = (
+            # (stone-wall tier, fortified tier, city tier)
+            (117, 155, 370),    # WALL2  / WALL3  -> CWAL
+            ( 64,  63, 1579),   # GTAA2  / GTAA3  -> CGTAA
+            ( 78,  67, 1580),   # GTAB2  / GTAB3  -> CGTAB
+            ( 81,  80, 1581),   # GTAC2  / GTAC3  -> CGTAC
+            (487, 488, 1582),   # GTAX2  / GTAX3  -> CGTAX
+            ( 88,  85, 1583),   # GTBA2  / GTBA3  -> CGTBA
+            ( 91,  90, 1584),   # GTBB2  / GTBB3  -> CGTBB
+            ( 95,  92, 1585),   # GTBC2  / GTBC3  -> CGTBC
+            (490, 491, 1586),   # GTBX2  / GTBX3  -> CGTBX
+            (659, 660, 1587),   # GTCA2  / GTCA3  -> CGTCA
+            (661, 662, 1588),   # GTCB2  / GTCB3  -> CGTCB
+            (663, 664, 1589),   # GTCC2  / GTCC3  -> CGTCC
+            (665, 666, 1590),   # GTCX2  / GTCX3  -> CGTCX
+            (667, 668, 1591),   # GTDA2  / GTDA3  -> CGTDA
+            (669, 670, 1592),   # GTDB2  / GTDB3  -> CGTDB
+            (671, 672, 1593),   # GTDC2  / GTDC3  -> CGTDC
+            (673, 674, 1594),   # GTDX2  / GTDX3  -> CGTDX
+        )
+        _CITY_WALL_UNIT      = 370
+        _FORTIFIED_WALL_UNIT = 155
+        _CITY_GATE_X         = 1582   # X-orientation gate — the one with a build button
+        _GATE_X_SRC          = 488    # GTAX3, the Fortified Gate it replaces
+
+        # ── Prep: make City Wall a buildable stand-in for Fortified Wall ──────
+        civ_units  = dat.civs[civ_index].units
+        city_wall  = civ_units[_CITY_WALL_UNIT]
+        fort_wall  = civ_units[_FORTIFIED_WALL_UNIT]
+        if city_wall.creatable and fort_wall.creatable and fort_wall.creatable.train_locations:
+            src_loc = fort_wall.creatable.train_locations[0]
+            if city_wall.creatable.train_locations:
+                dst_loc = city_wall.creatable.train_locations[0]
+                dst_loc.unit_id    = src_loc.unit_id      # 118 = Villager build menu
+                dst_loc.button_id  = src_loc.button_id    # 8  = wall slot
+                dst_loc.hot_key_id = src_loc.hot_key_id
+                # Vanilla City Wall carries a 30 s build time left over from being
+                # an unused unit; a wall segment has to build as fast as the tier
+                # it replaces or walling off becomes unusable.
+                dst_loc.train_time = src_loc.train_time
+            else:
+                city_wall.creatable.train_locations = [deepcopy(src_loc)]
+            # Cost parity with Fortified Wall (5 stone) so walling stays affordable.
+            for dst_rc, src_rc in zip(city_wall.creatable.resource_costs,
+                                      fort_wall.creatable.resource_costs):
+                dst_rc.type   = src_rc.type
+                dst_rc.amount = src_rc.amount
+                dst_rc.flag   = src_rc.flag
+        city_wall.hit_points          = 4800   # vs Fortified Wall 3000
+        city_wall.blast_defense_level = 2
+        if city_wall.type_50 and fort_wall.type_50:
+            city_wall.type_50.armours = deepcopy(fort_wall.type_50.armours)
+            # Vanilla City Wall ships with 100 pierce armour (effectively immune),
+            # so its armour list is replaced wholesale with Fortified Wall's and the
+            # three armour classes a wall actually uses are raised 12 -> 16.
+            for armour in city_wall.type_50.armours:
+                if armour.class_ in (4, 3, 31):   # melee / pierce / fire
+                    armour.amount = 16
+            city_wall.type_50.displayed_melee_armour = 16
+        if city_wall.creatable:
+            city_wall.creatable.displayed_pierce_armour = 16
+
+        # City Gate X keeps whatever button the Fortified Gate it replaces sits on,
+        # otherwise the gate button jumps slots the moment the upgrade fires.
+        gate_x, gate_x_src = civ_units[_CITY_GATE_X], civ_units[_GATE_X_SRC]
+        if (gate_x.creatable and gate_x.creatable.train_locations
+                and gate_x_src.creatable and gate_x_src.creatable.train_locations):
+            gate_x.creatable.train_locations[0].button_id = \
+                gate_x_src.creatable.train_locations[0].button_id
+
+        cmds: list[EffectCommand] = []
+        for stone_tier, fort_tier, city_tier in _WALL_UPGRADES:
+            cmds.append(EffectCommand(type=EC_UPGRADE, a=stone_tier, b=city_tier, c=-1, d=0.0))
+            cmds.append(EffectCommand(type=EC_UPGRADE, a=fort_tier,  b=city_tier, c=-1, d=0.0))
+
         eff = Effect(name="City Walls", effect_commands=cmds)
         dat.effects.append(eff)
         eff_id = len(dat.effects) - 1
@@ -2251,11 +2431,17 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             ResearchResourceCost(type=-1, amount=0, flag=0),
             ResearchResourceCost(type=-1, amount=0, flag=0),
         )
-        new_tech.language_dll_name        = _CITY_WALL_NAME_SID
-        new_tech.language_dll_description = -1
-        new_tech.language_dll_help        = -1
-        new_tech.language_dll_tech_tree   = -1
+        new_tech.language_dll_name        = CITY_WALLS_NAME_SID
+        new_tech.language_dll_description = CITY_WALLS_NAME_SID + 1000
+        new_tech.language_dll_help        = CITY_WALLS_NAME_SID + 21000
+        new_tech.language_dll_tech_tree   = CITY_WALLS_NAME_SID + 150000
         dat.techs.append(new_tech)
+        if extra_strings is not None:
+            extra_strings.append({
+                "sid":       CITY_WALLS_NAME_SID,
+                "name":      "City Walls",
+                "help_sid":  CITY_WALLS_HELP_SID,
+            })
         return True
 
     if bonus_id == 195:          # Blacksmith upgrades free one age after they're available
@@ -2281,8 +2467,9 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                                 age_req=_IMPERIAL, name="C-Bonus 195, Castle BS free at Imperial")
         return True
 
-    if bonus_id == 239:          # "Upgrade Fortified Walls to City Walls" — superseded by bonus 400
-        return True             # silently accept; users use bonus 400 for the HP upgrade instead
+    if bonus_id == 239:          # "Upgrade Fortified Walls to City Walls" — same handler as 400
+        return _create_bonus_handler(dat, 400, civ_index, multiplier,
+                                     extra_strings, extra_unit_strings, tech_remaps, civ_def)
 
     if bonus_id == 258:          # Villagers +1 carry capacity per Town Center tech
         _BUILDING_TC    = 109
@@ -3130,6 +3317,11 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         uu_id       = uu_unit_id
         elite_uu_id = elite_unit_id
         preset_name = km_custom_uu.PRESETS[km_uu_index]["name"]
+        # Use wizard's custom name/description if provided, else fall back to preset.
+        _uu_custom_name = ((civ_def.get("unique_unit") or {}).get("name") or "").strip()
+        _uu_custom_desc = ((civ_def.get("unique_unit") or {}).get("description") or "").strip()
+        uu_display_name    = _uu_custom_name or preset_name
+        elite_display_name = f"Elite {uu_display_name}"
         # No separate extra_tech_strings entry for the elite tech — it
         # reuses elite_name_sid/elite_desc_sid directly (same ids as the
         # elite unit's own strings below), so writing the unit strings
@@ -3138,14 +3330,18 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         uu_obj    = dat.civs[civ_index].units[uu_unit_id]
         elite_obj = dat.civs[civ_index].units[elite_unit_id]
         km_uu_custom_unit_strings = [
-            {"sid": uu_name_sid, "name": preset_name, "desc_sid": uu_desc_sid,
-             "help_text": format_unit_tooltip_help(uu_obj, preset_name, extra=_trainable_extra),
+            {"sid": uu_name_sid, "name": uu_display_name, "desc_sid": uu_desc_sid,
+             "help_text": format_unit_tooltip_help(uu_obj, uu_display_name, extra=_trainable_extra),
              "ext_sid": _extended_tooltip_sid(uu_name_sid),
-             "ext_text": format_unit_extended_tooltip(uu_obj, preset_name, tag=f"{alias} unique unit")},
-            {"sid": elite_name_sid, "name": f"Elite {preset_name}", "desc_sid": elite_desc_sid,
-             "help_text": format_unit_tooltip_help(elite_obj, f"Elite {preset_name}", extra=_trainable_extra),
+             "ext_text": format_unit_extended_tooltip(uu_obj, uu_display_name,
+                                                      tag=f"{alias} unique unit",
+                                                      desc=_uu_custom_desc)},
+            {"sid": elite_name_sid, "name": elite_display_name, "desc_sid": elite_desc_sid,
+             "help_text": format_unit_tooltip_help(elite_obj, elite_display_name, extra=_trainable_extra),
              "ext_sid": _extended_tooltip_sid(elite_name_sid),
-             "ext_text": format_unit_extended_tooltip(elite_obj, f"Elite {preset_name}", tag=f"{alias} unique unit")},
+             "ext_text": format_unit_extended_tooltip(elite_obj, elite_display_name,
+                                                      tag=f"{alias} unique unit",
+                                                      desc=_uu_custom_desc)},
         ]
         print(f"       KM-custom UU index {km_uu_index} ({preset_name}): "
               f"make-avail tech {km_uu_make_avail_tech_id}, elite tech {km_uu_elite_tech_id}"
@@ -3731,7 +3927,7 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
             icon_id=icon,
             lang_name=name_sid,
             lang_desc=desc_sid,
-            lang_help=help_sid,
+            lang_help=name_sid + 21000,
             lang_tech_tree=_tech_tree_sid(name_sid),
             hot_key_id=hotkey,
         )

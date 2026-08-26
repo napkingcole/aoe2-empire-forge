@@ -519,16 +519,16 @@
           "Unit_2628_45",
           "Unit_528_45",
           "Tech_35_45",
-          "Unit_420_45"
+          null
         ],
         [
           null,
-          "Unit_1302_45",
           null,
           null,
           null,
           null,
-          "Unit_691_45"
+          null,
+          null
         ]
       ],
       "help_string_id": 105144,
@@ -2312,7 +2312,8 @@
       "node_type": "Research",
       "picture_index": 10,
       "row": 4,
-      "use_type": "Tech"
+      "use_type": "Tech",
+      "independent": true
     },
     {
       "age_id": 3,
@@ -2904,25 +2905,6 @@
       "use_type": "Unit"
     },
     {
-      "age_id": 4,
-      "building_id": 45,
-      "building_in_new_column": null,
-      "building_upgraded_from_id": null,
-      "grid": null,
-      "help_string_id": 105739,
-      "id": "Unit_1302_45",
-      "link_id": 529,
-      "link_node_type": "UnitUpgrade",
-      "name": "Dragon Ship",
-      "name_string_id": 14739,
-      "node_id": 1302,
-      "node_status": "ResearchedCompleted",
-      "node_type": "UniqueUnit",
-      "picture_index": 178,
-      "row": 7,
-      "use_type": "Unit"
-    },
-    {
       "age_id": 2,
       "building_id": 45,
       "building_in_new_column": null,
@@ -3187,44 +3169,6 @@
       "picture_index": 148,
       "row": 6,
       "use_type": "Tech"
-    },
-    {
-      "age_id": 4,
-      "building_id": 45,
-      "building_in_new_column": null,
-      "building_upgraded_from_id": null,
-      "grid": null,
-      "help_string_id": 105287,
-      "id": "Unit_420_45",
-      "link_id": null,
-      "link_node_type": "BuildingTech",
-      "name": "Cannon Galleon",
-      "name_string_id": 14287,
-      "node_id": 420,
-      "node_status": "ResearchRequired",
-      "node_type": "Unit",
-      "picture_index": 55,
-      "row": 6,
-      "use_type": "Unit"
-    },
-    {
-      "age_id": 4,
-      "building_id": 45,
-      "building_in_new_column": null,
-      "building_upgraded_from_id": null,
-      "grid": null,
-      "help_string_id": 105573,
-      "id": "Unit_691_45",
-      "link_id": 420,
-      "link_node_type": "Unit",
-      "name": "Elite Cannon Galleon",
-      "name_string_id": 14573,
-      "node_id": 691,
-      "node_status": "NotAvailable",
-      "node_type": "UnitUpgrade",
-      "picture_index": 298,
-      "row": 7,
-      "use_type": "Unit"
     },
     {
       "age_id": 3,

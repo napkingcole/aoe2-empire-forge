@@ -73,6 +73,8 @@ a = unit_id   b = -1   c = attribute_id   d = multiplier
 | 102 | ATTR_EXTRA_PROJ_1  | Extra projectile count (part 1 of 2) |
 | 107 | ATTR_EXTRA_PROJ_2  | Extra projectile count (part 2 of 2) |
 | 109 | ATTR_REGEN_HP      | HP regeneration per minute |
+| 126 | ATTR_AVAIL_COUNT   | Available Unit Flag — how many may be trained (needs 127 = 2 or 4) |
+| 127 | ATTR_DISABLED_FLAG | Disabled Unit Flag — 1 disabled, 2 limited/no retrain, 4 limited/retrain on death |
 | 158 | ATTR_UI_REFRESH    | No-op toggle — pair with ATTR_TRAIN_LOC to force UI update |
 
 **Attack/armor encoding:** `d = float(class_id * 256 + amount)`. Use the armor class IDs below.

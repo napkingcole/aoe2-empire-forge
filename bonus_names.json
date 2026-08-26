@@ -345,5 +345,7 @@
   "375": "Fallen units return 15% of their cost",
   "376": "Team: Towers and Castles provide +10 population space",
   "377": "Mounted Units generate +3 gold when defeating military units",
-  "112": "Arson and Gambesons are free"
+  "112": "Arson and Gambesons are free",
+  "402": "Dragon Ships replace the Fire Ship line (Imperial Age)",
+  "403": "Settlement (replaces Mill, Lumber Camp, and Mining Camp)"
 }
