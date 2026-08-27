@@ -32,9 +32,37 @@ jobs:
           name: AOE2EmpireForge-windows
           path: dist/AOE2EmpireForge.exe
 
-      - name: Create release
+      # Done with the preinstalled gh CLI rather than a third-party action: the
+      # v2.0.0-beta.1.2 run created the release but died uploading the asset,
+      # leaving a release with no exe on it. This retries the upload and then
+      # fails the job if the asset still isn't attached, so an assetless release
+      # can never be mistaken for a good one.
+      - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/AOE2EmpireForge.exe
-          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $exe = "dist/AOE2EmpireForge.exe"
+          if (-not (Test-Path $exe)) { throw "$exe was not produced by the build" }
+
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -ne 0) {
+            $createArgs = @($env:TAG, '--title', $env:TAG, '--notes', '')
+            if ($env:TAG -like '*-*') { $createArgs += '--prerelease' }
+            gh release create @createArgs
+            if ($LASTEXITCODE -ne 0) { throw "could not create release $env:TAG" }
+          }
+
+          for ($i = 1; $i -le 3; $i++) {
+            gh release upload $env:TAG $exe --clobber
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "upload attempt $i failed; retrying in 15s"
+            Start-Sleep -Seconds 15
+          }
+
+          $assets = gh release view $env:TAG --json assets --jq '.assets[].name'
+          if ($assets -notcontains 'AOE2EmpireForge.exe') {
+            throw "release $env:TAG has no AOE2EmpireForge.exe asset"
+          }
+          Write-Host "release $env:TAG has assets: $assets"
