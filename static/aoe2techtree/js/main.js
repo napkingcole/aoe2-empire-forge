@@ -30,8 +30,46 @@ let _buildingItems = {};
 // item.id → building object — fallback for highlight path when parentConnections has no entry
 let _itemToBuilding = {};
 
-// Buildings that are always enabled and cannot be toggled (TC, Mining/Lumber Camp, Mill)
-const ALWAYS_ON_BUILDINGS = new Set([109, 621, 584, 562, 68]);
+// Buildings that are always enabled and can never be toggled (Town Center, House)
+const HARD_ALWAYS_ON_BUILDINGS = new Set([109, 621]);
+
+// Resource drop-off buildings.  Always on *unless* a regional building that
+// replaces them is selected (see _REGIONAL_BUILDING_SWAPS below).
+const _CAMP_BUILDING_IDS = new Set([68, 562, 584]);   // Mill, Lumber Camp, Mining Camp
+
+// Farm's home when no regional replacement is active: a child of the Mill.
+const _FARM_STANDARD = { building_id: 68, id: 'Building_50_68', link_id: 68 };
+
+// Some layouts drop a camp entirely because a regional building replaced it —
+// POLES.json has no Mill column at all, only a Folwark.  Switching such a civ
+// back to the standard camps needs the column recreated, so keep a definition
+// of each.  Field-for-field copies of the columns in FULL.json.
+const _CAMP_NODE_DEFS = {
+    68: {
+        age_id: 1, building_id: 68, building_in_new_column: false,
+        building_upgraded_from_id: -1, help_string_id: 105157,
+        id: 'Building_68_68', link_id: null, link_node_type: 'BuildingTech',
+        name: 'Mill', name_string_id: 14157, node_id: 68,
+        node_status: 'ResearchedCompleted', node_type: 'BuildingTech',
+        picture_index: 19, row: 0, use_type: 'Building',
+    },
+    562: {
+        age_id: 1, building_id: 562, building_in_new_column: null,
+        building_upgraded_from_id: -1, help_string_id: 105464,
+        id: 'Building_562_562', link_id: null, link_node_type: 'BuildingTech',
+        name: 'Lumber Camp', name_string_id: 14464, node_id: 562,
+        node_status: 'ResearchedCompleted', node_type: 'BuildingTech',
+        picture_index: 40, row: 0, use_type: 'Building',
+    },
+    584: {
+        age_id: 1, building_id: 584, building_in_new_column: null,
+        building_upgraded_from_id: -1, help_string_id: 105487,
+        id: 'Building_584_584', link_id: null, link_node_type: 'BuildingTech',
+        name: 'Mining Camp', name_string_id: 14487, node_id: 584,
+        node_status: 'ResearchedCompleted', node_type: 'BuildingTech',
+        picture_index: 39, row: 0, use_type: 'Building',
+    },
+};
 
 // ── Regional unit mutual-exclusivity ─────────────────────────────────────────
 // Each pair: select one group's units → the other group is evicted.
@@ -44,6 +82,153 @@ const _REGIONAL_PAIRS = [
 ];
 // Flat set of all regional-side unit IDs — excluded from "Select All"
 const _REGIONAL_UNIT_IDS = new Set([2550, 2588, 2552, 2554, 1944, 1946, 1904, 1907, 1744, 1746]);
+
+// ── Picker-controlled units ──────────────────────────────────────────────────
+// The siege ship is one Dock button with five candidates plus an elite toggle —
+// more than the tree's on/off vocabulary can express — so it is chosen in the
+// wizard's Siege Ship picker instead, and the backend rebuilds tree[0] from that
+// choice.  The nodes stay visible in the Dock (that's where you'd look for
+// them) but can't be toggled here, or the tree would show a ship the build
+// won't produce.  builder.js keeps the displayed selection in sync.
+const _PICKER_CONTROLLED_UNITS = new Set([420, 691, 2633, 1795, 1948]);
+const _PICKER_HINT = 'Chosen with the Siege Ship picker, next to the tech tree button.';
+
+// Every shipped layout reserves the same Dock cells for these: the Cannon
+// Galleon and its elite in the last column, and whichever variant the civ has
+// in column 1 row 7.  FULL.json has them stripped, so a from-scratch tree used
+// to show no siege ship at all — the nodes are put back at render time instead
+// of editing 54 layout files.  Only the picked variant occupies the variant
+// cell, exactly as each real civ's layout does.
+const _DOCK_BUILDING_ID = 45;
+// role → the cell the shipped layouts normally use.  420 and 691 are their
+// own roles; the three variants share the single 'variant' cell.
+const _SIEGE_SHIP_CELLS = { 420: [6, 6], 691: [6, 7], variant: [1, 7] };
+const _SIEGE_VARIANT_IDS = [2633, 1795, 1948];
+const _SIEGE_SHIP_NODES = {
+    420: {
+        age_id: 4, building_id: 45, building_in_new_column: null,
+        building_upgraded_from_id: null, grid: null, help_string_id: 105287,
+        id: 'Unit_420_45', link_id: null, link_node_type: 'BuildingTech',
+        name: 'Cannon Galleon', name_string_id: 14287, node_id: 420,
+        node_status: 'ResearchRequired', node_type: 'Unit', picture_index: 55,
+        row: 6, use_type: 'Unit',
+    },
+    691: {
+        age_id: 4, building_id: 45, building_in_new_column: null,
+        building_upgraded_from_id: null, grid: null, help_string_id: 105573,
+        id: 'Unit_691_45', link_id: 420, link_node_type: 'Unit',
+        name: 'Elite Cannon Galleon', name_string_id: 14573, node_id: 691,
+        node_status: 'NotAvailable', node_type: null, picture_index: 298,
+        row: 7, use_type: 'Unit',
+    },
+    2633: {
+        age_id: 4, building_id: 45, building_in_new_column: null,
+        building_upgraded_from_id: null, grid: null, help_string_id: 105572,
+        id: 'Unit_2633_45', link_id: null, link_node_type: 'BuildingTech',
+        name: 'Catapult Galleon', name_string_id: 14572, node_id: 2633,
+        node_status: 'ResearchedCompleted', node_type: 'RegionalUnit',
+        picture_index: 591, row: 7, use_type: 'Unit',
+    },
+    1795: {
+        age_id: 4, building_id: 45, building_in_new_column: null,
+        building_upgraded_from_id: null, grid: null, help_string_id: 105055,
+        id: 'Unit_1795_45', link_id: null, link_node_type: 'BuildingTech',
+        name: 'Dromon', name_string_id: 14055, node_id: 1795,
+        node_status: 'ResearchedCompleted', node_type: 'RegionalUnit',
+        picture_index: 406, row: 7, use_type: 'Unit',
+    },
+    1948: {
+        age_id: 4, building_id: 45, building_in_new_column: null,
+        building_upgraded_from_id: null, grid: null, help_string_id: 105601,
+        id: 'Unit_1948_45', link_id: null, link_node_type: 'BuildingTech',
+        name: 'Lou Chuan', name_string_id: 14601, node_id: 1948,
+        node_status: 'ResearchedCompleted', node_type: 'RegionalUnit',
+        picture_index: 431, row: 7, use_type: 'Unit',
+    },
+};
+
+// ── Regional building swaps ──────────────────────────────────────────────────
+// A regional building replaces one or more of the standard resource camps and
+// absorbs their techs into a single column (this is how the Settlement, Folwark
+// and Mule Cart work in the shipped trees).  The swap is applied to whatever
+// layout is loaded, so each one is reachable from *any* starting template —
+// including the wide-open "Full" tree — instead of only from the handful of civ
+// layouts that happen to ship the column.
+//
+// Two swaps can be active at once as long as they replace different camps: the
+// Folwark takes over the Mill while the Mule Cart takes over the Lumber and
+// Mining Camps, so those combine.  The Settlement takes all three, so it
+// conflicts with both.  Selecting a swap evicts whatever overlaps it.
+//
+// standard_columns describes the layout when the swap is OFF: for each replaced
+// building, the columns of tech node_ids it owns (top-to-bottom within a column).
+// Folding a regional column back reads this map; unfolding it reads the live
+// layout, so a template that already has the column (Mapuche) round-trips.
+//
+// farm: where the Farm node hangs when this swap owns the Mill.  Swaps that
+// don't touch the Mill leave it null and the Farm stays put.
+const _STD_CAMP_COLUMNS = {
+    562: [[202, 203, 221]],           // Double-Bit Axe → Bow Saw → Two-Man Saw
+    68:  [[14, 13, 12]],              // Horse Collar → Heavy Plow → Crop Rotation
+    584: [[55, 182], [278, 279]],     // Gold Mining / Stone Mining + shaft upgrades
+};
+const _REGIONAL_BUILDING_SWAPS = [
+    {
+        id: 2556,
+        label: 'Settlement',
+        replaced_label: 'Mill, Lumber Camp and Mining Camp',
+        replaces: [562, 68, 584],
+        standard_columns: _STD_CAMP_COLUMNS,
+        // Settlement re-roots Farm as its own column linked to the Settlement.
+        farm: { building_id: 50, id: 'Building_50_50', link_id: 2556 },
+        // Node used when the loaded layout has no column of its own.
+        // Field-for-field copy of Building_2556_2556 from MAPUCHE.json.
+        node: {
+            age_id: 1, building_id: 2556, building_in_new_column: false,
+            building_upgraded_from_id: -1, help_string_id: 105509,
+            id: 'Building_2556_2556', link_id: null, link_node_type: 'BuildingTech',
+            name: 'Settlement', name_string_id: 14509, node_id: 2556,
+            node_status: 'ResearchedCompleted', node_type: 'RegionalBuilding',
+            picture_index: 98, row: 0, use_type: 'Building',
+        },
+    },
+    {
+        id: 1734,
+        label: 'Folwark',
+        replaced_label: 'Mill',
+        replaces: [68],
+        standard_columns: _STD_CAMP_COLUMNS,
+        // The Folwark absorbs the Farm as a child column (as the Poles have it).
+        farm: { building_id: 1734, id: 'Building_50_1734', link_id: 1734 },
+        // Copy of Building_1734_1734 from POLES.json.
+        node: {
+            age_id: 1, building_id: 1734, building_in_new_column: null,
+            building_upgraded_from_id: -1, help_string_id: 105581,
+            id: 'Building_1734_1734', link_id: null, link_node_type: 'BuildingTech',
+            name: 'Folwark', name_string_id: 14581, node_id: 1734,
+            node_status: 'ResearchedCompleted', node_type: 'UniqueBuilding',
+            picture_index: 86, row: 0, use_type: 'Building',
+        },
+    },
+    {
+        id: 1808,
+        label: 'Mule Cart',
+        replaced_label: 'Lumber Camp and Mining Camp',
+        replaces: [584, 562],
+        standard_columns: _STD_CAMP_COLUMNS,
+        farm: null,                       // doesn't touch the Mill
+        // Copy of Building_1808_1808 from ARMENIANS.json.
+        node: {
+            age_id: 1, building_id: 1808, building_in_new_column: false,
+            building_upgraded_from_id: -1, help_string_id: 105045,
+            id: 'Building_1808_1808', link_id: null, link_node_type: 'BuildingNonTech',
+            name: 'Mule Cart', name_string_id: 14045, node_id: 1808,
+            node_status: 'ResearchedCompleted', node_type: 'RegionalBuilding',
+            picture_index: 89, row: 0, use_type: 'Building',
+        },
+    },
+];
+const _REGIONAL_BUILDING_IDS = new Set(_REGIONAL_BUILDING_SWAPS.map(s => s.id));
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
@@ -329,10 +514,352 @@ function _useTypeKey(useType) {
 }
 
 function _isSelected(item) {
-    if (item.use_type === 'Building' && ALWAYS_ON_BUILDINGS.has(item.node_id)) return true;
+    if (item.use_type === 'Building' && HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) return true;
     const key = _useTypeKey(item.use_type);
     if (!key) return true;  // unknown types treated as always-selected
     return _localtree[key].includes(item.node_id);
+}
+
+// ── Regional building swaps ──────────────────────────────────────────────────
+
+// Every regional building the draft currently has selected.  More than one can
+// be active at a time when they replace different camps (Folwark + Mule Cart).
+function _activeBuildingSwaps() {
+    return _REGIONAL_BUILDING_SWAPS.filter(s => _localtree.buildings.includes(s.id));
+}
+
+// The active swap that has taken over a given camp, if any.
+function _swapOwningCamp(campId) {
+    return _activeBuildingSwaps().find(s => s.replaces.includes(campId)) || null;
+}
+
+// Buildings that must be present in _localtree for the current variant.
+function _forcedOnBuildings() {
+    const forced = new Set(HARD_ALWAYS_ON_BUILDINGS);
+    for (const id of _CAMP_BUILDING_IDS) {
+        if (!_swapOwningCamp(id)) forced.add(id);
+    }
+    return forced;
+}
+
+function _dropBuilding(id) {
+    const idx = _localtree.buildings.indexOf(id);
+    if (idx !== -1) _localtree.buildings.splice(idx, 1);
+}
+
+function _addBuilding(id) {
+    if (!_localtree.buildings.includes(id)) _localtree.buildings.push(id);
+}
+
+// Give a swap's camps back and drop the regional building itself.
+function _clearSwap(swap) {
+    _dropBuilding(swap.id);
+    for (const id of swap.replaces) _addBuilding(id);
+}
+
+// Adopt a regional building, evicting any active swap that wants the same camps.
+// Returns the label of whatever got evicted, for the toast.
+function _applySwap(swap) {
+    let evicted = null;
+    for (const other of _activeBuildingSwaps()) {
+        if (other.id === swap.id) continue;
+        if (other.replaces.some(id => swap.replaces.includes(id))) {
+            _clearSwap(other);
+            evicted = other.label;
+        }
+    }
+    _addBuilding(swap.id);
+    for (const id of swap.replaces) _dropBuilding(id);
+    return evicted;
+}
+
+// Re-render after a variant change — the swap moves whole columns around, so it
+// changes the layout rather than just which nodes are crossed.
+function _refreshAfterVariantChange(message) {
+    if (message && typeof window.showToast === 'function') window.showToast(message);
+    // The pointer hasn't moved, so no fresh mouseover will fire after the
+    // re-render — drop the tooltip rather than leave it describing the old state.
+    _hideEditTooltip();
+    if (_currentCivName) civ(_currentCivName);
+}
+
+// Intercept clicks on a camp or regional building.  Returns true when the click
+// was handled as a variant switch (so _toggleNode should not fall through).
+function _handleBuildingVariantClick(nodeId) {
+    if (_REGIONAL_BUILDING_IDS.has(nodeId)) {
+        const swap = _REGIONAL_BUILDING_SWAPS.find(s => s.id === nodeId);
+        if (_localtree.buildings.includes(swap.id)) {
+            _clearSwap(swap);
+            _refreshAfterVariantChange(`${swap.replaced_label} restored.`);
+        } else {
+            const evicted = _applySwap(swap);
+            _refreshAfterVariantChange(
+                `${swap.replaced_label} replaced by the ${swap.label}.`
+                + (evicted ? ` ${evicted} removed — it needs the same buildings.` : ''));
+        }
+        return true;
+    }
+    if (_CAMP_BUILDING_IDS.has(nodeId)) {
+        // Camps can't be turned off on their own — clicking one only means
+        // "give me this camp back" when a regional building has taken it over.
+        const owner = _swapOwningCamp(nodeId);
+        if (owner) {
+            _clearSwap(owner);
+            _refreshAfterVariantChange(`${owner.replaced_label} restored.`);
+        }
+        return true;
+    }
+    return false;
+}
+
+// ── Regional building layout transform ───────────────────────────────────────
+
+function _itemIndexOf(treeData) {
+    const index = {};
+    for (const item of treeData.units_techs) index[item.id] = item;
+    return index;
+}
+
+// Read a building's grid back out as an array of columns of items (top-to-bottom).
+function _columnsOf(building, itemIndex) {
+    const cols = [];
+    const width = building.grid.length ? building.grid[0].length : 0;
+    for (let c = 0; c < width; c++) {
+        const col = [];
+        for (let r = 0; r < building.grid.length; r++) {
+            const id = building.grid[r][c];
+            if (id && itemIndex[id]) col.push(itemIndex[id]);
+        }
+        cols.push(col);
+    }
+    return cols;
+}
+
+// Rewrite a building's grid from an array of columns.  Each item keeps its own
+// row (which encodes its age), so vertical placement is preserved across moves.
+function _setColumns(building, cols) {
+    const rows = 8;
+    const width = Math.max(cols.length, 1);
+    building.grid = Array.from({ length: rows }, () => new Array(width).fill(null));
+    cols.forEach((col, c) => {
+        for (const item of col) building.grid[item.row][c] = item.id;
+    });
+}
+
+// Move an item into another building, rewriting the id the DOM/index keys use.
+function _reparentItem(item, buildingId) {
+    item.building_id = buildingId;
+    item.id = `${item.use_type}_${item.node_id}_${buildingId}`;
+}
+
+function _findBuilding(treeData, nodeId) {
+    return treeData.buildings.find(b => b.node_id === nodeId);
+}
+
+function _setFarmHome(treeData, home) {
+    const farm = treeData.buildings.find(b => b.node_id === 50 && b.use_type === 'Building');
+    if (!farm) return;
+    farm.building_id = home.building_id;
+    farm.id          = home.id;
+    farm.link_id     = home.link_id;
+}
+
+function _insertStub(treeData, def, insertAt) {
+    const stub = Object.assign({}, def);
+    _setColumns(stub, []);
+    treeData.buildings.splice(insertAt, 0, stub);
+    return stub;
+}
+
+// Recreate a standard camp column the loaded layout doesn't have.  POLES.json
+// ships a Folwark and no Mill, so switching that civ back to the standard camps
+// needs somewhere to put the Mill's techs.
+function _ensureCampColumn(treeData, campId) {
+    if (_findBuilding(treeData, campId)) return;
+    const def = _CAMP_NODE_DEFS[campId];
+    if (!def) return;
+    // Sit next to whichever camps the layout does have, else at the end.
+    let insertAt = treeData.buildings.length;
+    for (const other of _CAMP_BUILDING_IDS) {
+        const idx = treeData.buildings.findIndex(b => b.node_id === other);
+        if (idx !== -1 && idx + 1 < insertAt) insertAt = idx + 1;
+    }
+    _insertStub(treeData, def, insertAt);
+}
+
+// Make sure the regional building has a column in the layout even when it isn't
+// selected, so it renders crossed-out and stays clickable.  Without this the
+// Settlement would only ever be visible on the four South American layouts that
+// ship one, which is exactly why it used to be unreachable from a blank tree.
+function _ensureRegionalStub(treeData, swap) {
+    if (_findBuilding(treeData, swap.id)) return;
+    // Slot it in right after the last camp it replaces.
+    let insertAt = treeData.buildings.length;
+    for (const rid of swap.replaces) {
+        const idx = treeData.buildings.findIndex(b => b.node_id === rid);
+        if (idx !== -1 && (insertAt === treeData.buildings.length || idx + 1 > insertAt)) {
+            insertAt = idx + 1;
+        }
+    }
+    _insertStub(treeData, swap.node, insertAt);
+}
+
+// Fold a regional building column back into the standard camps, so every layout
+// starts from the same shape regardless of which civ it came from.  The column
+// itself stays (emptied) — it is the control for switching back on.
+function _foldRegionalColumn(treeData, swap) {
+    const regional = _findBuilding(treeData, swap.id);
+    if (!regional) return;
+
+    const itemIndex = _itemIndexOf(treeData);
+    const owned = {};
+    for (const col of _columnsOf(regional, itemIndex)) {
+        for (const item of col) owned[item.node_id] = item;
+    }
+    // Nothing to fold: the layout is already on the standard camps (this is the
+    // normal case, and rebuilding their columns from an empty source would wipe
+    // the techs they legitimately own).
+    if (!Object.keys(owned).length) return;
+
+    const claimed = new Set();
+    for (const rid of swap.replaces) {
+        const home = _findBuilding(treeData, rid);
+        if (!home) continue;
+        const cols = (swap.standard_columns[rid] || []).map(nodeIds => {
+            const col = [];
+            for (const nid of nodeIds) {
+                const item = owned[nid];
+                if (!item) continue;
+                _reparentItem(item, rid);
+                claimed.add(nid);
+                col.push(item);
+            }
+            return col;
+        });
+        _setColumns(home, cols);
+    }
+
+    // Anything else that lived in the regional column (e.g. the Mapuche
+    // Skirmisher/Spearman duplicates) has a home elsewhere in the layout, so
+    // drop the copy rather than leaving an orphan the renderer can't place.
+    const dropped = new Set();
+    for (const nid of Object.keys(owned)) {
+        if (!claimed.has(Number(nid))) dropped.add(owned[nid].id);
+    }
+    if (dropped.size) {
+        treeData.units_techs = treeData.units_techs.filter(i => !dropped.has(i.id));
+    }
+
+    _setColumns(regional, []);
+}
+
+// Merge the replaced camps' columns into the regional building's column, leaving
+// the camps as empty stubs so they stay visible (crossed) and clickable.
+function _unfoldRegionalColumn(treeData, swap) {
+    const itemIndex = _itemIndexOf(treeData);
+    const cols = [];
+
+    for (const rid of swap.replaces) {
+        const home = _findBuilding(treeData, rid);
+        if (!home) continue;
+        for (const col of _columnsOf(home, itemIndex)) {
+            if (!col.length) continue;
+            for (const item of col) _reparentItem(item, swap.id);
+            cols.push(col);
+        }
+        _setColumns(home, []);
+    }
+
+    _setColumns(_findBuilding(treeData, swap.id), cols);
+}
+
+// Put the Dock's siege ship where every shipped layout keeps it, showing the
+// one the picker chose (crossed if the draft doesn't include it) and dropping
+// any variant belonging to a different civ's layout.
+function _applySiegeShipLayout(treeData) {
+    const dock = _findBuilding(treeData, _DOCK_BUILDING_ID);
+    if (!dock || !dock.grid.length) return;
+
+    const chosenVariant = _SIEGE_VARIANT_IDS.find(id => _localtree.units.includes(id)) || null;
+    const wanted = [420, 691];
+    if (chosenVariant) wanted.push(chosenVariant);
+
+    // Clear every siege node out of the Dock, then place the ones we want.
+    // This also evicts, say, the Aztec Catapult Galleon when the picker says
+    // Lou Chuan — otherwise the layout's variant would sit there crossed out
+    // while the actual choice had nowhere to show.  Remember where each one was
+    // first: a few layouts don't use the usual cells (the Burgundian Dock has no
+    // Fast Fire Ship, so their Cannon Galleon sits a column over), and putting a
+    // node back where its own layout had it beats any rule we could invent.
+    const freed = {};
+    const drop = new Set();
+    for (const item of treeData.units_techs) {
+        if (item.building_id !== _DOCK_BUILDING_ID) continue;
+        if (!_PICKER_CONTROLLED_UNITS.has(item.node_id)) continue;
+        drop.add(item.id);
+        const role = _SIEGE_VARIANT_IDS.includes(item.node_id) ? 'variant' : item.node_id;
+        for (let r = 0; r < dock.grid.length; r++) {
+            const c = dock.grid[r].indexOf(item.id);
+            if (c !== -1) { freed[role] = [c, r]; break; }
+        }
+    }
+    if (drop.size) {
+        treeData.units_techs = treeData.units_techs.filter(i => !drop.has(i.id));
+        for (let r = 0; r < dock.grid.length; r++) {
+            for (let c = 0; c < dock.grid[r].length; c++) {
+                if (drop.has(dock.grid[r][c])) dock.grid[r][c] = null;
+            }
+        }
+    }
+
+    const isFree = ([c, r]) =>
+        r < dock.grid.length && c < dock.grid[r].length && !dock.grid[r][c];
+
+    for (const uid of wanted) {
+        const role = _SIEGE_VARIANT_IDS.includes(uid) ? 'variant' : uid;
+        // Its own cell in this layout, then the usual one, then a new column —
+        // the Dravidian Thirisadai owns the variant cell, so a fallback is real.
+        let cell = [freed[role], _SIEGE_SHIP_CELLS[role]].find(x => x && isFree(x));
+        if (!cell) {
+            const row = (_SIEGE_SHIP_CELLS[role] || _SIEGE_SHIP_CELLS.variant)[1];
+            for (const r of dock.grid) r.push(null);
+            cell = [dock.grid[0].length - 1, row];
+        }
+        const [col, row] = cell;
+        const node = Object.assign({}, _SIEGE_SHIP_NODES[uid]);
+        node.row = row;
+        // Connect to whatever sits directly above in this column, so the line
+        // matches the layout rather than a hard-coded predecessor.
+        if (node.link_id === null) {
+            for (let r = row - 1; r >= 0; r--) {
+                const aboveId = dock.grid[r][col];
+                if (!aboveId) continue;
+                const above = treeData.units_techs.find(i => i.id === aboveId);
+                if (above) { node.link_id = above.node_id; node.link_node_type = above.node_type; }
+                break;
+            }
+        }
+        treeData.units_techs.push(node);
+        dock.grid[row][col] = node.id;
+    }
+}
+
+// Normalise the loaded layout to the standard camps, then apply whichever
+// regional buildings the draft actually selected (more than one can apply when
+// they replace different camps, e.g. Folwark + Mule Cart).
+function _applyBuildingVariantLayout(treeData) {
+    // Every camp needs a column to fold techs back into before anything moves.
+    for (const campId of _CAMP_BUILDING_IDS) _ensureCampColumn(treeData, campId);
+    for (const swap of _REGIONAL_BUILDING_SWAPS) {
+        _foldRegionalColumn(treeData, swap);
+        _ensureRegionalStub(treeData, swap);
+    }
+    const active = _activeBuildingSwaps();
+    for (const swap of active) _unfoldRegionalColumn(treeData, swap);
+
+    // The Farm hangs off whichever building owns the Mill.
+    const millOwner = active.find(s => s.replaces.includes(68));
+    _setFarmHome(treeData, (millOwner && millOwner.farm) || _FARM_STANDARD);
 }
 
 // Walk the successor index to collect all items that depend on this one (BFS).
@@ -405,6 +932,10 @@ function _addNodeCross(item, element_height) {
 }
 
 function _disableSingle(item, element_height) {
+    // Cascades (e.g. switching the Dock off) must not strip the picker's ship
+    // either — the backend puts it back, so removing it here would only make
+    // the tree disagree with the build.
+    if (item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) return;
     const key = _useTypeKey(item.use_type);
     if (!key) return;
     const arr = _localtree[key];
@@ -419,8 +950,16 @@ function _disableBuildingItems(building, element_height) {
 }
 
 function _toggleNode(item, element_height) {
-    // Always-on buildings cannot be toggled.
-    if (item.use_type === 'Building' && ALWAYS_ON_BUILDINGS.has(item.node_id)) return;
+    // The siege ship is owned by the wizard's picker, not by this tree.
+    if (item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) return;
+
+    if (item.use_type === 'Building') {
+        // Town Center and House can never be toggled.
+        if (HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) return;
+        // Camps and the regional buildings that replace them are a set of
+        // mutually exclusive variants, not independent on/off switches.
+        if (_handleBuildingVariantClick(item.node_id)) return;
+    }
 
     const key = _useTypeKey(item.use_type);
     if (!key) return;
@@ -431,7 +970,13 @@ function _toggleNode(item, element_height) {
         arr.push(item.node_id);
         _removeNodeCross(item.id);
         for (const ancestor of _getAncestors(item)) {
-            if (ancestor.use_type === 'Building' && ALWAYS_ON_BUILDINGS.has(ancestor.node_id)) continue;
+            // Skip buildings that aren't independently toggleable — always-on
+            // ones, and camps/regional buildings owned by the variant switch
+            // (cascading into those could re-add a camp the Settlement replaced).
+            if (ancestor.use_type === 'Building'
+                    && (HARD_ALWAYS_ON_BUILDINGS.has(ancestor.node_id)
+                        || _CAMP_BUILDING_IDS.has(ancestor.node_id)
+                        || _REGIONAL_BUILDING_IDS.has(ancestor.node_id))) continue;
             const aKey = _useTypeKey(ancestor.use_type);
             if (!aKey) continue;
             const aArr = _localtree[aKey];
@@ -512,6 +1057,34 @@ function _costHtml(costObj) {
     return parts.join(' · ');
 }
 
+// Explain what clicking a camp / regional building does — the swap is the one
+// interaction in the editor that isn't a plain on/off toggle.
+function _variantHint(item) {
+    if (item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) {
+        return _PICKER_HINT;
+    }
+    if (item.use_type !== 'Building') return '';
+    if (_REGIONAL_BUILDING_IDS.has(item.node_id)) {
+        const swap = _REGIONAL_BUILDING_SWAPS.find(s => s.id === item.node_id);
+        if (_localtree.buildings.includes(swap.id)) {
+            return `Click to go back to the ${swap.replaced_label}.`;
+        }
+        // Warn up front if picking this one costs another regional building.
+        const conflict = _activeBuildingSwaps().find(
+            o => o.id !== swap.id && o.replaces.some(id => swap.replaces.includes(id)));
+        return `Click to replace the ${swap.replaced_label} with the ${swap.label}.`
+            + (conflict ? ` Removes the ${conflict.label}.` : '');
+    }
+    if (_CAMP_BUILDING_IDS.has(item.node_id)) {
+        const owner = _swapOwningCamp(item.node_id);
+        return owner
+            ? `Replaced by the ${owner.label} — click to restore.`
+            : 'Always available.';
+    }
+    if (HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) return 'Always available.';
+    return '';
+}
+
 function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
     const svgX = svgNodeRight; // keep existing references below working
     const panel = document.getElementById('helptext');
@@ -548,7 +1121,12 @@ function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
         ? `<div style="margin-top:5px;font-size:11px;line-height:1.4;opacity:.88;">${desc}</div>`
         : '';
 
-    content.innerHTML = `<div style="font-weight:700;font-size:13px;">${name}</div>${costLine}${statsLine}${descLine}${civLine}`;
+    const hint = _variantHint(itemToDraw);
+    const hintLine = hint
+        ? `<div style="margin-top:5px;font-size:11px;font-weight:600;color:#7a4a00;">${hint}</div>`
+        : '';
+
+    content.innerHTML = `<div style="font-weight:700;font-size:13px;">${name}</div>${costLine}${statsLine}${descLine}${hintLine}${civLine}`;
     document.getElementById('helptext__advanced_stats').innerHTML = '';
     panel.style.display = 'block';
 
@@ -697,6 +1275,8 @@ function civ(civName) {
 
     loadJson(_treeroot + '/' + civName.toUpperCase() + '.json', function (treeData) {
         _stripCastleUuAndUt(treeData);
+        _applyBuildingVariantLayout(treeData);
+        _applySiegeShipLayout(treeData);
         const root = document.getElementById('root');
         if (root) document.getElementById('techtree').removeChild(root);
 
@@ -710,8 +1290,10 @@ function civ(civName) {
         _successorIndex = {};
         _buildingItems = {};
         _itemToBuilding = {};
-        // Guarantee always-on buildings are present in _localtree regardless of saved state.
-        for (const id of ALWAYS_ON_BUILDINGS) {
+        // Guarantee always-on buildings are present in _localtree regardless of
+        // saved state.  Camps count as always-on only while no regional building
+        // has replaced them.
+        for (const id of _forcedOnBuildings()) {
             if (!_localtree.buildings.includes(id)) _localtree.buildings.push(id);
         }
         for (const building of treeData.buildings) {
@@ -1013,21 +1595,39 @@ function _fillAll() {
     // Regional replacement units (Champi, Hei Guang, Rocket Cart, Armored/Siege Elephant)
     // are excluded — standard lines (Militia, Knight, Mangonel, Ram) are kept.
     if (!_currentCivName) return;
+    // The picker owns the siege ship — carry the current choice across.
+    const keepShips = _localtree.units.filter(id => _PICKER_CONTROLLED_UNITS.has(id));
     loadJson(_treeroot + '/' + _currentCivName.toUpperCase() + '.json', function (treeData) {
-        _localtree = { units: [], buildings: [], techs: [] };
+        _localtree = { units: keepShips.slice(), buildings: [], techs: [] };
+        const seen = { units: new Set(keepShips), buildings: new Set(), techs: new Set() };
+        const push = (key, id) => {
+            if (seen[key].has(id)) return;   // layouts can list a node twice
+            seen[key].add(id);
+            _localtree[key].push(id);
+        };
         for (const b of treeData.buildings) {
-            _localtree.buildings.push(b.node_id);
+            // Regional buildings are opt-in, same as regional units — "Enable
+            // All" keeps the standard Mill / Lumber Camp / Mining Camp.
+            if (_REGIONAL_BUILDING_IDS.has(b.node_id)) continue;
+            push('buildings', b.node_id);
         }
+        for (const id of _CAMP_BUILDING_IDS) push('buildings', id);
         for (const item of treeData.units_techs) {
             const key = _useTypeKey(item.use_type);
             if (key === 'units' && _REGIONAL_UNIT_IDS.has(item.node_id)) continue;
-            if (key) _localtree[key].push(item.node_id);
+            // Never enable a siege ship the picker didn't ask for.
+            if (key === 'units' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) continue;
+            if (key) push(key, item.node_id);
         }
         civ(_currentCivName);
     });
 }
 
 function _disableAll() {
-    _localtree = { units: [], buildings: [...ALWAYS_ON_BUILDINGS], techs: [] };
+    // Resets to the standard camps — the regional building is a deliberate pick.
+    // The siege ship survives: it belongs to the picker, not to this tree.
+    const keepShips = _localtree.units.filter(id => _PICKER_CONTROLLED_UNITS.has(id));
+    _localtree = { units: keepShips, buildings: [], techs: [] };
+    _localtree.buildings = [...HARD_ALWAYS_ON_BUILDINGS, ..._CAMP_BUILDING_IDS];
     if (_currentCivName) civ(_currentCivName);
 }

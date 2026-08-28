@@ -36,7 +36,7 @@ The `llm/` directory contains comprehensive AoE2 DE dat modding documentation. R
 
 2. **unit.enabled does not control trainability.** EC_ENABLE b=0/1 is a visibility flag only. Trainability is controlled by whether the unit's make-avail tech is in the type=102 disable list (or missing from the type=8 unlock list for opt-in units).
 
-3. **EC_UPGRADE redirects the build/train button only if the target already has a train_location.** It always converts existing instances; whether *new* ones come out upgraded depends on the target unit's `creatable.train_locations[0]` pointing at the same `(building, button)` slot as the source. Vanilla City Wall (370) has no train location at all, so upgrading to it silently does nothing until you copy Fortified Wall's — see the bonus 400 handler. When the target can't own a button (e.g. 2×2 farms), modify unit data directly on the original unit slot instead.
+3. **EC_UPGRADE redirects the build/train button only if the target already has a train_location.** It always converts existing instances; whether *new* ones come out upgraded depends on the target unit's `creatable.train_locations[0]` pointing at the same `(building, button)` slot as the source. Vanilla City Wall (370) has no train location at all, so upgrading to it silently does nothing until you copy Fortified Wall's — see the bonus 400 handler (confirmed in-game 2026-08-26). When the target can't own a button (e.g. 2×2 farms), modify unit data directly on the original unit slot instead.
 
 4. **Battering Ram orphan pattern.** Unit 1258 (BTRAM base) is what trains — not unit 35 (Battering Ram). Tech 162 makes 1258 available; tech 712 upgrades the line. To remove rams from a civ, exclude unit 1258 from tree[0].
 
@@ -44,7 +44,7 @@ The `llm/` directory contains comprehensive AoE2 DE dat modding documentation. R
 
 6. **Empty research_locations crashes silently.** Always provide at least one `ResearchLocation(location_id=-1, research_time=0)` for auto-fire techs.
 
-7. **Hero one-at-a-time is attributes 126/127, not `hero_mode`.** `hero_mode=1` only grants hero status (gold border, regen, conversion immunity). The cap is `EC_SET(unit, c=126, d=1)` + `EC_ADD(unit, c=127, d=4)` in the hero's make-avail tech — 127 flag `4` = limited but retrainable after death, `2` = never retrainable. See `llm/advanced_techniques.md`'s "Hero Units (One-at-a-Time)".
+7. **Hero one-at-a-time is attributes 126/127, not `hero_mode`.** `hero_mode=1` only grants hero status (gold border, regen, conversion immunity). The cap is `EC_SET(unit, c=126, d=1)` + `EC_ADD(unit, c=127, d=4)` in the hero's make-avail tech — 127 flag `4` = limited but retrainable after death, `2` = never retrainable. See `llm/advanced_techniques.md`'s "Hero Units (One-at-a-Time)" (confirmed in-game 2026-08-26).
 
 8. **String IDs must be EXISTING vanilla ids — brand-new ids are silently ignored, no matter the range.** Allocate one id per unit/tech from `civ_appender.CAMPAIGN_STRING_POOL`; every other field is a fixed offset from it: `+1000`=creation/description, `+100000`=help (tech research-button tooltips only), `+150000`=tech_tree (techs only). A UNIT's Castle train-button hover tooltip needs a separate `+21000` write with NO corresponding DAT field at all — `language_dll_help`/`+100000` does not drive it. See `llm/advanced_techniques.md`'s "Language String Pitfalls" and [[project_string_id_engine_limit]] in memory for the full story.
 

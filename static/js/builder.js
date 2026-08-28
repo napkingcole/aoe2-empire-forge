@@ -2897,6 +2897,39 @@ const _LRS_NOTES = {
 // Only Cannon Galleon has an elite upgrade (unit 691 — Elite Cannon Galleon)
 const _LRS_HAS_ELITE = new Set(["cannon_galleon"]);
 
+// Siege ship unit IDs ↔ picker option ids.  The picker is the sole control (the
+// backend discards all of these from tree[0] and re-adds from the draft), so
+// these two maps keep the tech tree and the picker showing the same thing.
+// Variants are checked before the Cannon Galleon: a civ that has both listed
+// (several do) is really a variant civ.
+const _LRS_UNIT_OF = { cannon_galleon: 420, catapult_galleon: 2633, dromon: 1795, lou_chuan: 1948 };
+const _LRS_ELITE_UNIT = 691;
+const _LRS_UNIT_IDS = new Set([...Object.values(_LRS_UNIT_OF), _LRS_ELITE_UNIT]);
+
+// Read a civ's unit list and work out which picker option it corresponds to.
+function _lrsFromUnits(units) {
+  const has = new Set(units);
+  for (const id of ["catapult_galleon", "dromon", "lou_chuan", "cannon_galleon"]) {
+    if (has.has(_LRS_UNIT_OF[id])) return { ship: id, elite: has.has(_LRS_ELITE_UNIT) };
+  }
+  return { ship: "none", elite: false };
+}
+
+// Rewrite a unit list so the siege ship matches the picker exactly — used on
+// every tree open so the Dock can't show a ship the build won't produce.
+function _applyLrsToUnits(units) {
+  const out = units.filter(id => !_LRS_UNIT_IDS.has(id));
+  const ship = draft.long_range_ship || "cannon_galleon";
+  const base = _LRS_UNIT_OF[ship];
+  if (base !== undefined) {
+    out.push(base);
+    if (_LRS_HAS_ELITE.has(ship) && draft.long_range_ship_elite !== false) {
+      out.push(_LRS_ELITE_UNIT);
+    }
+  }
+  return out;
+}
+
 // Unique ship bonuses that lock the Demo Ship line.
 // Thirisadai (298) is excluded — it sits in dock position 15 (row 3, col 5),
 // well clear of the demo line (positions 8 and 13), so it can coexist.
@@ -3067,16 +3100,43 @@ document.getElementById("btn-open-tree").addEventListener("click", async () => {
         : `/api/builder/techtree?civ=${encodeURIComponent(templateVal)}`;
       const res  = await fetch(url);
       const data = await res.json();
-      const _regional = typeof _REGIONAL_UNIT_IDS !== 'undefined' ? _REGIONAL_UNIT_IDS : new Set();
-      // Always strip regional units (Settlements, regional buildings) from any
-      // loaded template — they should only be selected via a dedicated bonus card.
-      const filteredUnits = data.units.filter(id => !_regional.has(id));
-      treeToLoad = [filteredUnits, data.buildings, data.techs];
+      // The "full" template is the union of every civ, so it contains BOTH sides
+      // of every regional swap (Militia line *and* Champi line, camps *and*
+      // Settlement).  Those are mutually exclusive, so the wide-open tree starts
+      // on the standard side and the regional options are opt-in.
+      //
+      // A real civ template must be taken at face value: the Mapuche genuinely
+      // have the Champi line and no Militia line, the Wei genuinely have Hei
+      // Guang Cavalry and no Knights.  Filtering those out was giving South
+      // American and Chinese templates a tech tree they can't actually have.
+      if (templateVal === "full") {
+        const regUnits = typeof _REGIONAL_UNIT_IDS !== 'undefined' ? _REGIONAL_UNIT_IDS : new Set();
+        const regBldgs = typeof _REGIONAL_BUILDING_IDS !== 'undefined' ? _REGIONAL_BUILDING_IDS : new Set();
+        treeToLoad = [
+          data.units.filter(id => !regUnits.has(id)),
+          data.buildings.filter(id => !regBldgs.has(id)),
+          data.techs,
+        ];
+      } else {
+        treeToLoad = [data.units, data.buildings, data.techs];
+        // Adopt the template civ's siege ship.  The picker is the only control
+        // the backend honours, so loading the Aztecs without this gave you the
+        // Aztec tree with a Frankish Cannon Galleon.
+        const lrs = _lrsFromUnits(data.units);
+        draft.long_range_ship = (lrs.ship === "cannon_galleon") ? null : lrs.ship;
+        if (_LRS_HAS_ELITE.has(lrs.ship)) draft.long_range_ship_elite = lrs.elite;
+        saveDraft();
+        renderLRSPicker();
+      }
     } catch (e) {
       alert("Failed to load tech tree data. Please try again.");
       return;
     }
   }
+
+  // Whatever we're about to show, the Dock's siege ship comes from the picker —
+  // never from the tree — so make the tree agree before it renders.
+  if (treeToLoad) treeToLoad[0] = _applyLrsToUnits(treeToLoad[0]);
 
   window.showTechtree(civName, treeToLoad, "/static");
 });

@@ -953,26 +953,78 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         dat.techs.append(ds_tech)
         print("       Dragon Ship upgrade tech added (replicates tech 1010 for this civ)")
 
-    # ── Step 5b: Settlement unlock — enable Settlement (2556) and hide the
-    # three standard resource-gathering buildings it replaces.
-    # Bonus 403 is the explicit "Settlement replaces Mill/Lumber/Mining Camp" card.
-    # We also trigger this for any other Settlement bonus (367/371/374) so the
-    # buildings are hidden whenever Settlement is part of the civ's identity.
-    _SETTLEMENT_BUILDING = 2556
-    _SETTLEMENT_BONUS_IDS = {403, 367, 371, 374}
-    _RESOURCE_CAMPS = (68, 562, 584)   # Mill, Lumber Camp, Mining Camp
-    if _SETTLEMENT_BONUS_IDS & _civ_bonus_ids:
-        for _tid in ec8_unit_techs.get(_SETTLEMENT_BUILDING, []):
-            if _tid in ec8_info:
-                a, b, c, d = ec8_info[_tid]
-                dat.effects[tt_eff_id].effect_commands.append(
-                    EffectCommand(type=8, a=a, b=b, c=c, d=d)
-                )
-        for _uid in _RESOURCE_CAMPS:
+    # ── Step 5b: Regional resource buildings (Settlement / Folwark / Mule Cart).
+    #
+    # Each of these replaces one or more of the standard resource camps and is
+    # picked in the tech tree editor, so tree[1] membership is the source of
+    # truth.  They reach the game three different ways in the shipped DAT and we
+    # reproduce each faithfully rather than inventing a uniform one:
+    #
+    #   Settlement (2556)  global make-avail tech 1353, opted into with a type=8
+    #                      unlock (Step 3b already emits it from tree[1]).  The
+    #                      three camps are hidden by type=2 commands in the civ's
+    #                      own TT effect — exactly what the Mapuche effect does.
+    #   Folwark (1734)     no make-avail tech at all: Poles tech 793 upgrades the
+    #                      Mill (and its age variants 129/130/131) into a Folwark,
+    #                      with 794-796 doing the per-age upgrades.  The Mill is
+    #                      NOT hidden — EC_UPGRADE converts its Villager button,
+    #                      which works because 1734's train_location is already
+    #                      (118, 2), the Mill's own slot.  See CLAUDE.md quirk 3.
+    #   Mule Cart (1808)   Armenians tech 940 (civ-specific, so it needs a civ
+    #                      reassignment rather than a type=8).  Its effect 944
+    #                      already contains all three commands — show 1808, hide
+    #                      562, hide 584 — so nothing else is needed.
+    #
+    # Legacy bonus IDs are still honoured so civs saved before the tech-tree swap
+    # existed (and KM-imported civs that only carry the bonus) keep working.
+    _REGIONAL_RESOURCE_BUILDINGS = {
+        2556: {"name": "Settlement", "bonus_ids": {403, 367, 371, 374},
+               "unlock_techs": (), "hide": (68, 562, 584)},
+        1734: {"name": "Folwark", "bonus_ids": {280},
+               "unlock_techs": (793, 794, 795, 796), "hide": ()},
+        1808: {"name": "Mule Cart", "bonus_ids": set(),
+               "unlock_techs": (940,), "hide": ()},
+    }
+    for _bid, _spec in _REGIONAL_RESOURCE_BUILDINGS.items():
+        _from_tree = _bid in tree_buildings
+        if not _from_tree and not (_spec["bonus_ids"] & _civ_bonus_ids):
+            continue
+
+        # Step 3b already emitted the type=8 unlock when the building came from
+        # tree[1]; only the legacy bonus-only path still needs it added here.
+        # (Duplicate commands are not free — effects blow up the engine past ~189.)
+        _n8 = 0
+        if not _from_tree:
+            for _tid in ec8_unit_techs.get(_bid, []):
+                if _tid in ec8_info:
+                    a, b, c, d = ec8_info[_tid]
+                    dat.effects[tt_eff_id].effect_commands.append(
+                        EffectCommand(type=8, a=a, b=b, c=c, d=d)
+                    )
+                    _n8 += 1
+
+        # Civ-specific unlock/upgrade techs need a copy reassigned to our civ, or
+        # they simply never fire (they are gated on tech.civ, not on the TT
+        # effect).  Same pattern as the Dragon Ship replication above.
+        _seen: dict = {}
+        _n_alloc = 0
+        for _tid in _spec["unlock_techs"]:
+            if _allocate_tech(dat, _tid, civ_index, _seen) != -1:
+                _n_alloc += 1
+
+        for _uid in _spec["hide"]:
             dat.effects[tt_eff_id].effect_commands.append(
                 EffectCommand(type=2, a=_uid, b=0, c=-1, d=0.0)
             )
-        print("       Settlement unlock: type=8 added, Mill/Lumber Camp/Mining Camp hidden")
+
+        _parts = []
+        if _n8:
+            _parts.append(f"{_n8} type=8")
+        if _n_alloc:
+            _parts.append(f"{_n_alloc} techs allocated")
+        if _spec["hide"]:
+            _parts.append(f"{len(_spec['hide'])} camps hidden")
+        print(f"       {_spec['name']} enabled: " + (", ".join(_parts) or "no-op"))
 
 
 # ── Bonus application ────────────────────────────────────────────────────────

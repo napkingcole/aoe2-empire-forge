@@ -411,14 +411,20 @@ _OPT_IN_UNIT_NODE_SOURCES: dict[int, list[str]] = {
     1370: ["MONGOLS.json",     "CUMANS.json"],     # Steppe Lancer
     1371: ["MONGOLS.json",     "CUMANS.json"],     # Elite Steppe Lancer
     1744: ["BENGALIS.json",    "DRAVIDIANS.json"], # Armored Elephant
-    1745: ["BENGALIS.json",    "DRAVIDIANS.json"], # Elite Armored Elephant
+    1746: ["BENGALIS.json",    "DRAVIDIANS.json"], # Siege Elephant (elite upgrade)
     1795: ["BYZANTINES.json"],            # Dromon
     1901: ["CHINESE.json",     "KOREANS.json"],    # Fire Lancer
     1904: ["CHINESE.json",     "KOREANS.json"],    # Rocket Cart
+    1907: ["CHINESE.json",     "KOREANS.json"],    # Heavy Rocket Cart
     1942: ["SHU.json",         "WEI.json"],        # Traction Trebuchet
+    1944: ["SHU.json",         "WEI.json"],        # Hei Guang Cavalry
+    1946: ["SHU.json",         "WEI.json"],        # Heavy Hei Guang Cavalry
     1948: ["CHINESE.json",     "SHU.json"],        # Lou Chuan
     2150: ["ACHAEMENIDS.json"],           # War Chariot
-    2550: ["INCAS.json"],                # Champi Scout
+    2550: ["INCAS.json",       "MAPUCHE.json"],    # Champi Scout
+    2552: ["INCAS.json",       "MAPUCHE.json"],    # Champi Warrior
+    2554: ["INCAS.json",       "MAPUCHE.json"],    # Elite Champi Warrior
+    2588: ["INCAS.json",       "MAPUCHE.json"],    # Champi Runner
     2633: ["AZTECS.json",      "INCAS.json"],      # Catapult Galleon
     1302: ["CHINESE.json"],                 # Dragon Ship
 }
@@ -493,6 +499,190 @@ def _inject_regional_unit_nodes(data: dict, tree_units: set,
             break  # found in preferred source; stop trying fallbacks
 
     return injected
+
+
+# ── Regional resource buildings in the in-game tech tree viewer ───────────────
+#
+# The Settlement, Folwark and Mule Cart each replace one or more of the standard
+# resource camps and absorb their techs.  In the shipped CivTechTrees files only
+# the civs that natively own one are laid out that way; every other civ's file
+# has the three camps and no such node at all.  Since a custom civ can now pick
+# any of them from any starting template, the reshape has to be applied to
+# whichever civ's file the custom civ replaces — otherwise the F2 viewer shows a
+# tech tree that doesn't match the civ the player is actually playing.
+#
+# Node ordering in these files is layout-independent (unlike the wizard's tree
+# JSONs there are no grid coordinates — the game positions nodes from Building
+# ID + Age ID), so injecting a node and repointing Building IDs is sufficient.
+#
+# The reverse direction matters just as much: a custom civ built on the Armenian,
+# Georgian, Polish or a South American slot inherits a file whose camp techs hang
+# off a building it can't build, so those get folded back onto the camps.
+_FARM_NODE_ID = 50
+# Which camp each absorbed tech belongs to when no regional building owns it.
+# NOTE: these are TECH ids — several collide with unit ids in the same node list
+# (13 is Heavy Plow as a Tech and Fishing Ship as a Unit, 279 is Stone Shaft
+# Mining and Scorpion), so every lookup must filter on Use Type == "Tech".
+_CAMP_TECH_HOME = {
+    202: 562, 203: 562, 221: 562,        # Double-Bit Axe → Bow Saw → Two-Man Saw
+    14: 68,   13: 68,   12: 68,          # Horse Collar → Heavy Plow → Crop Rotation
+    55: 584,  182: 584, 278: 584, 279: 584,   # Gold / Stone Mining + shaft upgrades
+}
+# regional building id → what it replaces, where the Farm goes when it owns the
+# Mill, and which shipped civ files to lift its node from.
+_REGIONAL_CAMP_SWAPS = {
+    2556: {"name": "Settlement", "replaces": (68, 562, 584), "farm": 50,
+           "sources": ["MAPUCHE.json", "INCAS.json", "MUISCA.json", "TUPI.json"]},
+    1734: {"name": "Folwark",    "replaces": (68,),          "farm": 1734,
+           "sources": ["POLES.json"]},
+    1808: {"name": "Mule Cart",  "replaces": (562, 584),     "farm": None,
+           "sources": ["ARMENIANS.json", "GEORGIANS.json"]},
+}
+# Files to lift a standard camp node from when the replaced slot's file lacks one.
+_CAMP_NODE_SOURCES = ["FRANKS.json", "BRITONS.json", "GOTHS.json"]
+
+
+def _load_civ_json(civ_json_dir: Path, fname: str) -> dict | None:
+    path = civ_json_dir / fname
+    if not path.exists():
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _apply_regional_camp_swaps(data: dict, building_ids: set,
+                               civ_json_dir: Path) -> int:
+    """
+    Reshape a CivTechTrees JSON around whichever regional resource buildings the
+    custom civ selected.
+
+    Selected: inject the node if the file lacks one, and repoint the replaced
+    camps' techs onto it.  Not selected: fold those techs back onto the Mill /
+    Lumber Camp / Mining Camp and hide the regional building.
+
+    Two can be active at once when they replace different camps (Folwark takes
+    the Mill, Mule Cart takes the Lumber and Mining Camps).  Node Status for the
+    camps themselves is left to the caller's tree-membership pass.  Returns the
+    number of nodes changed.
+    """
+    unit_nodes = data.get("civ_techs_units", [])
+    bldg_nodes = data.get("civ_techs_buildings", [])
+    changed = 0
+
+    def _building_node(node_id):
+        return next((n for n in bldg_nodes
+                     if n.get("Node ID") == node_id and n.get("Use Type") == "Building"),
+                    None)
+
+    def _camp_techs():
+        for n in unit_nodes:
+            if n.get("Use Type") == "Tech" and n.get("Node ID") in _CAMP_TECH_HOME:
+                yield n
+
+    active = [b for b in _REGIONAL_CAMP_SWAPS if b in building_ids]
+    present = [b for b in _REGIONAL_CAMP_SWAPS if _building_node(b) is not None]
+    if not active and not present:
+        return 0   # ordinary civ, ordinary camps — nothing to do
+
+    # Make sure every selected regional building has a node to hang techs off.
+    for bid in list(active):
+        if _building_node(bid) is not None:
+            continue
+        spec = _REGIONAL_CAMP_SWAPS[bid]
+        node = None
+        for fname in spec["sources"]:
+            src = _load_civ_json(civ_json_dir, fname)
+            if src is None:
+                continue
+            node = next((dict(n) for n in src.get("civ_techs_buildings", [])
+                         if n.get("Node ID") == bid and n.get("Use Type") == "Building"), None)
+            if node is not None:
+                break
+        if node is None:
+            print(f"  WARNING: {spec['name']} selected but no source node found; "
+                  "the F2 tech tree will not show it")
+            active.remove(bid)
+            continue
+        node["Node Status"] = "ResearchedCompleted"
+        bldg_nodes.append(node)
+        changed += 1
+
+    # Which regional building (if any) has taken over each camp.
+    owner = {}
+    for bid in active:
+        for camp in _REGIONAL_CAMP_SWAPS[bid]["replaces"]:
+            owner[camp] = bid
+
+    # A camp that is about to receive techs needs a node to receive them onto.
+    # POLES.json has no Mill node at all — the Folwark replaced it — so a custom
+    # civ on that slot using the standard camps would otherwise end up with
+    # Horse Collar and friends hanging off a building that isn't in the file.
+    for camp in sorted(set(_CAMP_TECH_HOME.values())):
+        if camp in owner or _building_node(camp) is not None:
+            continue
+        for fname in _CAMP_NODE_SOURCES:
+            src = _load_civ_json(civ_json_dir, fname)
+            if src is None:
+                continue
+            node = next((dict(n) for n in src.get("civ_techs_buildings", [])
+                         if n.get("Node ID") == camp and n.get("Use Type") == "Building"), None)
+            if node is None:
+                continue
+            node["Node Status"] = ("ResearchedCompleted" if camp in building_ids
+                                   else "NotAvailable")
+            bldg_nodes.append(node)
+            changed += 1
+            break
+
+    # Repoint the absorbed techs, wherever they currently live.
+    for node in _camp_techs():
+        home = _CAMP_TECH_HOME[node["Node ID"]]
+        target = owner.get(home, home)
+        if node.get("Building ID") != target:
+            node["Building ID"] = target
+            changed += 1
+
+    # The Farm hangs off whichever building owns the Mill.
+    mill_owner = owner.get(68)
+    farm_target = _REGIONAL_CAMP_SWAPS[mill_owner]["farm"] if mill_owner else 68
+    if farm_target is None:
+        farm_target = 68
+    for node in bldg_nodes:
+        if node.get("Node ID") != _FARM_NODE_ID or node.get("Use Type") != "Building":
+            continue
+        if node.get("Building ID") != farm_target:
+            node["Building ID"] = farm_target
+            changed += 1
+
+    # Anything else an unselected regional building owned (the Mapuche
+    # Skirmisher / Spearman duplicates, for instance) has no home now.  Drop it
+    # when the same unit is listed under another building, otherwise just hide
+    # it — never silently lose a unit from the viewer.
+    emptied = {b for b in _REGIONAL_CAMP_SWAPS if b not in active}
+    elsewhere = {n.get("Node ID") for n in unit_nodes
+                 if n.get("Building ID") not in emptied}
+    keep = []
+    for node in unit_nodes:
+        if node.get("Building ID") not in emptied:
+            keep.append(node)
+            continue
+        if node.get("Node ID") in elsewhere:
+            changed += 1
+            continue   # duplicate — drop this copy
+        node["Node Status"] = "NotAvailable"
+        keep.append(node)
+        changed += 1
+    data["civ_techs_units"] = keep
+    for node in bldg_nodes:
+        if (node.get("Node ID") in emptied and node.get("Use Type") == "Building"
+                and node.get("Node Status") != "NotAvailable"):
+            node["Node Status"] = "NotAvailable"
+            changed += 1
+
+    return changed
 
 
 def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
@@ -716,6 +906,14 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
     if injected:
         changed += injected
         print(f"  CivTechTrees/{civ_json_path.name}: {injected} regional unit nodes injected")
+
+    # Reshape the resource-camp block around the Settlement / Folwark / Mule Cart.
+    swapped = _apply_regional_camp_swaps(data, building_ids, civ_json_path.parent)
+    if swapped:
+        changed += swapped
+        picked = [s["name"] for b, s in _REGIONAL_CAMP_SWAPS.items() if b in building_ids]
+        print(f"  CivTechTrees/{civ_json_path.name}: resource camps → "
+              f"{' + '.join(picked) or 'standard'} ({swapped} nodes)")
 
     print(f"  CivTechTrees/{civ_json_path.name}: {changed} nodes updated")
     return json.dumps(data, separators=(",", ":")).encode("utf-8")
