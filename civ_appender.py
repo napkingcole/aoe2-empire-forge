@@ -36,6 +36,48 @@ BUILDING_BLACKSMITH  = 103
 _ARCH_REP_CIVS = [3, 1, 5, 8, 15, 7, 20, 22, 25, 28, 33, 21]  # 12 = South American (Inca)
 _ARCH_BUILDING_CLASSES = frozenset({3, 52, 27, 39})   # Building, Wall, Gate, Tower
 _ARCH_MOBILE_CLASSES   = frozenset({59, 18, 43, 19, 22})
+# Units the class filters miss but that still carry regional art.  Unit 134 is
+# the Monk-carrying-a-relic pose: its class (11) is shared with projectiles, so
+# it can't be swept in by class.  Without it the Monk changes with the
+# architecture set but reverts to the European pose the moment it picks up a
+# relic — visible in-game for every non-European civ.
+_ARCH_EXTRA_UNITS = (134,)
+
+# ── Monk skin ─────────────────────────────────────────────────────────────────
+# Monk appearance is its own axis, NOT the architecture set: the Monk partitions
+# the civs into 11 groups that cut across architecture (Britons and Goths share
+# a Monk but not an architecture; Byzantines and Slavs share a Monk but not an
+# architecture either).  Exactly three units carry it — verified by comparing
+# every unit's per-civ graphic partition against the Monk's.
+_MONK_SKIN_UNITS = (125, 134, 286)   # Monk, Monk w/ relic, RMONK
+# value = the DAT civ index whose Monk art is copied.  Chronicles civs have a
+# 12th skin but are excluded from the catalogue entirely (see memory).
+MONK_SKIN_OPTIONS: list[dict] = [
+    {"value": 1,  "label": "European",      "example": "Britons, Franks, Teutons, Poles"},
+    {"value": 7,  "label": "Orthodox",      "example": "Byzantines, Slavs, Bulgarians"},
+    {"value": 14, "label": "Mediterranean", "example": "Spanish, Italians, Portuguese"},
+    {"value": 8,  "label": "Middle Eastern","example": "Persians, Saracens, Turks"},
+    {"value": 12, "label": "Central Asian", "example": "Mongols, Huns, Cumans"},
+    {"value": 5,  "label": "East Asian",    "example": "Japanese, Chinese, Koreans"},
+    {"value": 28, "label": "South Asian",   "example": "Khmer, Dravidians, Gurjaras"},
+    {"value": 25, "label": "African",       "example": "Ethiopians, Malians"},
+    {"value": 15, "label": "Mesoamerican",  "example": "Aztecs, Mayans"},
+    {"value": 21, "label": "Andean",        "example": "Inca, Mapuche, Muisca, Tupi"},
+]
+
+# ── Starting scout ────────────────────────────────────────────────────────────
+# civ.resources[263] holds the unit the civ starts the game with alongside its
+# Villagers.  Vanilla uses only four values: every civ is 448 (Scout Cavalry)
+# except Aztecs/Mayans (751), Gurjaras (1755) and the four Andean civs (2550).
+# The unit does NOT have to be trainable by the civ — Incas start with a Champi
+# Runner while training the Militia line — so this is a free choice.
+STARTING_SCOUT_RESOURCE = 263
+STARTING_SCOUT_UNITS: dict[int, str] = {
+    448:  "Scout Cavalry",
+    751:  "Eagle Scout",
+    1755: "Camel Scout",
+    2550: "Champi Runner",
+}
 
 # ── KM UU index → (make_avail_tech_id, elite_upgrade_tech_id) ────────────────
 # Source: fritz-net/AoE2-Civbuilder modding/civbuilder.cpp uuTechIDs[] init +
@@ -1029,6 +1071,48 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
 
 # ── Bonus application ────────────────────────────────────────────────────────
 
+def _train_button(dat: DatFile, civ_index: int, unit_id: int) -> tuple[int, int] | None:
+    """Return the (building_id, button_id) a unit trains from, or None."""
+    units = dat.civs[civ_index].units
+    if unit_id < 0 or unit_id >= len(units):
+        return None
+    u = units[unit_id]
+    if u is None or u.creatable is None or not u.creatable.train_locations:
+        return None
+    loc = u.creatable.train_locations[0]
+    return None if loc.unit_id < 0 else (loc.unit_id, loc.button_id)
+
+
+def _warn_train_button_conflicts(dat: DatFile, civ_index: int, civ_def: dict | None,
+                                 spec: dict) -> None:
+    """Warn when an unlocked unit shares a training button with a tree unit.
+
+    Two units on the same (building, button) means only one of them is reachable
+    in-game.  We do NOT silently hide the tree unit: the tech tree is where the
+    standard line's on/off decision lives, so overriding it from a bonus card
+    would move that choice somewhere the user can't see it.  Warn instead and
+    let them drop one side.
+    """
+    if not civ_def:
+        return
+    tree = civ_def.get("tree") or []
+    tree_units = set(tree[0]) if tree and tree[0] else set()
+    if not tree_units:
+        return
+
+    slots = {b for uid in spec["units"] if (b := _train_button(dat, civ_index, uid))}
+    clashes = sorted(
+        uid for uid in tree_units
+        if uid not in spec["units"] and _train_button(dat, civ_index, uid) in slots
+    )
+    if clashes:
+        names = ", ".join(
+            f"{uid} ({dat.civs[civ_index].units[uid].name})" for uid in clashes
+        )
+        print(f"       WARNING: {spec['name']} shares a training button with "
+              f"tree unit(s) {names} — only one will be reachable in-game")
+
+
 def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
                    _seen: dict | None = None,
                    tech_remaps: dict | None = None) -> int:
@@ -1208,6 +1292,46 @@ _BLOCK_PRINTING = 230
 _ATONEMENT      = 319
 _ILLUMINATION   = 233
 _REDEMPTION     = 316
+
+# ── Regional / second unique units, unlocked by a bonus card ─────────────────
+# These units are gated on `tech.civ`, not on the tech-tree effect, so neither a
+# type=8 unlock nor keeping their make-avail tech out of the type=102 disable
+# list makes them appear — the tech simply never fires for anyone but its owner
+# civ.  _allocate_tech reassigns a private copy of the whole prerequisite chain
+# to our civ, the same mechanism Folwark/Mule Cart use in Step 5b.
+#
+# They live on bonus cards rather than in the tech tree because they are extras
+# on top of a civ's normal roster, not either/or swaps for a standard line —
+# putting eleven of them in the tree editor would crowd it for no gain.
+#
+# `units` is only used to warn about training-button collisions; `techs` is what
+# actually gets allocated.  Elite upgrades are listed after their make-avail
+# tech, but _allocate_tech follows required_techs either way.
+_UNLOCK_UNIT_BONUSES: dict[int, dict] = {
+    405: {"name": "Bolas Rider",      "techs": (1377, 1378), "units": (2569, 2571)},
+    406: {"name": "Xianbei Raider",   "techs": (1037,),      "units": (1952,)},
+    407: {"name": "Grenadier",        "techs": (992,),       "units": (1911,)},
+    408: {"name": "Jian Swordsman",   "techs": (1075,),      "units": (1974,)},
+    409: {"name": "Temple Guard",     "techs": (1400, 1401), "units": (2586, 2587)},
+    410: {"name": "Ibirapema Warrior","techs": (1390, 1391), "units": (2582, 2584)},
+    411: {"name": "War Chariot",      "techs": (1065,),      "units": (1962,)},
+    412: {"name": "Siege Camel",      "techs": (1005,),      "units": (1923,)},
+    413: {"name": "Shrivamsha Rider", "techs": (842, 843),   "units": (1751, 1753)},
+    414: {"name": "Warrior Priest",   "techs": (948,),       "units": (1811,)},
+    415: {"name": "Thirisadai",       "techs": (841,),       "units": (1750,)},
+    # Upgrade-only: these replace an existing line's button rather than claiming
+    # one of their own, so they can never collide.  Their prerequisites (Long
+    # Swordsman 207 / Cavalier 209) are global techs, so the unlock simply never
+    # fires for a civ whose tree lacks them — which is the right behaviour.
+    416: {"name": "Legionary",        "techs": (885,),       "units": (1793,)},
+    417: {"name": "Savar",            "techs": (526,),       "units": (1813,)},
+}
+
+# Mining Camp tech IDs (vanilla AoE2 DE) — the four techs the Bohemians get
+# for free.  Vanilla implements this inside the Bohemian tech-tree effect (803)
+# rather than as a civ tech; we mirror the Burmese free-lumberjack tech (645)
+# and use a civ-owned auto-fire tech instead, which is what bonus 404 needs.
+_MINING_CAMP_TECHS = [55, 182, 278, 279]   # Gold/Gold Shaft/Stone/Stone Shaft Mining
 
 # Elephant unit IDs
 _ELEPHANT_UNITS = [239, 558, 873, 875, 1120, 1122, 1132, 1134, 1744, 1746, 1180]
@@ -1657,6 +1781,8 @@ HANDLED_BONUS_IDS = {
     286,
     402,   # Dragon Ship (handled via Step 5 of _apply_tree_wiring)
     403,   # Settlement unlock (handled via Step 5b of _apply_tree_wiring)
+    404,   # Mining Camp techs free (Bohemians)
+    *_UNLOCK_UNIT_BONUSES,   # 405-416: regional / second unique unit unlocks
 }
 
 
@@ -1708,6 +1834,29 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _add_auto_fire_tech(dat, civ_index,
                             _free_tech_cmds([_REDEMPTION]),
                             name="C-Bonus, free Redemption")
+        return True
+
+    if bonus_id == 404:          # Mining Camp technologies free (Bohemians)
+        _add_auto_fire_tech(dat, civ_index,
+                            _free_tech_cmds(_MINING_CAMP_TECHS),
+                            name="C-Bonus, free Mining Camp techs")
+        return True
+
+    if bonus_id in _UNLOCK_UNIT_BONUSES:
+        spec = _UNLOCK_UNIT_BONUSES[bonus_id]
+        seen: dict = {}
+        allocated = [
+            new_tid
+            for tid in spec["techs"]
+            if (new_tid := _allocate_tech(dat, tid, civ_index, seen, tech_remaps)) != -1
+        ]
+        if not allocated:
+            print(f"       WARNING: {spec['name']} unlock allocated no techs "
+                  f"(bonus {bonus_id}) — unit will not appear")
+            return True
+        print(f"       {spec['name']} unlocked: {len(allocated)} techs allocated "
+              f"{spec['techs']}→{tuple(allocated)}")
+        _warn_train_button_conflicts(dat, civ_index, civ_def, spec)
         return True
 
     if bonus_id == 155:          # {ELITE_BATTLE_ELEPHANT, Royal Battle Elephant} free
@@ -2714,14 +2863,46 @@ def _norm_entry(e) -> list:
         return [int(e["id"]), int(e.get("multiplier", 1))]
     return [int(e[0]), int(e[1]) if len(e) > 1 else 1]
 
+def _tree_unit_ids(civ_def: dict) -> set[int]:
+    """Units in tree[0], for either civ_def format ([] when absent)."""
+    tree = civ_def.get("tree") or []
+    if tree and isinstance(tree[0], (list, tuple)):
+        return {int(u) for u in tree[0]}
+    return set()
+
+
 def get_civ_bonuses(civ_def: dict) -> list:
-    """Return civ bonus entries as [[id, mult], ...] from either format."""
+    """Return civ bonus entries as [[id, mult], ...] from either format.
+
+    The "Unlock ..." bonuses (_UNLOCK_UNIT_BONUSES) are *derived* from tree[0]
+    rather than stored independently: a civ whose tree contains Bolas Rider
+    gets bonus 405 whether or not the card was ticked.  Deriving here — the one
+    accessor every code path reads bonuses through — means the wizard, the KM
+    importer and civs saved before these bonuses existed all behave the same,
+    and switching tech-tree templates can never leave a stale unlock behind.
+    """
     raw = civ_def.get("bonuses", [])
     if not raw:
-        return []
-    if isinstance(raw[0], dict):
-        return [_norm_entry(e) for e in raw]
-    return raw[0] if isinstance(raw[0], list) else []
+        entries = []
+    elif isinstance(raw[0], dict):
+        entries = [_norm_entry(e) for e in raw]
+    else:
+        # list() is load-bearing: the KM format's raw[0] IS the caller's list,
+        # and appending a derived unlock straight into it would write the
+        # derivation back into civ_def — making it sticky across tree changes,
+        # which is the exact staleness this design exists to avoid.
+        entries = list(raw[0]) if isinstance(raw[0], list) else []
+
+    units = _tree_unit_ids(civ_def)
+    if units:
+        # Tolerate a malformed entry rather than crashing this accessor — it is
+        # on every read path, and a bad hand-edited JSON should degrade to "no
+        # derived unlocks", not take the whole build down.
+        have = {e[0] for e in entries if isinstance(e, (list, tuple)) and e}
+        for bid, spec in _UNLOCK_UNIT_BONUSES.items():
+            if bid not in have and units.intersection(spec["units"]):
+                entries.append([bid, 1])
+    return entries
 
 def get_team_bonuses(civ_def: dict) -> list:
     """Return team bonus entries as [[id, mult], ...] from either format."""
@@ -2928,6 +3109,68 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     return bonus_result
 
 
+def _lock_unclaimed_optin_techs(dat: DatFile, civ_index: int, civ_def: dict) -> int:
+    """Explicitly disable every global opt-in tech this civ did not unlock.
+
+    Opt-in make-avail techs (Settlement 1353, Eagle Warrior 433, Elephant Archer
+    480, Steppe Lancer 714, Rocket Cart 979, the Champi line, camels, ...) are
+    `civ=-1` and gated only on an age, and vanilla never puts them in ANY civ's
+    type=102 list — the engine keeps them locked until a civ's TT effect opts in
+    with a type=8.  Human players therefore never see a button for them, because
+    the per-civ tech tree JSON has no node.  The AI does not build from that
+    JSON, so for any civ that neither unlocked nor disabled the tech, the AI can
+    still build/train the unit — Settlements alongside Mills being the reported
+    case (issues #15, #24).
+
+    Writing the type=102 makes the intent explicit instead of relying on the
+    engine's implicit lock.  It is a no-op where the engine already locks them.
+
+    Must run AFTER bonuses: several bonus handlers add their own type=8 opt-ins,
+    and a tech carrying both commands would be disabled rather than unlocked.
+
+    Keyed on stable tech properties (referenced by a type=8 anywhere + civ=-1)
+    rather than on the vanilla type=102 pool, so processing many civs against one
+    DatFile can't feed this civ's freshly written disables back into the next
+    civ's risky set.  Returns the number of commands added.
+    """
+    tt_eff_id = dat.civs[civ_index].tech_tree_id
+    if not (0 <= tt_eff_id < len(dat.effects)):
+        return 0
+
+    optin: set[int] = set()
+    for civ in dat.civs:
+        tti = civ.tech_tree_id
+        if 0 <= tti < len(dat.effects):
+            for c in dat.effects[tti].effect_commands:
+                if c.type == 8:
+                    tid = int(c.a)
+                    if 0 <= tid < len(dat.techs) and dat.techs[tid].civ == -1:
+                        optin.add(tid)
+
+    cmds      = dat.effects[tt_eff_id].effect_commands
+    unlocked  = {int(c.a) for c in cmds if c.type == 8}
+    disabled  = {int(c.d) for c in cmds if c.type == 102}
+
+    # The starting scout is spawned by the engine, but its unit still needs its
+    # make-avail tech (Incas start with a Champi Runner and do unlock tech 1350).
+    # Never disable the tech that enables the scout this civ starts with.
+    scout = civ_def.get("starting_scout")
+    if scout in STARTING_SCOUT_UNITS:
+        for tid in list(optin):
+            eid = dat.techs[tid].effect_id
+            if not (0 <= eid < len(dat.effects)):
+                continue
+            for c in dat.effects[eid].effect_commands:
+                if c.type == EC_ENABLE and int(c.a) == scout and int(c.b) == 1:
+                    unlocked.add(tid)
+                    break
+
+    to_lock = sorted(optin - unlocked - disabled)
+    cmds.extend(EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(tid))
+                for tid in to_lock)
+    return len(to_lock)
+
+
 def _restore_elite_upgrade_location(dat: DatFile, tech_id: int, civ_index: int) -> None:
     """Fix a cloned elite-upgrade tech whose research_location building was wiped
     to -1 by step-0 nullification. Derives the correct building from the base
@@ -3027,15 +3270,22 @@ def assign_all_languages(dat: DatFile, assignments: list[tuple[int, int]]) -> No
                 print(f"         civ={item.civilization:>3}  res={item.resource_id}  file={item.filename!r}")
 
 
-def _copy_architecture(dat: DatFile, src_idx: int, dst_idx: int) -> None:
-    """Copy building and regional-unit graphics from one civ slot to another.
+def _copy_architecture(src_civ, dst_civ) -> None:
+    """Copy building and regional-unit graphics from one civ to another.
 
     Mirrors KM's copyArchitecture() from helpers.cpp.  Castle (unit slot 82)
     and Wonder (unit slot 276) are intentionally skipped so the castle/wonder
     graphic choices stay independent of the architecture set.
+
+    Takes Civ objects rather than slot indices on purpose.  The source must be
+    captured BEFORE apply_civ overwrites the target slot: when a civ replaces
+    the very civ that represents its architecture (e.g. replacing Byzantines
+    while choosing Mediterranean), looking the source up by index afterwards
+    finds the half-built replacement and copies it onto itself — a silent
+    no-op that leaves the Britons clone's architecture in place.
     """
-    src_units = dat.civs[src_idx].units
-    dst_units = dat.civs[dst_idx].units
+    src_units = src_civ.units
+    dst_units = dst_civ.units
 
     for i, (src, dst) in enumerate(zip(src_units, dst_units)):
         if src is None or dst is None:
@@ -3067,7 +3317,36 @@ def _copy_architecture(dat: DatFile, src_idx: int, dst_idx: int) -> None:
                     for st, dt in zip(src.bird.tasks, dst.bird.tasks):
                         dt.proceeding_graphic_id = st.proceeding_graphic_id
 
-    dat.civs[dst_idx].icon_set = dat.civs[src_idx].icon_set
+    # Units with regional art that no class filter reaches (see _ARCH_EXTRA_UNITS).
+    for i in _ARCH_EXTRA_UNITS:
+        if i < len(src_units) and i < len(dst_units):
+            src, dst = src_units[i], dst_units[i]
+            if src is not None and dst is not None:
+                dst.standing_graphic = src.standing_graphic
+                dst.dying_graphic    = src.dying_graphic
+                dst.undead_graphic   = src.undead_graphic
+
+    dst_civ.icon_set = src_civ.icon_set
+
+
+def _copy_monk_skin(src_civ, dst_civ) -> None:
+    """Copy the three Monk-appearance units from one civ to another.
+
+    Runs after _copy_architecture, which sets a Monk matching the architecture
+    set; this overrides it when the user picked a Monk skin explicitly.
+    Same capture-before-overwrite rule as _copy_architecture.
+    """
+    src_units = src_civ.units
+    dst_units = dst_civ.units
+    for i in _MONK_SKIN_UNITS:
+        if i >= len(src_units) or i >= len(dst_units):
+            continue
+        src, dst = src_units[i], dst_units[i]
+        if src is None or dst is None:
+            continue
+        dst.standing_graphic = src.standing_graphic
+        dst.dying_graphic    = src.dying_graphic
+        dst.undead_graphic   = src.undead_graphic
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -3216,6 +3495,22 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         if len(src_units) > 276 and src_units[276] is not None:
             new_civ.units[276] = deepcopy(src_units[276])
 
+    # Capture the graphic source civs BEFORE the slot is overwritten below.
+    # Overwriting rebinds dat.civs[civ_index], but these references keep the
+    # original Civ objects alive — which is what makes "replace Byzantines and
+    # choose Mediterranean" work instead of silently copying the half-built
+    # replacement onto itself.
+    arch_val = civ_def.get("architecture", 2)
+    arch_src = (_ARCH_REP_CIVS[arch_val - 1]
+                if isinstance(arch_val, int) and 1 <= arch_val <= len(_ARCH_REP_CIVS)
+                else None)
+    arch_src_civ = dat.civs[arch_src] if arch_src is not None and arch_src < len(dat.civs) else None
+
+    monk_src = civ_def.get("monk_skin", -1)
+    monk_src_civ = (dat.civs[monk_src]
+                    if isinstance(monk_src, int) and 0 < monk_src < len(dat.civs)
+                    else None)
+
     if overwrite:
         dat.civs[civ_index] = new_civ
     else:
@@ -3224,12 +3519,25 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # Architecture: copy building graphics from the representative vanilla civ.
     # KM architecture value is 1-based into _ARCH_REP_CIVS; default 2 = Britons
     # (Western European), matching the deepcopy base above.
-    arch_val = civ_def.get("architecture", 2)
-    if isinstance(arch_val, int) and 1 <= arch_val <= len(_ARCH_REP_CIVS):
-        arch_src = _ARCH_REP_CIVS[arch_val - 1]
-        if arch_src < len(dat.civs):
-            _copy_architecture(dat, arch_src, civ_index)
-            print(f"       Architecture: style {arch_val} (from DAT civ {arch_src})")
+    if arch_src_civ is not None:
+        _copy_architecture(arch_src_civ, dat.civs[civ_index])
+        print(f"       Architecture: style {arch_val} (from DAT civ {arch_src})")
+
+    # Monk skin: independent of architecture (see MONK_SKIN_OPTIONS).  Unset
+    # leaves whatever _copy_architecture just applied, which is the coherent
+    # default — the architecture set already carries a matching Monk.
+    if monk_src_civ is not None:
+        _copy_monk_skin(monk_src_civ, dat.civs[civ_index])
+        print(f"       Monk skin: from DAT civ {monk_src} ({monk_src_civ.name!r})")
+
+    # Starting scout: the deepcopy base (civ 1) starts with a Scout Cavalry, so
+    # leaving this unset keeps vanilla behaviour.
+    scout_val = civ_def.get("starting_scout")
+    if scout_val in STARTING_SCOUT_UNITS:
+        dat.civs[civ_index].resources[STARTING_SCOUT_RESOURCE] = float(scout_val)
+        print(f"       Starting scout: {STARTING_SCOUT_UNITS[scout_val]} ({scout_val})")
+    elif scout_val is not None:
+        print(f"       WARNING: unknown starting_scout {scout_val!r} — keeping Scout Cavalry")
 
     # Snapshot the unit count before we append UU slots so _apply_tree_wiring
     # can skip our custom units (they're managed by the elite upgrade tech, not tree[]).
@@ -3497,6 +3805,12 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     #    after all civs are processed — see app.py / build_all.py.
     lang_val = civ_def.get("language", 0)
 
+    # 7b. Lock every global opt-in tech this civ never claimed.  After bonuses,
+    #     so bonus-added type=8 opt-ins are already visible and stay exempt.
+    _n_locked = _lock_unclaimed_optin_techs(dat, civ_index, civ_def)
+    if _n_locked:
+        print(f"       Opt-in lockdown: {_n_locked} unclaimed regional techs disabled")
+
     # Guard: TT effects exceeding ~189 commands crash the game at startup.
     _TT_COMMAND_SOFT_LIMIT = 185
     _tt_cmd_count = len(dat.effects[tt_eff_id].effect_commands)
@@ -3687,6 +4001,8 @@ _KM_CASTLE_UT_TECHS: dict[int, int] = {
     56: 1080, 57: 1061, 58: 996, 59: 1006,
     # Mesoamerican DLC — Mapuche: Malon, Tupi: Caciques, Muisca: Herbalism
     60: 1379, 61: 1392, 62: 1365,
+    # Naval rework — Portuguese: Circumnavigation (reveal map + ships -25% train time)
+    63: 1404,
 }
 
 _KM_IMP_UT_TECHS: dict[int, int] = {

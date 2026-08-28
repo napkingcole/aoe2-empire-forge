@@ -72,8 +72,12 @@ def _draft_to_civ_def(draft: dict) -> dict:
         "description":  draft.get("tagline", ""),
         "architecture": draft.get("architecture", 2),
         "language":     draft.get("language", 0),
-        "wonder":       draft.get("wonder", -1),
-        "castle":       draft.get("castle", -1),
+        # Drafts saved before the wizard renamed these carry only the *_model
+        # keys.  apply_civ has its own *_model fallback, but writing "wonder"
+        # unconditionally here shadowed it, so those older drafts silently lost
+        # their Castle/Wonder choice and got the Britons clone's graphics.
+        "wonder":       draft.get("wonder",  draft.get("wonder_model", -1)),
+        "castle":       draft.get("castle",  draft.get("castle_model", -1)),
         "bonuses": [civ_bonuses, uu_slot, castle_effects, imp_effects, team_slot],
         "tree": [
             (draft.get("tree") or {}).get("units", []),
@@ -82,6 +86,8 @@ def _draft_to_civ_def(draft: dict) -> dict:
         ],
         "long_range_ship":       draft.get("long_range_ship"),
         "long_range_ship_elite": draft.get("long_range_ship_elite", True),
+        "starting_scout":        draft.get("starting_scout"),
+        "monk_skin":             draft.get("monk_skin"),
     }
 
     # UU name override — passed under unique_unit.name so km_custom_uu can

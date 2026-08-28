@@ -112,6 +112,8 @@ _UNIQUE_CASTLE_STRINGS = [
     "Malon (Bolas Riders, Slingers and Skirmishers deal pass through damage)",
     "Caciques (Champi Warriors and Slingers attack +25% faster)",
     "Herbalism (Archer-line and Champi Warriors move +15% faster)",
+    # Naval rework — Portuguese (slot 63)
+    "Circumnavigation (Reveals the map; Ships train 33% faster)",
 ]
 
 _UNIQUE_IMP_STRINGS = [

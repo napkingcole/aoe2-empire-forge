@@ -79,9 +79,11 @@ const _REGIONAL_PAIRS = [
     { a: [38, 283, 569],           b: [1944, 1946],              bldg: 101, nameA: "Knight line",        nameB: "Hei Guang Cavalry"     },
     { a: [280, 550, 588],          b: [1904, 1907],              bldg: 49,  nameA: "Mangonel line",      nameB: "Rocket Cart"           },
     { a: [1258, 422, 548],         b: [1744, 1746],              bldg: 49,  nameA: "Battering Ram line", nameB: "Armored Elephant line" },
+    // Both lines train from Archery Range button 3, so only one can own the cell.
+    { a: [39, 474],                b: [873, 875],                bldg: 87,  nameA: "Cavalry Archer line", nameB: "Elephant Archer line" },
 ];
 // Flat set of all regional-side unit IDs — excluded from "Select All"
-const _REGIONAL_UNIT_IDS = new Set([2550, 2588, 2552, 2554, 1944, 1946, 1904, 1907, 1744, 1746]);
+const _REGIONAL_UNIT_IDS = new Set([2550, 2588, 2552, 2554, 1944, 1946, 1904, 1907, 1744, 1746, 873, 875]);
 
 // ── Picker-controlled units ──────────────────────────────────────────────────
 // The siege ship is one Dock button with five candidates plus an elite toggle —
@@ -92,6 +94,40 @@ const _REGIONAL_UNIT_IDS = new Set([2550, 2588, 2552, 2554, 1944, 1946, 1904, 19
 // won't produce.  builder.js keeps the displayed selection in sync.
 const _PICKER_CONTROLLED_UNITS = new Set([420, 691, 2633, 1795, 1948]);
 const _PICKER_HINT = 'Chosen with the Siege Ship picker, next to the tech tree button.';
+
+// ── Bonus-mirrored units ─────────────────────────────────────────────────────
+// Regional / second unique units whose make-avail tech is locked to its owner
+// civ (tech.civ, not the tech-tree effect), so the backend has to reassign the
+// whole tech chain for them to work.  That reassignment is the matching
+// "Unlock ..." civ bonus, which the wizard *derives* from this tree — ticking a
+// node here adds the bonus, unticking removes it.  So these toggle normally;
+// the set exists only to explain the link in the hover hint, and to keep them
+// out of "Enable All" (they are opt-in extras, and two of them share the
+// Archery Range's Cavalry Archer button).  Keep in sync with
+// civ_appender._UNLOCK_UNIT_BONUSES.
+const _BONUS_CONTROLLED_UNITS = new Set([
+    2569, 2571,   // Bolas Rider
+    1952,         // Xianbei Raider
+    1911,         // Grenadier
+    1974,         // Jian Swordsman
+    2586, 2587,   // Temple Guard
+    2582, 2584,   // Ibirapema Warrior
+    1962,         // War Chariot
+    1923,         // Mounted Trebuchet
+    1751, 1753,   // Shrivamsha Rider
+    1811,         // Warrior Priest
+    1750,         // Thirisadai
+    1793,         // Legionary
+    1813,         // Savar
+]);
+const _BONUS_HINT = 'Also adds the matching "Unlock ..." civ bonus on the Bonuses step.';
+
+// True for a unit this editor shows but does not own the on/off decision for.
+// Only the picker's siege ships qualify — the bonus-mirrored units are owned
+// here, and merely publish their state to the Bonuses step.
+function _isExternallyControlled(item) {
+    return item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id);
+}
 
 // Every shipped layout reserves the same Dock cells for these: the Cannon
 // Galleon and its elite in the last column, and whichever variant the civ has
@@ -935,7 +971,7 @@ function _disableSingle(item, element_height) {
     // Cascades (e.g. switching the Dock off) must not strip the picker's ship
     // either — the backend puts it back, so removing it here would only make
     // the tree disagree with the build.
-    if (item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) return;
+    if (_isExternallyControlled(item)) return;
     const key = _useTypeKey(item.use_type);
     if (!key) return;
     const arr = _localtree[key];
@@ -950,8 +986,9 @@ function _disableBuildingItems(building, element_height) {
 }
 
 function _toggleNode(item, element_height) {
-    // The siege ship is owned by the wizard's picker, not by this tree.
-    if (item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) return;
+    // The siege ship is owned by the wizard's picker and the regional second
+    // unique units by their bonus cards — neither decision lives in this tree.
+    if (_isExternallyControlled(item)) return;
 
     if (item.use_type === 'Building') {
         // Town Center and House can never be toggled.
@@ -1062,6 +1099,9 @@ function _costHtml(costObj) {
 function _variantHint(item) {
     if (item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) {
         return _PICKER_HINT;
+    }
+    if (item.use_type === 'Unit' && _BONUS_CONTROLLED_UNITS.has(item.node_id)) {
+        return _BONUS_HINT;
     }
     if (item.use_type !== 'Building') return '';
     if (_REGIONAL_BUILDING_IDS.has(item.node_id)) {
@@ -1616,7 +1656,11 @@ function _fillAll() {
             const key = _useTypeKey(item.use_type);
             if (key === 'units' && _REGIONAL_UNIT_IDS.has(item.node_id)) continue;
             // Never enable a siege ship the picker didn't ask for.
-            if (key === 'units' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) continue;
+            if (_isExternallyControlled(item)) continue;
+            // Second unique units are opt-in extras, and Bolas Rider / Xianbei
+            // Raider would land on the Cavalry Archer's button — "Enable All"
+            // should not quietly hand out a colliding tree.
+            if (key === 'units' && _BONUS_CONTROLLED_UNITS.has(item.node_id)) continue;
             if (key) push(key, item.node_id);
         }
         civ(_currentCivName);

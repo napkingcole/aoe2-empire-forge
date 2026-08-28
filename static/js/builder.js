@@ -243,6 +243,17 @@ document.getElementById("voice-select").addEventListener("change", e => {
   saveDraft();
 });
 
+document.getElementById("scout-select").addEventListener("change", e => {
+  draft.starting_scout = parseInt(e.target.value, 10);
+  saveDraft();
+});
+
+document.getElementById("monk-select").addEventListener("change", e => {
+  const v = parseInt(e.target.value, 10);
+  if (v < 0) delete draft.monk_skin; else draft.monk_skin = v;
+  saveDraft();
+});
+
 // ── Emblem upload ─────────────────────────────────────────────────────────────
 
 document.getElementById("emblem-file").addEventListener("change", e => {
@@ -332,6 +343,21 @@ function populateVoiceSelect(options, currentValue) {
   if (currentValue === undefined || currentValue === null) sel.value = 0;
 }
 
+// Starting scout has no "default" entry — Scout Cavalry (448) is the default,
+// and it's a real choice in its own right, so it's just the first option.
+function populateScoutSelect(options, currentValue) {
+  const sel = document.getElementById("scout-select");
+  sel.innerHTML = "";
+  options.forEach(opt => {
+    const o = document.createElement("option");
+    o.value = opt.value;
+    o.textContent = opt.example ? `${opt.label} — ${opt.example}` : opt.label;
+    if (opt.value === currentValue) o.selected = true;
+    sel.appendChild(o);
+  });
+  if (currentValue === undefined || currentValue === null) sel.value = 448;
+}
+
 // ── Review panel ──────────────────────────────────────────────────────────────
 
 function _costStr(cost) {
@@ -364,6 +390,12 @@ function populateReview() {
   const voiceName = draft.language != null
     ? (_voiceOptions.find(v => v.value === draft.language)?.label || `Voice #${draft.language}`)
     : "Default (Britons)";
+  const scoutName = (window._metaScouts || [])
+    .find(s => s.value === (draft.starting_scout ?? 448))?.label || "Scout Cavalry";
+  const monkName = draft.monk_skin != null && draft.monk_skin >= 0
+    ? ((window._metaMonks || []).find(m => m.value === draft.monk_skin)?.label
+       || `#${draft.monk_skin}`)
+    : "Architecture Default";
 
   const identityRows = [
     _reviewRow("Name",         draft.alias || "<em class='text-danger'>Not set</em>"),
@@ -372,6 +404,8 @@ function populateReview() {
     _reviewRow("Castle Skin",  castleName),
     _reviewRow("Wonder Skin",  wonderName),
     _reviewRow("Voice",        voiceName),
+    _reviewRow("Starting Scout", scoutName),
+    _reviewRow("Monk Skin",    monkName),
     _reviewRow("Emblem",       draft.emblem ? "&#10003; Uploaded" : "<em class='text-muted'>None</em>"),
   ].join("");
 
@@ -963,7 +997,7 @@ const _BONUS_CATEGORIES = [
   { key: 'combat',   icon: 'fa-shield-halved',kw: ['hit point','attack','armor','pierce','melee','damage','resist','bonus damage','line of sight','range','accuracy','reload','fire rate'] },
   { key: 'research', icon: 'fa-flask',        kw: ['research','blacksmith','university','technology','tech','age','upgrade'] },
   { key: 'building', icon: 'fa-chess-rook',   kw: ['castle','tower','wall','krepost','fortif','stone defense','palisade','wonder','house','settlement'] },
-  { key: 'unlock',   icon: 'fa-lock-open',    kw: ['can recruit','can train','can build','can upgrade','replaces','recruitable','is available','be trained','be recruited','be built'] },
+  { key: 'unlock',   icon: 'fa-lock-open',    kw: ['unlock','can recruit','can train','can build','can upgrade','replaces','recruitable','is available','be trained','be recruited','be built'] },
   { key: 'general',  icon: 'fa-shield',       kw: [] },
 ];
 
@@ -1004,6 +1038,13 @@ const _BONUS_CAT_OVERRIDES = {
   330: 'unlock',  332: 'unlock',  337: 'unlock',  343: 'unlock',
   348: 'unlock',  352: 'unlock',  355: 'unlock',  356: 'unlock',
   360: 'unlock',  361: 'unlock',  72: 'unlock', 280: 'unlock',
+  // Regional / second unique unit unlocks (civ_appender._UNLOCK_UNIT_BONUSES).
+  // Explicit so a label mentioning "Archery Range" can't fall through to
+  // 'combat' on the 'range' keyword before the 'unlock' rule is reached.
+  405: 'unlock',  406: 'unlock',  407: 'unlock',  408: 'unlock',
+  409: 'unlock',  410: 'unlock',  411: 'unlock',  412: 'unlock',
+  413: 'unlock',  414: 'unlock',  415: 'unlock',  416: 'unlock',
+  417: 'unlock',
   T1: 'unlock', T16: 'unlock', T35: 'unlock', T72: 'unlock', T73: 'unlock'
 };
 
@@ -1437,7 +1478,6 @@ function _wireBonusGridEvents(grid, toggleFn, getDraftEntry) {
   });
 }
 
-const MAX_CIV_BONUSES = 6;
 let _bonusCatalog      = [];   // [{id, label}]
 let _teamCatalog       = [];
 let _utOverrides       = { castle: {}, imperial: {} };
@@ -1777,7 +1817,62 @@ function _updateBonusCountBadge() {
   badge.style.color = n > 0 ? 'var(--accent-2)' : 'var(--body-text)';
 }
 
+// ── "Unlock ..." bonuses ─────────────────────────────────────────────────────
+// These are derived from the tech tree, never stored on their own: a draft whose
+// tree contains Bolas Rider has bonus 405, and one that doesn't, doesn't.  That
+// makes switching tech-tree templates self-correcting — swapping the Mapuche
+// layout for the Muisca one drops 405 and adds 409 with no bookkeeping, because
+// there is no independent state to reconcile.  The map is served by
+// /api/builder/meta so it can't drift from civ_appender._UNLOCK_UNIT_BONUSES.
+let _unlockBonusUnits = {};   // {bonusId: [unitId, ...]}
+
+function _isUnlockBonus(id) {
+  return Object.prototype.hasOwnProperty.call(_unlockBonusUnits, String(id));
+}
+
+// Recompute the unlock entries in draft.bonuses from draft.tree.units.
+// Returns true if anything changed.
+function _deriveUnlockBonuses() {
+  const treeUnits = new Set(draft.tree?.units || []);
+  const before = (draft.bonuses || []).map(b => b.id).join(",");
+
+  const want = new Set();
+  for (const [bid, units] of Object.entries(_unlockBonusUnits)) {
+    if (units.some(u => treeUnits.has(u))) want.add(Number(bid));
+  }
+  draft.bonuses = (draft.bonuses || [])
+    .filter(b => !_isUnlockBonus(b.id) || want.has(b.id));
+  for (const bid of want) {
+    if (!draft.bonuses.some(b => b.id === bid)) {
+      draft.bonuses.push({ id: bid, multiplier: 1 });
+    }
+  }
+  return before !== draft.bonuses.map(b => b.id).join(",");
+}
+
+// Clicking an Unlock card edits the tree instead of the bonus list — the card
+// and the tree node are two doors onto the same fact, so neither is a dead end.
+function _toggleUnlockBonus(id) {
+  if (!draft.tree) draft.tree = { units: [], buildings: [], techs: [] };
+  if (!draft.tree.units) draft.tree.units = [];
+  const units = _unlockBonusUnits[String(id)] || [];
+  const has   = units.some(u => draft.tree.units.includes(u));
+
+  if (has) {
+    draft.tree.units = draft.tree.units.filter(u => !units.includes(u));
+  } else {
+    for (const u of units) {
+      if (!draft.tree.units.includes(u)) draft.tree.units.push(u);
+    }
+  }
+  _deriveUnlockBonuses();
+  saveDraft();
+  updateTreeSummary();
+  _moveBonusCard(id, !has);
+}
+
 function toggleCivBonus(id) {
+  if (_isUnlockBonus(id)) { _toggleUnlockBonus(id); return; }
   if (!draft.bonuses) draft.bonuses = [];
   const idx = draft.bonuses.findIndex(b => b.id === id);
   const isNowSelected = idx === -1;
@@ -3041,6 +3136,9 @@ window.setTechTree = function (localtree) {
     buildings: localtree[1],
     techs:     localtree[2],
   };
+  // The tree owns the "Unlock ..." bonuses — re-derive rather than diff, so a
+  // template swap can't leave a unit's bonus behind after the unit is gone.
+  if (_deriveUnlockBonuses()) renderBonusGrid();
   saveDraft();
   updateTreeSummary();
 };
@@ -3150,11 +3248,19 @@ async function init() {
 
     window._metaArchitectures = meta.architectures;
     window._metaCivs          = meta.civs;
+    window._metaScouts        = meta.starting_scouts || [];
+    window._metaMonks         = meta.monk_skins      || [];
+    _unlockBonusUnits         = meta.unlock_bonuses  || {};
+    // Reconcile drafts saved before the unlock bonuses existed (or edited in
+    // another tab) so the bonus list matches the tree from the first render.
+    if (_deriveUnlockBonuses()) saveDraft();
 
     renderArchGrid(meta.architectures);
     populateSelect("wonder-select", meta.civs, draft.wonder,  "— Architecture Default —");
     populateSelect("castle-select", meta.civs, draft.castle,  "— Architecture Default —");
     populateVoiceSelect(meta.voices, draft.language);
+    populateScoutSelect(meta.starting_scouts || [], draft.starting_scout);
+    populateSelect("monk-select", meta.monk_skins || [], draft.monk_skin, "— Architecture Default —");
 
     // Restore text fields
     if (draft.alias)   document.getElementById("civ-name").value    = draft.alias;

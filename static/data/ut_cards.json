@@ -57,7 +57,8 @@
     "59": { "icon": "infantry.png",          "category": "infantry" },
     "60": { "icon": "skirmisher.png",       "category": "archers"   },
     "61": { "icon": "champi.png",           "category": "infantry"  },
-    "62": { "icon": "archer.png",           "category": "archers"   }
+    "62": { "icon": "archer.png",           "category": "archers"   },
+    "63": { "icon": "dock.png",             "category": "naval"     }
   },
   "imperial": {
     "0":  { "icon": "infantry.png",         "category": "infantry"  },

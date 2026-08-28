@@ -347,5 +347,19 @@
   "377": "Mounted Units generate +3 gold when defeating military units",
   "112": "Arson and Gambesons are free",
   "402": "Dragon Ships replace the Fire Ship line (Imperial Age)",
-  "403": "Settlement (replaces Mill, Lumber Camp, and Mining Camp)"
+  "403": "Settlement (replaces Mill, Lumber Camp, and Mining Camp)",
+  "404": "Mining Camp technologies are free",
+  "405": "Unlock the Bolas Rider (Mapuche mounted skirmisher, Archery Range, Castle Age)",
+  "406": "Unlock the Xianbei Raider (Wei mounted archer, Archery Range, Castle Age)",
+  "407": "Unlock the Grenadier (Jurchen gunpowder infantry, Archery Range, Castle Age)",
+  "408": "Unlock the Jian Swordsman (Wu infantry, Barracks, Castle Age)",
+  "409": "Unlock the Temple Guard (Muisca infantry, Barracks, Castle Age)",
+  "410": "Unlock the Ibirapema Warrior (Tupi infantry, Barracks, Castle Age)",
+  "411": "Unlock the War Chariot (Shu ranged chariot, Siege Workshop, Castle Age)",
+  "412": "Unlock the Mounted Trebuchet (Khitan siege unit, Siege Workshop, Imperial Age)",
+  "413": "Unlock the Shrivamsha Rider (Gurjara light cavalry, Stable, Castle Age)",
+  "414": "Unlock the Warrior Priest (Armenian monk unit, Monastery, Castle Age)",
+  "415": "Unlock the Thirisadai (Dravidian warship, Dock, Imperial Age)",
+  "416": "Unlock the Legionary (Roman upgrade of the Militia line, requires Long Swordsman)",
+  "417": "Unlock the Savar (Persian upgrade of the Knight line, requires Cavalier)"
 }

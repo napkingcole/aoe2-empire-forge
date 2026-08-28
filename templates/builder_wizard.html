@@ -90,6 +90,24 @@
           </select>
           <div class="form-text">Which vanilla civ's unit voice lines your units will use.</div>
         </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold" for="scout-select">Starting Scout</label>
+          <select id="scout-select" class="form-select">
+            <option value="448">Loading…</option>
+          </select>
+          <div class="form-text">The unit your civ starts the game with, alongside its Villagers.</div>
+        </div>
+      </div>
+
+      {# Monk skin #}
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold" for="monk-select">Monk Skin</label>
+          <select id="monk-select" class="form-select">
+            <option value="-1">— Architecture Default —</option>
+          </select>
+          <div class="form-text">Monk appearance is separate from architecture &mdash; Britons and Teutons build differently but share a Monk.</div>
+        </div>
       </div>
 
       {# Game Files #}
@@ -230,10 +248,10 @@
     <div class="card-header d-flex align-items-center gap-2">
       <span class="step-badge">3</span> Civilization Bonuses
       <span id="bonus-count-badge" class="ms-auto badge"
-            style="background:oklch(from var(--body-bg) calc(l + 0.2) c h);color:var(--body-text);font-weight:500;font-size:.75rem;">0 / 6</span>
+            style="background:oklch(from var(--body-bg) calc(l + 0.2) c h);color:var(--body-text);font-weight:500;font-size:.75rem;"></span>
     </div>
     <div class="card-body">
-      <p class="text-muted small mb-3">Choose up to 6 civilization bonuses. Click a card to select it; click again to remove it.</p>
+      <p class="text-muted small mb-3">Choose your civilization bonuses. Click a card to select it; click again to remove it.</p>
 
       <div id="bonus-cat-pills" class="bonus-cat-pills mb-2"></div>
 

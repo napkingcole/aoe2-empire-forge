@@ -147,6 +147,8 @@ def to_draft(schema: dict) -> dict:
         "tree":         tree,
         "long_range_ship":       s.get("long_range_ship"),
         "long_range_ship_elite": s.get("long_range_ship_elite", True),
+        "starting_scout":        s.get("starting_scout"),
+        "monk_skin":             s.get("monk_skin"),
 
         # Phase Two pass-throughs (not yet consumed by build pipeline)
         "second_uu":              s.get("second_uu"),
@@ -254,6 +256,8 @@ def from_draft(draft: dict) -> dict:
         "tree": tree_out,
         "long_range_ship":         draft.get("long_range_ship"),
         "long_range_ship_elite":   draft.get("long_range_ship_elite", True),
+        "starting_scout":          draft.get("starting_scout"),
+        "monk_skin":               draft.get("monk_skin"),
 
         "unit_overrides":          draft.get("unit_overrides",          []),
         "button_moves":            draft.get("button_moves",            []),

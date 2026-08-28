@@ -1081,6 +1081,15 @@ _ARCH_OPTIONS = [
     {"value": 12, "label": "South American",           "example": "Inca, Mapuche, Muisca, Tupi"},
 ]
 
+# Unit the civ starts the game with, written to civ.resources[263].
+# Mirrors civ_appender.STARTING_SCOUT_UNITS; the unit need not be trainable.
+_SCOUT_OPTIONS = [
+    {"value": 448,  "label": "Scout Cavalry",  "example": "Default — most civilizations"},
+    {"value": 751,  "label": "Eagle Scout",    "example": "Aztecs, Mayans"},
+    {"value": 1755, "label": "Camel Scout",    "example": "Gurjaras"},
+    {"value": 2550, "label": "Champi Runner",  "example": "Inca, Mapuche, Muisca, Tupi"},
+]
+
 
 @app.route("/resources/uniticons/<path:filename>")
 def serve_unit_icon(filename):
@@ -1122,10 +1131,19 @@ def api_builder_meta():
         for i, c in enumerate(_civ_list)
         if 0 < i <= 43
     ], key=lambda x: x["label"])
+    # bonus_id → unit_ids, so the wizard can derive the "Unlock ..." bonuses
+    # from the tech tree without keeping its own copy of the table.
+    from civ_appender import _UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS
+    unlock_bonuses = {
+        str(bid): list(spec["units"]) for bid, spec in _UNLOCK_UNIT_BONUSES.items()
+    }
     return jsonify({
         "architectures": _ARCH_OPTIONS,
         "civs": civ_options,
         "voices": voice_options,
+        "starting_scouts": _SCOUT_OPTIONS,
+        "monk_skins": MONK_SKIN_OPTIONS,
+        "unlock_bonuses": unlock_bonuses,
     })
 
 

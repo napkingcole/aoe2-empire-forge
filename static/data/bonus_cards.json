@@ -1937,7 +1937,8 @@
     "hidden": true
   },
   "280": {
-    "type": "value",
+    "type": "hidden",
+    "_note": "Chosen in the tech tree (resource-camp variant), not here. Kept as a valid bonus id so civs saved before the tech-tree swap, and KM imports that only carry the bonus, still build.",
     "entity": "folwark",
     "description": "Folwark",
     "heading": "Unlocked",
@@ -2212,7 +2213,8 @@
     "multiplier": false
   },
   "317": {
-    "type": "dual",
+    "type": "hidden",
+    "_note": "Chosen in the tech tree (resource-camp variant), not here. Kept as a valid bonus id so civs saved before the tech-tree swap, and KM imports that only carry the bonus, still build.",
     "heading": "UNLOCKED",
     "stat": "Mule Carts replace Lumber Camps and Mining Camps",
     "entity": "mule_cart",
@@ -2611,7 +2613,8 @@
     "multiplier": false
   },
   "403": {
-    "type": "desc",
+    "type": "hidden",
+    "_note": "Chosen in the tech tree (resource-camp variant), not here. Kept as a valid bonus id so civs saved before the tech-tree swap, and KM imports that only carry the bonus, still build.",
     "entity": "settlement_building",
     "description": "Settlement",
     "lines": [
@@ -2765,6 +2768,104 @@
     "entity": "arson",
     "entity2": "gambesons",
     "description": "Military Technologies",
+    "multiplier": false
+  },
+  "404": {
+    "heading": "FREE",
+    "stat": "Mining Camp Technologies",
+    "entity": "mining_camp",
+    "description": "Gold & Stone Miners",
+    "multiplier": false
+  },
+  "405": {
+    "heading": "UNLOCK",
+    "stat": "Bolas Rider",
+    "entity": "unique_unit",
+    "description": "Archery Range \u2014 Castle Age",
+    "multiplier": false
+  },
+  "406": {
+    "heading": "UNLOCK",
+    "stat": "Xianbei Raider",
+    "entity": "xianbei_raider",
+    "description": "Archery Range \u2014 Castle Age",
+    "multiplier": false
+  },
+  "407": {
+    "heading": "UNLOCK",
+    "stat": "Grenadier",
+    "entity": "grenadier",
+    "description": "Archery Range \u2014 Castle Age",
+    "multiplier": false
+  },
+  "408": {
+    "heading": "UNLOCK",
+    "stat": "Jian Swordsman",
+    "entity": "jian_swordsman",
+    "description": "Barracks \u2014 Castle Age",
+    "multiplier": false
+  },
+  "409": {
+    "heading": "UNLOCK",
+    "stat": "Temple Guard",
+    "entity": "unique_unit",
+    "description": "Barracks \u2014 Castle Age",
+    "multiplier": false
+  },
+  "410": {
+    "heading": "UNLOCK",
+    "stat": "Ibirapema Warrior",
+    "entity": "unique_unit",
+    "description": "Barracks \u2014 Castle Age",
+    "multiplier": false
+  },
+  "411": {
+    "heading": "UNLOCK",
+    "stat": "War Chariot",
+    "entity": "war_chariot",
+    "description": "Siege Workshop \u2014 Castle Age",
+    "multiplier": false
+  },
+  "412": {
+    "heading": "UNLOCK",
+    "stat": "Mounted Trebuchet",
+    "entity": "mounted_trebuchet",
+    "description": "Siege Workshop \u2014 Imperial Age",
+    "multiplier": false
+  },
+  "413": {
+    "heading": "UNLOCK",
+    "stat": "Shrivamsha Rider",
+    "entity": "shrivamsha_rider",
+    "description": "Stable \u2014 Castle Age",
+    "multiplier": false
+  },
+  "414": {
+    "heading": "UNLOCK",
+    "stat": "Warrior Priest",
+    "entity": "warrior_priest",
+    "description": "Monastery \u2014 Castle Age",
+    "multiplier": false
+  },
+  "415": {
+    "heading": "UNLOCK",
+    "stat": "Thirisadai",
+    "entity": "thirisadai",
+    "description": "Dock \u2014 Imperial Age",
+    "multiplier": false
+  },
+  "416": {
+    "heading": "UNLOCK",
+    "stat": "Legionary",
+    "entity": "legionary",
+    "description": "Upgrades the Militia line",
+    "multiplier": false
+  },
+  "417": {
+    "heading": "UNLOCK",
+    "stat": "Savar",
+    "entity": "savar",
+    "description": "Upgrades the Knight line",
     "multiplier": false
   }
 }
