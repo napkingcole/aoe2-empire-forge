@@ -972,11 +972,17 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
 
         _progress_push(job_id, "Packaging mod files…")
         prefix   = mod_name.lower().replace(" ", "_")
-        data_zip = _build_combined_data_zip(dat, button_pngs, per_civ_tt, mod_name=mod_name,
-                                            civs_json_bytes=civs_json_bytes)
         unique_lang_values = {lang_val for _, lang_val in lang_assignments}
-        ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings, mod_name=mod_name,
-                                          lang_values=unique_lang_values)
+        # Packaging runs under the same redirect as the language pass so its
+        # output — notably the "no voice files found" warning — reaches the
+        # build log the user actually sees, not bare stdout (which a windowed
+        # exe discards).
+        with contextlib.redirect_stdout(log_buf):
+            data_zip = _build_combined_data_zip(dat, button_pngs, per_civ_tt, mod_name=mod_name,
+                                                civs_json_bytes=civs_json_bytes)
+            ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings,
+                                              mod_name=mod_name,
+                                              lang_values=unique_lang_values)
 
         out_path = sd / f"{prefix}.zip"
         with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as outer:
@@ -1125,15 +1131,18 @@ def api_builder_meta():
         for i, c in enumerate(_civ_list)
         if i > 0 and c.get("era", "base") != "antiquity"
     ], key=lambda x: x["label"])
-    # Only the 43 voice folders that exist on disk (0-42)
+    # Driven by which voice_files/<value>/ folders actually exist, not a fixed
+    # count.  build_all bundles those .wem files into the mod, so offering a
+    # voice we have no folder for would silently ship a civ with no audio.
+    # Drop a new folder in and the option appears.
     voice_options = sorted([
         {"value": i - 1, "label": c.get("internal_name", "")}
         for i, c in enumerate(_civ_list)
-        if 0 < i <= 43
+        if i > 0 and (i - 1) in _available_voice_values()
     ], key=lambda x: x["label"])
     # bonus_id → unit_ids, so the wizard can derive the "Unlock ..." bonuses
     # from the tech tree without keeping its own copy of the table.
-    from civ_appender import _UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS
+    from civ_appender import _UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, _ARCH_REP_CIVS
     unlock_bonuses = {
         str(bid): list(spec["units"]) for bid, spec in _UNLOCK_UNIT_BONUSES.items()
     }
@@ -1144,7 +1153,102 @@ def api_builder_meta():
         "starting_scouts": _SCOUT_OPTIONS,
         "monk_skins": MONK_SKIN_OPTIONS,
         "unlock_bonuses": unlock_bonuses,
+        # Display names for the identity scene ("Hagia Sophia" rather than
+        # "Byzantines").  Written by scripts/import_km_art.py; absent until that
+        # has been run, so the wizard falls back to civ names.
+        "scene_names": _scene_names(),
+        # civ option value -> KM art index (they diverge past 44; see above)
+        "scene_art_index": _scene_art_index(civ_options),
+        # architecture value -> the civ option value whose art it borrows, so the
+        # scene can draw a concrete wonder/castle for "— Architecture Default —".
+        # Mirrors _ARCH_REP_CIVS (DAT indices) shifted into the KM 0-based
+        # convention the wonder/castle selects use.
+        "arch_rep_civs": {
+            str(i + 1): dat_idx - 1 for i, dat_idx in enumerate(_ARCH_REP_CIVS)
+        },
     })
+
+
+_SCENE_NAMES_PATH = Path(__file__).parent / "static" / "data" / "scene_names.json"
+_scene_names_cache: dict | None = None
+
+# KM's art arrays are indexed by HIS civ order, which matches ours only up to
+# index 44.  His snapshot predates the current DAT ordering of the Three
+# Kingdoms / Dynasties of China civs: he has Shu/Wu/Wei at 45-47 and
+# Jurchens/Khitans at 48-49, where the live DAT has Shu=48 … Khitans=52.
+# Without this remap, choosing Shu would silently render a Jurchen castle.
+_VOICE_FILES_DIR = Path(__file__).parent / "voice_files"
+
+
+# The 43 languages KM extracted (values 0-42).  Used as a floor when the
+# voice_files/ tree isn't present at all.
+_VOICE_FALLBACK_VALUES = frozenset(range(43))
+
+
+def _available_voice_values() -> set[int]:
+    """Voice values with a voice_files/<value>/ folder holding at least one .wem.
+
+    voice_files/ is gitignored (~24 MB of game audio) and is NOT bundled into
+    the PyInstaller build, so in a packaged exe the directory does not exist.
+    Falling back to the historical 0-42 range there keeps the Voice dropdown
+    populated — scanning alone would render it empty.
+    """
+    out: set[int] = set()
+    try:
+        for d in _VOICE_FILES_DIR.iterdir():
+            if d.is_dir() and d.name.isdigit() and any(d.glob("*.wem")):
+                out.add(int(d.name))
+    except OSError:
+        pass
+    return out or set(_VOICE_FALLBACK_VALUES)
+
+
+_SCENE_ART_OVERRIDES = {48: 45, 49: 46, 50: 47, 51: 48, 52: 49}
+
+# Which art indices actually exist is read off disk rather than hardcoded to
+# KM's 0-49, so hand-gathered additions (the South American civs, which postdate
+# his snapshot) light up without touching this file.  A civ is mapped if EITHER
+# a castle or a wonder exists for it; the other slot 404s to a placeholder.
+_SCENE_ART_DIRS = (("castles", "castle"), ("wonders", "wonder"))
+_SCENE_ART_RE = re.compile(r"^(?:castle|wonder)_(\d+)\.webp$")
+
+
+def _scene_names() -> dict:
+    """KM's wonder/castle/language display-name arrays, indexed by ART index."""
+    global _scene_names_cache
+    if _scene_names_cache is None:
+        try:
+            with open(_SCENE_NAMES_PATH, encoding="utf-8") as f:
+                _scene_names_cache = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            _scene_names_cache = {}
+    return _scene_names_cache
+
+
+def _scene_art_index(civ_options: list[dict]) -> dict[str, int]:
+    """civ option value -> KM art index, omitting civs KM has no art for.
+
+    Civs newer than KM's snapshot (Muisca, Mapuche, Tupi) are simply absent; the
+    wizard renders a labelled placeholder for those rather than a broken image.
+    """
+    available: set[int] = set()
+    base = Path(__file__).parent / "static" / "img" / "scene"
+    for sub, _stem in _SCENE_ART_DIRS:
+        try:
+            for f in (base / sub).iterdir():
+                m = _SCENE_ART_RE.match(f.name)
+                if m:
+                    available.add(int(m.group(1)))
+        except OSError:
+            pass
+
+    out: dict[str, int] = {}
+    for opt in civ_options:
+        v = opt["value"]
+        art = _SCENE_ART_OVERRIDES.get(v, v)
+        if art in available:
+            out[str(v)] = art
+    return out
 
 
 _TECHTREE_DATA_PATH = Path(__file__).parent / "static" / "aoe2techtree" / "data" / "data.json"

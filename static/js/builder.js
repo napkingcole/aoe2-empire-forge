@@ -211,7 +211,7 @@ function showArchError(show) {
     err.id = "arch-error";
     err.className = "text-danger small mt-1";
     err.textContent = "Please select an architecture set.";
-    document.getElementById("arch-grid").after(err);
+    document.querySelector(".scene-controls")?.after(err);
   }
   if (err) err.style.display = show ? "" : "none";
 }
@@ -228,30 +228,10 @@ document.getElementById("civ-tagline").addEventListener("input", e => {
   saveDraft();
 });
 
-document.getElementById("wonder-select").addEventListener("change", e => {
-  draft.wonder = parseInt(e.target.value, 10);
-  saveDraft();
-});
-
-document.getElementById("castle-select").addEventListener("change", e => {
-  draft.castle = parseInt(e.target.value, 10);
-  saveDraft();
-});
-
 document.getElementById("voice-select").addEventListener("change", e => {
   draft.language = parseInt(e.target.value, 10);
   saveDraft();
-});
-
-document.getElementById("scout-select").addEventListener("change", e => {
-  draft.starting_scout = parseInt(e.target.value, 10);
-  saveDraft();
-});
-
-document.getElementById("monk-select").addEventListener("change", e => {
-  const v = parseInt(e.target.value, 10);
-  if (v < 0) delete draft.monk_skin; else draft.monk_skin = v;
-  saveDraft();
+  playVoiceSample();
 });
 
 // ── Emblem upload ─────────────────────────────────────────────────────────────
@@ -286,47 +266,394 @@ function clearEmblem() {
   document.getElementById("emblem-file").value = "";
 }
 
-// ── Architecture grid ─────────────────────────────────────────────────────────
+// ── Identity scene ────────────────────────────────────────────────────────────
+// The scene is both preview and picker: each building/unit is a button that
+// opens a grid overlay.  The select row underneath drives the same state, so
+// the whole thing stays keyboard- and screen-reader-reachable.
+//
+// Art lives in static/img/scene/, written by scripts/import_km_art.py.  Where a
+// slot has no art yet the tile renders as a labelled placeholder rather than a
+// broken image.
 
-function renderArchGrid(options) {
-  const grid = document.getElementById("arch-grid");
+const DEFAULT_ARCHITECTURE = 2;   // Western European — matches civ_appender's default
+
+// Label for the "-1" entry on defaultable slots.  A slot can override it with
+// `defaultLabel` when the long form would wrap (the Monk uses just "Default").
+const DEFAULT_OPTION_LABEL = "— Architecture Default —";
+
+// Unit slots carry TWO art variants:
+//   scene  — an in-game sprite cut out on its patch of grass, which reads
+//            correctly standing in the scene but is small and awkwardly framed
+//            when contain-fitted into a 78px picker tile;
+//   picker — the standard square in-game button icon.
+// A slot declares `pickerArt`/`pickerFallback` when it wants them to differ;
+// otherwise the picker just reuses the scene art.
+const SCOUT_ICONS = {
+  448:  "/static/icons/units/scout.png",
+  751:  "/static/icons/units/eagle_warrior.png",
+  1755: "/static/icons/units/camel_rider.png",
+  2550: "/static/icons/units/champi.png",
+};
+
+// Per-skin Monk art is keyed by the MONK_SKIN_OPTIONS value (which is the DAT
+// civ index the Monk graphic gets copied from).  Drop a file in with that name
+// and it appears — no code change.
+//   scene   static/img/scene/monks/monk_<value>.webp
+//   picker  static/img/scene/monks/icons/monk_<value>.webp
+// Either falls back to the generic Monk icon when absent.
+const MONK_ART_FALLBACK = "/static/icons/units/monk.png";
+
+// monk_skin -1 ("architecture default") has no art of its own; draw European.
+// NB: in-game the default actually follows the architecture set, so this is
+// only literally right for European architectures — the caption still says
+// "Architecture Default" rather than claiming the civ picked European.
+const MONK_DEFAULT_VALUE = 1;
+
+let _sceneNames    = {};   // KM display names, indexed by ART index
+let _archRepCivs   = {};   // architecture value -> civ option value, from meta
+let _sceneArtIndex = {};   // civ option value -> KM art index (they diverge past 44)
+
+function _archRep(archValue) {
+  const v = _archRepCivs[String(archValue)];
+  return v === undefined ? null : v;
+}
+
+/** KM art index for a civ option value, or null when he shipped no art for it. */
+function _artIdx(civValue) {
+  const a = _sceneArtIndex[String(civValue)];
+  return a === undefined ? null : a;
+}
+
+// wonder/castle hold -1 for "— Architecture Default —"; the scene still has to
+// draw something, so resolve that to the civ the architecture borrows from.
+function _effectiveCivValue(raw, archValue) {
+  return (typeof raw === "number" && raw >= 0) ? raw : _archRep(archValue);
+}
+
+const SCENE_SLOTS = {
+  architecture: {
+    title:   "Select Architecture Set",
+    select:  "arch-select",
+    options: () => window._metaArchitectures || [],
+    get:     () => draft.architecture ?? DEFAULT_ARCHITECTURE,
+    set:     v => { draft.architecture = v; },
+    art:     v => `/static/img/scene/arch/tc_${v}.webp`,
+    name:    v => (window._metaArchitectures || []).find(o => o.value === v)?.label || `#${v}`,
+    caption: v => `${SCENE_SLOTS.architecture.name(v)} architecture`,
+  },
+  wonder: {
+    title:   "Select Wonder",
+    select:  "wonder-select",
+    options: () => window._metaCivs || [],
+    get:     () => draft.wonder,
+    set:     v => { draft.wonder = v; },
+    art:     v => { const a = _artIdx(v); return a === null ? null : `/static/img/scene/wonders/wonder_${a}.webp`; },
+    // KM names the wonder itself ("Hagia Sophia (Byzantines)"), which is far
+    // more use than the civ name alone.
+    name:    v => { const a = _artIdx(v); return (a !== null && _sceneNames.wonders?.[a]) || _civLabel(v); },
+    caption: v => SCENE_SLOTS.wonder.name(v),
+    defaultable: true,
+  },
+  castle: {
+    title:   "Select Castle",
+    select:  "castle-select",
+    options: () => window._metaCivs || [],
+    get:     () => draft.castle,
+    set:     v => { draft.castle = v; },
+    art:     v => { const a = _artIdx(v); return a === null ? null : `/static/img/scene/castles/castle_${a}.webp`; },
+    // KM's castle names are just "<Civ> Castle" and carry some stale civ names
+    // (Hindustani, Polish), so the live civ label is the better label here.
+    name:    _civLabel,
+    caption: v => `${_civLabel(v)} Castle`,
+    defaultable: true,
+  },
+  monk_skin: {
+    title:   "Select Monk",
+    select:  "monk-select",
+    options: () => window._metaMonks || [],
+    get:     () => draft.monk_skin,
+    set:     v => { if (v < 0) delete draft.monk_skin; else draft.monk_skin = v; },
+    art:            v => `/static/img/scene/monks/monk_${v}.webp`,
+    fallback:       MONK_ART_FALLBACK,
+    pickerArt:      v => `/static/img/scene/monks/icons/monk_${v}.webp`,
+    pickerFallback: MONK_ART_FALLBACK,
+    name:    v => (window._metaMonks || []).find(o => o.value === v)?.label || "Default",
+    caption: v => `${SCENE_SLOTS.monk_skin.name(v)} Monk`,
+    defaultable: true,
+    resolveDefault:  () => MONK_DEFAULT_VALUE,
+    // Short enough to stay on one line in a picker tile and the select.
+    defaultLabel:    "Default",
+    defaultCaption:  "Default Monk",
+  },
+  starting_scout: {
+    title:   "Select Starting Scout",
+    select:  "scout-select",
+    options: () => window._metaScouts || [],
+    get:     () => draft.starting_scout ?? 448,
+    set:     v => { draft.starting_scout = v; },
+    // Cut-out sprites once they exist; until then each unit's own button icon
+    // stands in (per-value, so an Eagle Scout doesn't fall back to a horse).
+    art:            v => `/static/img/scene/scouts/scout_${v}.webp`,
+    fallback:       v => SCOUT_ICONS[v],
+    pickerArt:      v => `/static/img/scene/scouts/icons/scout_${v}.webp`,
+    pickerFallback: v => SCOUT_ICONS[v],
+    name:    v => (window._metaScouts || []).find(o => o.value === v)?.label || `#${v}`,
+    caption: v => SCENE_SLOTS.starting_scout.name(v),
+  },
+};
+
+function _civLabel(v) {
+  return (window._metaCivs || []).find(o => o.value === v)?.label || `#${v}`;
+}
+
+/** True when a defaultable slot is sitting on "— Architecture Default —". */
+function _isDefaulted(key) {
+  const slot = SCENE_SLOTS[key];
+  if (!slot.defaultable) return false;
+  const raw = slot.get();
+  return !(typeof raw === "number" && raw >= 0);
+}
+
+/** A slot's fallback may be a plain path or a function of the value. */
+function _resolveFallback(fb, value) {
+  return typeof fb === "function" ? fb(value) : fb;
+}
+
+/** Value actually drawn for a slot, after resolving "architecture default". */
+function _sceneDrawValue(key) {
+  const slot = SCENE_SLOTS[key];
+  const raw  = slot.get();
+  if (!slot.defaultable) return raw;
+  if (slot.resolveDefault) {
+    return (typeof raw === "number" && raw >= 0) ? raw : slot.resolveDefault();
+  }
+  return _effectiveCivValue(raw, draft.architecture ?? DEFAULT_ARCHITECTURE);
+}
+
+function renderScene() {
+  for (const key of Object.keys(SCENE_SLOTS)) {
+    const slot = SCENE_SLOTS[key];
+    const btn  = document.querySelector(`.scene-slot[data-slot="${key}"]`);
+    const img  = document.getElementById(`scene-img-${key}`);
+    if (!btn || !img) continue;
+
+    const value = _sceneDrawValue(key);
+    const blank = (value === null || value === undefined);
+    const src   = blank ? null : slot.art(value);
+    // A slot on "architecture default" may borrow art without claiming the
+    // civ actually chose it — the Monk draws European but stays captioned
+    // "Architecture Default", since in-game the default follows architecture.
+    const label = blank ? ""
+                : (_isDefaulted(key) && slot.defaultCaption) ? slot.defaultCaption
+                : slot.name(value);
+
+    btn.title = `${slot.title.replace(/^Select /, "")}: ${label || "not set"}`;
+    btn.setAttribute("aria-label", btn.title);
+
+    // Exposed for per-item CSS tuning, e.g. the Mesoamerican Monk's tall
+    // headdress:  .scene-slot--monk[data-value="15"] img { ... }
+    if (blank) btn.removeAttribute("data-value");
+    else       btn.dataset.value = String(value);
+
+    // Art we haven't imported yet (tc_12, the three South American civs, every
+    // Monk skin) shows a labelled placeholder rather than a broken image.
+    const markEmpty = () => {
+      img.style.display = "none";
+      btn.classList.add("is-empty");
+      let span = btn.querySelector(".scene-empty-label");
+      if (!span) {
+        span = document.createElement("span");
+        span.className = "scene-empty-label";
+        btn.appendChild(span);
+      }
+      span.textContent = label || "—";
+    };
+
+    if (src) {
+      // A slot may name a stand-in to try before giving up — the Monk uses the
+      // generic icon for skins whose art hasn't been captured yet.
+      let usedFallback = false;
+      img.onerror = () => {
+        const fb = _resolveFallback(slot.fallback, value);
+        if (fb && !usedFallback) {
+          usedFallback = true;
+          img.src = fb;
+          return;
+        }
+        markEmpty();
+      };
+      img.src = src;
+      img.alt = label;
+      img.style.display = "";
+      btn.classList.remove("is-empty");
+      btn.querySelector(".scene-empty-label")?.remove();
+    } else {
+      markEmpty();
+    }
+
+    // Keep the paired select in sync (draft may have been restored or changed
+    // from the picker).
+    const sel = document.getElementById(slot.select);
+    if (sel) {
+      const raw = slot.get();
+      const want = (raw === undefined || raw === null) ? (slot.defaultable ? -1 : String(_sceneDrawValue(key))) : String(raw);
+      if (sel.value !== want) sel.value = want;
+    }
+  }
+  updateSceneCaption();
+}
+
+function updateSceneCaption(key) {
+  const el = document.getElementById("scene-caption");
+  if (!el) return;
+  if (key && SCENE_SLOTS[key]) {
+    const slot = SCENE_SLOTS[key];
+    const v = _sceneDrawValue(key);
+    el.textContent = (v === null || v === undefined) ? ""
+                   : (_isDefaulted(key) && slot.defaultCaption) ? slot.defaultCaption
+                   : slot.caption(v);
+    return;
+  }
+  const arch = _sceneDrawValue("architecture");
+  el.textContent = arch ? `${SCENE_SLOTS.architecture.name(arch)} architecture` : "";
+}
+
+/** Highlight one slot and dim the rest — driven by hovering/focusing a control. */
+function spotlightSlot(key) {
+  const stage = document.getElementById("identity-scene");
+  if (!stage) return;
+  stage.querySelectorAll(".scene-slot").forEach(s => {
+    s.classList.toggle("is-active", s.dataset.slot === key);
+  });
+  stage.classList.toggle("is-spotlit", Boolean(key));
+  updateSceneCaption(key);
+}
+
+function setSceneValue(key, value) {
+  SCENE_SLOTS[key].set(value);
+  saveDraft();
+  renderScene();
+}
+
+// ── Picker overlay ────────────────────────────────────────────────────────────
+
+let _scenePickerModal = null;
+
+function openScenePicker(key) {
+  const slot = SCENE_SLOTS[key];
+  const grid = document.getElementById("scene-picker-grid");
+  document.getElementById("scene-picker-title").textContent = slot.title;
   grid.innerHTML = "";
-  options.forEach(opt => {
-    const card = document.createElement("div");
-    card.className = "arch-card" + (draft.architecture === opt.value ? " selected" : "");
-    card.dataset.value = opt.value;
-    card.innerHTML = `
-      <div class="arch-card-label">${opt.label}</div>
-      <div class="arch-card-example">${opt.example}</div>
-    `;
+
+  const current = slot.get();
+  const items = [];
+  if (slot.defaultable) {
+    items.push({ value: -1, label: slot.defaultLabel || DEFAULT_OPTION_LABEL });
+  }
+  items.push(...slot.options());
+
+  items.forEach(opt => {
+    const drawVal = (opt.value < 0)
+      ? (slot.resolveDefault ? slot.resolveDefault()
+                             : _effectiveCivValue(-1, draft.architecture ?? DEFAULT_ARCHITECTURE))
+      : opt.value;
+    // The picker wants square button icons, not the scene's cut-out sprites.
+    const artFn = slot.pickerArt || slot.art;
+    const src = (drawVal === null || drawVal === undefined) ? null : artFn(drawVal);
+
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "scene-picker-item" + (current === opt.value ? " selected" : "");
+    const name = opt.value < 0 ? opt.label : slot.name(opt.value);
+    const fb = _resolveFallback(slot.pickerFallback ?? slot.fallback, drawVal) || "";
+    card.innerHTML =
+      (src ? `<img src="${src}" alt="" loading="lazy" data-fb="${fb}"
+                   onerror="if(this.dataset.fb){this.src=this.dataset.fb;this.dataset.fb='';}
+                            else{this.style.visibility='hidden';}">` : "") +
+      `<div class="scene-picker-label">${name}</div>`;
     card.addEventListener("click", () => {
-      document.querySelectorAll(".arch-card").forEach(c => c.classList.remove("selected"));
-      card.classList.add("selected");
-      draft.architecture = opt.value;
-      saveDraft();
-      showArchError(false);
+      setSceneValue(key, opt.value);
+      _scenePickerModal?.hide();
     });
     grid.appendChild(card);
   });
+
+  if (!_scenePickerModal) {
+    _scenePickerModal = new bootstrap.Modal(document.getElementById("modal-scene-picker"));
+  }
+  _scenePickerModal.show();
+  grid.querySelector(".scene-picker-item.selected")?.scrollIntoView({ block: "center" });
+}
+
+// ── Voice sample ──────────────────────────────────────────────────────────────
+
+let _voiceAudio = null;
+
+/** Play a villager clip for the selected voice set, if one has been imported. */
+function playVoiceSample() {
+  const value = draft.language ?? 0;
+  const btn   = document.getElementById("voice-play");
+  if (!btn) return;
+
+  if (_voiceAudio) { _voiceAudio.pause(); _voiceAudio = null; }
+
+  const audio = new Audio(`/static/audio/voice/${value}.mp3`);
+  _voiceAudio = audio;
+  btn.classList.add("is-playing");
+  const done = () => { btn.classList.remove("is-playing"); if (_voiceAudio === audio) _voiceAudio = null; };
+  audio.addEventListener("ended", done);
+  audio.addEventListener("error", () => {
+    done();
+    btn.title = "No voice sample imported yet — see scripts/import_voice_samples.py";
+  });
+  audio.play().catch(done);   // autoplay refusal is not an error worth surfacing
+}
+
+// ── Scene wiring ──────────────────────────────────────────────────────────────
+
+function bindScene() {
+  document.querySelectorAll(".scene-slot").forEach(btn => {
+    btn.addEventListener("click", () => openScenePicker(btn.dataset.slot));
+  });
+
+  for (const [key, slot] of Object.entries(SCENE_SLOTS)) {
+    const sel = document.getElementById(slot.select);
+    if (!sel) continue;
+    sel.addEventListener("change", e => setSceneValue(key, parseInt(e.target.value, 10)));
+    const on  = () => spotlightSlot(key);
+    const off = () => spotlightSlot(null);
+    sel.addEventListener("mouseenter", on);
+    sel.addEventListener("mouseleave", off);
+    sel.addEventListener("focus", on);
+    sel.addEventListener("blur", off);
+  }
+
+  document.getElementById("voice-play")?.addEventListener("click", playVoiceSample);
 }
 
 // ── Populate selects ──────────────────────────────────────────────────────────
 
-function populateSelect(id, options, currentValue, defaultLabel) {
+// `labelFor` lets the wonder/castle selects show what the thing *is*
+// ("Hagia Sophia (Byzantines)") rather than only whose it is.
+function populateSelect(id, options, currentValue, defaultLabel, labelFor) {
   const sel = document.getElementById(id);
   sel.innerHTML = "";
-  const def = document.createElement("option");
-  def.value = -1;
-  def.textContent = defaultLabel;
-  sel.appendChild(def);
+  if (defaultLabel !== null) {
+    const def = document.createElement("option");
+    def.value = -1;
+    def.textContent = defaultLabel;
+    sel.appendChild(def);
+  }
   options.forEach(opt => {
     const o = document.createElement("option");
     o.value = opt.value;
-    o.textContent = opt.label;
+    o.textContent = labelFor ? labelFor(opt) : opt.label;
     if (opt.value === currentValue) o.selected = true;
     sel.appendChild(o);
   });
-  if (currentValue === undefined || currentValue === null) sel.value = -1;
+  if (defaultLabel !== null && (currentValue === undefined || currentValue === null)) {
+    sel.value = -1;
+  }
 }
 
 function populateVoiceSelect(options, currentValue) {
@@ -3255,12 +3582,30 @@ async function init() {
     // another tab) so the bonus list matches the tree from the first render.
     if (_deriveUnlockBonuses()) saveDraft();
 
-    renderArchGrid(meta.architectures);
-    populateSelect("wonder-select", meta.civs, draft.wonder,  "— Architecture Default —");
-    populateSelect("castle-select", meta.civs, draft.castle,  "— Architecture Default —");
+    _sceneNames    = meta.scene_names     || {};
+    _archRepCivs   = meta.arch_rep_civs   || {};
+    _sceneArtIndex = meta.scene_art_index || {};
+
+    // Architecture is no longer a required choice — it defaults to the same set
+    // civ_appender would have used, and the scene shows it immediately.
+    if (!draft.architecture) {
+      draft.architecture = DEFAULT_ARCHITECTURE;
+      saveDraft();
+    }
+
+    populateSelect("arch-select", meta.architectures, draft.architecture, null,
+                   o => `${o.label}`);
+    populateSelect("wonder-select", meta.civs, draft.wonder, DEFAULT_OPTION_LABEL,
+                   o => SCENE_SLOTS.wonder.name(o.value));
+    populateSelect("castle-select", meta.civs, draft.castle, DEFAULT_OPTION_LABEL,
+                   o => `${o.label} Castle`);
     populateVoiceSelect(meta.voices, draft.language);
     populateScoutSelect(meta.starting_scouts || [], draft.starting_scout);
-    populateSelect("monk-select", meta.monk_skins || [], draft.monk_skin, "— Architecture Default —");
+    populateSelect("monk-select", meta.monk_skins || [], draft.monk_skin,
+                   SCENE_SLOTS.monk_skin.defaultLabel);
+
+    bindScene();
+    renderScene();
 
     // Restore text fields
     if (draft.alias)   document.getElementById("civ-name").value    = draft.alias;

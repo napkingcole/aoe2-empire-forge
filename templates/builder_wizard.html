@@ -56,57 +56,79 @@
         </div>
       </div>
 
-      {# Architecture #}
-      <label class="form-label fw-semibold">Architecture Set <span class="text-danger">*</span></label>
-      <div class="form-text mb-2">Determines your buildings' visual style.</div>
-      <div id="arch-grid" class="arch-grid mb-4">
-        <div class="text-muted small">Loading…</div>
+      {# ── Appearance scene ──────────────────────────────────────────────────
+         The scene is the picker: each building/unit is a button that opens a
+         grid overlay.  The select row underneath is the same state, reachable
+         by keyboard and typeahead.  See static/css/scene.css. #}
+      <label class="form-label fw-semibold">Appearance</label>
+      <div class="form-text mb-2">
+        Click any building or unit to change it &mdash; or use the menus underneath.
       </div>
 
-      {# Wonder + Castle #}
-      <div class="row g-3 mb-4">
-        <div class="col-md-6">
-          <label class="form-label fw-semibold" for="wonder-select">Wonder Skin</label>
-          <select id="wonder-select" class="form-select">
-            <option value="-1">— Architecture Default —</option>
-          </select>
-          <div class="form-text">Which civ's Wonder graphic to use.</div>
+      <div class="scene-stage" id="identity-scene">
+        <div class="scene-row">
+          <button type="button" class="scene-slot scene-slot--wonder" data-slot="wonder">
+            <img id="scene-img-wonder" src="" alt="Wonder">
+          </button>
+          <button type="button" class="scene-slot scene-slot--tc" data-slot="architecture">
+            <img id="scene-img-architecture" src="" alt="Town Center">
+          </button>
+          <button type="button" class="scene-slot scene-slot--castle" data-slot="castle">
+            <img id="scene-img-castle" src="" alt="Castle">
+          </button>
         </div>
-        <div class="col-md-6">
-          <label class="form-label fw-semibold" for="castle-select">Castle Skin</label>
-          <select id="castle-select" class="form-select">
-            <option value="-1">— Architecture Default —</option>
-          </select>
-          <div class="form-text">Which civ's Castle graphic to use.</div>
+        <div class="scene-units">
+          <button type="button" class="scene-slot scene-slot--unit scene-slot--monk" data-slot="monk_skin">
+            <img id="scene-img-monk_skin" src="" alt="Monk">
+          </button>
+          <button type="button" class="scene-slot scene-slot--unit scene-slot--scout" data-slot="starting_scout">
+            <img id="scene-img-starting_scout" src="" alt="Starting scout">
+          </button>
         </div>
+        <div class="scene-caption" id="scene-caption"></div>
       </div>
 
-      {# Voice #}
-      <div class="row g-3 mb-4">
-        <div class="col-md-6">
-          <label class="form-label fw-semibold" for="voice-select">Voice Set</label>
-          <select id="voice-select" class="form-select">
-            <option value="0">Loading…</option>
-          </select>
-          <div class="form-text">Which vanilla civ's unit voice lines your units will use.</div>
+      <div class="scene-controls mb-4">
+        <div class="scene-control">
+          <label for="arch-select">Architecture</label>
+          <select id="arch-select" class="form-select" data-slot="architecture"></select>
         </div>
-        <div class="col-md-6">
-          <label class="form-label fw-semibold" for="scout-select">Starting Scout</label>
-          <select id="scout-select" class="form-select">
+        <div class="scene-control">
+          <label for="wonder-select">Wonder</label>
+          <select id="wonder-select" class="form-select" data-slot="wonder">
+            <option value="-1">— Architecture Default —</option>
+          </select>
+        </div>
+        <div class="scene-control">
+          <label for="castle-select">Castle</label>
+          <select id="castle-select" class="form-select" data-slot="castle">
+            <option value="-1">— Architecture Default —</option>
+          </select>
+        </div>
+        <div class="scene-control">
+          <label for="monk-select">Monk</label>
+          <select id="monk-select" class="form-select" data-slot="monk_skin"
+                  title="Monk appearance is separate from architecture — Britons and Teutons build differently but share a Monk.">
+            <option value="-1">Default</option>
+          </select>
+        </div>
+        <div class="scene-control">
+          <label for="scout-select">Starting Scout</label>
+          <select id="scout-select" class="form-select" data-slot="starting_scout">
             <option value="448">Loading…</option>
           </select>
-          <div class="form-text">The unit your civ starts the game with, alongside its Villagers.</div>
         </div>
-      </div>
-
-      {# Monk skin #}
-      <div class="row g-3 mb-4">
-        <div class="col-md-6">
-          <label class="form-label fw-semibold" for="monk-select">Monk Skin</label>
-          <select id="monk-select" class="form-select">
-            <option value="-1">— Architecture Default —</option>
-          </select>
-          <div class="form-text">Monk appearance is separate from architecture &mdash; Britons and Teutons build differently but share a Monk.</div>
+        <div class="scene-control">
+          <label for="voice-select">Voice</label>
+          <div class="scene-control-voice">
+            <select id="voice-select" class="form-select">
+              <option value="0">Loading…</option>
+            </select>
+            <button type="button" id="voice-play" class="btn btn-outline-secondary btn-sm"
+                    title="Hear a villager from this civ" aria-label="Play voice sample">
+              <i class="fa-solid fa-volume-high"></i>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -895,6 +917,21 @@
     </div>
   </div>
 
+</div>
+
+{# Scene slot picker — grid overlay opened by clicking a building/unit #}
+<div class="modal fade" id="modal-scene-picker" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="scene-picker-title">Select</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="scene-picker-grid" id="scene-picker-grid"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 {# Start Fresh modal #}

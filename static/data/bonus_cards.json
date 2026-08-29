@@ -410,7 +410,7 @@
     "multiplier": false
   },
   "43": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Missionaries can be trained at the Monastery",
     "entity": "missionary",
     "description": "Missionaries",
@@ -471,14 +471,14 @@
     "multiplier": false
   },
   "50": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Train Turtle Ships at Docks",
     "entity": "turtle_ship",
     "description": "Turtle Ships",
     "multiplier": false
   },
   "51": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Train Longboats at Docks",
     "entity": "longboat",
     "description": "Longboats",
@@ -594,6 +594,9 @@
     "entity2": "villager",
     "description": "Villagers"
   },
+  "61": {
+    "hidden": true
+  },
   "62": {
     "type": "desc",
     "entity": "villager",
@@ -635,14 +638,14 @@
     "description": "Ships"
   },
   "68": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Build Feitoria (Imperial Age)",
     "entity": "feitoria",
     "description": "Feitoria",
     "multiplier": false
   },
   "69": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Build Caravels at Docks",
     "entity": "caravel",
     "description": "Caravels",
@@ -869,7 +872,7 @@
     "description": "Town Centers"
   },
   "93": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Build Krepost",
     "entity": "krepost",
     "description": "Krepost",
@@ -928,7 +931,7 @@
   },
   "99": {
     "type": "dual",
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Siege Workshop and Battering Ram available in the Feudal Age; Capped Ram upgrade available in Castle Age",
     "entity": "siege_workshop",
     "entity2": "battering_ram",
@@ -957,7 +960,7 @@
     "description": "Knight + UU"
   },
   "103": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Cavalier upgrade available in Castle Age",
     "entity": "cavalier",
     "description": "Cavalier Upgrade",
@@ -999,7 +1002,7 @@
     "description": "Farm Upgrades"
   },
   "109": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Build Donjon",
     "entity": "donjon",
     "description": "Donjon",
@@ -1373,7 +1376,7 @@
     "description": "Town Centers"
   },
   "193": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Warrior Priests can be trained at Monasteries",
     "entity": "warrior_priest",
     "description": "Warrior Priests",
@@ -1475,7 +1478,7 @@
     "description": "Elephant Units"
   },
   "209": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "entity": "tower",
     "stat": "Stone Walls can be built in the Dark Age",
     "description": "Stone Walls",
@@ -1716,7 +1719,7 @@
     "hidden": true
   },
   "247": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Parthian Tactics can be researched in the Castle Age",
     "entity": "parthian_tactics",
     "description": "Cavalry Archers",
@@ -1941,7 +1944,7 @@
     "_note": "Chosen in the tech tree (resource-camp variant), not here. Kept as a valid bonus id so civs saved before the tech-tree swap, and KM imports that only carry the bonus, still build.",
     "entity": "folwark",
     "description": "Folwark",
-    "heading": "Unlocked",
+    "heading": "UNLOCK",
     "stat": "Folwark replaces the Mill; also functions as a farm drop-off site",
     "multiplier": false
   },
@@ -1962,7 +1965,7 @@
   },
   "283": {
     "type": "dual",
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Chemistry + Hand Cannoneer in Castle Age",
     "entity": "chemistry",
     "entity2": "hand_cannoneer",
@@ -1992,7 +1995,7 @@
     "multiplier": false
   },
   "287": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Build Caravanserai (Imperial Age)",
     "entity": "caravanserai",
     "description": "Caravanserai",
@@ -2080,21 +2083,21 @@
     "hidden": true
   },
   "298": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Thirisadai can be trained at Docks",
     "entity": "thirisadai",
     "description": "Thirisadai",
     "multiplier": false
   },
   "299": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Shrivamsha Riders can be recruited",
     "entity": "shrivamsha_rider",
     "description": "Shrivamsha Riders",
     "multiplier": false
   },
   "300": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Camel Scouts can be recruited in the Feudal Age",
     "entity": "camel_rider",
     "description": "Camel Scouts",
@@ -2141,7 +2144,7 @@
     "stat": "Scorpions cost -60% gold and benefit from Ballistics research"
   },
   "307": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Legionary replaces the Two-Handed Swordsman and Champion",
     "entity": "legionary",
     "description": "Militia Line",
@@ -2193,7 +2196,7 @@
     "multiplier": false
   },
   "314": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Savar replaces the Paladin",
     "entity": "savar",
     "description": "Cavalry",
@@ -2206,7 +2209,7 @@
     "description": "Galley Line"
   },
   "316": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Fortified Church replaces the Monastery",
     "entity": "monastery",
     "description": "Monastery",
@@ -2215,7 +2218,7 @@
   "317": {
     "type": "hidden",
     "_note": "Chosen in the tech tree (resource-camp variant), not here. Kept as a valid bonus id so civs saved before the tech-tree swap, and KM imports that only carry the bonus, still build.",
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Mule Carts replace Lumber Camps and Mining Camps",
     "entity": "mule_cart",
     "entity2": "mining_camp",
@@ -2264,7 +2267,7 @@
     ]
   },
   "322": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Flaming Camels can be trained at Siege Workshops (Imperial Age)",
     "entity": "flaming_camel",
     "description": "Flaming Camels",
@@ -2334,7 +2337,7 @@
     "multiplier": false
   },
   "332": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Knights can be recruited in the Feudal Age (30 HP)",
     "entity": "knight",
     "description": "Feudal Knights",
@@ -2392,7 +2395,7 @@
     ]
   },
   "337": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "War Chariots can be recruited",
     "entity": "war_chariot",
     "description": "War Chariots",
@@ -2448,7 +2451,7 @@
     ]
   },
   "343": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Jian Swordsmen can be recruited",
     "entity": "jian_swordsman",
     "description": "Jian Swordsmen",
@@ -2490,7 +2493,7 @@
     "description": "Traction Trebuchets + Lou Chuans"
   },
   "348": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Xianbei Raiders can be recruited",
     "entity": "xianbei_raider",
     "description": "Xianbei Raiders",
@@ -2516,7 +2519,7 @@
     "description": "Mounted + Fire Lancers"
   },
   "352": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Siege Engineers can be researched in the Castle Age",
     "entity": "siege_engineers",
     "description": "Siege",
@@ -2538,7 +2541,7 @@
     "description": "All Units"
   },
   "355": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Grenadiers can be recruited",
     "entity": "grenadier",
     "description": "Grenadiers",
@@ -2575,13 +2578,13 @@
     "description": "Counter Units"
   },
   "360": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Heavy Cavalry Archer available in Castle Age at -50% cost",
     "entity": "cavalry_archer",
     "description": "Cavalry Archers"
   },
   "361": {
-    "heading": "UNLOCKED",
+    "heading": "UNLOCK",
     "stat": "Mounted Trebuchets can be trained",
     "entity": "mounted_trebuchet",
     "description": "Mounted Trebuchets",
@@ -2715,7 +2718,7 @@
     "type": "dual",
     "entity": "skirmisher",
     "entity2": "spearman",
-    "heading": "Unlocked",
+    "heading": "UNLOCK",
     "stat": "Can be trained at Settlements; training speed improves per age",
     "description": "Skirmishers & Spearmen"
   },
@@ -2792,6 +2795,7 @@
     "multiplier": false
   },
   "407": {
+    "hidden":true,
     "heading": "UNLOCK",
     "stat": "Grenadier",
     "entity": "grenadier",

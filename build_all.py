@@ -355,7 +355,16 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                 content.encode("utf-8"),
             )
         if lang_values:
+            # Voices need BOTH the DAT SoundItem remap (assign_all_languages)
+            # and the physical .wem files here — the remap alone leaves the
+            # engine falling back to Wwise routing, i.e. the replaced slot's
+            # original voice.  voice_files/ is gitignored and is NOT bundled
+            # into the PyInstaller build, so this silently copies nothing when
+            # running from a packaged exe.  Say so rather than shipping a mod
+            # whose civs quietly ignore the chosen voice.
             voice_root = Path(__file__).parent / "voice_files"
+            wem_count = 0
+            missing: list[int] = []
             for lang_val in lang_values:
                 lang_dir = voice_root / str(lang_val)
                 if lang_dir.is_dir():
@@ -365,6 +374,17 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                                 f"resources/_common/drs/sounds/{wem.name}",
                                 wem.read_bytes(),
                             )
+                            wem_count += 1
+                else:
+                    missing.append(lang_val)
+            if missing:
+                print(f"  WARNING: no voice files found for language value(s) "
+                      f"{sorted(missing)} — looked in {voice_root}")
+                print("           Those civs will use the replaced slot's original "
+                      "voice in-game, not the chosen one.")
+            if wem_count:
+                print(f"  [voice] bundled {wem_count} .wem file(s) for "
+                      f"{len(lang_values) - len(missing)} language(s)")
     return buf.getvalue()
 
 

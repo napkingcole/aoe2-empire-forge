@@ -1,0 +1,237 @@
+/* ── Identity scene ───────────────────────────────────────────────────────────
+   The step-1 appearance preview: wonder, town center and castle standing on a
+   grass plane, with the monk and starting scout in front.  Every slot is a
+   real <button>, so the scene is the picker as well as the preview; the select
+   row underneath is the same state reached by keyboard.
+
+   Building art comes from scripts/import_km_art.py (KM's renders, WebP).  The
+   ground is drawn in CSS — swap --scene-grass-image for a real tile if one is
+   ever added.
+   ------------------------------------------------------------------------- */
+
+.scene-stage {
+  --scene-grass:       #6f8a4c;
+  --scene-grass-dark:  #5d7740;
+  --scene-grass-image: none;
+
+  position: relative;
+  border: 1px solid var(--border, #C9B896);
+  border-radius: 8px;
+  overflow: hidden;
+  padding: 18px 16px 0;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background-color: var(--scene-grass);
+  background-image: url('/static/grass.jpg');
+  background-size: cover;
+}
+
+/* Soft horizon so the plane reads as ground rather than a green rectangle */
+/* .scene-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 42%;
+  background: linear-gradient(180deg, rgba(28,21,8,.22), transparent);
+  pointer-events: none;
+} */
+
+.scene-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(4px, 2vw, 22px);
+  z-index: 1;
+}
+
+/* ── Slots ─────────────────────────────────────────────────────────────────── */
+
+.scene-slot {
+  position: relative;
+  flex: 0 0 auto;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+  border-radius: 6px;
+  transition: transform .16s ease, filter .16s ease, opacity .16s ease;
+}
+
+.scene-slot img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  filter: drop-shadow(0 6px 10px rgba(0,0,0,.38));
+  transition: inherit;
+}
+
+.scene-slot--wonder img { height: clamp(120px, 22vw, 280px); }
+.scene-slot--tc     img { height: clamp( 82px, 15vw, 180px); }
+.scene-slot--castle img { height: clamp( 78px, 20vw, 270px); }
+
+/* Units stand in front of the buildings, overlapping the row above */
+.scene-units {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 18px;
+  margin-top: -70px;
+  padding-bottom: 14px;
+}
+
+/* Units are sized by WIDTH, not height.  Sizing by height makes anything with
+   tall headgear — the Mesoamerican Monk especially — shrink its whole body to
+   fit the same box, so it reads as a much smaller figure than its neighbours.
+   Matching on width keeps bodies consistent and lets a tall headdress simply
+   rise higher, which is what happens in game.  max-height is only a sanity cap.
+   No border-radius: these are cut-out sprites, and rounding clips their corners.
+
+   Per-skin nudges hook off the value, e.g.:
+     .scene-slot--monk[data-value="15"] img { width: 46px; }            */
+.scene-slot--unit img {
+  width: clamp(34px, 5.5vw, 53px);
+  height: auto;
+  max-height: clamp(72px, 12vw, 104px);
+  object-fit: contain;
+  object-position: bottom center;
+}
+.scene-slot.scene-slot--monk[data-value="5"] img { width: 44px } /* East Asian Monk */
+.scene-slot.scene-slot--monk[data-value="12"] img { width: 49px } /* Central Asian Monk */
+.scene-slot.scene-slot--monk[data-value="15"] img { width: 46px } /* Meso Monk */
+.scene-slot.scene-slot--monk[data-value="21"] img { width: 56px } /* Andean Monk */
+.scene-slot.scene-slot--monk[data-value="25"] img { width: 47px } /* Andean Monk */
+.scene-slot.scene-slot--scout[data-value="448"] img { width: 78px } /* Scout Cavalry */
+.scene-slot.scene-slot--scout[data-value="751"] img { width: 57px } /* Eagle Scout */
+.scene-slot.scene-slot--scout[data-value="1755"] img { width: 52px } /* Scout Cavalry */
+.scene-slot.scene-slot--scout[data-value="2550"] img { width: 58px } /* Champi Scout */
+
+/* A mounted scout is much wider than a standing Monk at the same width value. */
+.scene-slot--scout img { width: clamp(42px, 7vw, 66px); }
+
+.scene-slot:hover,
+.scene-slot:focus-visible {
+  transform: translateY(-3px);
+  outline: none;
+}
+
+.scene-slot:focus-visible img,
+.scene-slot:hover img {
+  filter: drop-shadow(0 8px 14px rgba(0,0,0,.5))
+          drop-shadow(0 0 3px var(--gold-light, #D4AC40));
+}
+
+/* Spotlight: hovering/focusing a control dims every slot but its own */
+.scene-stage.is-spotlit .scene-slot            { opacity: .38; filter: saturate(.6); }
+.scene-stage.is-spotlit .scene-slot.is-active  { opacity: 1;   filter: none; transform: translateY(-3px); }
+
+/* Empty slot (art we don't have yet — e.g. arch 12, monk skins) */
+.scene-slot.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  min-height: 74px;
+  border: 1px dashed rgba(255,255,255,.5);
+  background: rgba(0,0,0,.16);
+  color: rgba(255,255,255,.82);
+  font-size: .68rem;
+  line-height: 1.2;
+  text-align: center;
+  padding: 6px 8px;
+}
+
+/* Caption strip along the bottom of the stage */
+.scene-caption {
+  position: relative;
+  z-index: 2;
+  margin: 0 -16px;
+  padding: 6px 12px;
+  background: rgba(28,21,8,.62);
+  color: #F3EAD4;
+  font-size: .74rem;
+  text-align: center;
+  min-height: 1.9em;
+}
+
+/* ── Control row ───────────────────────────────────────────────────────────── */
+
+.scene-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 10px 12px;
+  margin-top: 12px;
+}
+
+.scene-control label {
+  display: block;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: var(--ash, #7A6A54);
+  margin-bottom: 3px;
+}
+
+.scene-control .form-select { font-size: .85rem; padding-block: .3rem; }
+
+.scene-control-voice { display: flex; gap: 6px; align-items: stretch; }
+.scene-control-voice .form-select { flex: 1 1 auto; min-width: 0; }
+
+#voice-play {
+  flex: 0 0 auto;
+  padding-inline: .55rem;
+  line-height: 1;
+}
+#voice-play.is-playing { color: var(--crimson, #8C2020); }
+
+/* ── Picker modal ──────────────────────────────────────────────────────────── */
+
+.scene-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 10px;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.scene-picker-item {
+  border: 2px solid var(--border, #C9B896);
+  border-radius: 6px;
+  background: var(--parch-light, #FAF6EC);
+  padding: 6px 6px 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color .12s, background .12s, transform .12s;
+}
+.scene-picker-item:hover     { border-color: var(--gold, #B8911A); transform: translateY(-2px); }
+.scene-picker-item.selected  { border-color: var(--crimson, #8C2020); background: rgba(140,32,32,.06); }
+.scene-picker-item:focus-visible { outline: 2px solid var(--crimson, #8C2020); outline-offset: 2px; }
+
+.scene-picker-item img {
+  width: 100%;
+  height: 78px;
+  object-fit: contain;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.scene-picker-label {
+  font-size: .7rem;
+  line-height: 1.25;
+  color: var(--ink, #2d292a);
+}
+.scene-picker-item.selected .scene-picker-label { color: var(--crimson, #8C2020); font-weight: 600; }
+
+@media (max-width: 575.98px) {
+  .scene-stage { min-height: 230px; padding-inline: 10px; }
+  .scene-row   { gap: 2px; }
+  .scene-units { gap: 10px; }
+}
