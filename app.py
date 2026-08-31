@@ -420,8 +420,9 @@ def upload():
         f.save(dest)
         try:
             data = json.loads(dest.read_text(encoding="utf-8"))
-            bonus_list = (data.get("bonuses", [[]])[0]
-                          if data.get("bonuses") else [])
+            # bonuses[0] is the KM slot; an Empire Forge file has a flat list of
+            # dicts there instead, which counted its keys rather than its bonuses.
+            bonus_list = get_civ_bonuses(data)
             civs.append({
                 "filename": f.filename,
                 "name": (data.get("alias") or data.get("name")

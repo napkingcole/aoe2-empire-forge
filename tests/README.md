@@ -30,6 +30,12 @@ other 53, which is exactly what spot-checking misses:
 - Folding a regional column back rebuilt the camps from an empty source, blanking
   their techs on every layout that was already using the standard camps.
 
+The other cheap-to-check surface is the **civ_def format split**. Two shapes of
+civ_def reach `apply_civ` — the wizard's dicts and the older KM lists — and the
+accessors in `civ_appender` are the entire compatibility layer between them. A
+reader written against one shape works fine until someone builds from the other,
+which is a release boundary, not a code path you stumble into locally.
+
 ## What each file covers
 
 **`test_editor_layout.js`** — loads `static/aoe2techtree/js/main.js` into Node
@@ -51,9 +57,32 @@ pointing at a column that disagrees about owning it**, and every item in
 59 files in `CivTechTrees/` x 5 combinations. Same invariant, plus: every
 building that ends up owning a tech has to actually exist as a node in the file.
 
+**`test_civ_def_formats.py`** — the format-agnostic accessors in `civ_appender`
+(`_tree_unit_ids`, `get_civ_bonuses`, `get_team_bonuses`, `get_ut_entries`,
+`get_km_uu_index`), over both civ_def shapes.
+
+- Writes one civ twice, wizard and KM, and asserts all six accessors return the
+  same thing. Anything that reads civ_def directly instead of through these will
+  drift out from under this check, which is the point.
+- Sweeps the 15 saved civ files committed to the repo (`*.civbuilder.json`,
+  `my_civs/`, `civbuilder_civs/`) through every accessor, and asserts the corpus
+  still contains both shapes — a fixture set that quietly becomes all-wizard
+  stops testing the split.
+- Malformed input degrades rather than crashes: absent / `null` / empty / wrongly
+  typed `tree` and `bonuses`. These accessors sit on every read path and their
+  input arrives from user uploads and hand edits.
+- The derived "Unlock ..." cards (405-417) are recomputed from the tree on each
+  read, never written back into civ_def — drop the unit and the card goes with
+  it; a hand-ticked card survives and is not duplicated.
+
+Both bugs it has caught so far were the same mistake at different sites:
+`civ_def["tree"][0]` on a dict (`KeyError: 0`, shipped in v2.0.0-beta.1.3), and
+`civ_def.get("bonuses", [])` returning `None` for a key present with a `null`
+value, so the `len()` on the next line raised.
+
 ## Notes
 
-- Neither test touches the DAT, so both run in about a second.
+- No test touches the DAT, so they all run in about a second.
 - `test_civtechtrees.py` prints a `note` line for three known-dead entries in
   `_OPT_IN_UNIT_NODE_SOURCES` (1133, 1371, 1302). Those are reported rather than
   asserted — see the comment there for why they never resolve.

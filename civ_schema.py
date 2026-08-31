@@ -50,8 +50,8 @@ def to_draft(schema: dict) -> dict:
     _draft_to_civ_def, _apply_uu_overrides, and _override_ut_costs.
 
     Unknown / Phase-Two keys (unit_overrides, button_moves, free_techs, second_uu,
-    monk_skin_unit, monastery_skin_building) are passed through unchanged so
-    future handlers can act on them without schema changes.
+    monastery_skin_building) are passed through unchanged so future handlers can
+    act on them without schema changes.
     """
     s = _clean(schema)
 
@@ -155,7 +155,6 @@ def to_draft(schema: dict) -> dict:
         "unit_overrides":         s.get("unit_overrides",         []),
         "button_moves":           s.get("button_moves",           []),
         "free_techs":             s.get("free_techs",             []),
-        "monk_skin_unit":         s.get("monk_skin_unit"),
         "monastery_skin_building":s.get("monastery_skin_building"),
     }
     return draft
@@ -262,7 +261,6 @@ def from_draft(draft: dict) -> dict:
         "unit_overrides":          draft.get("unit_overrides",          []),
         "button_moves":            draft.get("button_moves",            []),
         "free_techs":              draft.get("free_techs",              []),
-        "monk_skin_unit":          draft.get("monk_skin_unit"),
         "monastery_skin_building": draft.get("monastery_skin_building"),
     }
     return schema

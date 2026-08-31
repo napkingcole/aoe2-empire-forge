@@ -744,7 +744,7 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     tree[1] = building IDs the civ can build.
     tree[2] = research tech IDs the civ can research.
     """
-    raw_tree = civ_def.get("tree", [[], [], []])
+    raw_tree = civ_def.get("tree") or [[], [], []]
     if isinstance(raw_tree, dict):
         tree_units     = set(raw_tree.get("units", []))
         tree_buildings = set(raw_tree.get("buildings", []))
@@ -1095,8 +1095,7 @@ def _warn_train_button_conflicts(dat: DatFile, civ_index: int, civ_def: dict | N
     """
     if not civ_def:
         return
-    tree = civ_def.get("tree") or []
-    tree_units = set(tree[0]) if tree and tree[0] else set()
+    tree_units = _tree_unit_ids(civ_def)
     if not tree_units:
         return
 
@@ -2271,8 +2270,7 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _SHIFT = {103: 102, 102: 101}
         tt_eff_id = dat.civs[civ_index].tech_tree_id
         barracks_ids = set(_barracks_tech_ids(dat))
-        _tree_list = (civ_def or {}).get('tree', [[]])
-        tree_units = set(_tree_list[0]) if _tree_list else set()
+        tree_units = _tree_unit_ids(civ_def or {})
         # Collect techs already disabled for this civ (used in Filter A below)
         tt_disabled = {int(ec.d) for ec in dat.effects[tt_eff_id].effect_commands if ec.type == 102}
         orig_to_new: dict[int, int] = {}   # orig_tid → new tech index
@@ -2864,10 +2862,27 @@ def _norm_entry(e) -> list:
     return [int(e[0]), int(e[1]) if len(e) > 1 else 1]
 
 def _tree_unit_ids(civ_def: dict) -> set[int]:
-    """Units in tree[0], for either civ_def format ([] when absent)."""
+    """Trainable unit IDs from the civ's tree, for either civ_def format.
+
+    Wizard format stores the tree as {"units": [...], "buildings": [...],
+    "techs": [...]}; the old KM format as [units, buildings, techs].  Returns
+    an empty set for anything else (absent or malformed tree).
+    """
     tree = civ_def.get("tree") or []
+    if isinstance(tree, dict):
+        return {int(u) for u in (tree.get("units") or [])}
     if tree and isinstance(tree[0], (list, tuple)):
         return {int(u) for u in tree[0]}
+    return set()
+
+
+def _tree_building_ids(civ_def: dict) -> set[int]:
+    """Buildable building IDs from the civ's tree, for either civ_def format."""
+    tree = civ_def.get("tree") or []
+    if isinstance(tree, dict):
+        return {int(b) for b in (tree.get("buildings") or [])}
+    if len(tree) > 1 and isinstance(tree[1], (list, tuple)):
+        return {int(b) for b in tree[1]}
     return set()
 
 
@@ -2881,7 +2896,7 @@ def get_civ_bonuses(civ_def: dict) -> list:
     importer and civs saved before these bonuses existed all behave the same,
     and switching tech-tree templates can never leave a stale unlock behind.
     """
-    raw = civ_def.get("bonuses", [])
+    raw = civ_def.get("bonuses") or []
     if not raw:
         entries = []
     elif isinstance(raw[0], dict):
@@ -2908,7 +2923,7 @@ def get_team_bonuses(civ_def: dict) -> list:
     """Return team bonus entries as [[id, mult], ...] from either format."""
     if "team_bonuses" in civ_def:
         return [_norm_entry(e) for e in civ_def["team_bonuses"]]
-    raw = civ_def.get("bonuses", [])
+    raw = civ_def.get("bonuses") or []
     return raw[4] if len(raw) > 4 and isinstance(raw[4], list) else []
 
 def get_ut_entries(civ_def: dict, which: str) -> list:
@@ -2921,7 +2936,7 @@ def get_ut_entries(civ_def: dict, which: str) -> list:
     if which in civ_def:
         ut = civ_def[which] or {}
         return [_norm_entry(e) for e in ut.get("effects", [])]
-    raw = civ_def.get("bonuses", [])
+    raw = civ_def.get("bonuses") or []
     idx = 2 if which == "castle_ut" else 3
     return raw[idx] if len(raw) > idx and isinstance(raw[idx], list) else []
 
@@ -2930,7 +2945,7 @@ def get_km_uu_index(civ_def: dict) -> int | None:
     uu = civ_def.get("unique_unit")
     if isinstance(uu, dict) and uu.get("km_idx") is not None:
         return int(uu["km_idx"])
-    raw = civ_def.get("bonuses", [])
+    raw = civ_def.get("bonuses") or []
     if len(raw) > 1 and isinstance(raw[1], list) and raw[1] and isinstance(raw[1][0], int):
         return raw[1][0]
     return None
@@ -3379,7 +3394,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
 
     # 0. When overwriting, neutralize existing civ-specific techs for this slot
     #    so they don't bleed into the new civ (ghost Castle buttons, old bonuses).
-    has_custom_uu = civ_def.get("unique_unit", {}).get("base_unit_id") is not None
+    has_custom_uu = (civ_def.get("unique_unit") or {}).get("base_unit_id") is not None
 
     # Detect KM vanilla UU index. Vanilla indices (0-38, 78-87) fully supported;
     # KM-custom indices (39-77, 88+) fall back to vanilla UU preserve.
@@ -3546,7 +3561,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # 2. Append UU and Elite UU to every civ (unit arrays must stay same length).
     #    Skip entirely when unique_unit has no base_unit_id (avoids Militia clone).
     uu_id, elite_uu_id = -1, -1
-    if civ_def.get("unique_unit", {}).get("base_unit_id") is not None:
+    if (civ_def.get("unique_unit") or {}).get("base_unit_id") is not None:
         uu_id, elite_uu_id = _append_unique_units(dat, civ_index, civ_def)
         print(f"       UU: {uu_id}  Elite UU: {elite_uu_id}")
     elif not (km_uu_is_vanilla or km_uu_is_custom):
@@ -3619,12 +3634,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         isinstance(e, (list, tuple)) and e and int(e[0]) == 93
         for e in get_civ_bonuses(civ_def)
     )
-    _tree_pre = civ_def.get("tree", [[], [], []])
-    if isinstance(_tree_pre, dict):
-        _tree_buildings_pre = _tree_pre.get("buildings", [])
-    else:
-        _tree_buildings_pre = _tree_pre[1] if len(_tree_pre) > 1 and isinstance(_tree_pre[1], list) else []
-    has_krepost_tree = 1251 in _tree_buildings_pre
+    has_krepost_tree = 1251 in _tree_building_ids(civ_def)
     has_krepost = has_krepost_bonus or has_krepost_tree
     if km_uu_is_vanilla:
         km_uu_make_avail_tech_id, km_uu_elite_tech_id = _apply_km_uu(dat, civ_index, km_uu_index)
@@ -3865,7 +3875,7 @@ def _append_one_unit(dat: DatFile, civ_index: int, civ_def: dict, elite: bool) -
     append the clone to every civ's unit list + unit_headers.
     Returns the new unit ID.
     """
-    uu_def  = civ_def.get("unique_unit", {})
+    uu_def  = civ_def.get("unique_unit") or {}
     base_id = uu_def.get("base_unit_id", 74)  # 74 = Militia fallback
     stats   = uu_def.get("stats", {})
     alias   = civ_def.get("alias", "Custom")
@@ -3900,7 +3910,7 @@ def _append_one_unit(dat: DatFile, civ_index: int, civ_def: dict, elite: bool) -
 def _apply_uu_stats(u, stats: dict, elite: bool, civ_def: dict) -> None:
     """Apply stat overrides from civ_def to the unit object in place."""
     alias = civ_def.get("alias", "Custom")
-    uu_def = civ_def.get("unique_unit", {})
+    uu_def = civ_def.get("unique_unit") or {}
 
     # Stat scaling for elite: +20% HP, +2 attack over base as a simple default.
     hp_bonus     = 20 if elite else 0

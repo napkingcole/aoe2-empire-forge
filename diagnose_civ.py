@@ -27,6 +27,7 @@ from genieutils.datfile import DatFile
 from civ_appender import (
     apply_civ,
     _KM_UU_TECHS,
+    get_civ_bonuses, get_team_bonuses, get_ut_entries, get_km_uu_index,
     BUILDING_CASTLE,
     EC_SET, EC_RESOURCE, EC_ENABLE, EC_UPGRADE, EC_ADD, EC_MULTIPLY,
     EC_TECH_COST, EC_TECH_TIME,
@@ -252,11 +253,8 @@ def diagnose_one(dat: DatFile, civ_def: dict,
     print(f"  Added: {len(dat.techs) - tech_before} techs, "
           f"{len(dat.effects) - eff_before} effects")
 
-    raw = civ_def.get("bonuses", [])
-
     # ── KM Unique Unit ────────────────────────────────────────────────────────
-    uu_ref      = raw[1] if len(raw) > 1 and isinstance(raw[1], list) else []
-    km_uu_index = uu_ref[0] if uu_ref and isinstance(uu_ref[0], int) else None
+    km_uu_index = get_km_uu_index(civ_def)
     make_id     = result.get("km_uu_make_avail_tech_id", -1)
     elite_id    = result.get("km_uu_elite_tech_id", -1)
 
@@ -273,7 +271,7 @@ def diagnose_one(dat: DatFile, civ_def: dict,
     # ── UU Stats ─────────────────────────────────────────────────────────────
     uu_id       = result.get("uu_id", -1)
     elite_uu_id = result.get("elite_uu_id", -1)
-    uu_stats    = civ_def.get("unique_unit", {}).get("stats", {})
+    uu_stats    = (civ_def.get("unique_unit") or {}).get("stats") or {}
     pierce_overridden = "pierce_armor" in uu_stats
     _section("UU STATS (from DAT after apply)")
     for uid, label in ((uu_id, "Base UU"), (elite_uu_id, "Elite UU")):
@@ -301,7 +299,7 @@ def diagnose_one(dat: DatFile, civ_def: dict,
             print(f"      pierce_armor  {p_arm_actual} (inherited from source, not overridden)")
 
     # ── Castle UT ─────────────────────────────────────────────────────────────
-    castle_entries = raw[2] if len(raw) > 2 and isinstance(raw[2], list) else []
+    castle_entries = get_ut_entries(civ_def, "castle_ut")
     c_tech  = result.get("castle_ut_tech_id")
     c_name  = result["castle_ut_sid"]
     c_desc  = result["castle_ut_desc_sid"]
@@ -324,7 +322,7 @@ def diagnose_one(dat: DatFile, civ_def: dict,
                   f"hover={c_name + 21000}  help={c_help}")
 
     # ── Imperial UT ───────────────────────────────────────────────────────────
-    imp_entries = raw[3] if len(raw) > 3 and isinstance(raw[3], list) else []
+    imp_entries = get_ut_entries(civ_def, "imperial_ut")
     i_tech = result.get("imp_ut_tech_id")
     i_name = result["imp_ut_sid"]
     i_desc = result["imp_ut_desc_sid"]
@@ -348,7 +346,7 @@ def diagnose_one(dat: DatFile, civ_def: dict,
 
     # ── Civ bonuses ───────────────────────────────────────────────────────────
     _section("CIV BONUSES  (bonuses[0])")
-    civ_bonus_list = raw[0] if len(raw) > 0 and isinstance(raw[0], list) else []
+    civ_bonus_list = get_civ_bonuses(civ_def)
     if not civ_bonus_list:
         print("    (none)")
 
@@ -381,7 +379,7 @@ def diagnose_one(dat: DatFile, civ_def: dict,
 
     # ── Team bonus ────────────────────────────────────────────────────────────
     _section("TEAM BONUS  (bonuses[4])")
-    team_list = raw[4] if len(raw) > 4 and isinstance(raw[4], list) else []
+    team_list = get_team_bonuses(civ_def)
     if not team_list:
         print("    (none)")
     else:

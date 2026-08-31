@@ -2783,7 +2783,7 @@
   "405": {
     "heading": "UNLOCK",
     "stat": "Bolas Rider",
-    "entity": "unique_unit",
+    "entity": "bolas_rider",
     "description": "Archery Range \u2014 Castle Age",
     "multiplier": false
   },
@@ -2812,14 +2812,14 @@
   "409": {
     "heading": "UNLOCK",
     "stat": "Temple Guard",
-    "entity": "unique_unit",
-    "description": "Barracks \u2014 Castle Age",
+    "entity": "temple_guard",
+    "description": "Barracks + Monastery \u2014 Castle Age",
     "multiplier": false
   },
   "410": {
     "heading": "UNLOCK",
     "stat": "Ibirapema Warrior",
-    "entity": "unique_unit",
+    "entity": "ibirapema_warrior",
     "description": "Barracks \u2014 Castle Age",
     "multiplier": false
   },

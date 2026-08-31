@@ -109,7 +109,7 @@
 .scene-slot.scene-slot--monk[data-value="25"] img { width: 47px } /* Andean Monk */
 .scene-slot.scene-slot--scout[data-value="448"] img { width: 78px } /* Scout Cavalry */
 .scene-slot.scene-slot--scout[data-value="751"] img { width: 57px } /* Eagle Scout */
-.scene-slot.scene-slot--scout[data-value="1755"] img { width: 52px } /* Scout Cavalry */
+.scene-slot.scene-slot--scout[data-value="1755"] img { width: 72px } /* Camel Scout */
 .scene-slot.scene-slot--scout[data-value="2550"] img { width: 58px } /* Champi Scout */
 
 /* A mounted scout is much wider than a standing Monk at the same width value. */

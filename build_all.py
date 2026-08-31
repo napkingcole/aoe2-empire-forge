@@ -542,10 +542,10 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # handled by _resolve_uu_info above); fall back to the KM UU name
         # table only for the two still-unimplemented custom indices (Monkey
         # Boy 47, Warrior Monk 75).
-        _uu_refs = civ_def.get("bonuses", [None]*2)
-        _km_uu_idx = (_uu_refs[1][0]
-                      if len(_uu_refs) > 1 and isinstance(_uu_refs[1], list) and _uu_refs[1]
-                      else None)
+        # Read via the accessor, not bonuses[1][0]: line 460 above converts an
+        # Empire Forge file to a draft, so this function sees both civ_def
+        # shapes and the KM slot only exists in one of them.
+        _km_uu_idx = get_km_uu_index(civ_def)
         uu_display = (uu_info["name"] if uu_info
                       else _KM_UU_NAMES.get(_km_uu_idx, "Unique Unit"))
         # Also look up the elite unit's dll_name for string writes.

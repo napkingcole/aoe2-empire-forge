@@ -34,7 +34,9 @@ from build_civ import (
     _find_civ_techtrees_folder,
     _decode_flag,
 )
-from civ_appender import apply_civ, assign_all_languages
+from civ_appender import (
+    apply_civ, assign_all_languages, get_civ_bonuses, get_team_bonuses,
+)
 from civ_overrides import _apply_uu_overrides, _apply_hero_unit, _override_ut_costs
 from dat_reader import load_dat
 
@@ -211,8 +213,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
 
     # Build civ-picker description string
     tagline      = civ_def.get("description", "")
-    civ_bonuses  = civ_def["bonuses"][0] if civ_def.get("bonuses") else []
-    team_entries = civ_def["bonuses"][4] if len(civ_def.get("bonuses", [])) > 4 else []
+    civ_bonuses  = get_civ_bonuses(civ_def)
+    team_entries = get_team_bonuses(civ_def)
 
     desc_parts = [f"{tagline} civilization" if tagline else f"{alias} civilization"]
     desc_parts.append("\\n\\n")

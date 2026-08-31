@@ -31,7 +31,18 @@ else
     failed=1
 fi
 
-run "in-game tech tree (python)" "$PY" tests/test_civtechtrees.py
+run "in-game tech tree (python)"  "$PY" tests/test_civtechtrees.py
+run "civ_def formats (python)"    "$PY" tests/test_civ_def_formats.py
+run "no direct civ_def reads"     "$PY" tests/test_no_direct_civdef_reads.py
+
+# Route round-trip needs the real game DAT and ~75s, so it is opt-in.  It skips
+# itself cleanly when no DAT is found; ROUNDTRIP=1 makes it run.
+if [ "${ROUNDTRIP:-0}" = "1" ]; then
+    run "route round-trip (python)" "$PY" tests/test_route_roundtrip.py
+else
+    echo
+    echo "──── route round-trip: SKIPPED (ROUNDTRIP=1 to run, needs game DAT, ~75s)"
+fi
 
 echo
 if [ "$failed" -eq 0 ]; then
