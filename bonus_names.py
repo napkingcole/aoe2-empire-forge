@@ -25,6 +25,9 @@ DEPRECATED_BONUSES: dict[int, int] = {
     # Both give Archery Range units +1 melee armor per age. 364 is the vanilla
     # tech copy and also covers Champi Warriors, so it strictly supersedes 245.
     245: 364,
+    # Dragon Ships. 402 now maps to the same vanilla tech (1010) as 362, so it
+    # still works for civs that carry it — it just isn't offered twice.
+    402: 362,
 }
 
 

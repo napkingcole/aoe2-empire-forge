@@ -1,7 +1,7 @@
 # Builder enhancements
 
-**Status:** Track A complete except two in-game tests; everything else proposed
-**Written:** 2026-09-01, against `v2.0.0-beta.1.4` on `feature/ui-builder`
+**Status:** Track A complete and verified in-game; Tracks B–F proposed
+**Written:** 2026-09-01, updated 2026-09-02, against `v2.0.0-beta.1.4` on `feature/ui-builder`
 **Origin:** a survey of the bonus catalog against the DAT, the community threads,
 and our own issue tracker — looking for gaps rather than bugs
 
@@ -84,7 +84,7 @@ tech 1010, takes its place in the picker pending an in-game test.
 | Item | Test that settles it |
 |---|---|
 | ~~Every type-6 command passes `B = -1` where vanilla passes `B = 0`~~ | **Resolved 2026-09-01 — `B = -1` works, no change needed.** Bonus 235 on one villager and one tree yielded 199 wood instead of 100. All six "resources last longer" bonuses are sound. |
-| Bonus **362** duplicates **402** (Dragon Ships), and issue #28 says 402 does not work. 362 copies vanilla tech 1010 (`EC_UPGRADE 529/1103/532 → 1302`) | Build a civ with 362 instead of 402. If the Fire Ship line upgrades, #28 closes by pointing 402 at the same tech. |
+| ~~Bonus **362** duplicates **402** (Dragon Ships), and issue #28 says 402 does not work~~ | **Resolved 2026-09-02.** 362 worked in-game first try. 402 now maps to `[1010]` as well, its bespoke replica block in `civ_appender.py` is deleted, and it is deprecated → 362 so it still builds for civs that carry it without being offered twice. Verified by build: `tech 'Dragon Ship' civ=1 req=[103, 35]`, upgrades 529/1103/532 → 1302. **Closes #28.** |
 | ~~Bonus **245** near-duplicates **364**~~ | **Resolved.** 245 deprecated in favour of 364, which also covers Champi Warriors. Hidden from the picker via `bonus_names.DEPRECATED_BONUSES`; implementation kept so KM civs in the wild that reference it still build. |
 | ~~Bonuses 127 and 326 write resources 195 / 253~~ | **Accepted.** Both documented and correct (195 Construction Rate Mod — our 1.3 matches the Spanish value exactly; 253 Trade Stone Percent). Allowlisted in `tests/test_resource_ids.py`. 326 to be spot-checked in-game. |
 
@@ -177,6 +177,48 @@ than `""`; and Step 8 refuses to advance with a hero selected but unnamed.
 **The general trap:** claiming a pool SID and writing text to it must happen
 together. A SID claimed but unwritten is worse than no SID at all, because it
 silently displays unrelated campaign prose.
+
+## Parked — external, not ours to fix
+
+### Civ preview panel shows the overwritten civ's text
+
+**Status: confirmed game-side, 2026-09-02. Do not "fix" this in the build system.**
+
+Symptom: the civ preview panel shows the replaced civ's bonuses, unique unit and
+unique techs. All three come from one string — the civ description at
+`name_sid + 109879` (`120150` for the Britons slot) — so it is a single override
+not landing, not three separate failures. The UU *icon* is correct because it
+comes from `civilizations.json` in the data mod, which applies fine.
+
+The decisive evidence is Unhinged Empires: a hand-authored mod, independent of
+this tool, previously working. It writes a genuine custom description to `120150`
+and that is ignored, while its `10271` civ-name override in the *same file* is
+honoured. No mod can cause that asymmetry.
+
+Ruled out, in order: string ids, the `+109879` offset (`120150` really is the
+Britons description), file content, path and filename (identical to Unhinged),
+encoding/BOM/line endings (identical to Unhinged), competing string files
+(nothing else defines `1201xx`), mod collision (all other mods disabled), the UI
+mod not loading (local UI mods cannot be disabled), our code (an older commit
+fails identically), and install integrity (Steam verify + reboot).
+
+Reported to the AoE2 modding community; awaiting an answer on whether `1201xx`
+overrides need a different file now or the panel stopped reading the string
+table. Re-test before touching anything here.
+
+### `unique_tech_id_1` / `unique_tech_id_2` never patched — unconfirmed
+
+`app.py`'s `civilizations.json` patch sets the civ name, UU icon, UU ids and UU
+string ids, but leaves `unique_tech_id_1` / `unique_tech_id_2` at the replaced
+civ's values (Britons keeps Yeomen 3 / Warwolf 461).
+
+Flagged as a bug from a static read of the JSON, but **no observed symptom** —
+UTs display correctly in-game and in the preview panel, with a screenshot from
+early September 2026 showing them working. The fields are likely vestigial for
+display: the preview panel takes UT names from inside the `120150` description
+string, and the tech tree screen takes them from the per-civ CivTechTrees JSON,
+which we do patch. Check before changing anything; do not "fix" on the strength
+of the JSON alone.
 
 ## Track B — Tech tree node inspector
 
@@ -336,8 +378,8 @@ no handler. Blocked on the same button-space question.
 
 ## Suggested order
 
-1. Finish **Track A** — commit what is landed, run the two in-game tests
-   (`B = -1` control, bonus 362). Unblocks D.
+1. ~~**Track A**~~ — done. Both in-game tests passed (`B = -1` control, Dragon
+   Ships). D is unblocked.
 2. **Track B step 1** — read-only stat panel. Small, self-contained, proves the
    inspector.
 3. **Track E** — pre-game hints + AI names. Visible, cheap, differentiating.

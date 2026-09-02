@@ -969,31 +969,17 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
           f"{len(keep_enabled & all_disableable)} unit-line techs kept"
           + (f", {n_unlocked} type=8 unlocks" if n_unlocked else ""))
 
-    # ── Step 5: Dragon Ship — replicate tech 1010 (civ=6 only) for this civ.
-    # Tech 1010 is Chinese-exclusive and won't fire for custom civs.  Triggered
-    # by civ bonus 402 (Dragon Ship) rather than tree_units.
-    _DRAGON_SHIP_UNIT = 1302
-    _DRAGON_SHIP_REQS = (103, 35)   # Imperial Age tech, Galleon tech
-    _DRAGON_SHIP_UPGRADES = ((1103, _DRAGON_SHIP_UNIT),  # Fire Galley → Dragon Ship
-                             (529,  _DRAGON_SHIP_UNIT),  # Fire Ship   → Dragon Ship
-                             (532,  _DRAGON_SHIP_UNIT))  # Fast Fire   → Dragon Ship
-    _civ_bonus_ids = {e[0] for e in get_civ_bonuses(civ_def)}
-    if 402 in _civ_bonus_ids:
-        from genieutils.effect import Effect as _Effect
-        ds_cmds = [
-            EffectCommand(type=3, a=src, b=dst, c=-1, d=0.0)
-            for src, dst in _DRAGON_SHIP_UPGRADES
-        ]
-        ds_eff = _Effect(name="Dragon Ship Upgrade", effect_commands=ds_cmds)
-        dat.effects.append(ds_eff)
-        ds_eff_id = len(dat.effects) - 1
-        ds_tech = _make_tech(name="Dragon Ship", effect_id=ds_eff_id,
-                             civ_index=civ_index)
-        ds_tech.required_techs = (*_DRAGON_SHIP_REQS, -1, -1, -1, -1)
-        ds_tech.required_tech_count = len(_DRAGON_SHIP_REQS)
-        ds_tech.repeatable = 1
-        dat.techs.append(ds_tech)
-        print("       Dragon Ship upgrade tech added (replicates tech 1010 for this civ)")
+    # ── Step 5: Dragon Ship.
+    #
+    # This used to hand-build a replica of tech 1010 here, keyed on civ bonus
+    # 402.  In a real build it emitted nothing (issue #28) while bonus 362 —
+    # which simply deepcopies vanilla tech 1010 through the ordinary catalog
+    # path — worked first try in-game (confirmed 2026-09-01).  So 402 is now
+    # mapped to [1010] in bonus_catalog_raw.json alongside 362, and both go
+    # through _apply_bonuses like every other tech-backed bonus.
+    #
+    # Do not reintroduce a bespoke replica here: _allocate_tech already handles
+    # the civ=6 gating that made tech 1010 look unusable (CLAUDE.md quirk 9).
 
     # ── Step 5b: Regional resource buildings (Settlement / Folwark / Mule Cart).
     #
@@ -1778,7 +1764,6 @@ HANDLED_BONUS_IDS = {
     239, 400,
     222, 356, 401,
     286,
-    402,   # Dragon Ship (handled via Step 5 of _apply_tree_wiring)
     403,   # Settlement unlock (handled via Step 5b of _apply_tree_wiring)
     404,   # Mining Camp techs free (Bohemians)
     *_UNLOCK_UNIT_BONUSES,   # 405-416: regional / second unique unit unlocks
