@@ -3491,22 +3491,45 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         new_civ.name = dat.civs[civ_index].name
     else:
         new_civ.name = alias
-    # Castle graphic: copy units[82] from the chosen source civ (0-indexed KM value → DAT civ N+1).
+    # Architecture's representative civ, resolved up front so the castle and
+    # wonder defaults below can fall back to it.
+    arch_val = civ_def.get("architecture", 2)
+    arch_src = (_ARCH_REP_CIVS[arch_val - 1]
+                if isinstance(arch_val, int) and 1 <= arch_val <= len(_ARCH_REP_CIVS)
+                else None)
+
+    def _graphic_src(raw) -> int:
+        """DAT civ index to copy a castle/wonder model from.
+
+        An explicit pick is a 0-based KM civ index, so DAT civ = raw + 1.
+        Unset (-1) follows the chosen architecture rather than doing nothing:
+        apply_civ clones Britons, so "leave it alone" used to mean "European
+        castle", which looks wrong on a Mesoamerican or South American town.
+        """
+        if isinstance(raw, int) and raw >= 0:
+            return raw + 1
+        return arch_src if arch_src is not None else 0
+
+    # Castle graphic: copy units[82] from the chosen source civ.
     # Falls back to "castle_model" so raw civbuilder_v1 files (before _schema_to_draft) also work.
     castle_raw = civ_def.get("castle") if "castle" in civ_def else civ_def.get("castle_model", -1)
-    castle_src = (castle_raw + 1) if isinstance(castle_raw, int) else 0
+    castle_src = _graphic_src(castle_raw)
     if castle_src > 1 and castle_src < len(dat.civs):
         src_units = dat.civs[castle_src].units
         castle_civ_name = dat.civs[castle_src].name
-        print(f"       Castle: copying from DAT civ {castle_src} ({castle_civ_name!r})")
+        origin = "explicit" if isinstance(castle_raw, int) and castle_raw >= 0 else "architecture default"
+        print(f"       Castle: copying from DAT civ {castle_src} ({castle_civ_name!r}) [{origin}]")
         if len(src_units) > 82 and src_units[82] is not None:
             new_civ.units[82] = deepcopy(src_units[82])
 
     # Wonder graphic: copy units[276] from the chosen source civ.
     wonder_raw = civ_def.get("wonder") if "wonder" in civ_def else civ_def.get("wonder_model", -1)
-    wonder_src = (wonder_raw + 1) if isinstance(wonder_raw, int) else 0
+    wonder_src = _graphic_src(wonder_raw)
     if wonder_src > 1 and wonder_src < len(dat.civs):
         src_units = dat.civs[wonder_src].units
+        origin = "explicit" if isinstance(wonder_raw, int) and wonder_raw >= 0 else "architecture default"
+        print(f"       Wonder: copying from DAT civ {wonder_src} "
+              f"({dat.civs[wonder_src].name!r}) [{origin}]")
         if len(src_units) > 276 and src_units[276] is not None:
             new_civ.units[276] = deepcopy(src_units[276])
 
@@ -3515,10 +3538,6 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # original Civ objects alive — which is what makes "replace Byzantines and
     # choose Mediterranean" work instead of silently copying the half-built
     # replacement onto itself.
-    arch_val = civ_def.get("architecture", 2)
-    arch_src = (_ARCH_REP_CIVS[arch_val - 1]
-                if isinstance(arch_val, int) and 1 <= arch_val <= len(_ARCH_REP_CIVS)
-                else None)
     arch_src_civ = dat.civs[arch_src] if arch_src is not None and arch_src < len(dat.civs) else None
 
     monk_src = civ_def.get("monk_skin", -1)

@@ -13,6 +13,21 @@ SKIP_REASONS: dict[int, str] = {
 }
 
 
+# Bonuses hidden from the picker because another card does the same job better.
+# Maps the retired id to the one that supersedes it.
+#
+# The implementation is deliberately left in place: KM-format civs in the wild
+# may already reference these, and dropping the catalog entry would make such a
+# civ build silently without the bonus. Hiding it only stops *new* civs from
+# picking it, which is the whole point — old civs keep working and keep their
+# label in build output.
+DEPRECATED_BONUSES: dict[int, int] = {
+    # Both give Archery Range units +1 melee armor per age. 364 is the vanilla
+    # tech copy and also covers Champi Warriors, so it strictly supersedes 245.
+    245: 364,
+}
+
+
 def _load() -> dict[int, str]:
     global _NAMES
     if _NAMES is None:

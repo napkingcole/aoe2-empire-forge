@@ -34,6 +34,7 @@ fi
 run "in-game tech tree (python)"  "$PY" tests/test_civtechtrees.py
 run "civ_def formats (python)"    "$PY" tests/test_civ_def_formats.py
 run "no direct civ_def reads"     "$PY" tests/test_no_direct_civdef_reads.py
+run "catalog resource ids"        "$PY" tests/test_resource_ids.py
 
 # Route round-trip needs the real game DAT and ~75s, so it is opt-in.  It skips
 # itself cleanly when no DAT is found; ROUNDTRIP=1 makes it run.

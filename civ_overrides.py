@@ -354,9 +354,21 @@ def _apply_hero_unit(dat, slot: int, draft: dict) -> None:
     # hero).  Liu Bei — the shipped one-at-a-time hero — is enabled=0 too; the cap
     # comes from attributes 126/127 in imp_eff above, not from the enabled flag.
     unit.disabled = 0   # clean base for the EC_ADD on attribute 127
-    unit.language_dll_name     = hero_name_sid
-    unit.language_dll_creation = hero_name_sid + 1000
-    unit.language_dll_help     = hero_name_sid + 100000
+
+    # Only claim the pool SIDs when the caller will actually write text to them.
+    # The pool holds *existing* campaign strings, so repointing without writing
+    # does not blank the name — it swaps the hero's name for whatever campaign
+    # line happens to live at that id ("The English castle at Falkirk is no
+    # more!").  An unnamed hero keeps its vanilla strings instead, which is
+    # always a sane fallback.  wizard_build.py / app.py gate their string writes
+    # on the same non-empty name, so the two stay in step.
+    if (hero.get("name") or "").strip():
+        unit.language_dll_name     = hero_name_sid
+        unit.language_dll_creation = hero_name_sid + 1000
+        unit.language_dll_help     = hero_name_sid + 100000
+    else:
+        print("       Hero unit: no name given — keeping vanilla strings "
+              "(a pool SID with no text written shows campaign dialogue)")
 
     if unit.creatable:
         # ── Train location: always Castle btn 2 (W key = hotkey 16381) ───────

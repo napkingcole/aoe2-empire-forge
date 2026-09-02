@@ -70,10 +70,26 @@ VFFIS 57) alongside it just makes them slower for nothing — that pairing was
 removed from bonus 240. 190 (Food Gathering) covers every food source, which is
 why tech 737 compensates the whole villager roster.
 
-**Open question:** every type-6 command in our catalog passes `B = -1`; every
-vanilla type-6 passes `B = 0`. Bonuses 235/236/237 use valid resource ids with
-`B = -1`, so they are a clean control — if "Trees last 100% longer" works
-in-game, `B = -1` is harmless and no further change is needed.
+**`B = -1` on type-6 is fine — confirmed in-game 2026-09-01.** Our catalog passes
+`B = -1` on every type-6 command where vanilla passes `B = 0`. Tested with bonus
+235 (Trees last 100% longer) on a single villager and a single tree: the tree
+yielded 199 wood instead of 100, and the villager's carried total rose about
+twice as fast as the tree depleted. No change needed for 132/235/236/237/238/240.
+
+**The depletion model is the reverse of what the note above implies.** Raising a
+productivity multiplier does not leave the node depleting normally while you
+bank more — the node depletes at roughly `1/multiplier` of what the gatherer
+accumulates. Observed: villager carrying 32 while the tree had dropped only 17.
+
+**Unexplained, and worth knowing before pricing these:** that villager carried
+**32** consistently, which no legal carry capacity allows (base 10, Wheelbarrow
+→ 12, Hand Cart → 19, and Hand Cart is Imperial-only). Productivity appears to
+inflate effective carry as well as yield, which means fewer trips for more
+resource — so the work-rate compensation does *not* make these bonuses neutral.
+They are net positive, and more so the further the resource sits from a
+drop-off. Vanilla's Mapuche forager bonus (tech 1381) pairs resource 296 with an
+explicit carry-capacity multiplier on the same unit; ours have no such command,
+so the mechanism behind the inflation is not yet understood.
 
 Do not reference techs 737-747 directly. They are the lobby "resources last X%"
 ladder: `civ = -1` with `required_tech_count = 1` and no valid prerequisite, so

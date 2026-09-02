@@ -172,6 +172,18 @@ function validateStep(n) {
     }
     showUUError(false);
   }
+  if (n === 8) {
+    // A hero with no name gets no custom strings, and the DAT keeps the base
+    // unit's vanilla ones.  Playable, but never what the user intended.
+    const hu = draft.hero_unit;
+    if (hu && hu.base_unit_id != null && !(hu.name || "").trim()) {
+      const el = document.getElementById("hero-name");
+      el?.classList.add("is-invalid");
+      el?.focus();
+      return false;
+    }
+    document.getElementById("hero-name")?.classList.remove("is-invalid");
+  }
   if (n === 6 || n === 7) {
     const { key, prefix } = UT_STEPS[n];
     const ut = draft[key] || {};
@@ -891,7 +903,26 @@ function _populateReplaceCivSelect() {
 
 // ── Export JSON ───────────────────────────────────────────────────────────────
 
+// An empty tree is a legal-looking state that produces a badly broken civ: the
+// DAT keeps almost everything trainable while the per-civ layout JSON marks all
+// 170 nodes NotAvailable, so in-game the tech tree screen reads as blank while
+// the units are still buildable.  Refuse to save it rather than let someone
+// discover that after a build.
+function _treeIsEmpty() {
+  const t = draft.tree || {};
+  return !(t.units || []).length
+      && !(t.buildings || []).length
+      && !(t.techs || []).length;
+}
+
 document.getElementById("btn-export-json").addEventListener("click", async () => {
+  if (_treeIsEmpty()) {
+    alert("This civilization has an empty tech tree, so it would build with "
+        + "everything disabled.\n\nGo to Step 2 (Tech Tree), open the tree "
+        + "editor and pick a starting template, then save again.");
+    showStep(2);
+    return;
+  }
   const btn = document.getElementById("btn-export-json");
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Saving…';
@@ -1118,7 +1149,17 @@ function _heroSetSelected(id) {
   if (!id) {
     draft.hero_unit = null;
   } else if (id !== _heroId()) {
-    draft.hero_unit = { base_unit_id: id, name: "", description: "", overrides: {}, flags: {} };
+    // Default the name to the catalog's display name rather than "".  An unnamed
+    // hero gets no custom strings written, and the build then falls back to the
+    // unit's vanilla name — so the field must never be silently blank.
+    const _heroCat = _HERO_CATALOG.find(h => h.id === id);
+    draft.hero_unit = {
+      base_unit_id: id,
+      name:         (_heroCat && _heroCat.name) ? _heroCat.name : "",
+      description:  "",
+      overrides:    {},
+      flags:        {},
+    };
   } else {
     draft.hero_unit = null;  // click selected card to deselect
   }
@@ -3506,6 +3547,36 @@ async function populateTtTemplates() {
   }
 }
 
+// Strip the regional half of every mutually-exclusive swap from the union tree.
+// Shared by the "full" template button and the empty-draft seed below so the two
+// can't drift apart.
+function _filterFullTree(data) {
+  const regUnits = typeof _REGIONAL_UNIT_IDS     !== 'undefined' ? _REGIONAL_UNIT_IDS     : new Set();
+  const regBldgs = typeof _REGIONAL_BUILDING_IDS !== 'undefined' ? _REGIONAL_BUILDING_IDS : new Set();
+  return {
+    units:     (data.units     || []).filter(id => !regUnits.has(id)),
+    buildings: (data.buildings || []).filter(id => !regBldgs.has(id)),
+    techs:     (data.techs     || []).slice(),
+  };
+}
+
+// A brand-new draft starts with the full tree rather than an empty one.  Empty
+// was the default for no better reason than "the user hasn't chosen yet", but a
+// civ that never visits Step 2 then builds with every node disabled.  Starting
+// wide open means skipping the step yields a playable civ.
+async function _seedFullTreeIfEmpty() {
+  const t = draft.tree || {};
+  if ((t.units || []).length || (t.buildings || []).length || (t.techs || []).length) return;
+  try {
+    const res  = await fetch("/api/builder/techtree?civ=full");
+    if (!res.ok) return;
+    draft.tree = _filterFullTree(await res.json());
+    saveDraft();
+  } catch (e) {
+    console.warn("Could not seed the default tech tree:", e);
+  }
+}
+
 document.getElementById("btn-open-tree").addEventListener("click", async () => {
   const templateVal = document.getElementById("tt-template-select").value;
 
@@ -3535,13 +3606,8 @@ document.getElementById("btn-open-tree").addEventListener("click", async () => {
       // Guang Cavalry and no Knights.  Filtering those out was giving South
       // American and Chinese templates a tech tree they can't actually have.
       if (templateVal === "full") {
-        const regUnits = typeof _REGIONAL_UNIT_IDS !== 'undefined' ? _REGIONAL_UNIT_IDS : new Set();
-        const regBldgs = typeof _REGIONAL_BUILDING_IDS !== 'undefined' ? _REGIONAL_BUILDING_IDS : new Set();
-        treeToLoad = [
-          data.units.filter(id => !regUnits.has(id)),
-          data.buildings.filter(id => !regBldgs.has(id)),
-          data.techs,
-        ];
+        const full = _filterFullTree(data);
+        treeToLoad = [full.units, full.buildings, full.techs];
       } else {
         treeToLoad = [data.units, data.buildings, data.techs];
         // Adopt the template civ's siege ship.  The picker is the only control
@@ -3578,6 +3644,10 @@ async function init() {
     window._metaScouts        = meta.starting_scouts || [];
     window._metaMonks         = meta.monk_skins      || [];
     _unlockBonusUnits         = meta.unlock_bonuses  || {};
+    // A draft with no tree yet (new civ, or one saved before this defaulted to
+    // full) gets the wide-open tree before anything reads draft.tree.
+    await _seedFullTreeIfEmpty();
+
     // Reconcile drafts saved before the unlock bonuses existed (or edited in
     // another tab) so the bonus list matches the tree from the first render.
     if (_deriveUnlockBonuses()) saveDraft();
