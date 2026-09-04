@@ -15,9 +15,13 @@ It is also the harness for the schema-canonical refactor: capture hashes with
 `--baseline`, migrate, then re-run and diff.  A no-op refactor leaves every
 hash unchanged.
 
-Unlike the rest of tests/, this one needs the real game DAT and takes ~40s, so
-run_all.sh skips it unless the DAT is found.  Two loads total — one per route,
-reused across all civs — because load_dat alone is ~16s.
+Unlike most of tests/, this needs the real game DAT and takes ~80s, so
+run_all.sh leaves it opt-in behind ROUNDTRIP=1 (it also skips itself cleanly if
+no DAT is found).  Two loads total — one per route, reused across all civs —
+because load_dat alone is ~17s.
+
+This is a DRIFT check.  "Does a build complete at all?" is a different question
+and belongs to test_build_smoke.py, which runs by default at ~25s.
 
     venv/bin/python tests/test_route_roundtrip.py             # compare routes
     venv/bin/python tests/test_route_roundtrip.py --baseline  # write hashes

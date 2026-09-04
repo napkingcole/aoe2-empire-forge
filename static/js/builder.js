@@ -3547,15 +3547,51 @@ async function populateTtTemplates() {
   }
 }
 
-// Strip the regional half of every mutually-exclusive swap from the union tree.
-// Shared by the "full" template button and the empty-draft seed below so the two
-// can't drift apart.
+// Civ-unique buildings.  They are in the "full" union tree because some civ
+// owns them, but the editor has no node for any of them — each is granted by a
+// bonus card (Krepost by bonus 93) or by a regional swap, never by ticking a
+// tree node.  A blank civ that starts with them gets two wrong things it cannot
+// undo: _deriveUnlockBonuses ticks Unlock cards nobody chose, and
+// _patch_per_civ_techtree marks the building available in the F2 viewer while
+// the DAT correctly refuses to enable it (the phantom Feitoria, issue #31).
+//
+// Fish Trap (199) is deliberately NOT in this set.  It is also a node-less
+// "building" in the union data, but 53 civs have it — it is standard equipment,
+// and dropping it would quietly take Fish Traps away from every new civ.
+const _CIV_UNIQUE_BUILDING_IDS = new Set([
+  1021,  // Feitoria           — Portuguese
+  1189,  // Harbor             — Malay
+  1251,  // Krepost            — Bulgarians (bonus 93)
+  1665,  // Donjon             — Sicilians
+  1754,  // Caravanserai       — Hindustanis, Persians
+  1806,  // Fortified Church   — Armenians, Georgians
+  1889,  // Pasture            — Khitans
+]);
+
+// Strip the regional half of every mutually-exclusive swap from the union tree,
+// plus everything a blank civ has no way to have asked for.  Shared by the
+// "full" template button and the empty-draft seed below so the two can't drift
+// apart.
+//
+// A named civ template is deliberately NOT filtered through here — the Mapuche
+// really do have the Champi line, and the Portuguese really do have a Feitoria.
 function _filterFullTree(data) {
   const regUnits = typeof _REGIONAL_UNIT_IDS     !== 'undefined' ? _REGIONAL_UNIT_IDS     : new Set();
   const regBldgs = typeof _REGIONAL_BUILDING_IDS !== 'undefined' ? _REGIONAL_BUILDING_IDS : new Set();
+
+  // Units behind an "Unlock ..." card (Bolas Rider, Xianbei Raider, ...).  They
+  // have no tree node either, so leaving them in the seed is what pre-ticks a
+  // handful of Unlock cards on a brand-new civ.  Sourced from
+  // /api/builder/meta, which mirrors civ_appender._UNLOCK_UNIT_BONUSES, so this
+  // list cannot drift from the backend's.
+  const unlockUnits = new Set(
+    Object.values(_unlockBonusUnits || {}).flat().map(Number)
+  );
+
   return {
-    units:     (data.units     || []).filter(id => !regUnits.has(id)),
-    buildings: (data.buildings || []).filter(id => !regBldgs.has(id)),
+    units:     (data.units     || []).filter(id => !regUnits.has(id) && !unlockUnits.has(id)),
+    buildings: (data.buildings || []).filter(id => !regBldgs.has(id)
+                                                && !_CIV_UNIQUE_BUILDING_IDS.has(id)),
     techs:     (data.techs     || []).slice(),
   };
 }

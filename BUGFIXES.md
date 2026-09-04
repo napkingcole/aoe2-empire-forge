@@ -5,6 +5,50 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-02..04 — Discord issue batch #25-#35 (in-game confirmed 2026-09-04)
+
+Worked from `github.com/napkingcole/aoe2-empire-forge/issues`. All of the below were
+verified in-game on the two probe civs in `my_civs/` (`PROBES.md` has the test plan).
+
+**Build-breaking regression (found first, blocked everything else).** `9259f40` deleted
+the Dragon Ship block in `_apply_tree_wiring`, which was where `_civ_bonus_ids` was
+defined, leaving a reference behind at what is now line ~1018. Short-circuiting `and`
+meant it only fired when the building was absent from `tree[1]`, so every build crashed
+with `NameError` unless the civ had Settlement, Folwark *and* Mule Cart ticked. Branch
+only — the released v2.0.0-beta.1.4 was unaffected. Fix: `_civ_bonus_ids_early`.
+**The round-trip test would have caught this but is opt-in (`ROUNDTRIP=1`)** — worth
+deciding whether it should default to on when a DAT is present.
+
+| # | Symptom | Root cause | Fix |
+|---|---|---|---|
+| 32/33 | Unticking Monks, Houses, Fishing Ships, mining/fishing techs did nothing | disable list built only from techs some vanilla civ disables | candidate universe is now `_editor_nodes()`; three mechanisms + a protected set — CLAUDE.md quirk 15 |
+| 35 | UU cost override ignored | `resource_costs` is a fixed 3-tuple and the population slot fills the third, so a *new* resource had nowhere to go and was dropped | cost boxes are now the complete spendable cost; warns when >2 resources requested — quirk 14 |
+| 29 | UU train time only applied at the Castle | `train_time` is per `TrainLocation`; only `[0]` was written | write every slot — quirk 14 |
+| 27 | Winged Hussar: civ lost the Hussar and gained nothing | tech 786 wants 3 of `[115, 254, 788, 789]`; the copied trigger lands at a new id so only 115+254 were satisfiable | `_add_alt_prereq` — quirk 9 |
+| 26 | Eco upgrades discounted but not an age earlier | the "one age earlier" half is nine Burgundian `civ=36` shim techs listed as alternative prerequisites — no EffectCommand can express it | `_apply_early_eco_shims` + `_add_alt_prereq` |
+| 34 | Custom UU hover showed neither cost nor description | three stacked bugs: tooltip rendered inside `apply_civ` before overrides ran; `wizard_build._draft_to_civ_def` dropped the description; and both string blocks wrote the same ids twice with different text | `_refresh_uu_tooltips`, carry the description, `_owned_sids` guard in all three builders |
+| 31 | Feitoria buildable on a civ replacing the Portuguese | the blank-civ seed carried it (see below); the DAT refused it but `_patch_per_civ_techtree` still lit the node | `UNSUPPORTED_UNIQUE_BUILDINGS`, filtered in `_tree_sets` |
+| 25 | Eagle Warriors and Fire Lancers both selectable | both sit on Barracks button 4, so one was always unreachable | `_REGIONAL_PAIRS` entry; Fire Lancers are the default side (5 civs vs 2) |
+| — | Monk skin: right skin idle, wrong skin walking, wrong icon | `_copy_monk_skin` copied 3 of the 6 per-skin fields while `_copy_architecture` had already written the walking graphic | copy all six — quirk 12 |
+| — | New civ arrived with ~10 Unlock cards ticked and a phantom Feitoria | `_filterFullTree` read `_REGIONAL_UNIT_IDS`/`_REGIONAL_BUILDING_IDS`, which cover neither Unlock-card units nor civ-unique buildings | filter both; `tests/test_seed_tree.js` |
+| — | UT research-button label could render the whole tooltip | `castle_ut_desc_sid` **is** `name_sid+1000`, the button label — two writers, one id | drop the second write; slot map now documented at `_append_unique_tech_stubs` |
+| — | Crash on any civ with a blank UU name/description | `.get("name", "").strip()` — the default never fires when the key exists as `null`, which is how the wizard stores an untouched field | `or ""` |
+
+**#22** (Bohemian free mining) needed no work — it shipped in `0187f9e` the same day it
+was filed; this batch only confirmed it.
+
+**#30** (2 sheep per new Town Center) was the hard one. The four copied techs were
+faithful in every field, so it was isolated with two single-bonus civs —
+`probe_sheep` (bonus 139) and `probe_tcfood` (bonus 100, the same per-TC engine hook
+via tech 639 + attribute 57). **Both worked in isolation**, which means the mechanism
+copies correctly and the original failure was interference from something else in
+`probe_bonus`. Not yet root-caused.
+
+**Still open:** Fish Trap cannot be disabled (no editor node anywhere). `build_all.py`
+writes `help_sid_ut`, which nothing reads — left in place deliberately and commented.
+
+---
+
 ## 2026-06-29 — Elite Cavalier / Paladin unlocked too early
 
 **Symptom:** Elite Cavalier and/or Paladin became trainable or researchable before the

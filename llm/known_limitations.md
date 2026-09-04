@@ -32,7 +32,9 @@ Documented constraints in the AoE2 DE dat engine that affect what's achievable v
 
 **Root cause:** Tech 209's `required_techs` tuple contains the literal ID 768. It checks whether tech 768 has fired, not whether "any civ-gate tech with the same purpose" has fired. Our allocated copy has a different ID and is never checked.
 
-**Workaround:** Create a civ-specific copy of tech 209 itself with simplified `required_techs=(102, 166)` (Castle Age + Knight make-avail), then disable global tech 209 via type=102 so it doesn't duplicate in Imperial Age.
+**Workaround (preferred, added 2026-09-04):** don't clone the downstream tech — **add the copy as an alternative prerequisite on it.** `required_techs` is a 6-slot tuple, usually with spares, and `required_tech_count` is "N of the listed", so writing the copy's id into a free slot and leaving the count alone makes the copy one more way to satisfy the same requirement. Other civs are untouched: they cannot research a tech gated to ours, and their own route still satisfies the count. `civ_appender._add_alt_prereq(dat, original_tid, new_tid, limit=None)` does this; pass `limit` to avoid rewiring copies you just appended. Two bonuses depend on it — 282 (Winged Hussar, tech 786 wants 3 of `[115, 254, 788, 789]`) and 105 (nine `civ=36` eco shims). Both confirmed in-game 2026-09-04.
+
+**Older workaround (more invasive, only if no free slot exists):** create a civ-specific copy of the downstream tech itself with simplified `required_techs`, then disable the global one via type=102 so it doesn't duplicate later. `_add_alt_prereq` logs a warning naming the tech when it finds no free slot, which is the signal to fall back to this.
 
 ---
 
@@ -122,4 +124,30 @@ Documented constraints in the AoE2 DE dat engine that affect what's achievable v
 
 **Root cause:** `build_all.py`'s final string-combining step re-sorts all lines by `(numeric_id, full_line_text)` to group them into contiguous blocks (a requirement for some picker-description overrides to render — see the "120150+i" note elsewhere in that file). The documented assumption was "AoE2 DE key-value files are first-definition-wins," but resorting by the line's OWN TEXT as the tie-breaker does not preserve original write order — it makes the outcome depend on which string sorts alphabetically first. (`app.py`'s build path doesn't re-sort at all, so it was never affected by this specific bug — but also can't rely on contiguous-block grouping for the cases that need it.)
 
-**Workaround:** Tie-break on the line's original insertion index, not its text — `sorted(enumerate(lines), key=lambda x: (extracted_id, x[0]))`, then re-emit `line for _, line in ...`. This makes "first write wins" actually true again. When adding any NEW string-writing block, check whether it might double-write an ID some OTHER block already covers (e.g. via a shared `dll_name`/sid) — if so, order your appends deliberately (richer/more-specific text first) and don't rely on alphabetical luck.
+**Workaround:** Tie-break on the line's original insertion index, not its text — `sorted(enumerate(lines), key=lambda x: (extracted_id, x[0]))`, then re-emit `line for _, line in ...`. This makes "first write wins" actually true again.
+
+**Better: don't write the id twice at all (2026-09-04).** The tie-break above restores a deterministic order, but "first write wins" is still an assumption about undocumented engine behaviour, and it silently decides which of two texts a player sees. All three builders now track an `_owned_sids` set: `extra_unit_strings` records every id it claims, and the later generic block skips any id already owned (`_put()`). Duplicate count across a two-civ batch went from several to zero. Two collisions this found:
+- a KM-custom UU's rich Castle tooltip (`sid+21000`, `sid+100000`) being re-emitted as a bare unit name, so the cost and description a player saw depended on the tie-break;
+- Castle/Imperial UT text, where `civ_result["castle_ut_desc_sid"]` **is** `name_sid+1000` — the short research-button label — and the full tooltip paragraph was being written on top of it.
+
+When adding a new string-writing block, give it an ownership check rather than ordering your appends and hoping.
+
+---
+
+## A Unit Has Only 3 Cost Slots, and Population Usually Takes One
+
+**Symptom:** a unique unit asked for 65 wood + 30 gold comes out costing its vanilla 45 food + 30 gold. The wood is dropped with no error.
+
+**Root cause:** `creatable.resource_costs` is a fixed 3-tuple (`tuple[ResourceCost, ResourceCost, ResourceCost]` — verified across all 1218 creatable units in the DAT, every one has exactly 3). Most trainable units spend one slot on population (`type=4`, `flag=0`), leaving room for **two spendable resources**. Merging a *new* resource type into a unit that already charges two therefore has nowhere to go. Non-standard types 214/215/501/514 also appear in that slot on a handful of units.
+
+**Workaround:** treat the cost fields as a complete replacement, not a patch — clear the spendable slots and rewrite them, preserving any slot whose type is outside 0-3. When the request needs more slots than exist, warn naming what was dropped rather than failing silently (`civ_overrides._apply_uu_overrides`). Note `civ_appender._apply_unit_costs` on the append-a-custom-unit path resets *all* slots including population.
+
+---
+
+## Fish Trap Has No Tech-Tree Editor Node
+
+**Symptom:** unticking the Fish Trap has no effect; it stays buildable.
+
+**Root cause:** unit 199 appears in the union `Building` data but has no node in `FULL.json` or in any of the 54 per-civ layouts — the editor cannot draw or toggle it. So its absence from a civ's tree array carries no intent: every civ's tree lacks it, including the 53 that should have one.
+
+**Workaround:** none currently. It is deliberately excluded from the disable sweep, because sweeping "absent from tree" would remove Fish Traps from every civ. Giving it a node in the Dock column is the real fix. Same reasoning applies to any future node-less entity — see CLAUDE.md quirk 15.

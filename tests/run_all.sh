@@ -26,8 +26,10 @@ run() {
 
 if command -v node >/dev/null 2>&1; then
     run "editor layout (node)" node tests/test_editor_layout.js
+    run "blank-civ seed tree (node)" node tests/test_seed_tree.js
+    run "unit exclusivity (node)"    node tests/test_unit_exclusivity.js
 else
-    echo "!! node not found — skipping tests/test_editor_layout.js"
+    echo "!! node not found — skipping tests/test_editor_layout.js, tests/test_seed_tree.js, tests/test_unit_exclusivity.js"
     failed=1
 fi
 
@@ -36,13 +38,26 @@ run "civ_def formats (python)"    "$PY" tests/test_civ_def_formats.py
 run "no direct civ_def reads"     "$PY" tests/test_no_direct_civdef_reads.py
 run "catalog resource ids"        "$PY" tests/test_resource_ids.py
 
-# Route round-trip needs the real game DAT and ~75s, so it is opt-in.  It skips
-# itself cleanly when no DAT is found; ROUNDTRIP=1 makes it run.
+# Build smoke: builds ONE civ end to end (~25s, of which ~17s is loading the
+# DAT).  Everything above this line is a pure data check that never builds a
+# civ, which is how a NameError that broke every build once reached the branch
+# with the suite still green.  Runs by default and skips itself cleanly when no
+# DAT is found; SKIP_SMOKE=1 opts out.
+if [ "${SKIP_SMOKE:-0}" = "1" ]; then
+    echo
+    echo "──── build smoke: SKIPPED (SKIP_SMOKE=1 was set)"
+else
+    run "build smoke (python)" "$PY" tests/test_build_smoke.py
+fi
+
+# Route round-trip builds all 19 saved civs down BOTH routes and compares them —
+# a drift check, distinct from the smoke test's "does it build at all".  ~80s,
+# so it stays opt-in.  It skips itself cleanly when no DAT is found.
 if [ "${ROUNDTRIP:-0}" = "1" ]; then
     run "route round-trip (python)" "$PY" tests/test_route_roundtrip.py
 else
     echo
-    echo "──── route round-trip: SKIPPED (ROUNDTRIP=1 to run, needs game DAT, ~75s)"
+    echo "──── route round-trip: SKIPPED (ROUNDTRIP=1 to run, needs game DAT, ~80s)"
 fi
 
 echo

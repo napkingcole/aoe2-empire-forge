@@ -31,7 +31,8 @@ from pathlib import Path
 from dat_reader import find_game_dat, load_dat, dat_info
 from version import __version__ as _APP_VERSION
 from civ_schema import is_civbuilder_v1, is_empireforge, to_draft as _schema_to_draft
-from civ_overrides import _apply_uu_overrides, _apply_hero_unit, _override_ut_costs
+from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
+                           _refresh_uu_tooltips)
 from civ_appender import (apply_civ, assign_all_languages,
     DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET,
     get_civ_bonuses, get_team_bonuses, get_ut_entries, get_km_uu_index)
@@ -41,7 +42,7 @@ from build_civ import (
     _decode_flag,
     _find_civ_techtrees_folder,
     _patch_per_civ_techtree,
-    _canonical_techtree_id, _resolve_uu_info,
+    _canonical_techtree_id, _resolve_uu_info, uu_cost_text,
 )
 from civ_appender import _KM_UU_NAMES
 
@@ -514,6 +515,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # KM-format files never have these keys, so this is always a no-op for them.
         _override_ut_costs(dat, civ_result, civ_def)
         _apply_uu_overrides(dat, slot, uu_info, civ_def)
+        _refresh_uu_tooltips(dat, slot, civ_result)
         _apply_hero_unit(dat, slot, civ_def)
         civs_overrides[slot] = {
             "name_sid": name_sid,
@@ -661,12 +663,14 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 if desc:
                     ut_hover += f"\\n{desc}"
                 string_lines[lang].append(f'{name_sid_ut + 21000} "{ut_hover}"')
-                # lang_help in the DAT tech points to help_sid_ut — a 60000s existing
-                # vanilla ID (UT_HELP_POOL_OFFSET block). Writing the cost tooltip here
-                # is safe: 60000-68999 are campaign narrative strings that only appear
-                # in campaign scenarios (which this mod does not affect), and the engine
-                # reads language_dll_help directly for TECH research-button hover tooltips.
-                # We do NOT write at name_sid_ut+100000 (=170000s, live lobby UI).
+                # INERT, kept deliberately: language_dll_help does NOT point here.
+                # _make_tech sets lang_help=name_sid+21000 (65209 for civ 24), while
+                # help_sid_ut comes from UT_HELP_POOL_OFFSET (60051) — different ids.
+                # Nothing reads this write.  It is left in place because it is
+                # harmless (60000-68999 are campaign narrative strings this mod does
+                # not otherwise touch) and this path is verified working; removing it
+                # would be a change with no upside.  Do not copy it into a new
+                # builder, and do not "fix" a tooltip by writing here.
                 string_lines[lang].append(f'{help_sid_ut} "{ut_hover}"')
                 string_lines[lang].append(
                     f'{name_sid_ut + DLL_TECH_TREE_OFFSET} "{short}"')
@@ -681,6 +685,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 string_lines[lang].append(
                     f'{sid + DLL_HELP_OFFSET} "Research <b>{name}<b> (<cost>)"')
                 string_lines[lang].append(f'{sid + 150000} "{name}"')
+            _owned_sids: set[int] = set()
             # KM-custom UU units' OWN name/help strings (the actual in-game
             # selection-panel/training-queue text, distinct from the
             # dll_name+10000/+100000 tech-tree-viewer block below). Without
@@ -702,6 +707,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 help_text = ext.get("help_text", name)
                 desc_sid = ext.get("desc_sid", sid)
                 string_lines[lang].append(f'{desc_sid} "{help_text}"')
+                _owned_sids |= {sid, sid + DLL_CREATION_OFFSET, desc_sid}
                 # The Castle "create unit" button's EXTENDED hover tooltip
                 # for a UNIT (as opposed to a tech's research-button
                 # tooltip) is read from name+21000, NOT name+100000 — a
@@ -714,38 +720,54 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 if "ext_sid" in ext:
                     string_lines[lang].append(
                         f'{ext["ext_sid"]} "{ext.get("ext_text", name)}"')
-            # UU name strings for civ selection tech tree display. For
-            # KM-custom UUs, uu_dll == the extra_unit_strings sid above (both
-            # ultimately read the unit's own language_dll_name) — the
-            # `+DLL_HELP_OFFSET` line here is then a harmless duplicate
-            # (same id, weaker bare-name text) that the now-fixed insertion-
-            # order tie-break correctly lets the richer one win. Left as-is
-            # rather than cross-wiring the two independently-evolved paths.
+                    _owned_sids.add(ext["ext_sid"])
+
+            def _put(sid_: int, text: str) -> None:
+                """Write a string unless extra_unit_strings already owns that id.
+
+                For a KM-custom UU, uu_dll IS the extra_unit_strings sid, so the
+                block below used to re-emit the tooltip ids with a bare unit
+                name.  That left two conflicting definitions of one string and
+                relied on the engine preferring the first — an assumption that
+                was never verified.  Not emitting the weaker line at all removes
+                the question (issue #34).
+                """
+                if sid_ not in _owned_sids:
+                    string_lines[lang].append(f'{sid_} "{text}"')
+
+            # UU name strings for civ selection tech tree display.
             if uu_info:
                 uu_dll = uu_info["dll_name"]
+                # Hover text quotes the cost the player is actually charged —
+                # read from the DAT after _apply_uu_overrides, so a UU with a
+                # cost override no longer advertises the vanilla price.
+                _cost  = uu_cost_text(dat, slot, uu_info.get("unit_id"))
+                _hover = f"Create <b>{uu_display}<b>" + (f"\\n{_cost}" if _cost else "")
                 # +1000 is the Castle "Create <Unit>" button label (language_dll_creation).
                 # Only write for renamed UUs to avoid unnecessarily overwriting vanilla strings
-                # that other civs' units may share. For KM-custom UUs this is a harmless
-                # duplicate of the extra_unit_strings "Create {name}" entry.
+                # that other civs' units may share.
                 is_renamed = uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)
                 if is_renamed:
                     # Base string ID: unit name in selection panel. Writing here affects
                     # any vanilla civ that shares this unit (e.g. Mongols opponents for
                     # Mangudai). Acceptable trade-off; proper fix needs unit cloning.
-                    string_lines[lang].append(f'{uu_dll} "{uu_display}"')
-                    string_lines[lang].append(f'{uu_dll + DLL_CREATION_OFFSET} "Create {uu_display}"')
-                string_lines[lang].append(f'{uu_dll + 10000} "{uu_display}"')
-                string_lines[lang].append(f'{uu_dll + DLL_HELP_OFFSET} "{uu_display}"')
+                    _put(uu_dll, uu_display)
+                    _put(uu_dll + DLL_CREATION_OFFSET, f"Create {uu_display}")
+                _put(uu_dll + 10000, uu_display)
+                _put(uu_dll + DLL_HELP_OFFSET, _hover)
                 # Castle train-button hover reads name+21000. KM-custom UUs
                 # write this via extra_unit_strings/ext_sid; vanilla UUs need
                 # it written here or a stale campaign string bleeds through.
-                string_lines[lang].append(f'{uu_dll + 21000} "{uu_display}"')
+                _put(uu_dll + 21000, _hover)
             if uu_elite_dll and uu_elite_name:
-                string_lines[lang].append(f'{uu_elite_dll} "{uu_elite_name}"')
-                string_lines[lang].append(f'{uu_elite_dll + DLL_CREATION_OFFSET} "Create {uu_elite_name}"')
-                string_lines[lang].append(f'{uu_elite_dll + 10000} "{uu_elite_name}"')
-                string_lines[lang].append(f'{uu_elite_dll + DLL_HELP_OFFSET} "{uu_elite_name}"')
-                string_lines[lang].append(f'{uu_elite_dll + 21000} "{uu_elite_name}"')
+                _ecost  = uu_cost_text(dat, slot,
+                                       uu_info.get("elite_id") if uu_info else None)
+                _ehover = f"Create <b>{uu_elite_name}<b>" + (f"\\n{_ecost}" if _ecost else "")
+                _put(uu_elite_dll, uu_elite_name)
+                _put(uu_elite_dll + DLL_CREATION_OFFSET, f"Create {uu_elite_name}")
+                _put(uu_elite_dll + 10000, uu_elite_name)
+                _put(uu_elite_dll + DLL_HELP_OFFSET, _ehover)
+                _put(uu_elite_dll + 21000, _ehover)
 
         # Button PNGs (104×104 civ picker emblem).
         # Use the canonical civTechTrees name (e.g. "britons"), not the DAT
@@ -900,7 +922,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     print("Known bonus limitations (partial implementation):")
     print("  [81]  No buildings required to age up — IMPLEMENTED (Khmer shadow-node mechanism).")
     print("        Limited to ~4 civs per batch; raises RuntimeError if Shadow Node+ prereq slots fill up.")
-    print("  [105] Economic upgrades −33% food — food discount applied; 'one age earlier' NOT implemented")
+    print("  [105] Economic upgrades −33% food, one age earlier — IMPLEMENTED "
+          "(Burgundian shim techs re-pointed per civ).")
     print("  [283] Chemistry + Hand Cannoneer in Castle Age — IMPLEMENTED (Castle Age gate clone).")
     print("  [352] Siege Engineers in Castle Age — IMPLEMENTED (Jurchen prereq-slot mechanism).")
     print("        Limited by available prereq slots in tech 377; raises RuntimeError if slots fill up.")

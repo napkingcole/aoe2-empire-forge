@@ -38,9 +38,10 @@ from build_civ import (
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
     _decode_flag, _find_civ_techtrees_folder,
     _patch_per_civ_techtree, _canonical_techtree_id,
-    _resolve_uu_info, _find_adjacent_json,
+    _resolve_uu_info, _find_adjacent_json, uu_cost_text,
 )
-from civ_overrides import _apply_uu_overrides, _apply_hero_unit, _override_ut_costs
+from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
+                           _refresh_uu_tooltips)
 from civ_appender import (apply_civ, assign_all_languages,
                           _str_id, STRING_BASE, STRING_BLOCK_SIZE,
                           STR_CASTLE_UT, STR_IMPERIAL_UT,
@@ -631,6 +632,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 uu_info_resolved = _resolve_uu_info(civ_def, dat, slot, result)
                 _override_ut_costs(dat, result, civ_def)
                 _apply_uu_overrides(dat, slot, uu_info_resolved, civ_def)
+                _refresh_uu_tooltips(dat, slot, result)
                 _apply_hero_unit(dat, slot, civ_def)
             result["replace"] = replace
             result["log"]     = log_buf.getvalue()
@@ -789,7 +791,9 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 # language_dll_help = name_sid+21000 (same slot KM uses; 60xxx pool range
                 # is overwritten by campaign string files loaded after the mod).
                 string_lines[lang].append(f'{castle_ut_sid + 21000} "{_castle_ut_help}"')
-                string_lines[lang].append(f'{castle_ut_desc_sid} "{_castle_ut_help}"')
+                # NOTE: no write to castle_ut_desc_sid — it IS castle_ut_sid+1000,
+                # the short research-button label set just above.  See the matching
+                # note in wizard_build.py.
                 string_lines[lang].append(
                     f'{castle_ut_sid + DLL_TECH_TREE_OFFSET} "{castle_ut_name_short}"')
 
@@ -801,7 +805,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 if imp_ut_desc_text:
                     _imp_ut_help += f"\\n{imp_ut_desc_text}"
                 string_lines[lang].append(f'{imp_ut_sid + 21000} "{_imp_ut_help}"')
-                string_lines[lang].append(f'{imp_ut_desc_sid} "{_imp_ut_help}"')
+                # NOTE: same as the Castle UT above — imp_ut_desc_sid is the
+                # button label slot, not a separate description slot.
                 string_lines[lang].append(
                     f'{imp_ut_sid + DLL_TECH_TREE_OFFSET} "{imp_ut_name}"')
                 # Bonus-specific research buttons (Imperial Scorpion, Royal Battle
@@ -819,6 +824,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     # language_dll_help = name+21000 (same slot used for UTs; 60xxx
                     # pool range is overwritten by campaign files loaded after the mod).
                     string_lines[lang].append(f'{sid + 21000} "{_ext_help}"')
+                _owned_sids: set[int] = set()
                 # KM-custom UU units' OWN name/help strings — see build_all.py's
                 # identical block for why this is separate from the dll_name+10000
                 # tech-tree-viewer block right below.
@@ -829,6 +835,11 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     # reasoning as the Castle/Imperial UT block above. desc_sid
                     # (=sid+DLL_HELP_OFFSET, computed by civ_appender) is the
                     # full tooltip.
+                    # extra_unit_strings holds the richest text for these ids —
+                    # real stats, real cost, the user's description.  Record the
+                    # ids so the generic block below cannot overwrite them with a
+                    # bare name, which is what left a custom UU's hover tooltip
+                    # showing neither cost nor description (issue #34).
                     sid, name = ext["sid"], ext["name"]
                     string_lines[lang].append(f'{sid} "{name}"')
                     string_lines[lang].append(
@@ -836,6 +847,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     help_text = ext.get("help_text", name)
                     desc_sid = ext.get("desc_sid", sid)
                     string_lines[lang].append(f'{desc_sid} "{help_text}"')
+                    _owned_sids |= {sid, sid + DLL_CREATION_OFFSET, desc_sid}
                     # The Castle "create unit" button's EXTENDED hover tooltip
                     # for a UNIT is read from name+21000, NOT name+100000 — see
                     # build_all.py's identical block / civ_appender.
@@ -843,29 +855,48 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     if "ext_sid" in ext:
                         string_lines[lang].append(
                             f'{ext["ext_sid"]} "{ext.get("ext_text", name)}"')
+                        _owned_sids.add(ext["ext_sid"])
+
+                def _put(sid_: int, text: str) -> None:
+                    """Write unless extra_unit_strings already owns that id."""
+                    if sid_ not in _owned_sids:
+                        string_lines[lang].append(f'{sid_} "{text}"')
+
                 # UU name strings for civ selection tech tree display and Castle button.
                 if uu_info:
                     uu_dll = uu_info["dll_name"]
-                    _eus = result["bonus_results"].get("extra_unit_strings", [])
-                    _ext_sid_taken = any(e.get("ext_sid") == uu_dll + 21000 for e in _eus)
+                    _ext_sid_taken = (uu_dll + 21000) in _owned_sids
                     is_renamed = bool(uu_override_name) or (
                         uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display))
                     if is_renamed:
-                        string_lines[lang].append(f'{uu_dll} "{uu_display}"')
-                        string_lines[lang].append(f'{uu_dll + DLL_CREATION_OFFSET} "Create {uu_display}"')
-                    string_lines[lang].append(f'{uu_dll + 10000} "{uu_display}"')
+                        _put(uu_dll, uu_display)
+                        _put(uu_dll + DLL_CREATION_OFFSET, f"Create {uu_display}")
+                    _put(uu_dll + 10000, uu_display)
+                    # Quote the training cost the player is actually charged.
+                    # This block previously wrote no cost at all, so a UU built
+                    # through this route never showed one (issue #34).
                     _uu_hover = f"Create <b>{uu_display}<b>"
                     if uu_override_desc:
                         _uu_hover += f"\\n{uu_override_desc}"
-                    string_lines[lang].append(f'{uu_dll + DLL_HELP_OFFSET} "{_uu_hover}"')
+                    _cost = uu_cost_text(dat, slot, uu_info.get("unit_id"))
+                    if _cost:
+                        _uu_hover += f"\\n{_cost}"
+                    _put(uu_dll + DLL_HELP_OFFSET, _uu_hover)
                     if not _ext_sid_taken:
-                        string_lines[lang].append(f'{uu_dll + 21000} "{_uu_hover}"')
+                        _put(uu_dll + 21000, _uu_hover)
                 if uu_elite_dll and uu_elite_name:
-                    string_lines[lang].append(f'{uu_elite_dll} "{uu_elite_name}"')
-                    string_lines[lang].append(f'{uu_elite_dll + DLL_CREATION_OFFSET} "Create {uu_elite_name}"')
-                    string_lines[lang].append(f'{uu_elite_dll + 10000} "{uu_elite_name}"')
-                    string_lines[lang].append(f'{uu_elite_dll + DLL_HELP_OFFSET} "{uu_elite_name}"')
-                    string_lines[lang].append(f'{uu_elite_dll + 21000} "{uu_elite_name}"')
+                    _elite_hover = f"Create <b>{uu_elite_name}<b>"
+                    if uu_override_desc:
+                        _elite_hover += f"\\n{uu_override_desc}"
+                    _ecost = uu_cost_text(dat, slot,
+                                           uu_info.get("elite_id") if uu_info else None)
+                    if _ecost:
+                        _elite_hover += f"\\n{_ecost}"
+                    _put(uu_elite_dll, uu_elite_name)
+                    _put(uu_elite_dll + DLL_CREATION_OFFSET, f"Create {uu_elite_name}")
+                    _put(uu_elite_dll + 10000, uu_elite_name)
+                    _put(uu_elite_dll + DLL_HELP_OFFSET, _elite_hover)
+                    _put(uu_elite_dll + 21000, _elite_hover)
 
             flag_png = _decode_flag(civ_def)
             if flag_png:

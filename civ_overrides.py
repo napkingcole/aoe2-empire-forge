@@ -17,7 +17,8 @@ from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import ResearchLocation, ResearchResourceCost, Tech
 from genieutils.unit import AttackOrArmor
 
-from civ_appender import HERO_POOL_OFFSET, _campaign_sid
+from civ_appender import (HERO_POOL_OFFSET, _campaign_sid,
+                          format_unit_tooltip_help, format_unit_extended_tooltip)
 
 
 # ── UT cost / time override ───────────────────────────────────────────────────
@@ -60,6 +61,38 @@ def _override_ut_costs(dat, civ_result: dict, draft: dict) -> None:
 _CASTLE_BUILDING     = 82
 _KREPOST_BUILDING    = 1251
 _CASTLE_BTN1_HOTKEY  = 16101   # Q key, Castle/Krepost button 1
+
+
+def _refresh_uu_tooltips(dat, slot: int, civ_result: dict | None) -> None:
+    """Re-render the KM-custom UU's Castle tooltips from the unit's CURRENT stats.
+
+    apply_civ builds these strings while it is still assembling the civ, which
+    is before _apply_uu_overrides has touched the unit — so a UU with a cost or
+    stat override published the preset numbers and the user's own values showed
+    up nowhere (issue #34).  Re-rendering here is cheap and keeps one copy of
+    the formatting logic, in civ_appender, rather than a second one per caller.
+
+    No-op for vanilla KM UUs: those strings are written by the caller after this
+    point and already read the overridden unit.
+    """
+    if not civ_result:
+        return
+    entries = (civ_result.get("bonus_results") or {}).get("extra_unit_strings") or []
+    for ext in entries:
+        regen = ext.get("regen")
+        uid   = ext.get("unit_id")
+        if not regen or uid is None:
+            continue
+        try:
+            unit = dat.civs[slot].units[uid]
+        except (IndexError, KeyError, TypeError):
+            continue
+        if unit is None:
+            continue
+        ext["help_text"] = format_unit_tooltip_help(
+            unit, ext["name"], extra=regen.get("extra", ""))
+        ext["ext_text"] = format_unit_extended_tooltip(
+            unit, ext["name"], tag=regen.get("tag", ""), desc=regen.get("desc", ""))
 
 
 def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> None:
@@ -158,32 +191,60 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
                     u.creatable.displayed_pierce_armour = v
 
         if overrides.get(f"train{sfx}") is not None and u.creatable:
-            if u.creatable.train_locations:
-                u.creatable.train_locations[0].train_time = int(overrides[f"train{sfx}"])
+            # train_time is a field of each TrainLocation, not of the unit, so a
+            # UU that trains in more than one building has one copy per slot.
+            # Writing only [0] left the Anarchy Barracks slot and the Krepost
+            # slot on the vanilla time while the Castle showed the override
+            # (issue #29).  apply_civ appends those extra slots before we run,
+            # so every one of them is already here.
+            for tl in u.creatable.train_locations:
+                tl.train_time = int(overrides[f"train{sfx}"])
 
-    # Training cost overrides (shared — applies to both tiers)
+    # Training cost overrides (shared — applies to both tiers).
+    #
+    # `resource_costs` is a fixed 3-slot tuple, and most trainable units spend
+    # one slot on population (type 4, flag 0), which leaves room for just TWO
+    # spendable resources.  The old code merged into whatever slots happened to
+    # be free, so asking a Samurai (food + gold + population — all three slots
+    # full) for wood silently dropped the wood and left the vanilla cost intact
+    # (issue #35).
+    #
+    # The four cost boxes are therefore read as the complete spendable cost, not
+    # as a patch over the vanilla one: filling in "wood 65, gold 30" means the
+    # unit costs 65 wood and 30 gold, with the unmentioned food gone.  That
+    # matches the wizard, which shows one combined "Default: 45F 30G" label for
+    # the whole row rather than a per-resource default.  Non-spendable slots
+    # (population, and the rarer 214/215/501/514 counters) are preserved.
     _RES = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
+    _SPENDABLE = set(_RES.values())
     cost_overrides = {
         _RES[r]: int(overrides[f"cost_{r}"])
         for r in _RES if f"cost_{r}" in overrides
     }
     if cost_overrides:
+        _NAME  = {v: k for k, v in _RES.items()}
+        wanted = [(t, a) for t, a in sorted(cost_overrides.items()) if a > 0]
         for u, _ in tiers:
             if u is None or not u.creatable:
                 continue
             rc = u.creatable.resource_costs
-            covered = {s.type: i for i, s in enumerate(rc) if s.type != -1}
-            empty   = [i for i, s in enumerate(rc) if s.type == -1]
-            for res_type, amount in cost_overrides.items():
-                if res_type in covered:
-                    i = covered[res_type]
-                    rc[i].amount = amount
-                    rc[i].flag = 1 if amount > 0 else 0
-                elif amount > 0 and empty:
-                    i = empty.pop(0)
-                    rc[i].type   = res_type
-                    rc[i].amount = amount
-                    rc[i].flag   = 1
+            free = [i for i, s in enumerate(rc) if s.type in _SPENDABLE or s.type == -1]
+
+            if len(wanted) > len(free):
+                dropped = ", ".join(f"{_NAME[t]} {a}" for t, a in wanted[len(free):])
+                print(f"       WARNING: unique unit cost needs {len(wanted)} resource "
+                      f"slots but only {len(free)} are spendable (a unit has 3 slots "
+                      f"total and this one reserves "
+                      f"{len(rc) - len(free)} for population) — dropped: {dropped}")
+
+            for i, (res_type, amount) in zip(free, wanted):
+                rc[i].type   = res_type
+                rc[i].amount = amount
+                rc[i].flag   = 1
+            for i in free[len(wanted):]:          # clear any slot we no longer use
+                rc[i].type   = -1
+                rc[i].amount = 0
+                rc[i].flag   = 0
 
     # ── Advanced flags ──────────────────────────────────────────────────────
 

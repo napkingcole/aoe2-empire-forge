@@ -2,7 +2,10 @@
 civ_appender.py — Append or overwrite a civilization in an AoE2 DE DatFile.
 """
 
+import json
+import re
 from copy import deepcopy
+from pathlib import Path
 
 from genieutils.datfile import DatFile
 from genieutils.civ import Civ
@@ -671,6 +674,81 @@ def _zero_costs() -> tuple:
     return (deepcopy(empty), deepcopy(empty), deepcopy(empty))
 
 
+# ── Tech-tree editor node universe ───────────────────────────────────────────
+#
+# Which ids the user could actually have ticked.  Absence from a civ's tree
+# array only means "the user turned this off" for things the editor draws as a
+# node; everything else is absent because the editor never offered it, and
+# sweeping those would disable them for every civ.  Fish Trap (unit 199) is the
+# cautionary case — it has no node in any shipped layout, so its absence carries
+# no intent and it must not be swept.  (That also means "disable Fish Traps"
+# cannot work until the editor grows a node for it.)
+_FULL_TREE_PATH = Path(__file__).parent / "static" / "aoe2techtree" / "data" / "trees" / "FULL.json"
+_editor_nodes_cache: dict[str, set[int]] | None = None
+
+
+def _editor_nodes() -> dict[str, set[int]]:
+    """Return {'techs','units','buildings'} — the ids FULL.json draws as nodes."""
+    global _editor_nodes_cache
+    if _editor_nodes_cache is not None:
+        return _editor_nodes_cache
+
+    techs: set[int] = set()
+    units: set[int] = set()
+    buildings: set[int] = set()
+    try:
+        with open(_FULL_TREE_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        buildings = {int(b["node_id"]) for b in data.get("buildings", [])}
+        pattern = re.compile(r"^(Unit|Tech)_(\d+)_(\d+)$")
+
+        def walk(obj):
+            if isinstance(obj, dict):
+                for v in obj.values():
+                    walk(v)
+            elif isinstance(obj, list):
+                for v in obj:
+                    walk(v)
+            elif isinstance(obj, str):
+                m = pattern.match(obj)
+                if m:
+                    (units if m.group(1) == "Unit" else techs).add(int(m.group(2)))
+
+        walk(data)
+    except Exception as e:                       # asset missing → sweep nothing
+        print(f"       WARNING: could not read {_FULL_TREE_PATH.name} ({e}) — "
+              f"tech-tree disabling falls back to the vanilla type=102 pool only")
+
+    _editor_nodes_cache = {"techs": techs, "units": units, "buildings": buildings}
+    return _editor_nodes_cache
+
+
+# Never disabled, however the tree arrives.  Ticking these off cannot produce a
+# civ anyone wants to play, and the editor has no business offering them.
+_PROTECTED_TECHS     = {101, 102, 103}   # Feudal / Castle / Imperial advance
+_PROTECTED_BUILDINGS = {109}             # Town Center
+_PROTECTED_UNITS     = {83}              # Villager
+
+# Civ-unique buildings we do NOT know how to grant.  Each belongs to one vanilla
+# civ and is gated on a civ-specific make-avail tech that apply_civ nullifies
+# when it takes the slot over, so the DAT correctly refuses them — but
+# _patch_per_civ_techtree would still light the node up in the F2 viewer,
+# advertising a building that can never be built (issue #31: a civ replacing the
+# Portuguese "got" a Feitoria it could not place).
+#
+# Deliberately NOT here: Krepost (1251) comes from bonus 93, and Settlement
+# (2556) / Folwark (1734) / Mule Cart (1808) are wired up by Step 5b of
+# _apply_tree_wiring.  Those four really do work from the tree.
+UNSUPPORTED_UNIQUE_BUILDINGS = {
+    1021,  # Feitoria         — Portuguese
+    1189,  # Harbor           — Malay
+    1665,  # Donjon           — Sicilians
+    1754,  # Caravanserai     — Hindustanis, Persians
+    1806,  # Fortified Church — Armenians, Georgians
+    1889,  # Pasture          — Khitans
+}
+
+
 def _append_effect(dat: DatFile, effect: Effect) -> int:
     dat.effects.append(effect)
     return len(dat.effects) - 1
@@ -756,6 +834,15 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
 
     if not tree_units and not tree_buildings and not tree_techs:
         return
+
+    # Unique buildings we cannot grant are dropped rather than half-honoured:
+    # the DAT refuses them anyway, and leaving them in only lit the node up in
+    # the F2 viewer (issue #31).  Say so, since the tree editor let them through.
+    _unsupported = tree_buildings & UNSUPPORTED_UNIQUE_BUILDINGS
+    if _unsupported:
+        tree_buildings -= _unsupported
+        print(f"       Dropped {len(_unsupported)} unique building(s) this builder "
+              f"cannot grant: {sorted(_unsupported)}")
 
     # ── Long-range ship override ──────────────────────────────────────────────
     # The picker controls which long-range ship the civ gets at the Dock.
@@ -863,6 +950,22 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
                 if c.type == 102:
                     all_disableable.add(int(c.d))
 
+    # ── Step 1b: Widen the candidate pool to everything the editor can toggle.
+    #
+    # all_disableable only holds techs some vanilla civ already switches off, so
+    # anything outside it was silently ignored no matter what the user unticked
+    # — Monks, Fish Traps, Gold/Stone Mining, Fishing Lines and Gillnets all sat
+    # in that blind spot (issues #32, #33).  The engine has no such restriction:
+    # type=102 takes any tech id, which _lock_unclaimed_optin_techs already
+    # relies on for the 30-odd opt-in techs vanilla never disables.
+    #
+    # The candidates are the techs the editor draws as nodes, because those are
+    # exactly the ones whose absence from tree[2] means "the user turned this
+    # off".  Age advances are excluded: a civ that cannot reach Castle Age is
+    # nobody's intent.
+    nodes = _editor_nodes()
+    all_disableable |= (nodes["techs"] - _PROTECTED_TECHS)
+
     # ── Step 2: Build reverse maps from effect inspection of each disableable tech.
     # enable_map:  unit/building_id → [tech_ids that make it available via EC_ENABLE b=1]
     # upgrade_map: new_unit_id      → [tech_ids that upgrade to it via EC_UPGRADE]
@@ -936,21 +1039,61 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     if 400 in _civ_bonus_ids_early and _FORTIFIED_WALL_TECH_ID in all_disableable:
         keep_enabled.add(_FORTIFIED_WALL_TECH_ID)
 
-    # ── Step 3d: Directly disable always-enabled units that have no make-avail tech.
-    # Militia (74) is enabled for every civ by default (unit.enabled=1 in the DAT
-    # deepcopy source).  Because no vanilla civ's TT effect contains a type=8 or
-    # type=102 entry for it, the type=102 mechanism can't touch it.  Setting
-    # unit.enabled=0 directly is the only reliable way to prevent it appearing in
-    # the Barracks training panel for civs that don't include it in tree[0].
-    _ALWAYS_ENABLED_UNITS = {74}   # Militia — add others here if needed
-    for _uid in _ALWAYS_ENABLED_UNITS:
-        if _uid not in tree_units:
+    # ── Step 3d: Switch off editor-visible units/buildings the user unticked.
+    #
+    # Two different mechanisms, picked per unit by what the DAT actually gives us:
+    #
+    #   a) the unit has a make-avail tech (Monk 157, Fish Trap 357) → disable
+    #      that tech.  Only safe when EVERY unit the tech enables is also absent
+    #      from the tree, or turning off the Monk would take a shared make-avail
+    #      tech down with unrelated units still in the tree.
+    #   b) the unit has no make-avail tech at all and ships enabled (Militia 74,
+    #      House 70, Fishing Ship 13) → there is no tech to disable, so clear the
+    #      civ's own unit.enabled.  This is the long-standing Militia treatment,
+    #      now applied to everything in the same situation rather than a
+    #      hardcoded list of one.
+    #
+    # Protected ids are skipped in both branches: the Town Center and the
+    # Villager are load-bearing, and the editor should not be able to remove
+    # them.  Houses deliberately ARE removable — the Huns bonus is exactly that.
+    _tree_all = tree_units | tree_buildings
+    _editor_entities = ((nodes["units"] - _PROTECTED_UNITS)
+                        | (nodes["buildings"] - _PROTECTED_BUILDINGS))
+    _unticked = _editor_entities - _tree_all
+
+    # Which units each tech enables, across ALL techs — not just the disableable
+    # pool, since the whole point is to reach make-avail techs vanilla never
+    # disables.  Built once here rather than per unit.
+    _enables: dict[int, set[int]] = {}
+    for _tid, _t in enumerate(dat.techs):
+        _eid = _t.effect_id
+        if _eid < 0 or _eid >= len(dat.effects):
+            continue
+        for _c in dat.effects[_eid].effect_commands:
+            if _c.type == EC_ENABLE and int(_c.b) == 1:
+                _enables.setdefault(_tid, set()).add(int(_c.a))
+
+    _extra_disable: set[int] = set()
+    _forced_off:    list[int] = []
+    for _uid in sorted(_unticked):
+        _makers = [t for t, us in _enables.items() if _uid in us]
+        # Only techs whose entire enable set is unticked — a tech shared with a
+        # unit the civ keeps must survive.
+        _safe = [t for t in _makers
+                 if not (_enables[t] & _tree_all) and t not in _PROTECTED_TECHS]
+        if _safe:
+            _extra_disable.update(_safe)
+        elif not _makers:
+            # No make-avail tech anywhere → the enabled flag is the only lever.
             try:
                 u = dat.civs[civ_index].units[_uid]
-                if u is not None:
-                    u.enabled = 0
             except IndexError:
-                pass
+                continue
+            if u is not None and u.enabled:
+                u.enabled = 0
+                _forced_off.append(_uid)
+
+    all_disableable |= _extra_disable
 
     # ── Step 4: Write type=8 unlock + type=102 disable commands into TT effect.
     to_disable = all_disableable - keep_enabled
@@ -968,6 +1111,10 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     print(f"       Tech tree: {len(to_disable)} techs disabled, "
           f"{len(keep_enabled & all_disableable)} unit-line techs kept"
           + (f", {n_unlocked} type=8 unlocks" if n_unlocked else ""))
+    if _extra_disable or _forced_off:
+        print(f"       Unticked entities: {len(_extra_disable)} make-avail techs disabled"
+              + (f", {len(_forced_off)} units forced off (no make-avail tech): "
+                 f"{sorted(_forced_off)}" if _forced_off else ""))
 
     # ── Step 5: Dragon Ship.
     #
@@ -1015,7 +1162,7 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     }
     for _bid, _spec in _REGIONAL_RESOURCE_BUILDINGS.items():
         _from_tree = _bid in tree_buildings
-        if not _from_tree and not (_spec["bonus_ids"] & _civ_bonus_ids):
+        if not _from_tree and not (_spec["bonus_ids"] & _civ_bonus_ids_early):
             continue
 
         # Step 3b already emitted the type=8 unlock when the building came from
@@ -3049,6 +3196,22 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                     _multiply_effect(dat, eff_id, multiplier)
                 applied += 1
             bonus_tech_map.update(seen_bonus)
+            # Winged Hussar: the copied trigger tech has to be threaded back into
+            # tech 786's prerequisites or the unit never arrives, and the Hussar
+            # the trigger just disabled is not replaced by anything (issue #27).
+            if bonus_id == _WINGED_HUSSAR_BONUS:
+                _wired = 0
+                for _trigger in _WINGED_HUSSAR_TRIGGERS:
+                    _copy = seen_bonus.get(_trigger)
+                    if _copy is not None:
+                        _wired += _add_alt_prereq(dat, _trigger, _copy)
+                if _wired:
+                    print(f"       Winged Hussar: tech {_WINGED_HUSSAR_TECH} "
+                          f"re-pointed at this civ's trigger copy")
+                else:
+                    print(f"       WARNING: Winged Hussar trigger tech was not "
+                          f"copied — the Hussar will be disabled with no "
+                          f"replacement")
             continue
 
         ec_entries = civ_bonus_ec_list(bonus_id)
@@ -3056,6 +3219,12 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             for ec_entry in ec_entries:
                 _apply_ec_list_entry(dat, civ_index, ec_entry, multiplier)
             applied += len(ec_entries)
+            # Bonus 105 is half catalog, half structural: the ec_list carries the
+            # -33% food, but "one age earlier" is a prerequisite rewrite no
+            # EffectCommand can express, so only the discount ever landed
+            # (issue #26).
+            if bonus_id == _EARLY_ECO_BONUS:
+                _apply_early_eco_shims(dat, civ_index)
             continue
 
         if _create_bonus_handler(dat, bonus_id, civ_index, multiplier, extra_strings, extra_unit_strings, tech_remaps, civ_def):
@@ -3107,6 +3276,102 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     bonus_result["team_applied"] = team_applied
     bonus_result["team_total"]   = len(team_entries)
     return bonus_result
+
+
+# Bonus 105 — "Economic upgrades cost -33% food and available one age earlier".
+# The catalog's ec_list covers the discount; the other half is structural.
+_EARLY_ECO_BONUS = 105
+
+# Vanilla implements "one age earlier" with effect-less shim techs owned by the
+# Burgundians (civ=36).  Each auto-fires one age before the upgrade it unlocks
+# and is listed as an ALTERNATIVE prerequisite on that upgrade — e.g. Wheelbarrow
+# (213) requires 1 of [101 Feudal, 758], so a civ that can research 758 in the
+# Dark Age gets Wheelbarrow in the Dark Age.  Nothing an EffectCommand can do.
+_EARLY_ECO_SHIM_TECHS = (
+    758,  # Feudal-tier eco techs   (Wheelbarrow, Gold/Stone Mining, Horse Collar,
+          #                          Double-Bit Axe, Fishing Lines)
+    760,  # Imperial-tier           (Crop Rotation)
+    761,  # Heavy Plow
+    762,  # Bow Saw
+    763,  # Hand Cart
+    764,  # Gold Shaft Mining
+    765,  # Stone Shaft Mining
+    767,  # Two-Man Saw
+    912,  # Gillnets
+)
+
+
+def _add_alt_prereq(dat: DatFile, original_tid: int, new_tid: int,
+                    limit: int | None = None) -> int:
+    """Let `new_tid` stand in for `original_tid` wherever it is a prerequisite.
+
+    _allocate_tech copies a civ-gated tech to a NEW id, but every tech that
+    named the original still names the original — and the original is gated to
+    the civ we copied it from, so it never fires for us (CLAUDE.md quirk 9).
+    Writing the copy into a spare required_techs slot fixes that without
+    touching required_tech_count: the copy reads as one more way to satisfy the
+    same requirement.  Other civs are unaffected, since they cannot research a
+    tech gated to ours and their own route is left intact.
+
+    `limit` caps how far into dat.techs to scan, so freshly appended copies are
+    not themselves rewired.  Returns the number of techs re-pointed.
+    """
+    n = 0
+    for tech in dat.techs[:limit]:
+        reqs = list(tech.required_techs)
+        if original_tid not in reqs or new_tid in reqs:
+            continue
+        if -1 not in reqs:
+            print(f"       WARNING: tech {tech.name!r} has no free required_techs "
+                  f"slot — prerequisite {original_tid} could not be re-pointed")
+            continue
+        reqs[reqs.index(-1)] = new_tid
+        tech.required_techs = tuple(reqs)
+        n += 1
+    return n
+
+
+# Bonus 282 — "Winged Hussar replaces Hussar".  The catalog copies the Poles'
+# trigger techs (789, 791), but the Winged Hussar tech itself (786) is global and
+# demands 3 of [115 Imperial, 254 Light Cavalry, 788 Lithuanian trigger, 789
+# Polish trigger].  A custom civ satisfies only 115 and 254, so 786 never fired —
+# while the copied 789 had already disabled the Hussar (tech 428), leaving the
+# civ with neither unit (issue #27).  Re-pointing 786 at our copy of 789 restores
+# the third requirement.
+_WINGED_HUSSAR_BONUS     = 282
+_WINGED_HUSSAR_TECH      = 786
+_WINGED_HUSSAR_TRIGGERS  = (789, 788)   # Poles first — the catalog copies that one
+
+
+def _apply_early_eco_shims(dat: DatFile, civ_index: int) -> int:
+    """Give this civ its own copies of the Burgundian eco shims, and point the
+    upgrades at them.
+
+    _allocate_tech alone is not enough: it copies a shim to a NEW tech id, but
+    Wheelbarrow still names the original 758 in its required_techs, and 758 is
+    civ-gated to the Burgundians so it never fires for us (CLAUDE.md quirk 9).
+    The copy therefore has to be threaded back into every upgrade that referenced
+    the original — written into a spare required_techs slot, leaving
+    required_tech_count alone so the copy reads as one more way to satisfy the
+    same requirement.  Other civs are unaffected: they cannot research a tech
+    gated to civ_index, and their own route (the age advance) is untouched.
+    """
+    n_techs_before = len(dat.techs)          # never wire into our own new copies
+    seen: dict[int, int] = {}
+    n_alloc = n_wired = 0
+
+    for shim in _EARLY_ECO_SHIM_TECHS:
+        if not (0 <= shim < len(dat.techs)):
+            continue
+        new_tid = _allocate_tech(dat, shim, civ_index, seen)
+        if new_tid == -1 or new_tid == shim:
+            continue                          # out of range, or already global
+        n_alloc += 1
+        n_wired += _add_alt_prereq(dat, shim, new_tid, limit=n_techs_before)
+
+    print(f"       Early eco upgrades: {n_alloc} shim techs allocated, "
+          f"{n_wired} upgrades re-pointed")
+    return n_alloc
 
 
 def _lock_unclaimed_optin_techs(dat: DatFile, civ_index: int, civ_def: dict) -> int:
@@ -3335,6 +3600,25 @@ def _copy_monk_skin(src_civ, dst_civ) -> None:
     Runs after _copy_architecture, which sets a Monk matching the architecture
     set; this overrides it when the user picked a Monk skin explicitly.
     Same capture-before-overwrite rule as _copy_architecture.
+
+    Copies the FULL visual set, not just the standing pose.  Diffing all 45
+    pairs of the 10 skin representatives, exactly these fields differ in every
+    pair — they are the Monk's visual identity:
+
+        standing_graphic, dying_graphic, icon_id,
+        dead_fish.walking_graphic, type_50.attack_graphic,
+        bird.tasks[*].proceeding_graphic_id
+
+    Copying only standing/dying (the old behaviour) produced a chimera: the Monk
+    idled in the chosen skin but walked in the architecture set's skin and kept
+    the wrong Monastery button icon, because _copy_architecture had already
+    written the walking graphic and this pass overwrote only the standing one.
+    Confirmed in-game 2026-09-04.
+
+    Deliberately NOT copied: the sound fields (selection_sound, bird.move_sound,
+    wwise_*) and unit 134's name/language_dll_* fields.  Those also vary between
+    skin representatives, but they belong to the voice axis that
+    assign_all_languages owns, and to naming — copying them here would fight it.
     """
     src_units = src_civ.units
     dst_units = dst_civ.units
@@ -3347,6 +3631,17 @@ def _copy_monk_skin(src_civ, dst_civ) -> None:
         dst.standing_graphic = src.standing_graphic
         dst.dying_graphic    = src.dying_graphic
         dst.undead_graphic   = src.undead_graphic
+        # Monastery training-panel button.  _copy_architecture deliberately does
+        # not touch icon_id (it would repaint every mobile unit in the set); the
+        # Monk is the one unit whose icon really is per-skin.
+        dst.icon_id          = src.icon_id
+        if src.dead_fish is not None and dst.dead_fish is not None:
+            dst.dead_fish.walking_graphic = src.dead_fish.walking_graphic
+        if src.type_50 is not None and dst.type_50 is not None:
+            dst.type_50.attack_graphic = src.type_50.attack_graphic
+        if src.bird is not None and dst.bird is not None:
+            for st, dt in zip(src.bird.tasks, dst.bird.tasks):
+                dt.proceeding_graphic_id = st.proceeding_graphic_id
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -3543,11 +3838,17 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         print(f"       Architecture: style {arch_val} (from DAT civ {arch_src})")
 
     # Monk skin: independent of architecture (see MONK_SKIN_OPTIONS).  Unset
-    # leaves whatever _copy_architecture just applied, which is the coherent
-    # default — the architecture set already carries a matching Monk.
-    if monk_src_civ is not None:
-        _copy_monk_skin(monk_src_civ, dat.civs[civ_index])
-        print(f"       Monk skin: from DAT civ {monk_src} ({monk_src_civ.name!r})")
+    # falls back to the architecture's own Monk, which is the coherent default.
+    # That fallback still goes through _copy_monk_skin rather than relying on
+    # _copy_architecture alone, because the Monastery button icon is the one
+    # per-skin field the architecture pass deliberately leaves alone.
+    _monk_from = monk_src_civ if monk_src_civ is not None else arch_src_civ
+    if _monk_from is not None:
+        _copy_monk_skin(_monk_from, dat.civs[civ_index])
+        if monk_src_civ is not None:
+            print(f"       Monk skin: from DAT civ {monk_src} ({monk_src_civ.name!r})")
+        else:
+            print(f"       Monk skin: architecture default ({_monk_from.name!r})")
 
     # Starting scout: the deepcopy base (civ 1) starts with a Scout Cavalry, so
     # leaving this unset keeps vanilla behaviour.
@@ -3703,14 +4004,25 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         _trainable_extra = "Trainable at Castle and Krepost." if has_krepost else "Trainable at Castle."
         uu_obj    = dat.civs[civ_index].units[uu_unit_id]
         elite_obj = dat.civs[civ_index].units[elite_unit_id]
+        # "regen" carries everything needed to re-render these two strings from
+        # the unit as it stands later on.  Both texts quote the unit's cost and
+        # stats, but _apply_uu_overrides does not run until apply_civ has
+        # returned — so rendering once here published the PRESET cost and left
+        # the user's overridden cost showing nowhere (issue #34).
+        # civ_overrides._refresh_uu_tooltips re-renders them after the overrides
+        # land; the values below are the correct fallback if it never runs.
+        _regen = {"extra": _trainable_extra, "tag": f"{alias} unique unit",
+                  "desc": _uu_custom_desc}
         km_uu_custom_unit_strings = [
             {"sid": uu_name_sid, "name": uu_display_name, "desc_sid": uu_desc_sid,
+             "unit_id": uu_unit_id, "regen": _regen,
              "help_text": format_unit_tooltip_help(uu_obj, uu_display_name, extra=_trainable_extra),
              "ext_sid": _extended_tooltip_sid(uu_name_sid),
              "ext_text": format_unit_extended_tooltip(uu_obj, uu_display_name,
                                                       tag=f"{alias} unique unit",
                                                       desc=_uu_custom_desc)},
             {"sid": elite_name_sid, "name": elite_display_name, "desc_sid": elite_desc_sid,
+             "unit_id": elite_unit_id, "regen": _regen,
              "help_text": format_unit_tooltip_help(elite_obj, elite_display_name, extra=_trainable_extra),
              "ext_sid": _extended_tooltip_sid(elite_name_sid),
              "ext_text": format_unit_extended_tooltip(elite_obj, elite_display_name,
@@ -3829,9 +4141,15 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     _TT_COMMAND_SOFT_LIMIT = 185
     _tt_cmd_count = len(dat.effects[tt_eff_id].effect_commands)
     if _tt_cmd_count > _TT_COMMAND_SOFT_LIMIT:
-        print(f"  WARNING: TT effect for {alias!r} has {_tt_cmd_count} commands "
-              f"(soft limit {_TT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
-              f"Game may crash at startup — reduce tree disables or bonus count.")
+        # Surfaced to the user, not just the console: the tree sweep now emits a
+        # command per unticked node, so a heavily-pruned civ can reach the cap,
+        # and the failure mode is a startup crash with no clue attached.
+        _msg = (f"Tech tree effect has {_tt_cmd_count} commands "
+                f"(soft limit {_TT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
+                f"The game may crash at startup — re-enable some tech tree nodes "
+                f"or drop a bonus.")
+        print(f"  WARNING: {_msg}")
+        warnings.append(_msg)
 
     print(f"       tech_tree_id(eff)={tt_eff_id}  team_bonus_id(eff)={tb_eff_id}  "
           f"TT_commands={_tt_cmd_count}")
@@ -3949,7 +4267,11 @@ def _apply_uu_stats(u, stats: dict, elite: bool, civ_def: dict) -> None:
         if "cost" in stats:
             _apply_unit_costs(u.creatable.resource_costs, stats["cost"])
         if "train_time" in stats and u.creatable.train_locations:
-            u.creatable.train_locations[0].train_time = stats["train_time"]
+            # Per-slot field — see the matching note in civ_overrides.py
+            # (_apply_uu_overrides).  Only slot 0 exists this early, but writing
+            # all of them keeps the two paths honest if that ever changes.
+            for tl in u.creatable.train_locations:
+                tl.train_time = stats["train_time"]
         # Wire to Castle btn1 (Q hotkey)
         if u.creatable.train_locations:
             tl = u.creatable.train_locations[0]
@@ -4269,12 +4591,27 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
     pending_base_subs_per_slot: list[list] = []
     for (btn, label, age_req, entries, cost_food, cost_b_type, cost_b, icon,
          name_sid, help_sid, ut_lookup) in ut_configs:
-        # lang_desc = name_sid+1000 (safe: UT_POOL_OFFSET now uses 44000-range SIDs,
-        # so +1000 = 45000-range, which is empty in vanilla). build_all.py writes
-        # "TechName (effect)" at this SID so the Castle button shows the effect.
-        # lang_help = help_sid from UT_HELP_POOL_OFFSET (a 60000s existing vanilla
-        # ID): set DIRECTLY so the Castle UT hover tooltip reads from a safe range.
-        # build_all.py writes "Research <b>UT<b> (<cost>)\n..." at help_sid.
+        # String slots for a UT, and what each one actually drives.  For civ 24's
+        # Castle UT the concrete ids are:
+        #
+        #   name_sid            44209   language_dll_name        the name
+        #   name_sid + 1000     45209   language_dll_description Castle research
+        #                                                        button LABEL
+        #   name_sid + 21000    65209   language_dll_help        hover tooltip
+        #   name_sid + 150000  194209   language_dll_tech_tree   F2 viewer
+        #
+        # Two traps here, both of which have already cost time:
+        #
+        #   * `desc_sid` is name_sid+1000 — the BUTTON LABEL, not a roomy
+        #     description slot.  wizard_build.py and app.py used to write the full
+        #     "Research <b>X<b> (<cost>)\n<desc>" tooltip there on top of the short
+        #     label, giving one id two conflicting definitions.  Write only the
+        #     short label; the tooltip belongs at +21000.
+        #   * `help_sid` (from UT_HELP_POOL_OFFSET, a 60000s id — 60051 for civ 24)
+        #     is NOT where language_dll_help points.  _make_tech below sets
+        #     lang_help=name_sid+21000, a different id entirely.  build_all.py still
+        #     writes help_sid; that write is inert but harmless, and help_sid is
+        #     kept in the return tuple so callers that pass it around keep working.
         desc_sid = name_sid + DLL_CREATION_OFFSET
         used_name_sids.append(name_sid)
         used_desc_sids.append(desc_sid)
@@ -4309,6 +4646,23 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
             icon_id=icon,
             lang_name=name_sid,
             lang_desc=desc_sid,
+            # +21000, NOT _help_sid()'s +100000, and this is evidence-backed
+            # rather than a convention guess.  Commit 4943c6a moved the whole UT
+            # pool from the 70000 range to 44000 precisely because name+21000
+            # was then landing in 91000-91734 — the civ-picker DLL strings — and
+            # UT hovers were showing "Click to play as the Burmese".  A tooltip
+            # could only pick that up if the engine reads name+21000 for UT
+            # hovers, so the symptom doubles as the proof.  44000+21000 = 65000s,
+            # empty in vanilla and overridable.
+            #
+            # If a UT tooltip ever misbehaves, check in this order:
+            #   1. is text actually written at name_sid+21000 in the strings file?
+            #      (all three builders write it; grep the built key-value file)
+            #   2. does name_sid+21000 collide with something live?  It must stay
+            #      inside 65000-68999.  Changing UT_POOL_OFFSET moves this.
+            #   3. only then consider _help_sid(name_sid) (+100000) — that is the
+            #      convention for OTHER techs (elite upgrades, bonuses 308/309/310),
+            #      and switching UTs to it would re-break what 4943c6a fixed.
             lang_help=name_sid + 21000,
             lang_tech_tree=_tech_tree_sid(name_sid),
             hot_key_id=hotkey,

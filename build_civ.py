@@ -27,7 +27,9 @@ import zipfile
 from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
-from civ_appender import apply_civ, _KM_UU_TECHS, _KM_UU_NAMES, get_km_uu_index, get_civ_bonuses, get_team_bonuses
+from civ_appender import (apply_civ, _KM_UU_TECHS, _KM_UU_NAMES, get_km_uu_index,
+                          get_civ_bonuses, get_team_bonuses,
+                          UNSUPPORTED_UNIQUE_BUILDINGS)
 import km_custom_uu
 
 # Languages KM ships string files for.
@@ -67,11 +69,40 @@ def _tree_sets(civ_def: dict) -> tuple[set, set, set]:
     """
     raw = civ_def.get("tree", {})
     if isinstance(raw, dict):
-        return set(raw.get("units", [])), set(raw.get("buildings", [])), set(raw.get("techs", []))
-    u = set(raw[0]) if len(raw) > 0 and isinstance(raw[0], list) else set()
-    b = set(raw[1]) if len(raw) > 1 and isinstance(raw[1], list) else set()
-    t = set(raw[2]) if len(raw) > 2 and isinstance(raw[2], list) else set()
+        u = set(raw.get("units", []))
+        b = set(raw.get("buildings", []))
+        t = set(raw.get("techs", []))
+    else:
+        u = set(raw[0]) if len(raw) > 0 and isinstance(raw[0], list) else set()
+        b = set(raw[1]) if len(raw) > 1 and isinstance(raw[1], list) else set()
+        t = set(raw[2]) if len(raw) > 2 and isinstance(raw[2], list) else set()
+    # Drop unique buildings apply_civ cannot actually grant, so the tech tree
+    # viewer agrees with the DAT instead of advertising an unbuildable Feitoria
+    # (issue #31).  Filtered here rather than at each call site so every consumer
+    # of the tree sees the same thing.
+    b -= UNSUPPORTED_UNIQUE_BUILDINGS
     return u, b, t
+
+
+def uu_cost_text(dat, slot: int, unit_id) -> str:
+    """'Costs: 65W 30G' for a unit in this civ's slot, or '' if unavailable.
+
+    Read from the DAT rather than the draft so it reflects the cost AFTER
+    _apply_uu_overrides has run — quoting the draft would republish the vanilla
+    or preset cost next to a unit that now charges something else (issue #34).
+    """
+    if unit_id is None:
+        return ""
+    try:
+        unit = dat.civs[slot].units[unit_id]
+        names = {0: "F", 1: "W", 2: "S", 3: "G"}
+        parts = [f"{int(rc.amount)}{names[rc.type]}"
+                 for rc in unit.creatable.resource_costs
+                 if rc.type in names and rc.amount > 0]
+        return "Costs: " + " ".join(parts) if parts else ""
+    except Exception as e:
+        print(f"       WARNING: could not read UU cost: {e}", flush=True)
+        return ""
 
 
 def _civ_file_name(civ_name: str) -> str:

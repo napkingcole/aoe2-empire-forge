@@ -81,9 +81,18 @@ const _REGIONAL_PAIRS = [
     { a: [1258, 422, 548],         b: [1744, 1746],              bldg: 49,  nameA: "Battering Ram line", nameB: "Armored Elephant line" },
     // Both lines train from Archery Range button 3, so only one can own the cell.
     { a: [39, 474],                b: [873, 875],                bldg: 87,  nameA: "Cavalry Archer line", nameB: "Elephant Archer line" },
+    // Regional shock infantry.  Fire Lancers (1901/1903) and Eagles
+    // (751/753/752) both sit on Barracks button 4, so picking both left one of
+    // them unreachable in-game rather than giving the civ two units.  The Fire
+    // Lancer is the default side: five civs field one (Chinese, Jurchens,
+    // Khitans, Koreans, Vietnamese) against the Eagle's two (Aztecs, Mayans).
+    // The Varangian Guard joins this group when the Vikings DLC lands — it is
+    // shock infantry too, but today it exists only as a Castle unique unit with
+    // no tech-tree node, and eviction needs a node to evict.
+    { a: [1901, 1903],             b: [751, 753, 752],           bldg: 12,  nameA: "Fire Lancer line",   nameB: "Eagle Warrior line"   },
 ];
 // Flat set of all regional-side unit IDs — excluded from "Select All"
-const _REGIONAL_UNIT_IDS = new Set([2550, 2588, 2552, 2554, 1944, 1946, 1904, 1907, 1744, 1746, 873, 875]);
+const _REGIONAL_UNIT_IDS = new Set([2550, 2588, 2552, 2554, 1944, 1946, 1904, 1907, 1744, 1746, 873, 875, 751, 753, 752]);
 
 // ── Picker-controlled units ──────────────────────────────────────────────────
 // The siege ship is one Dock button with five candidates plus an elite toggle —
