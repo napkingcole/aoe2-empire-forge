@@ -175,6 +175,13 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.0.0": [
+        "<strong class=\"color-accent-2\">NEW:</strong> Empire Forge is now a full civilization builder — design tech trees, bonuses, team bonuses, unique units, unique technologies, and hero units natively, no KrakenMeister civ required",
+        "<strong class=\"color-accent-2\">NEW:</strong> Convert KM Civ tool imports existing KrakenMeister civ JSON files into the new format, so existing civs carry forward",
+        "<strong class=\"color-accent-2\">NEW:</strong> Live tech tree editor — click any unit, building, or technology to enable or disable it for your civ",
+        "<strong class=\"color-accent-2\">NEW:</strong> Bonus catalog with search and category filters, replacing manual JSON edits",
+        "Reads your installed game's DAT file directly at build time, so Empire Forge keeps working as new DLCs are released instead of relying on a fixed snapshot",
+    ],
     "1.7.4": [
         "<strong class=\"color-accent-2\">NEW:</strong> Microsoft Store / Xbox App installation now auto-detected — DAT file path found automatically on first launch",
         "<strong class=\"color-accent-2\">NEW:</strong> Bonus #286 added: Can upgrade Bombard Cannons to Houfnice (properly gated behind Imperial Age even when Bonus #283 is active)",
