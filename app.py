@@ -175,12 +175,12 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
-    "2.0.0": [
-        "<strong class=\"color-accent-2\">NEW:</strong> Empire Forge is now a full civilization builder — design tech trees, bonuses, team bonuses, unique units, unique technologies, and hero units natively, no KrakenMeister civ required",
-        "<strong class=\"color-accent-2\">NEW:</strong> Convert KM Civ tool imports existing KrakenMeister civ JSON files into the new format, so existing civs carry forward",
+    "2.0.1": [
+        "<strong class=\"color-accent-2\">NEW:</strong> Empire Forge is now a full civilization and mod builder — design tech trees, bonuses, team bonuses, unique units, unique technologies, and hero units natively",
+        "<strong class=\"color-accent-2\">NEW:</strong> 'Convert KM Civ' tool imports existing KrakenMeister civ JSON files into the new format, so existing civs carry forward",
         "<strong class=\"color-accent-2\">NEW:</strong> Live tech tree editor — click any unit, building, or technology to enable or disable it for your civ",
-        "<strong class=\"color-accent-2\">NEW:</strong> Bonus catalog with search and category filters, replacing manual JSON edits",
-        "Reads your installed game's DAT file directly at build time, so Empire Forge keeps working as new DLCs are released instead of relying on a fixed snapshot",
+        "<strong class=\"color-accent-2\">NEW:</strong> Bonus catalog with search and category filters",
+        "Reads your installed game's DAT file directly at build time, so new DLCs won't brick the app",
     ],
     "1.7.4": [
         "<strong class=\"color-accent-2\">NEW:</strong> Microsoft Store / Xbox App installation now auto-detected — DAT file path found automatically on first launch",
@@ -2017,7 +2017,7 @@ if __name__ == "__main__":
     def _quiet_log_startup(self):
         scheme = "http" if self.ssl_context is None else "https"
         werkzeug.serving._log(
-            "info", f" * Running on {scheme}://{self.host}:{self.port}")
+            "info", f" * Running on {scheme}://{self.host}:{self.port}. \n\n Starting up Empire Forge - just a moment.")
 
     werkzeug.serving.BaseWSGIServer.log_startup = _quiet_log_startup
 

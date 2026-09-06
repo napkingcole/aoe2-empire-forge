@@ -98,8 +98,8 @@
 {% if latest_changes %}
 <div class="modal fade" id="changelogModal" tabindex="-1" aria-labelledby="changelogModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content" style="background-color: oklch(from var(--body-bg) calc(l + 0.06) c h); border: 1px solid var(--accent-2);">
-      <div class="modal-header" style="background-color: var(--accent-1); border-bottom: 2px solid var(--accent-2);">
+    <div class="modal-content">
+      <div class="modal-header">
         <h5 class="modal-title fw-bold" id="changelogModalLabel">
           <span style="color: var(--accent-2);">⚔️</span> What's New in v{{ app_version }}
         </h5>
@@ -112,7 +112,7 @@
           {% endfor %}
         </ul>
       </div>
-      <div class="modal-footer" style="border-top: 1px solid oklch(from var(--body-bg) calc(l + 0.16) c h);">
+      <div class="modal-footer" style="border-top: 1px solid rgba(0,0,0,0.3);">
         <a href="{{ url_for('changelog') }}" class="btn btn-outline-primary btn-sm">Full Changelog</a>
         <button type="button" class="btn btn-success btn-sm" data-bs-dismiss="modal">Got it</button>
       </div>
