@@ -36,6 +36,8 @@ It runs entirely on your own computer: launching it starts a small local server 
 
 Grab the latest release from the [Releases page](https://github.com/napkingcole/aoe2-empire-forge/releases). Download the `.exe` (Windows) — no coding libraries or tools required.
 
+**First launch:** since Empire Forge isn't code-signed yet, Windows SmartScreen will show a warning ([screenshot](docs/screenshots/smartscreen-warning.png)) the first time you run it. This is normal for small independent tools without a paid certificate — it doesn't mean anything is wrong. Click **More info**, then **Run anyway** ([screenshot](docs/screenshots/smartscreen-run-anyway.png)) to continue.
+
 ## How it works
 
 1. **Build a Civ.** Step through the wizard — Identity, Bonuses, Team Bonus, Tech Tree, Unique Unit, Castle UT, Imperial UT, Heroes, Review — or use **Convert KM Civ** to bring in an existing [KrakenMeister](https://krakenmeister.com/civbuilder) civ JSON and keep editing it from there. Save your civ as a `.civbuilder.json` file.
