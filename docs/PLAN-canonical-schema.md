@@ -129,10 +129,9 @@ Three constraints on the `DEFAULTS` table, from the 2026-09-08 sweep:
   writes `resource_costs` unconditionally, so an absent cost and an all-zero cost are the same
   thing to it today. This is the clearest case in the codebase where "fill every optional key with
   its empty value" is the wrong rule (finding 5).
-- **Do not materialize `unique_unit.base_unit_id`.** Nothing writes it, so the from-scratch UU path
-  in `_append_unique_units` is currently unreachable; a default would wake it up and start cloning
-  a Militia into every civ. Decide deliberately whether it exists in the canonical shape before
-  `second_uu` is implemented (finding 6).
+- **`unique_unit.base_unit_id` is not in the canonical shape** — settled 2026-09-08 by deleting
+  the unreachable from-scratch UU path it gated, so there is nothing left for a default to wake
+  up. `second_uu` builds on `km_custom_uu.append_km_custom_uu` instead (finding 6).
 - **`tagline` / `description` collapse to one key here** — this is the natural place for it
   (finding 2).
 
@@ -412,6 +411,10 @@ four doors → version bump.
 
 ### 6 — `unique_unit.base_unit_id` is dead; the from-scratch UU path is unreachable  ⚠ MEDIUM
 
+> **Resolved 2026-09-08 — the path was deleted.** The description below is the state at sweep
+> time; line references in it are stale. See "Finding 6 — the from-scratch UU path, deleted"
+> near the end of this document.
+
 **Where:** `civ_appender.py:3677`, `:3869`, `:4200-4208`
 
 ```python
@@ -516,8 +519,9 @@ Safe to land now, and all three make the migration itself safer:
 Feed into Step 1's design rather than fixing separately:
 
 - **Finding 5** — `DEFAULTS` must distinguish absent from zero for `castle_ut.time` / `cost`.
-- **Finding 6** — decide explicitly whether `unique_unit.base_unit_id` exists in the canonical
-  shape before `second_uu` is implemented.
+- **Finding 6** — ~~decide explicitly whether `unique_unit.base_unit_id` exists in the canonical
+  shape~~ **Decided 2026-09-08: it does not.** The key and the path it gated are deleted, so
+  `DEFAULTS` has nothing to accidentally wake up.
 - **Finding 2** — `normalize` is the natural place to collapse `tagline`/`description` to one key.
 
 Add to the plan as an explicit constraint:
@@ -574,7 +578,7 @@ only misfiles a UT on a file old enough to predate the `mode` key, not on every 
 | 3 — `build_all.py` UT names | **Fixed.** Now uses the user's name with the bonus-table lookup as fallback, matching both `app.py` doors. |
 | 4 — harness blind spots | **Fixed.** `digest()` now covers the unit table, the full resource block, tech costs/times, and the four override passes. Re-baselined. |
 | 5 — free/instant KM UTs | **Fixed.** `_override_ut_costs` now reads an all-zero cost and a non-positive time as *unset* rather than "free and instant", so a copied vanilla tech keeps its own. Also: `time` omitted from `_km_to_draft`, dead `vanilla_id` → `vanilla_km_idx`. |
-| 6 — dead `base_unit_id` | Marked UNREACHABLE at the `has_custom_uu` site in `civ_appender`, with the normalize() warning. **Open question:** delete the from-scratch UU path or keep it as `second_uu` scaffolding. |
+| 6 — dead `base_unit_id` | **Resolved: deleted.** The from-scratch UU path is gone (136 lines). See below. |
 | 7 — `castle`/`wonder` ladders | Folded into Step 4 as a hard constraint. No code change. |
 | 8 — string divergences | **All four fixed** — see below. |
 | 9 — hygiene | **Fixed.** `civ_schema` docstring, lint scope comment, and the plan's line-number references replaced with function names. |
@@ -633,6 +637,29 @@ Widening `digest()` also turned up a blind spot in the widening itself: `tech.re
 `research_locations[*].research_time` are different fields, `_override_ut_costs` writes the
 former, and only the latter was hashed — so a UT time change was invisible to the harness that
 was supposed to be watching for it. Both are hashed now, and the baseline was retaken.
+
+## Finding 6 — the from-scratch UU path, deleted 2026-09-08
+
+`_append_unique_units` → `_append_one_unit` → `_apply_uu_stats` → `_apply_unit_costs`, plus
+`_append_elite_upgrade_tech`: 136 lines reachable only from a branch that was always false.
+
+It was removed rather than kept as `second_uu` scaffolding, because
+**`km_custom_uu.append_km_custom_uu` already is that machinery and is strictly more complete.**
+Both append brand-new units to every civ's array and bake stats into the target civ only, but
+the live one also creates the make-avail and elite-upgrade techs (the dead path's caller had to
+bolt `_append_elite_upgrade_tech` on separately), derives its four string ids with the
+`name_sid + 100000` arithmetic CLAUDE.md quirk 8 calls load-bearing, and handles Castle/Krepost
+train locations and button placement. The dead path reads as an earlier draft of the same idea
+that `km_custom_uu` superseded — `km_custom_uu` even carried a comment working around its button
+convention, noting btn10 does not render correctly.
+
+The risk in keeping it was not the 136 lines; it was that it is the first thing a search for
+"how do I add a UU" finds, and it is the wrong answer. For `second_uu`, generalize
+`append_km_custom_uu` to run twice with a second Castle button slot. A pointer to that now sits
+on `civ_schema.to_draft`'s Phase-Two docstring.
+
+Kept and untouched nearby, since they sit in the same region and are live: `_KM_CASTLE_UT_TECHS`,
+`_KM_IMP_UT_TECHS`, `UU_SUBSTITUTION_TYPES`, `_MERCENARY_UU_SLOT` and `_setup_mercenary_uu_unit`.
 
 **Judgment call on finding 1.** The guard treats any payload with a `format` key as current,
 which means a genuinely old `civbuilder_v1` file whose UT effects really did use civ bonus ids no

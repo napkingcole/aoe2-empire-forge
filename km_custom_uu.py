@@ -55,9 +55,9 @@ BUILDING_KREPOST = 1251
 TRAIN_HOTKEY = 16101    # Castle btn1 (Q) — Iron Pagoda/Konnik/KM convention; also
                         # Krepost btn1 (Q) per llm/advanced_techniques.md's hotkey table.
 ELITE_BUTTON = 6        # matches KM's own createUU(): setResearchLocation(eliteTech, 82, techTime, 6).
-                        # civ_appender._append_elite_upgrade_tech uses btn10 for our unrelated
-                        # Phase-2 custom-UU feature; deliberately NOT reused here — confirmed
-                        # in-game that btn10 doesn't render correctly for this code path.
+                        # Confirmed in-game that btn10 does NOT render correctly for this code
+                        # path, so keep 6. (An older unreachable custom-UU path in civ_appender
+                        # used btn10; it was deleted 2026-09-08 — this module is the one that works.)
 EC_ENABLE = 2
 EC_UPGRADE = 3
 RES_SLOTS = (0, 1, 2, 3)  # food, wood, stone, gold

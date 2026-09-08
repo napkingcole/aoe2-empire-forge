@@ -140,7 +140,7 @@ When adding a new string-writing block, give it an ownership check rather than o
 
 **Root cause:** `creatable.resource_costs` is a fixed 3-tuple (`tuple[ResourceCost, ResourceCost, ResourceCost]` — verified across all 1218 creatable units in the DAT, every one has exactly 3). Most trainable units spend one slot on population (`type=4`, `flag=0`), leaving room for **two spendable resources**. Merging a *new* resource type into a unit that already charges two therefore has nowhere to go. Non-standard types 214/215/501/514 also appear in that slot on a handful of units.
 
-**Workaround:** treat the cost fields as a complete replacement, not a patch — clear the spendable slots and rewrite them, preserving any slot whose type is outside 0-3. When the request needs more slots than exist, warn naming what was dropped rather than failing silently (`civ_overrides._apply_uu_overrides`). Note `civ_appender._apply_unit_costs` on the append-a-custom-unit path resets *all* slots including population.
+**Workaround:** treat the cost fields as a complete replacement, not a patch — clear the spendable slots and rewrite them, preserving any slot whose type is outside 0-3. When the request needs more slots than exist, warn naming what was dropped rather than failing silently (`civ_overrides._apply_uu_overrides`). (An older `civ_appender._apply_unit_costs` on an unreachable append-a-custom-unit path reset *all* slots including population; that path was deleted 2026-09-08.)
 
 ---
 

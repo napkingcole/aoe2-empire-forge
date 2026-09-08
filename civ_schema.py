@@ -55,6 +55,11 @@ def to_draft(schema: dict) -> dict:
     Unknown / Phase-Two keys (unit_overrides, button_moves, free_techs, second_uu,
     monastery_skin_building) are passed through unchanged so future handlers can
     act on them without schema changes.
+
+    When second_uu is implemented, build it on km_custom_uu.append_km_custom_uu
+    — it already appends new units to every civ's array and wires the make-avail
+    and elite-upgrade techs with the string-id arithmetic CLAUDE.md quirk 8
+    depends on.
     """
     s = _clean(schema)
 

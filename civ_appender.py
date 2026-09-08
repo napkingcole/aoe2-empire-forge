@@ -12,7 +12,6 @@ from genieutils.civ import Civ
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import Tech, ResearchLocation, ResearchResourceCost
 from genieutils.unit import TrainLocation, ResourceCost
-from genieutils.unitheaders import UnitHeaders
 
 from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list, team_bonus_ec_list
 import km_custom_uu
@@ -3674,25 +3673,15 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
 
     # 0. When overwriting, neutralize existing civ-specific techs for this slot
     #    so they don't bleed into the new civ (ghost Castle buttons, old bonuses).
-    # UNREACHABLE TODAY: no layer writes unique_unit.base_unit_id — builder.js
-    # writes km_idx, civ_schema carries km_idx/vanilla_id, and _draft_to_civ_def
-    # narrows to {name, description}. So this is always False and the
-    # from-scratch UU path it gates (_append_unique_units and its elite upgrade)
-    # never runs. Kept as scaffolding for second_uu; do NOT let normalize()'s
-    # DEFAULTS materialize this key, or the path wakes up and clones a Militia
-    # into every civ (PLAN-canonical-schema, finding 6).
-    has_custom_uu = (civ_def.get("unique_unit") or {}).get("base_unit_id") is not None
-
     # Detect KM vanilla UU index. Vanilla indices (0-38, 78-87) fully supported;
     # KM-custom indices (39-77, 88+) fall back to vanilla UU preserve.
     km_uu_index = get_km_uu_index(civ_def)
     km_uu_is_vanilla = km_uu_index is not None and km_uu_index in _KM_UU_TECHS
     km_uu_is_custom = km_uu_index is not None and km_uu_index in km_custom_uu.PRESETS
 
-    # For nullification: treat a recognised vanilla/custom KM UU the same as a
-    # custom UU — don't preserve the original civ's UU techs (the desired UU
-    # will be allocated later).
-    suppress_preserve = has_custom_uu or km_uu_is_vanilla or km_uu_is_custom
+    # For nullification: don't preserve the original civ's UU techs when a
+    # recognised vanilla/custom KM UU will be allocated later.
+    suppress_preserve = km_uu_is_vanilla or km_uu_is_custom
 
     # Capture the original civ's UT tech IDs BEFORE nullification so the
     # CivTechTrees JSON patcher can find the vanilla Yeomen / Warwolf nodes
@@ -3870,24 +3859,12 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # can skip our custom units (they're managed by the elite upgrade tech, not tree[]).
     base_unit_count = len(dat.civs[0].units)
 
-    # 2. Append UU and Elite UU to every civ (unit arrays must stay same length).
-    #    Skip entirely when unique_unit has no base_unit_id (avoids Militia clone).
-    uu_id, elite_uu_id = -1, -1
-    if (civ_def.get("unique_unit") or {}).get("base_unit_id") is not None:
-        uu_id, elite_uu_id = _append_unique_units(dat, civ_index, civ_def)
-        print(f"       UU: {uu_id}  Elite UU: {elite_uu_id}")
-    elif not (km_uu_is_vanilla or km_uu_is_custom):
-        # Only truly "skipped" when no UU is being set at all. A vanilla KM
-        # UU reuse (km_uu_is_vanilla, e.g. bonuses[1]=[0] → Longbowman) or a
-        # from-scratch KM-custom UU (km_uu_is_custom) is handled later by
-        # _apply_km_uu / km_custom_uu.append_km_custom_uu, which print their
-        # own accurate line — printing "skipped" here as well was misleading
-        # since the UU does in fact get applied via that other path.
-        print("       UU: skipped (no base_unit_id)")
-
-    # 3. Elite upgrade tech (Castle, btn10).
-    if uu_id >= 0 and elite_uu_id >= 0:
-        _append_elite_upgrade_tech(dat, civ_index, alias, uu_id, elite_uu_id)
+    # 2. A vanilla KM UU reuse (km_uu_is_vanilla, e.g. bonuses[1]=[0] →
+    #    Longbowman) or a from-scratch KM-custom UU (km_uu_is_custom) is handled
+    #    later by _apply_km_uu / km_custom_uu.append_km_custom_uu, which print
+    #    their own accurate line. Anything else means no UU is being set at all.
+    if not (km_uu_is_vanilla or km_uu_is_custom):
+        print("       UU: none selected")
 
     # 4. Castle UT and Imperial UT.
     castle_ut_entries   = get_ut_entries(civ_def, "castle_ut")
@@ -4189,143 +4166,7 @@ def append_civ(dat: DatFile, civ_def: dict) -> int:
     return apply_civ(dat, civ_def, target_slot=None)["civ_index"]
 
 
-# ── Unique unit helpers ───────────────────────────────────────────────────────
-
-def _append_unique_units(dat: DatFile, civ_index: int, civ_def: dict) -> tuple[int, int]:
-    """Append base UU and elite UU to all civs. Returns (uu_id, elite_uu_id)."""
-    uu_id       = _append_one_unit(dat, civ_index, civ_def, elite=False)
-    elite_uu_id = _append_one_unit(dat, civ_index, civ_def, elite=True)
-    return uu_id, elite_uu_id
-
-
-def _append_one_unit(dat: DatFile, civ_index: int, civ_def: dict, elite: bool) -> int:
-    """
-    Deep-copy a base unit, apply stat overrides for the custom civ, and
-    append the clone to every civ's unit list + unit_headers.
-    Returns the new unit ID.
-    """
-    uu_def  = civ_def.get("unique_unit") or {}
-    base_id = uu_def.get("base_unit_id", 74)  # 74 = Militia fallback
-    stats   = uu_def.get("stats", {})
-    alias   = civ_def.get("alias", "Custom")
-    label   = ("Elite " if elite else "") + uu_def.get("name", f"{alias} Warrior")
-
-    base_template = dat.civs[0].units[base_id]
-    if base_template is None:
-        raise ValueError(f"base_unit_id {base_id} is None in civ 0 — choose a different base.")
-
-    new_id = len(dat.civs[0].units)
-
-    for civ_idx, civ in enumerate(dat.civs):
-        source = civ.units[base_id] or base_template
-        u = deepcopy(source)
-        u.id      = new_id
-        # Base UU enabled only for the custom civ; elite starts disabled everywhere
-        # (enabled by the elite upgrade tech at runtime).
-        u.enabled = 1 if (civ_idx == civ_index and not elite) else 0
-
-        if civ_idx == civ_index:
-            _apply_uu_stats(u, stats, elite, civ_def)
-
-        civ.units.append(u)
-
-    # Unit header is required for task scheduling — clone from base unit's header.
-    src_hdr = dat.unit_headers[base_id] if base_id < len(dat.unit_headers) else None
-    dat.unit_headers.append(deepcopy(src_hdr) if src_hdr else UnitHeaders(exists=0))
-
-    return new_id
-
-
-def _apply_uu_stats(u, stats: dict, elite: bool, civ_def: dict) -> None:
-    """Apply stat overrides from civ_def to the unit object in place."""
-    alias = civ_def.get("alias", "Custom")
-    uu_def = civ_def.get("unique_unit") or {}
-
-    # Stat scaling for elite: +20% HP, +2 attack over base as a simple default.
-    hp_bonus     = 20 if elite else 0
-    attack_bonus =  2 if elite else 0
-
-    if "hp" in stats:
-        u.hit_points = stats["hp"] + hp_bonus
-    if "speed" in stats:
-        u.speed = stats["speed"]
-
-    if u.type_50:
-        if "attack" in stats:
-            for atk in u.type_50.attacks:
-                if atk.class_ == 4:  # melee damage class
-                    atk.amount = stats["attack"] + attack_bonus
-            u.type_50.displayed_attack = stats["attack"] + attack_bonus
-        if "melee_armor" in stats:
-            for arm in u.type_50.armours:
-                if arm.class_ == 4:
-                    arm.amount = stats["melee_armor"]
-            u.type_50.displayed_melee_armour = stats["melee_armor"]
-        if "pierce_armor" in stats:
-            for arm in u.type_50.armours:
-                if arm.class_ == 3:
-                    arm.amount = stats["pierce_armor"]
-            if u.creatable:
-                u.creatable.displayed_pierce_armour = stats["pierce_armor"]
-        if "range" in stats:
-            u.type_50.max_range = stats["range"]
-
-    if u.creatable:
-        if "cost" in stats:
-            _apply_unit_costs(u.creatable.resource_costs, stats["cost"])
-        if "train_time" in stats and u.creatable.train_locations:
-            # Per-slot field — see the matching note in civ_overrides.py
-            # (_apply_uu_overrides).  Only slot 0 exists this early, but writing
-            # all of them keeps the two paths honest if that ever changes.
-            for tl in u.creatable.train_locations:
-                tl.train_time = stats["train_time"]
-        # Wire to Castle btn1 (Q hotkey)
-        if u.creatable.train_locations:
-            tl = u.creatable.train_locations[0]
-            tl.unit_id   = BUILDING_CASTLE
-            tl.button_id = 1
-            tl.hot_key_id = 16101
-
-
-def _apply_unit_costs(resource_costs, cost_dict: dict) -> None:
-    """Overwrite resource_costs with values from cost_dict (food/wood/stone/gold)."""
-    RES = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
-    for rc in resource_costs:
-        rc.type = -1; rc.amount = 0; rc.flag = 0
-    slot = 0
-    for key, res_type in RES.items():
-        amount = cost_dict.get(key, 0)
-        if amount > 0 and slot < len(resource_costs):
-            resource_costs[slot].type   = res_type
-            resource_costs[slot].amount = amount
-            resource_costs[slot].flag   = 1
-            slot += 1
-
-
 # ── Tech helpers ──────────────────────────────────────────────────────────────
-
-def _append_elite_upgrade_tech(dat: DatFile, civ_index: int, alias: str,
-                                uu_id: int, elite_uu_id: int) -> None:
-    """Elite upgrade at Castle btn10, requires Castle Age (102)."""
-    eff = Effect(
-        name=f"{alias} Elite Upgrade Effect",
-        effect_commands=[
-            EffectCommand(type=EC_ENABLE,  a=elite_uu_id, b=1,          c=-1, d=0.0),
-            EffectCommand(type=EC_UPGRADE, a=uu_id,       b=elite_uu_id, c=-1, d=0.0),
-        ],
-    )
-    eff_id = _append_effect(dat, eff)
-    _append_tech(dat, _make_tech(
-        name=f"Elite {alias} Upgrade",
-        effect_id=eff_id,
-        civ_index=civ_index,
-        age_req=102,
-        location=BUILDING_CASTLE,
-        button=10,
-        research_time=40,
-        icon_id=105,
-    ))
-
 
 # KM bonus index → vanilla DAT tech ID, for castle and imperial UTs.
 # Auto-extracted from Fritz's civbuilder.cpp `castleUniqueTechIDs[]` /
