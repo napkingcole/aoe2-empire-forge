@@ -16,6 +16,7 @@ from build_all import (
     _build_combined_ui_zip,
     _ut_name,
     _BONUS_NAMES,
+    _TEAM_BONUS_NAMES,
     _VANILLA_CIV_DESCRIPTIONS,
     DLL_CREATION_OFFSET,
     DLL_HELP_OFFSET,
@@ -37,6 +38,7 @@ from build_civ import (
 )
 from civ_appender import (
     apply_civ, assign_all_languages, get_civ_bonuses, get_team_bonuses,
+    get_km_uu_index, _KM_UU_NAMES,
 )
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
                            _refresh_uu_tooltips)
@@ -235,8 +237,12 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         f"\\n\\n<b>Unique Techs:<b> \\n• {castle_ut_name}\\n• {imp_ut_name}"
     )
     if team_entries:
+        # Team bonus ids are their own namespace, not civ bonus ids — every one
+        # of the 83 resolves to different text in _BONUS_NAMES, and none are
+        # missing, so reading the civ table here printed a confidently wrong
+        # team bonus on the civ-selection screen with nothing to make it obvious.
         tb_lines = [
-            _BONUS_NAMES.get(str(e[0]), "")
+            _TEAM_BONUS_NAMES.get(str(e[0]), "")
             for e in team_entries if isinstance(e, list)
         ]
         tb_lines = [t for t in tb_lines if t]
@@ -271,6 +277,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     _hero_name = (_hero_raw.get("name") or "").strip()
     _hero_desc = (_hero_raw.get("description") or "").strip()
     _hero_dll  = -1
+    _hero_cost_str = ""
     if _hero_bid is not None and _hero_name:
         try:
             _hero_dll = dat.civs[slot].units[_hero_bid].language_dll_name or -1
@@ -279,6 +286,9 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         if _hero_dll <= 0:
             print(f"       WARNING: hero unit {_hero_bid} has no language_dll_name"
                   " — name/desc won't appear in tooltip", flush=True)
+        # Read after _apply_hero_unit, so the tooltip quotes the cost the player
+        # will actually pay.
+        _hero_cost_str = uu_cost_text(dat, slot, _hero_bid)
 
     for lang in LANGUAGES:
         # Civ name + click-to-play + description
@@ -298,6 +308,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             _hero_hover = f"Create <b>{_hero_name}<b>"
             if _hero_desc:
                 _hero_hover += f"\\n{_hero_desc}"
+            if _hero_cost_str:
+                _hero_hover += f"\\n{_hero_cost_str}"
             string_lines[lang].append(f'{_hero_dll} "{_hero_name}"')
             string_lines[lang].append(
                 f'{_hero_dll + DLL_CREATION_OFFSET} "{_hero_hover}"')
@@ -378,7 +390,13 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             _ext_sid_taken = (dll + 21000) in _owned_sids
             # Tech-tree viewer (cosmetic)
             _put(dll + 10000, uu_display)
-            if uu_override_name:
+            # Same rename test as the upload door: an explicit override, OR a
+            # resolved name that no longer matches KM's table — which is how a
+            # custom preset reads. Without the second half the unit kept its
+            # original DAT name in game while the wizard showed the new one.
+            _is_renamed = bool(uu_override_name) or (
+                uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display))
+            if _is_renamed:
                 # In-game overrides: base name, create button text, castle hover tooltip, help.
                 # language_dll_help points to dll+100000; the game reads that for hover content.
                 # Also write to dll+21000 unless extra_unit_strings already put stats there.

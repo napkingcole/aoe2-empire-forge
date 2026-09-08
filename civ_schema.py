@@ -1,18 +1,21 @@
 """
-civ_schema.py — civbuilder_v1 JSON schema normalizer.
+civ_schema.py — empireforge_v2 JSON schema normalizer.
 
 Two public functions:
-  from_draft(draft)  → civbuilder_v1 dict  (wizard → saveable file)
-  to_draft(schema)   → wizard draft dict   (saveable file → build pipeline)
+  from_draft(draft)  → empireforge_v2 dict  (wizard → saveable file)
+  to_draft(schema)   → wizard draft dict    (saveable file → build pipeline)
 
-The wizard draft format is a superset of civbuilder_v1: it adds UI-only keys
+empireforge_v2 (SCHEMA_VER 2) is the only format written.  civbuilder_v1 is
+accepted on read and never emitted; is_empireforge() covers both.
+
+The wizard draft format is a superset of the schema: it adds UI-only keys
 (dat_path) that don't belong in a shareable civ file.  _draftVer IS included
 in the schema to prevent stale builder.js migrations when a saved file is
 loaded back into localStorage as the live draft.  Everything else maps 1-to-1,
 so the two formats stay tightly coupled by design.
 
-build_all.py detects "format": "civbuilder_v1" in a JSON file and calls
-to_draft() before passing it through the wizard_build pipeline.
+build_all.py detects a "format" key via is_civbuilder_v1() and calls to_draft()
+before passing the file through the wizard_build pipeline.
 """
 
 from __future__ import annotations

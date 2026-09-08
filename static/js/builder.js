@@ -7,6 +7,7 @@
 
 const EF_DRAFT_KEY = "ef_builder_draft";
 const TOTAL_STEPS  = 9;
+const DRAFT_VER    = 4;   // keep in sync with civ_schema._DRAFT_VER
 
 // ── Draft helpers ─────────────────────────────────────────────────────────────
 
@@ -20,6 +21,16 @@ function saveDraft() {
 }
 
 let draft = loadDraft();
+// Edit Civ writes a saved .civbuilder.json straight into localStorage without
+// going through to_draft, which is what normally stamps _draftVer. A `format`
+// key means from_draft wrote this file, so it is already in the current shape
+// and the migrations below would destroy live data: v2 empties both UTs'
+// effects, and on a file old enough to predate the `mode` key v4 then reads
+// that emptied list and files the UT as "vanilla".
+// civ_schema.to_draft stamps _DRAFT_VER for saved files too; this keeps the
+// browser door consistent with it. A future migration that must reach saved
+// files belongs in to_draft/normalize, not here.
+if (draft.format && !draft._draftVer) draft._draftVer = DRAFT_VER;
 // Migrate old single team_bonus → team_bonuses array
 if (draft.team_bonus && !draft.team_bonuses) {
   draft.team_bonuses = [draft.team_bonus];

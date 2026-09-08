@@ -37,6 +37,7 @@ run "in-game tech tree (python)"  "$PY" tests/test_civtechtrees.py
 run "civ_def formats (python)"    "$PY" tests/test_civ_def_formats.py
 run "no direct civ_def reads"     "$PY" tests/test_no_direct_civdef_reads.py
 run "catalog resource ids"        "$PY" tests/test_resource_ids.py
+run "UT cost override"            "$PY" tests/test_ut_cost_override.py
 
 # Build smoke: builds ONE civ end to end (~25s, of which ~17s is loading the
 # DAT).  Everything above this line is a pure data check that never builds a

@@ -41,19 +41,30 @@ def _override_ut_costs(dat, civ_result: dict, draft: dict) -> None:
 
         tech = dat.techs[tech_id]
 
+        # Zero means "unset", not "free".  Nothing can currently express the
+        # difference: the wizard seeds a new UT with an all-zero cost, KM import
+        # emits zeros, and from_draft/to_draft both write `int(x or 0)` on every
+        # save round-trip.  Applying those zeros stripped the real cost and
+        # research time off a copied vanilla tech, so a KM-imported UT was free
+        # and instant.  Skipping them leaves what apply_civ produced — a vanilla
+        # copy keeps its own cost/time, a synthesised custom UT keeps
+        # _make_tech's free/60s default — which is right in both modes.
+        # A deliberately free UT stays inexpressible until normalize() can carry
+        # absent and zero apart (PLAN-canonical-schema, finding 5).
         time_val = ut_data.get("time")
-        if time_val is not None:
-            tech.research_time = max(0, int(time_val))
+        if time_val is not None and int(time_val) > 0:
+            tech.research_time = int(time_val)
 
         cost = ut_data.get("cost") or {}
-        slots: list[ResearchResourceCost] = []
-        for res_name, res_type in (("food", 0), ("wood", 1), ("stone", 2), ("gold", 3)):
-            amount = int(cost.get(res_name, 0))
-            if amount > 0:
-                slots.append(ResearchResourceCost(type=res_type, amount=amount, flag=1))
-        while len(slots) < 3:
-            slots.append(ResearchResourceCost(type=-1, amount=0, flag=0))
-        tech.resource_costs = tuple(slots[:3])
+        wanted = [(res_type, int(cost.get(res_name) or 0))
+                  for res_name, res_type in (("food", 0), ("wood", 1),
+                                             ("stone", 2), ("gold", 3))]
+        if any(amount > 0 for _, amount in wanted):
+            slots = [ResearchResourceCost(type=res_type, amount=amount, flag=1)
+                     for res_type, amount in wanted if amount > 0]
+            while len(slots) < 3:
+                slots.append(ResearchResourceCost(type=-1, amount=0, flag=0))
+            tech.resource_costs = tuple(slots[:3])
 
 
 # ── UU stat overrides + advanced flags ───────────────────────────────────────
@@ -107,9 +118,15 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
     """
     if uu_info is None:
         return
-    uu        = draft.get("unique_unit") or {}
-    overrides = uu.get("overrides")      or {}
-    flags     = uu.get("advanced_flags") or {}
+    uu = draft.get("unique_unit") or {}
+    # Every read below is a membership test ("cost_food" in overrides), which an
+    # explicit null passes before reaching int(None).  to_draft strips nulls, so
+    # the wizard door could never hit that; the upload door hands us the raw
+    # schema, which keeps them — a hand-authored file with `"cost_food": null`
+    # crashed the build.  Restore the absence == "no override" contract here so
+    # both doors read the same thing.
+    overrides = {k: v for k, v in (uu.get("overrides")      or {}).items() if v is not None}
+    flags     = {k: v for k, v in (uu.get("advanced_flags") or {}).items() if v is not None}
 
     base_id  = uu_info.get("unit_id")
     elite_id = uu_info.get("elite_id")

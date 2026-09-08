@@ -489,8 +489,17 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # Resolve UT names from bonus IDs.
         castle_ut_bid = _ut_bonus_id(civ_def, 2)
         imp_ut_bid    = _ut_bonus_id(civ_def, 3)
-        castle_ut_name = _ut_name(castle_ut_bid, castle=True)
-        imp_ut_name    = _ut_name(imp_ut_bid, castle=False)
+        # Empire Forge files carry the user's own UT name; only KM files need the
+        # bonus-table lookup, which packs "Name (desc)" together and is keyed on
+        # the FIRST effect's slot id. Matches app.py's two doors.
+        castle_ut_name = (
+            (civ_def.get("castle_ut") or {}).get("name")
+            or _ut_name(castle_ut_bid, castle=True)
+        )
+        imp_ut_name = (
+            (civ_def.get("imperial_ut") or {}).get("name")
+            or _ut_name(imp_ut_bid, castle=False)
+        )
         # Enrich civ_result with UT names so _patch_per_civ_techtree can update node labels.
         civ_result["castle_ut_name"] = castle_ut_name
         civ_result["imp_ut_name"]    = imp_ut_name
@@ -564,7 +573,11 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                     pass
 
         # Build civ selection screen description.
-        description = civ_def.get("description", "")
+        # The wizard writes the blurb to `tagline` and nothing ever writes
+        # `description`, so prefer tagline and keep description as the KM-import
+        # fallback. This matches _draft_to_civ_def, which maps tagline ->
+        # civ_def["description"]. One key, chosen in normalize(), is the fix.
+        description = civ_def.get("tagline") or civ_def.get("description", "")
         civ_bonuses        = get_civ_bonuses(civ_def)
         team_bonus_entries = get_team_bonuses(civ_def)
 

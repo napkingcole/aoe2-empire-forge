@@ -3674,6 +3674,13 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
 
     # 0. When overwriting, neutralize existing civ-specific techs for this slot
     #    so they don't bleed into the new civ (ghost Castle buttons, old bonuses).
+    # UNREACHABLE TODAY: no layer writes unique_unit.base_unit_id — builder.js
+    # writes km_idx, civ_schema carries km_idx/vanilla_id, and _draft_to_civ_def
+    # narrows to {name, description}. So this is always False and the
+    # from-scratch UU path it gates (_append_unique_units and its elite upgrade)
+    # never runs. Kept as scaffolding for second_uu; do NOT let normalize()'s
+    # DEFAULTS materialize this key, or the path wakes up and clones a Militia
+    # into every civ (PLAN-canonical-schema, finding 6).
     has_custom_uu = (civ_def.get("unique_unit") or {}).get("base_unit_id") is not None
 
     # Detect KM vanilla UU index. Vanilla indices (0-38, 78-87) fully supported;

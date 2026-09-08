@@ -722,21 +722,20 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             _hero_cost_str = ""
             if _hero_bid is not None and _hero_name:
                 try:
-                    _hu = dat.civs[slot].units[_hero_bid]
-                    _hero_dll = _hu.language_dll_name or -1
-                    _RES = {0: "F", 1: "W", 2: "S", 3: "G"}
-                    _cost_parts = [
-                        f"{int(rc.amount)}{_RES[rc.type]}"
-                        for rc in _hu.creatable.resource_costs
-                        if rc.type in _RES and rc.amount > 0
-                    ]
-                    if _cost_parts:
-                        _hero_cost_str = "Costs: " + " ".join(_cost_parts)
+                    _hero_dll = dat.civs[slot].units[_hero_bid].language_dll_name or -1
                 except (IndexError, TypeError, AttributeError):
                     pass
+                # Read after _apply_hero_unit, so the tooltip quotes the cost the
+                # player will actually pay.
+                _hero_cost_str = uu_cost_text(dat, slot, _hero_bid)
 
             # Build civ selection screen description with bonuses + UT names.
-            description   = civ_def.get("description", "")
+            # The wizard writes the blurb to `tagline` and nothing writes
+            # `description`, so a schema file's own description is always "" and
+            # this door used to fall back to "<Alias> civilization" while the
+            # wizard door showed the real tagline. KM imports are the reverse,
+            # which is why both keys are read. One key, in normalize().
+            description   = civ_def.get("tagline") or civ_def.get("description", "")
             civ_bonuses        = _bonuses_raw_normalized
             team_bonus_entries = _team_bonuses_raw_normalized
             desc_parts = [f'{description} civilization' if description else f'{alias} civilization']
@@ -814,8 +813,11 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 string_lines[lang].append(f'{imp_ut_sid + 21000} "{_imp_ut_help}"')
                 # NOTE: same as the Castle UT above — imp_ut_desc_sid is the
                 # button label slot, not a separate description slot.
+                # Short name, like the Castle UT six lines up and like both UTs
+                # on the wizard door: the bonus-table lookup packs "Name (desc)"
+                # into one string and the F2 tech-tree node wants only the name.
                 string_lines[lang].append(
-                    f'{imp_ut_sid + DLL_TECH_TREE_OFFSET} "{imp_ut_name}"')
+                    f'{imp_ut_sid + DLL_TECH_TREE_OFFSET} "{imp_ut_name_short}"')
                 # Bonus-specific research buttons (Imperial Scorpion, Royal Battle
                 # Elephant, Royal Lancer — bonuses 308/309/310). Mirrors
                 # build_all.py's identical block — this was previously missing
@@ -1934,11 +1936,14 @@ def _km_to_draft(km: dict) -> dict:
         return out
 
     def _ut(fx_list):
+        # No `time` key: absence is the honest way to say "the KM file did not
+        # carry one", and _override_ut_costs then leaves the vanilla tech's own.
+        # The all-zero `cost` stays because the wizard's cost inputs assign into
+        # it, and _override_ut_costs now reads zero as unset too.
         return {
-            "mode": "vanilla", "vanilla_id": None,
+            "mode": "vanilla", "vanilla_km_idx": None,
             "name": "", "description": "",
             "cost": {"food": 0, "wood": 0, "stone": 0, "gold": 0},
-            "time": 0,
             "effects": _norm(fx_list),
         }
 

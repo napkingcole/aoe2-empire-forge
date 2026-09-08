@@ -110,6 +110,8 @@ class Scan(ast.NodeVisitor):
 
 print("=== Direct reads of shape-divergent civ_def keys ===")
 
+# Repo root only: tests/, scripts/ and all JavaScript are NOT scanned, so a
+# green run is not evidence about them.  Swept by hand 2026-09-08 — clean.
 sources = sorted(p for p in ROOT.glob("*.py") if p.name not in SKIP_FILES)
 check("found source files to scan", sources, "no .py files at repo root")
 
