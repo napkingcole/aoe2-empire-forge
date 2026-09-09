@@ -5,6 +5,27 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-09 — Civ with no unique unit crashed the build
+
+**Symptom:** `apply_civ` raised `UnboundLocalError: cannot access local variable 'uu_id'` for any
+civ that selected no unique unit. Never reached a user — found the same day it was introduced.
+
+**Root cause:** removing the unreachable from-scratch UU block (`51f856d`) also removed the
+`uu_id, elite_uu_id = -1, -1` initialisation that lived inside it, while the UT substitution
+blocks and `apply_civ`'s result dict still read both names on every path.
+
+**Why the suite stayed green:** every saved civ in the corpus picks a unique unit, so the
+round-trip harness and the build smoke test always walk the KM UU branches. The no-UU path had
+no fixture anywhere. **This is the second time this exact shape has shipped** — see the
+2026-09-02 `NameError` below, where a deletion also left a live reference behind a branch no test
+exercised. When deleting a block, grep for every name it *assigned*, not just the names it called.
+
+**Fix:** restore the initialisation unconditionally, plus `tests/test_no_uu_civ.py` (verified to
+fail with the init removed again). That test also pins that bonus ids whose cards were hidden in
+`5dc2ec7` still build, since hiding a card is a display decision and saved civs still carry them.
+
+---
+
 ## 2026-09-02..04 — Discord issue batch #25-#35 (in-game confirmed 2026-09-04)
 
 Worked from `github.com/napkingcole/aoe2-empire-forge/issues`. All of the below were
