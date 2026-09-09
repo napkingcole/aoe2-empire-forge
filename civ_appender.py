@@ -1446,7 +1446,11 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
     409: {"name": "Temple Guard",     "techs": (1400, 1401), "units": (2586, 2587)},
     410: {"name": "Ibirapema Warrior","techs": (1390, 1391), "units": (2582, 2584)},
     411: {"name": "War Chariot",      "techs": (1065,),      "units": (1962,)},
-    412: {"name": "Siege Camel",      "techs": (1005,),      "units": (1923,)},
+    # Vanilla names this one inconsistently: tech 1005 is "Mounted Trebuchet
+    # (make avail)" but its effect and unit 1923 are "SIEGECAMEL". The player-
+    # facing unit is the Khitan Mounted Trebuchet — a trebuchet mounted on two
+    # camels — so "Siege Camel" is a leftover development name.
+    412: {"name": "Mounted Trebuchet", "techs": (1005,),     "units": (1923,)},
     413: {"name": "Shrivamsha Rider", "techs": (842, 843),   "units": (1751, 1753)},
     414: {"name": "Warrior Priest",   "techs": (948,),       "units": (1811,)},
     415: {"name": "Thirisadai",       "techs": (841,),       "units": (1750,)},

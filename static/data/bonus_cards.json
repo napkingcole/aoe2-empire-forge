@@ -1171,7 +1171,9 @@
     "stat": "New Town Centers spawn 2 sheep (Castle Age+)",
     "entity": "town_center",
     "entity2": "sheep",
-    "description": "Town Centers"
+    "description": "Town Centers",
+    "_note": "No multiplier: the count is the length of a dead_unit chain of 1-HP spawner units ending at 594 SHEEP, not a number. Attribute 57 is ATTR_DEAD_UNIT, so d is a unit id — scaling it would spawn a different unit. Confirmed in-game 2026-09-09 that x3 still yields 2.",
+    "multiplier": false
   },
   "140": {
     "entity": "wonder",
@@ -1392,6 +1394,8 @@
     "description": "Town Centers"
   },
   "193": {
+    "type": "hidden",
+    "_note": "Superseded by bonus 414, the maintained _UNLOCK_UNIT_BONUSES entry for this unit (same tech). Its wording was moved to 414. Kept as a valid bonus id so saved civs and KM imports still load.",
     "heading": "UNLOCK",
     "stat": "Warrior Priests can be trained at Monasteries",
     "entity": "warrior_priest",
@@ -2107,6 +2111,8 @@
     "hidden": true
   },
   "298": {
+    "type": "hidden",
+    "_note": "Superseded by bonus 415, the maintained _UNLOCK_UNIT_BONUSES entry for this unit (same tech). Its wording was moved to 415. Kept as a valid bonus id so saved civs and KM imports still load.",
     "heading": "UNLOCK",
     "stat": "Thirisadai can be trained at Docks",
     "entity": "thirisadai",
@@ -2114,6 +2120,8 @@
     "multiplier": false
   },
   "299": {
+    "type": "hidden",
+    "_note": "Superseded by bonus 413, the maintained _UNLOCK_UNIT_BONUSES entry for this unit (same tech). Its wording was moved to 413. Kept as a valid bonus id so saved civs and KM imports still load.",
     "heading": "UNLOCK",
     "stat": "Shrivamsha Riders can be recruited",
     "entity": "shrivamsha_rider",
@@ -2168,6 +2176,8 @@
     "stat": "Scorpions cost -60% gold and benefit from Ballistics research"
   },
   "307": {
+    "type": "hidden",
+    "_note": "Superseded by bonus 416, the maintained _UNLOCK_UNIT_BONUSES entry for this unit (same tech). Its wording was moved to 416. Kept as a valid bonus id so saved civs and KM imports still load.",
     "heading": "UNLOCK",
     "stat": "Legionary replaces the Two-Handed Swordsman and Champion",
     "entity": "legionary",
@@ -2220,6 +2230,8 @@
     "multiplier": false
   },
   "314": {
+    "type": "hidden",
+    "_note": "Superseded by bonus 417, the maintained _UNLOCK_UNIT_BONUSES entry for this unit (same tech). Its wording was moved to 417. Kept as a valid bonus id so saved civs and KM imports still load.",
     "heading": "UNLOCK",
     "stat": "Savar replaces the Paladin",
     "entity": "savar",
@@ -2419,6 +2431,8 @@
     ]
   },
   "337": {
+    "type": "hidden",
+    "_note": "Superseded by bonus 411, the maintained _UNLOCK_UNIT_BONUSES entry for this unit (same tech). Its wording was moved to 411. Kept as a valid bonus id so saved civs and KM imports still load.",
     "heading": "UNLOCK",
     "stat": "War Chariots can be recruited",
     "entity": "war_chariot",
@@ -2475,6 +2489,8 @@
     ]
   },
   "343": {
+    "type": "hidden",
+    "_note": "Superseded by bonus 408, the maintained _UNLOCK_UNIT_BONUSES entry for this unit (same tech). Its wording was moved to 408. Kept as a valid bonus id so saved civs and KM imports still load.",
     "heading": "UNLOCK",
     "stat": "Jian Swordsmen can be recruited",
     "entity": "jian_swordsman",
@@ -2517,6 +2533,8 @@
     "description": "Traction Trebuchets + Lou Chuans"
   },
   "348": {
+    "type": "hidden",
+    "_note": "Superseded by bonus 406, the maintained _UNLOCK_UNIT_BONUSES entry for this unit (same tech). Its wording was moved to 406. Kept as a valid bonus id so saved civs and KM imports still load.",
     "heading": "UNLOCK",
     "stat": "Xianbei Raiders can be recruited",
     "entity": "xianbei_raider",
@@ -2565,6 +2583,8 @@
     "description": "All Units"
   },
   "355": {
+    "type": "hidden",
+    "_note": "Superseded by bonus 407, the maintained _UNLOCK_UNIT_BONUSES entry for this unit (same tech). Its wording was moved to 407. Kept as a valid bonus id so saved civs and KM imports still load.",
     "heading": "UNLOCK",
     "stat": "Grenadiers can be recruited",
     "entity": "grenadier",
@@ -2608,6 +2628,8 @@
     "description": "Cavalry Archers"
   },
   "361": {
+    "type": "hidden",
+    "_note": "Superseded by bonus 412, the maintained _UNLOCK_UNIT_BONUSES entry for this unit (same tech). Its wording was moved to 412. Kept as a valid bonus id so saved civs and KM imports still load.",
     "heading": "UNLOCK",
     "stat": "Mounted Trebuchets can be trained",
     "entity": "mounted_trebuchet",
@@ -2615,7 +2637,7 @@
     "multiplier": false
   },
   "362": {
-    "heading": "REPLACES",
+    "heading": "UNLOCK",
     "stat": "Fire Ships upgraded to Dragon Ships in Imperial Age",
     "entity": "dragon_ship",
     "description": "Fire Ship line",
@@ -2638,7 +2660,7 @@
   "402": {
     "type": "hidden",
     "_note": "Superseded by bonus 362, which copies vanilla tech 1010. The custom handler here produced no effect in a real build (issue #28). Kept as a valid bonus id so saved civs and KM imports still load.",
-    "heading": "REPLACES",
+    "heading": "UNLOCK",
     "stat": "Fire Ships upgraded to Dragon Ships in Imperial Age",
     "entity": "dragon_ship",
     "description": "Fire Ship line",
@@ -2818,22 +2840,21 @@
   },
   "406": {
     "heading": "UNLOCK",
-    "stat": "Xianbei Raider",
+    "stat": "Xianbei Raiders can be recruited",
     "entity": "xianbei_raider",
     "description": "Archery Range — Castle Age",
     "multiplier": false
   },
   "407": {
-    "hidden": true,
     "heading": "UNLOCK",
-    "stat": "Grenadier",
+    "stat": "Grenadiers can be recruited",
     "entity": "grenadier",
     "description": "Archery Range — Castle Age",
     "multiplier": false
   },
   "408": {
     "heading": "UNLOCK",
-    "stat": "Jian Swordsman",
+    "stat": "Jian Swordsmen can be recruited",
     "entity": "jian_swordsman",
     "description": "Barracks — Castle Age",
     "multiplier": false
@@ -2854,49 +2875,49 @@
   },
   "411": {
     "heading": "UNLOCK",
-    "stat": "War Chariot",
+    "stat": "War Chariots can be recruited",
     "entity": "war_chariot",
     "description": "Siege Workshop — Castle Age",
     "multiplier": false
   },
   "412": {
     "heading": "UNLOCK",
-    "stat": "Mounted Trebuchet",
+    "stat": "Mounted Trebuchets can be trained",
     "entity": "mounted_trebuchet",
     "description": "Siege Workshop — Imperial Age",
     "multiplier": false
   },
   "413": {
     "heading": "UNLOCK",
-    "stat": "Shrivamsha Rider",
+    "stat": "Shrivamsha Riders can be recruited",
     "entity": "shrivamsha_rider",
     "description": "Stable — Castle Age",
     "multiplier": false
   },
   "414": {
     "heading": "UNLOCK",
-    "stat": "Warrior Priest",
+    "stat": "Warrior Priests can be trained at Monasteries",
     "entity": "warrior_priest",
     "description": "Monastery — Castle Age",
     "multiplier": false
   },
   "415": {
     "heading": "UNLOCK",
-    "stat": "Thirisadai",
+    "stat": "Thirisadai can be trained at Docks",
     "entity": "thirisadai",
     "description": "Dock — Imperial Age",
     "multiplier": false
   },
   "416": {
     "heading": "UNLOCK",
-    "stat": "Legionary",
+    "stat": "Legionary replaces the Two-Handed Swordsman and Champion",
     "entity": "legionary",
     "description": "Upgrades the Militia line",
     "multiplier": false
   },
   "417": {
     "heading": "UNLOCK",
-    "stat": "Savar",
+    "stat": "Savar replaces the Paladin",
     "entity": "savar",
     "description": "Upgrades the Knight line",
     "multiplier": false

@@ -1424,6 +1424,10 @@ const _BONUS_CAT_OVERRIDES = {
   409: 'unlock',  410: 'unlock',  411: 'unlock',  412: 'unlock',
   413: 'unlock',  414: 'unlock',  415: 'unlock',  416: 'unlock',
   417: 'unlock',
+  // Dragon Ships replace the Fire Ship line. 'naval' is the FIRST category
+  // tested, so "Fire Ships…" matched it long before the 'replaces' keyword
+  // could reach 'unlock'. It is a unit unlock, not a naval stat bonus.
+  362: 'unlock',  402: 'unlock',
   T1: 'unlock', T16: 'unlock', T35: 'unlock', T72: 'unlock', T73: 'unlock'
 };
 
