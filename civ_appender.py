@@ -3867,6 +3867,13 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     #    Longbowman) or a from-scratch KM-custom UU (km_uu_is_custom) is handled
     #    later by _apply_km_uu / km_custom_uu.append_km_custom_uu, which print
     #    their own accurate line. Anything else means no UU is being set at all.
+    #
+    # These two MUST be initialised unconditionally: only the KM UU branches
+    # assign them, but the UT substitution blocks and the result dict read them
+    # on every path, so a civ with no unique unit at all would raise
+    # UnboundLocalError. Every saved civ in the corpus has a UU, so no test
+    # covers it — see tests/test_no_uu_civ.py.
+    uu_id, elite_uu_id = -1, -1
     if not (km_uu_is_vanilla or km_uu_is_custom):
         print("       UU: none selected")
 

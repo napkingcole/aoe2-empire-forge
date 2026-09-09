@@ -49,6 +49,7 @@ if [ "${SKIP_SMOKE:-0}" = "1" ]; then
     echo "──── build smoke: SKIPPED (SKIP_SMOKE=1 was set)"
 else
     run "build smoke (python)" "$PY" tests/test_build_smoke.py
+    run "civ with no UU (python)" "$PY" tests/test_no_uu_civ.py
 fi
 
 # Route round-trip builds all 19 saved civs down BOTH routes and compares them —

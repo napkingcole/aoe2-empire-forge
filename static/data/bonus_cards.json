@@ -942,7 +942,9 @@
     "heading": "+100 [food]",
     "stat": "Per Town Center",
     "entity": "town_center",
-    "description": "Town Centers"
+    "description": "Town Centers",
+    "_note": "No multiplier, same reason as bonus 139: the single command is EC_SET with c=57 (ATTR_DEAD_UNIT) and d=888 'Lithuanian food building', so d is a unit id, not an amount. Both bonuses write 890.dead_unit, so they also conflict with each other.",
+    "multiplier": false
   },
   "101": {
     "type": "dual",
