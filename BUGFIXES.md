@@ -5,6 +5,33 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-09 — Civ bonus 54 "Fishermen work 10% faster" did the wrong thing entirely
+
+**Symptom:** the bonus had no effect on fishing villagers. Its multiplier also did nothing.
+
+**Root cause:** the catalog mapped bonus 54 to tech **469 `[SCEN] Move Tarkan`** — a
+scenario-editor tech that sets attribute 42 (train location) to -1 on units 755/757. Nothing to
+do with fishing, and potentially harmful to a civ that also fields Tarkans.
+
+**Inherited, not introduced.** KM's builder has the identical mapping
+(`civbuilder.cpp:196`, `civBonuses[CIV_BONUS_54_FISHERMEN_WORK_10_FASTER] = {469}`), and our
+catalog was extracted from his C++, so we copied it faithfully. There was no correct upstream
+implementation to fall back on. Same failure shape as the 2026-07-03 team-bonus-30 mismap below.
+
+**Fix:** no vanilla tech implements this bonus, so it moved to `ec_list` — `EC_MULTIPLY` on the
+fishing villagers **56 `VMFIS`** and **57 `VFFIS`**, attribute 13 (work rate), `d=1.1`. That is
+the shape vanilla uses for every other per-task villager work-rate bonus (effects 956/958 do the
+same for lumberjacks and gold miners, both gender variants, `b=-1`, death variants untouched).
+Villagers carry a distinct unit id per task, so targeting the task variant is the only way to
+scope a bonus to one resource. Fishing *ships* (techs 306/906) are a different thing and are not
+what this bonus describes.
+
+Because the fix is an `EC_MULTIPLY`, the card's multiplier now works for free: x2 gives 1.21,
+x3 gives 1.331. `tests/test_bonus_54_fishermen.py` pins the mapping, since the catalog docstring
+points future readers at KM's source and re-extracting would silently restore tech 469.
+
+---
+
 ## 2026-09-09 — Civ with no unique unit crashed the build
 
 **Symptom:** `apply_civ` raised `UnboundLocalError: cannot access local variable 'uu_id'` for any

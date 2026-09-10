@@ -11,6 +11,16 @@ Mechanism (matches KM's civbuilder.cpp):
 Source: extracted from fritz-net/AoE2-Civbuilder modding/civbuilder.cpp +
         modding/enums/tech_ids.h via parse_bonus_catalog.py.
 
+DELIBERATE DIVERGENCE FROM KM — do not "restore" these from his source:
+  - civ bonus 54 ("Fishermen work 10% faster").  KM maps it to tech 469
+    (civbuilder.cpp: `civBonuses[CIV_BONUS_54_FISHERMEN_WORK_10_FASTER] = {469}`),
+    but tech 469 is `[SCEN] Move Tarkan`, a scenario-editor tech that sets
+    attribute 42 (train location) to -1 on units 755/757.  It has nothing to do
+    with fishing and may break Tarkan training.  No vanilla tech implements this
+    bonus, so it lives in ec_list instead: EC_MULTIPLY on the fishing villagers
+    56 (VMFIS) and 57 (VFFIS), attribute 13, d=1.1 — the same shape vanilla uses
+    for every other per-task villager work-rate bonus (see effects 956/958).
+
 "createCivBonus" bonuses (those that build effects from scratch in the C++)
 are not in this catalog — they require custom EffectCommand lists and are
 logged as skipped at build time.
