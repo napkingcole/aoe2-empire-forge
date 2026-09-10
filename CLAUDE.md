@@ -21,12 +21,14 @@ The `llm/` directory contains comprehensive AoE2 DE dat modding documentation. R
 | EC_UPGRADE   | 3    | from_unit    | to_unit                  | -1          | 0.0        |
 | EC_ADD       | 4    | unit_id      | -1                       | attribute   | delta      |
 | EC_MULTIPLY  | 5    | unit_id      | -1                       | attribute   | multiplier |
-| EC_TECH_COST | 101  | tech_id      | resource(0-3)            | 0=set/1=add | value     |
-| EC_TECH_TIME | 103  | tech_id      | -1                       | 0=set       | seconds    |
+| EC_TECH_COST | 101  | tech_id      | resource(0-3)            | mode        | value     |
+| EC_TECH_TIME | 103  | tech_id      | -1                       | mode        | seconds    |
 | unlock tech  | 8    | (copy from vanilla) | ...             | ...         | ...        |
 | disable tech | 102  | -1           | -1                       | -1          | float(tech_id) |
 
 **Unit attribute IDs (c parameter for EC_SET/ADD/MULTIPLY):** `0`=HP, `1`=LOS, `9`=attack, `13`=work rate. See `llm/effect_commands.md` for the full table.
+
+**EC_TECH_COST/TIME `c` is a mode, and `2` means MULTIPLY** — `0`=set, `1`=add, `-1`=signed delta, `2`=multiply. Mode 2 is how every "-50% tech cost" bonus is written (d is always a fraction), and it compounds like EC_MULTIPLY: `d ** N`, never `d * N`. Seven civ bonus cards depend on this; see `llm/effect_commands.md`.
 
 **Standard resource IDs (a for EC_RESOURCE):** `0`=food, `1`=wood, `2`=stone, `3`=gold.
 

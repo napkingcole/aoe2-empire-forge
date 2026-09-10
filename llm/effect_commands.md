@@ -146,15 +146,31 @@ Example: type=14 = TEAM_ATTRIBUTE_MODIFIER_ADDITIVE; gives the bonus to all alli
 ### EC_TECH_COST = 101
 Modify the resource cost of a tech.
 ```
-a = tech_id   b = resource(0-3)   c = 0(set)/1(add)   d = value
+a = tech_id   b = resource(0-3)   c = mode   d = value
 ```
 To zero a tech's cost across all resources: loop b=0..3 with c=0, d=0.0.
 
 ### EC_TECH_TIME = 103
 Modify the research time of a tech.
 ```
-a = tech_id   b = -1   c = 0(set)   d = seconds
+a = tech_id   b = -1   c = mode   d = seconds
 ```
+
+**`c` is a MODE with four values, not the "0=set / 1=add" this file claimed
+until 2026-09-09.** Counted across the whole shipped DAT:
+
+| mode | meaning | evidence |
+|---|---|---|
+| `0`  | set to an absolute value | 169 cost / 79 time commands; 141 of the cost ones are `0.0` = make it free |
+| `1`  | add a flat amount | 2 cost / 16 time commands |
+| `-1` | subtract / signed delta | 25 cost (±200, ±750) / 8 time commands |
+| `2`  | **multiply** | 173 cost / 51 time commands, and **every single value is a fraction** — 0.5, 0.75, 0.6, 0.25, 0.85, 0.67 |
+
+Mode 2 is how every "-50% tech cost" civ bonus is written, and it scales like
+`EC_MULTIPLY`: applying it N times is `d ** N`, so a x2 multiplier on `d=0.5`
+must produce `0.25` (-75%). Multiplying instead of compounding gives `1.0`,
+which silently turns the bonus into a no-op. `_scale_ec_for_multiplier` handles
+this; seven civ bonus cards depend on it.
 
 ## Non-standard Types
 

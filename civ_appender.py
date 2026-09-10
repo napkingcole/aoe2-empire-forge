@@ -23,8 +23,18 @@ EC_ENABLE    = 2
 EC_UPGRADE   = 3
 EC_ADD       = 4
 EC_MULTIPLY  = 5
-EC_TECH_COST = 101   # Modify tech research cost: a=tech_id, b=res(0-3), c=0(set)/1(add), d=val
-EC_TECH_TIME = 103   # Modify tech research time: a=tech_id, c=0(set), d=val
+EC_TECH_COST = 101   # Modify tech research cost: a=tech_id, b=res(0-3), c=mode, d=val
+EC_TECH_TIME = 103   # Modify tech research time: a=tech_id, c=mode, d=val
+
+# The `c` field on EC_TECH_COST / EC_TECH_TIME is a MODE, and it has four
+# values, not the two an older comment here claimed.  Counted across the whole
+# shipped DAT: mode 0 is "set" (169 cost commands, 141 of them to 0.0 = make it
+# free), mode 1 and -1 add or subtract a flat amount (2 and 25 commands), and
+# mode 2 MULTIPLIES — all 173 cost and 51 time commands using it carry a
+# fraction (0.5, 0.75, 0.6, 0.25, 0.85, 0.67), which is how every "-50% tech
+# cost" civ bonus is expressed.  Mode 2 therefore scales like EC_MULTIPLY.
+TECH_MODE_SET      = 0
+TECH_MODE_MULTIPLY = 2
 
 # ── Building IDs ──────────────────────────────────────────────────────────────
 BUILDING_CASTLE      = 82
@@ -1320,8 +1330,16 @@ def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
 def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectCommand:
     """Return a copy of ec whose d value is scaled so that applying the result
     once produces the same game effect as applying the original ec multiplier
-    times.  EC_MULTIPLY compounds (d ** N); EC_ADD and EC_RESOURCE accumulate
-    (d * N); all other types are idempotent and need no scaling.
+    times.  EC_MULTIPLY and mode-2 EC_TECH_COST/EC_TECH_TIME compound (d ** N);
+    EC_ADD and EC_RESOURCE accumulate (d * N); everything else is left alone.
+
+    Leaving a command alone is not always the same as "it is idempotent".  Some
+    are genuinely unscalable — EC_SET with c=57 (ATTR_DEAD_UNIT) carries a unit
+    id in d, so scaling it would spawn a different unit (civ bonuses 100 and
+    139).  Others are set-to-an-absolute-value and have no meaningful Nth
+    application.  Cards whose whole effect falls in this group should be marked
+    "multiplier": false rather than silently offering a control that does
+    nothing.
 
     Special case: EC_ADD with c=8 (armor attribute) uses packed d values where
     d = (armor_class_id << 8) | amount.  Only the amount byte must be scaled;
@@ -1332,6 +1350,11 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
     if multiplier <= 1:
         return result
     if result.type == EC_MULTIPLY:
+        result.d = result.d ** multiplier
+    elif (result.type in (EC_TECH_COST, EC_TECH_TIME)
+          and int(result.c) == TECH_MODE_MULTIPLY):
+        # "-50% cost" is d=0.5, so x2 must compound to 0.25 (-75%), exactly
+        # like EC_MULTIPLY.  Multiplying d instead would make the bonus WEAKER.
         result.d = result.d ** multiplier
     elif result.type == EC_ADD and int(result.c) == 8:
         d_int = int(result.d)
@@ -1347,22 +1370,17 @@ def _multiply_effect(dat: DatFile, effect_id: int, multiplier: int) -> None:
     """Scale each EffectCommand in the effect so that applying it once is
     equivalent to applying the original effect multiplier times.
 
-    Uses mathematical scaling (d**N for EC_MULTIPLY, d*N for EC_ADD/RESOURCE)
-    instead of command duplication, keeping the effect command count constant
-    and avoiding engine limits on large effect lists.  See _scale_ec_for_multiplier
-    for the packed-armor (EC_ADD c=8) special case."""
+    Uses mathematical scaling instead of command duplication, keeping the
+    effect command count constant and avoiding engine limits on large effect
+    lists.  Delegates to _scale_ec_for_multiplier so the two cannot drift
+    apart — this logic used to be copy-pasted in both, which is how a new
+    scalable command type would have been added to one and not the other.
+    Only `d` is ever changed, so copying it back is equivalent to rebuilding
+    the command."""
     if multiplier <= 1 or effect_id < 0 or effect_id >= len(dat.effects):
         return
     for ec in dat.effects[effect_id].effect_commands:
-        if ec.type == EC_MULTIPLY:
-            ec.d = ec.d ** multiplier
-        elif ec.type == EC_ADD and int(ec.c) == 8:
-            d_int = int(ec.d)
-            class_id = d_int >> 8
-            amount   = d_int & 0xFF
-            ec.d = float((class_id << 8) | (amount * multiplier))
-        elif ec.type in (EC_ADD, EC_RESOURCE):
-            ec.d = ec.d * multiplier
+        ec.d = _scale_ec_for_multiplier(ec, multiplier).d
 
 
 def _apply_ec_list_entry(dat: DatFile, civ_index: int, ec_entry: dict,
