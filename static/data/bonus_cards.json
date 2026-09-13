@@ -86,11 +86,11 @@
     "description": "Mounted Units"
   },
   "5": {
-    "heading": "+10% Work Rate",
-    "stat": "Foragers work 10% faster",
+    "heading": "+15% [workrate]",
+    "stat": "Foragers work 15% faster",
     "entity": "villager",
     "entity2": "berries",
-    "description": "Villagers"
+    "description": "Foragers"
   },
   "6": {
     "heading": "Loom",
@@ -102,11 +102,11 @@
   },
   "7": {
     "type": "dual",
-    "heading": "+[attack], Carry Capacity",
-    "stat": "Villagers +5 attack vs. wild boar; hunters carry +15 meat; hunt contains +20% meat",
+    "heading": "+15 Carry, +20% [food]",
+    "stat": "Hunters carry +15 meat and hunt contains +20% more meat",
     "entity": "villager",
     "entity2": "boar",
-    "description": "Villagers"
+    "description": "Hunters"
   },
   "8": {
     "heading": "+10 Pop Space",
@@ -188,7 +188,11 @@
   "16": {
     "type": "desc",
     "entity": "fishing_ship",
-    "description": "Fishing Ships"
+    "description": "Fishing Ships",
+    "lines": [
+      "2× hit points",
+      "Work rate +5% Dark, +10% Feudal, +15% Castle, +20% Imperial"
+    ]
   },
   "17": {
     "heading": "+33% [reload]",
@@ -1182,8 +1186,7 @@
     "type": "desc",
     "lines": [
       "Wonders cost no wood",
-      "Wonders provide +50 population capacity",
-      "Maximum 1 Wonder"
+      "Wonders provide +50 population capacity"
     ]
   },
   "141": {
@@ -1384,8 +1387,8 @@
     ]
   },
   "191": {
-    "heading": "×2 HP",
-    "stat": "Explosive units have 2× hit points",
+    "heading": "×2 [heart]",
+    "stat": "Petards, Demolition Ships, Flaming Camels and Grenadiers have 2× hit points",
     "entity": "demolition_ship",
     "description": "Explosive Units"
   },
@@ -1716,10 +1719,10 @@
     "description": "Fish"
   },
   "241": {
-    "heading": "Faster Healing",
-    "stat": "All units heal at a faster rate",
+    "heading": "2× Healing",
+    "stat": "Units garrisoned in buildings and towers heal twice as fast",
     "entity": "monk",
-    "description": "All Units"
+    "description": "Garrisoned Units"
   },
   "242": {
     "heading": "2× [workrate]",
@@ -2170,12 +2173,10 @@
     "description": "Infantry"
   },
   "306": {
-    "type": "dual",
     "entity": "scorpion",
-    "entity2": "ballistics",
-    "heading": "+Ballistics",
+    "heading": "-50% [gold]",
     "description": "Scorpions",
-    "stat": "Scorpions cost -60% gold and benefit from Ballistics research"
+    "stat": "Scorpions cost 50% less gold"
   },
   "307": {
     "type": "hidden",
@@ -2482,13 +2483,11 @@
     "description": "Jian Swordsmen + Hei Guang Cavalry"
   },
   "342": {
-    "type": "desc",
     "entity": "dock",
+    "heading": "FREE",
     "description": "Naval Techs",
-    "lines": [
-      "Careening and Dry Dock available one age earlier",
-      "Cost and research time -75%"
-    ]
+    "stat": "Careening and Dry Dock are free and research instantly",
+    "multiplier": false
   },
   "343": {
     "type": "hidden",
@@ -2713,7 +2712,8 @@
     "heading": "FREE",
     "stat": "Caravan and Guilds can be researched for free",
     "entity": "market",
-    "description": "Market Technologies"
+    "description": "Market Technologies",
+    "multiplier": false
   },
   "366": {
     "heading": "+50% Faith Rate",
@@ -2731,8 +2731,8 @@
   },
   "368": {
     "type": "dual",
-    "heading": "+25%",
-    "stat": "Foragers work 25% faster",
+    "heading": "+25% [food]",
+    "stat": "Foragers drop off +25% food",
     "entity": "villager",
     "entity2": "berries",
     "description": "Foragers"

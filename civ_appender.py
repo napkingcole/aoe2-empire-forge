@@ -3217,22 +3217,25 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                     _multiply_effect(dat, eff_id, multiplier)
                 applied += 1
             bonus_tech_map.update(seen_bonus)
-            # Winged Hussar: the copied trigger tech has to be threaded back into
-            # tech 786's prerequisites or the unit never arrives, and the Hussar
-            # the trigger just disabled is not replaced by anything (issue #27).
-            if bonus_id == _WINGED_HUSSAR_BONUS:
+            # The copied trigger tech has to be threaded back into its dependent's
+            # prerequisites, or the dependent never fires.  See _ALT_PREREQ_BONUSES.
+            if bonus_id in _ALT_PREREQ_BONUSES:
+                _triggers, _what = _ALT_PREREQ_BONUSES[bonus_id]
                 _wired = 0
-                for _trigger in _WINGED_HUSSAR_TRIGGERS:
+                for _trigger in _triggers:
                     _copy = seen_bonus.get(_trigger)
                     if _copy is not None:
                         _wired += _add_alt_prereq(dat, _trigger, _copy)
                 if _wired:
-                    print(f"       Winged Hussar: tech {_WINGED_HUSSAR_TECH} "
-                          f"re-pointed at this civ's trigger copy")
+                    print(f"       Bonus {bonus_id}: {_wired} tech(s) re-pointed "
+                          f"at this civ's copy of trigger {_triggers}")
                 else:
-                    print(f"       WARNING: Winged Hussar trigger tech was not "
-                          f"copied — the Hussar will be disabled with no "
-                          f"replacement")
+                    print(f"       WARNING: bonus {bonus_id} trigger tech was not "
+                          f"copied — {_what}")
+            # Half catalog, half hand-written: the techs cover the upgrade
+            # effectiveness, the buildings need commands vanilla never wrote.
+            if bonus_id == _DROPOFF_DISCOUNT_BONUS:
+                _apply_dropoff_discount(dat, civ_index, multiplier)
             continue
 
         ec_entries = civ_bonus_ec_list(bonus_id)
@@ -3299,6 +3302,40 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     return bonus_result
 
 
+# Bonus 312 — "Wood and mining upgrades are 40% more effective, economic
+# drop-off buildings cost -25%".  The catalog's eight techs cover the upgrade
+# half plus the Mule Cart's own discount (tech 958); the buildings were never
+# touched, so the card's second line did nothing for a civ that builds Mills
+# rather than Mule Carts.  Vanilla has no tech for it, so we emit our own.
+#
+# Four ids per building because each age has its own art: all four Mills share
+# language_dll_name 5157 and differ only in standing_graphic, and only the Dark
+# Age one ships enabled.  Missing one leaves that age at full price.
+_DROPOFF_DISCOUNT_BONUS = 312
+_DROPOFF_BUILDINGS = (
+    68, 129, 130, 131,      # Mill        (Dark/Feudal/Castle/Imperial)
+    562, 563, 564, 565,     # Lumber Camp
+    584, 585, 586, 587,     # Mining Camp
+    1734, 1711, 1720,       # Folwark     (replaces the Mill for some civs)
+    2556, 2558, 2560,       # Settlement  (125 wood, not 100)
+)
+
+
+def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> None:
+    """Bonus 312's second line: -25% on every economic drop-off building.
+
+    EC_MULTIPLY on attribute 100 (whole resource cost) rather than 104 (wood),
+    so the Settlement's non-wood cost is discounted too if it ever gains one.
+    Compounds with the multiplier the same way every other EC_MULTIPLY does.
+    """
+    factor = 0.75 ** max(1, multiplier)
+    cmds = [EffectCommand(type=EC_MULTIPLY, a=uid, b=-1, c=100, d=factor)
+            for uid in _DROPOFF_BUILDINGS]
+    _add_auto_fire_tech(dat, civ_index, cmds,
+                        name="C-Bonus, -25% drop-off buildings")
+    print(f"       Drop-off buildings: {len(cmds)} discounted to {factor:.4f}")
+
+
 # Bonus 105 — "Economic upgrades cost -33% food and available one age earlier".
 # The catalog's ec_list covers the discount; the other half is structural.
 _EARLY_ECO_BONUS = 105
@@ -3352,16 +3389,28 @@ def _add_alt_prereq(dat: DatFile, original_tid: int, new_tid: int,
     return n
 
 
-# Bonus 282 — "Winged Hussar replaces Hussar".  The catalog copies the Poles'
-# trigger techs (789, 791), but the Winged Hussar tech itself (786) is global and
-# demands 3 of [115 Imperial, 254 Light Cavalry, 788 Lithuanian trigger, 789
-# Polish trigger].  A custom civ satisfies only 115 and 254, so 786 never fired —
-# while the copied 789 had already disabled the Hussar (tech 428), leaving the
-# civ with neither unit (issue #27).  Re-pointing 786 at our copy of 789 restores
-# the third requirement.
-_WINGED_HUSSAR_BONUS     = 282
-_WINGED_HUSSAR_TECH      = 786
-_WINGED_HUSSAR_TRIGGERS  = (789, 788)   # Poles first — the catalog copies that one
+# Bonuses whose catalog tech is a civ-gated *trigger* that some other tech names
+# as a prerequisite.  _allocate_tech copies the trigger to a new id, but the
+# dependent still names the original — gated to a civ that is not ours, so it
+# never fires (CLAUDE.md quirk 9).  Maps bonus id → (trigger tech ids, what
+# breaks when the copy is missing).
+#
+#   282 "Winged Hussar replaces Hussar" — the catalog copies the Poles' trigger
+#       (789), but the Winged Hussar tech (786) is global and demands 3 of
+#       [115 Imperial, 254 Light Cavalry, 788 Lithuanian trigger, 789 Polish
+#       trigger].  A custom civ satisfies only 115 and 254, so 786 never fired
+#       while the copied 789 had already disabled the Hussar (issue #27).
+#   360 "Heavy Cavalry Archer available in Castle Age, -50% cost" — tech 218
+#       demands 2 of [103 Imperial, 192 Cav Archer (Castle), 1004 Khitan
+#       trigger].  Without the re-point our civ only ever reaches 192 + 103, so
+#       the upgrade stayed Imperial-only and the card's headline did nothing.
+#       With it, the auto-fire copy of 1004 pairs with 192 in the Castle Age.
+_ALT_PREREQ_BONUSES: dict[int, tuple[tuple[int, ...], str]] = {
+    282: ((789, 788),   # Poles first — the catalog copies that one
+          "the Hussar will be disabled with no replacement"),
+    360: ((1004,),
+          "the Heavy Cavalry Archer upgrade stays Imperial-only"),
+}
 
 
 def _apply_early_eco_shims(dat: DatFile, civ_index: int) -> int:

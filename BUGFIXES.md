@@ -5,6 +5,102 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-13 — Five more bonus cards claimed things their effects never did (sweep round 2)
+
+**Symptom:** round 2 of the catalog sweep (`docs/AUDIT-bonus-catalog-mismaps.md`), closing out
+Tier 2. Each card promised something no EffectCommand delivered.
+
+**Root cause — and one new general lesson:**
+
+- **52 "Gunpowder units cost -20%"** — vanilla tech 500 discounts five units, then gives Rocket
+  Carts, Fire Lancers and Grenadiers **+25% hit points instead of the discount**. Vanilla-faithful
+  (it is the Portuguese bonus) and wrong for a card whose whole claim is a cost cut.
+- **140 "Wonders don't cost wood…"** — only the +50 population half was implemented.
+- **191 "Explosive units 2x HP"** — `MULT class 35` covers Petard, Flaming Camel and the
+  unbuildable Saboteur, but **demolition ships are class 22 (Warship)**, shared with Galleys, so
+  they can never be swept in by class. They were silently excluded.
+- **312 "…drop-off buildings cost -25%"** — only the Mule Cart was discounted.
+- **368 "Foragers work 25% faster"** — the effect raises berry food and carry capacity; attribute
+  13 is never touched. Implementation coherent, sentence wrong.
+
+**New lesson — a building needs one id per age.** All four Mills share `language_dll_name` 5157
+and differ only in `standing_graphic`; only the Dark Age one ships `enabled=1`. Same for Lumber
+Camp (562-565), Mining Camp (584-587), Folwark (3) and Settlement (3). Discounting only the base
+id leaves every later age at full price — the same class of trap as CLAUDE.md's "a unit has
+several upgrade tiers" note, one level up.
+
+**Fix:**
+- 52 moved off tech 500 into an `ec_list` of twelve `MULT attr 100 ×0.8`, adding the units vanilla
+  skipped. Deliberate divergence, recorded in `bonus_catalog.py`.
+- 140 gained `EC_SET attr 104 = 0` on all seven Wonder ids. The card's "Maximum 1 Wonder" line is
+  the engine's **default** behaviour, so it came off the card rather than being implemented — the
+  only one-at-a-time mechanism in the DAT is the hero pair (attrs 126/127), used on exactly three
+  units and never on a building.
+- 191 gained 527/528/1104 and the Grenadier (1911) by explicit id.
+- 312 gained `_apply_dropoff_discount` — `MULT attr 100 ×0.75` on 18 building ids. It could not be
+  an `ec_list` entry: **the bonus dispatch is exclusive**, so a bonus with a tech list `continue`s
+  before `ec_list` is read, and 312 maps eight techs. It runs as a supplement after the tech
+  branch, the shape bonus 105 already uses after its ec_list.
+- 368 reworded to the **Mapuche** bonus's official text, *"Foragers drop off +25% food"* — which
+  is precisely what tech 1381 already did, so no mechanism changed. It is structurally identical
+  to tech 594 (bonus 75, *"Villagers drop off 10% more gold"*): `cMulResource` on the resource
+  pool plus carry capacity on both gender variants. **That pair is the codebase's idiom for "drop
+  off N% more"** — the bush holds more and each trip delivers more; the gather rate is untouched.
+  It is **not** the Franks bonus as first assumed — tech 1381 is `civ=58`. The Franks' forager
+  bonus is **bonus 5** (tech 524, `civ=2`, work rate ×1.15), already at its patched 15% with only
+  the card stale at 10%; that card is now fixed too.
+
+---
+
+## 2026-09-10 — Seven civ bonuses were inert, mismapped, or stale, found by a full catalog sweep
+
+**Symptom:** an audit comparing every one of the 350 visible bonus cards against the effect
+commands its techs actually fire (`scripts/dump_bonuses.py`, findings in
+`docs/AUDIT-bonus-catalog-mismaps.md`) turned up 28 discrepancies. Seven were fixed in this pass.
+
+**Root cause — four distinct kinds:**
+
+1. **KM points at empty DAT slots.** Bonuses **357** (tech 1003 `RESERVED`), **306** (tech 893
+   `RESERVED`) and **342** (techs 1077/1078, unnamed) map to techs with `effect_id = -1`, no
+   prerequisites, and nothing in the DAT referencing them. He never populates them either, so
+   these have never done anything. Bonus 357 was inert in full; 306 and 342 lost half their card.
+2. **A mapping that carries someone else's unit.** Bonus **108** ("Farm upgrades +125% food")
+   maps `{772, 773, 774, 815, 816, 817}`, and **773/774 are the Flemish Militia make-avail and
+   its Castle-Age stat boost** — every civ taking the farm bonus silently gained a unit line.
+   815-817 are `New Research` stubs pointing at the empty effect 0.
+3. **A missing tech.** Bonus **76** maps only the Dark Age step (584). The Berbers' Feudal tech
+   (**600**, requires 101, `×1.047619`) exists and is simply absent from KM's list.
+4. **A prerequisite that was never re-pointed.** Bonus **360**'s "Heavy Cavalry Archer available
+   in Castle Age" is not in any effect — it lives in tech 218's prerequisites, which want **2 of
+   `[103 Imperial, 192 Cav Archer (Castle), 1004 Khitan trigger]`**. `_allocate_tech` copies the
+   civ-gated 1004 to a new id while 218 keeps naming the original, so the civ never reached the
+   threshold early. This is CLAUDE.md quirk 9 for the third time (after Winged Hussar and the
+   Burgundian eco shims).
+
+**Several were stale wording, not broken code.** DE has changed the game under the catalog:
+Scorpions now get Ballistics on every civ (306), the naval rework dropped early Careening/Dry
+Dock (342), Japanese fishing ships traded +2P armor for +100% HP (16, already implemented as
+`class 21 HP ×2`), and the Goths lost their boar attack while keeping carry capacity and hunt
+food (7). For these the fix was to retarget the card, not to implement the old text.
+
+**Fix:**
+- Catalog: `76 → [584, 600]`, `108 → [772]`, `306 → [892]`, `342 → [1079]`, `357 → ec_list`
+  (`cMulResource` type 6 on resource 216, livestock food, `d=1.1`).
+- `302` ("ships get blacksmith armor") gained the **Galleon 539** at `+2/+2`, matching War Galley
+  and Dromon — without it the bonus vanished on the Imperial upgrade.
+- `civ_appender._ALT_PREREQ_BONUSES` generalises the old Winged-Hussar special case into a table;
+  bonus 360 joins it. The build log line changed from `Winged Hussar:` to
+  `Bonus <id>: N tech(s) re-pointed`, and `tests/test_build_smoke.py` was updated to match.
+- Wording: bonuses **7, 16, 241, 306, 342** retitled; `241` is now "Garrisoned units heal at a
+  faster rate", which is what its `GarrisonHealRate ×2` always did. `342` and `365` flagged
+  `"multiplier": false` — nothing to scale once a cost is already zero.
+
+`tests/test_audit_fixes.py` builds one civ carrying all seven changed bonuses and asserts each
+command reaches the built DAT, because "the catalog says so" is exactly the assertion that would
+have passed while bonus 357 did nothing.
+
+---
+
 ## 2026-09-09 — Civ bonus 54 "Fishermen work 10% faster" did the wrong thing entirely
 
 **Symptom:** the bonus had no effect on fishing villagers. Its multiplier also did nothing.

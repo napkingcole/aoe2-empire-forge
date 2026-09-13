@@ -210,7 +210,7 @@ check("Feitoria (1021) is dropped, not honoured", "1021" in drop_line,
 
 for needle, why in (
     ("Early eco upgrades:",         "bonus 105's shim allocation should run"),
-    ("Winged Hussar:",              "bonus 282 should re-point tech 786"),
+    ("Bonus 282: 1 tech(s) re-pointed", "bonus 282 should re-point tech 786"),
     ("Unticked entities:",          "the disable sweep should act on the pruned tree"),
     ("Monk skin:",                  "a monk skin was selected"),
 ):
