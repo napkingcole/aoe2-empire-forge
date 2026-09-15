@@ -137,10 +137,28 @@
   },
   "10": {
     "type": "progression",
-    "heading": "test",
     "prog_label": "Infantry cost less:",
     "stat": "Infantry Discount",
-    "description": "Infantry"
+    "description": "Infantry",
+    "entity": "infantry",
+    "ages": [
+      {
+        "age": "dark",
+        "value": "-15%"
+      },
+      {
+        "age": "feudal",
+        "value": "-20%"
+      },
+      {
+        "age": "castle",
+        "value": "-25%"
+      },
+      {
+        "age": "imperial",
+        "value": "-30%"
+      }
+    ]
   },
   "11": {
     "heading": "×2 Range",
@@ -150,7 +168,12 @@
   },
   "12": {
     "type": "desc",
-    "description": "Town Centers"
+    "description": "Town Centers",
+    "lines": [
+      "Towers garrison twice as many units",
+      "Town Centers garrison +10 units",
+      "Both fire extra arrows"
+    ]
   },
   "13": {
     "heading": "40% OFF",
@@ -202,7 +225,12 @@
   },
   "18": {
     "type": "desc",
-    "description": "Chinese Start"
+    "description": "Chinese Start",
+    "lines": [
+      "Start with +3 Villagers, but -200 food and -50 wood",
+      "Town Centers support 15 population",
+      "Town Centers +7 line of sight"
+    ]
   },
   "19": {
     "heading": "+50% [heart]",
@@ -263,12 +291,21 @@
     "prog_label": "Increase Per Age"
   },
   "27": {
-    "type": "desc"
+    "type": "desc",
+    "description": "Market",
+    "lines": [
+      "Markets cost -100 wood",
+      "Market trade fee is only 5%"
+    ]
   },
   "28": {
     "type": "desc",
     "entity": "transport_ship",
-    "description": "Transport Ships"
+    "description": "Transport Ships",
+    "lines": [
+      "2x hit points",
+      "+20 garrison capacity"
+    ]
   },
   "29": {
     "heading": "+25% [reload]",
@@ -585,8 +622,8 @@
     "description": "All Buildings"
   },
   "59": {
-    "heading": "+10 Pop",
-    "stat": "Per House",
+    "heading": "10 Pop",
+    "stat": "Supports 10 population",
     "entity": "house",
     "description": "Houses"
   },
@@ -1310,8 +1347,8 @@
     "description": "Trebuchets"
   },
   "180": {
-    "heading": "33% Faster",
-    "stat": "Cavalry Archers train 33% faster",
+    "heading": "25% Faster",
+    "stat": "Cavalry Archers train 25% faster",
     "entity": "cavalry_archer",
     "description": "Cavalry Archers"
   },
@@ -1494,7 +1531,7 @@
   },
   "208": {
     "heading": "+25% [reload]",
-    "stat": "Elephant units have +25% attack",
+    "stat": "Elephant units attack 25% faster",
     "entity": "battle_elephant",
     "description": "Elephant Units"
   },
@@ -1905,8 +1942,8 @@
     "description": "Builders"
   },
   "267": {
-    "heading": "+50 Population",
-    "stat": "Castles and Kreposts provide +50 population",
+    "heading": "50 Pop",
+    "stat": "Supports 50 population",
     "entity": "castle",
     "description": "Castles + Kreposts",
     "entity2": "krepost"
@@ -2447,8 +2484,8 @@
   },
   "339": {
     "type": "dual",
-    "heading": "+65 [food]",
-    "stat": "Per military production building and Dock",
+    "heading": "+55 [food]",
+    "stat": "Per Barracks, Stable, Archery Range, Siege Workshop, Dock, Castle and Krepost",
     "entity": "barracks",
     "entity2": "dock",
     "description": "Military Buildings + Docks"
@@ -2466,7 +2503,7 @@
       },
       {
         "age": "castle",
-        "value": "20 HP/min"
+        "value": "15 HP/min"
       },
       {
         "age": "imperial",
@@ -2517,7 +2554,7 @@
     "ages": [
       {
         "age": "castle",
-        "value": "+15%"
+        "value": "+20%"
       },
       {
         "age": "imperial",
@@ -2616,8 +2653,8 @@
   },
   "359": {
     "type": "dual",
-    "heading": "+25% Faster",
-    "stat": "Skirmishers, Spearmen, and Scouts train and upgrade +25% faster",
+    "heading": "+15% Faster",
+    "stat": "Skirmishers, Spearmen, and Scouts train and upgrade +15% faster",
     "entity": "skirmisher",
     "entity2": "spearman",
     "description": "Counter Units"
@@ -2772,7 +2809,7 @@
     "entity": "skirmisher",
     "entity2": "spearman",
     "heading": "UNLOCK",
-    "stat": "Can be trained at Settlements; training speed improves per age",
+    "stat": "Can be trained at Settlements",
     "description": "Skirmishers & Spearmen"
   },
   "372": {
@@ -2806,7 +2843,7 @@
   "376": {
     "type": "dual",
     "heading": "+10 Pop Space",
-    "stat": "Towers and Castles provide +10 population space (team effect via type=10)",
+    "stat": "Towers and Castles provide +10 population space",
     "entity": "watch_tower",
     "entity2": "castle",
     "description": "Team: Towers & Castles"

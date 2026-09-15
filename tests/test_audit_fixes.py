@@ -39,6 +39,8 @@ BONUSES = [
     [140, 1],   # Wonders                  — "cost no wood" was never implemented
     [191, 1],   # Explosive units 2x HP    — demo ships are class 22, needed ids
     [312, 1],   # Drop-off buildings -25%  — only the Mule Cart was discounted
+    # ── round 3 (2026-09-15) ──
+    [339, 1],   # Buildings give food      — vanilla hit every building, incl. Houses
 ]
 
 CIV_DEF = {
@@ -152,6 +154,26 @@ check("bonus 312 still discounts the Mule Cart (vanilla tech 958)", 1808 in chea
 check("bonus 312 still applies the upgrade-effectiveness half",
       len([c for c in all_cmds
            if c.type == 5 and c.c == 13 and c.a in (123, 218, 579, 581, 124, 220)]) >= 8)
+
+# ── 339: only the named buildings, and the two empty slots got opened ────────
+FOOD_BUILDINGS = (45, 133, 47, 51, 1189, 12, 498, 132, 20, 101, 86, 153,
+                  87, 10, 14, 49, 150, 82, 1251)
+fed = {c.a for c in all_cmds if c.type == 4 and c.c == 27 and abs(c.d - 55.0) < 1e-6}
+check("bonus 339 feeds every named building",
+      set(FOOD_BUILDINGS) <= fed, f"missing {sorted(set(FOOD_BUILDINGS) - fed)}")
+check("bonus 339 no longer feeds every building via class 3",
+      not any(c.type == 4 and c.c == 27 and c.a == -1 for c in all_cmds),
+      "still using the class-wide command")
+for uid, name in ((70, "House"), (68, "Mill"), (50, "Farm"), (109, "Town Center")):
+    check(f"bonus 339 leaves the {name} ({uid}) alone", uid not in fed)
+# the Krepost and Harbor ship resource_storages[2] empty; an EC can set a slot's
+# amount but never its type, so they need the slot opened on the unit itself
+for uid, name in ((1251, "Krepost"), (1189, "Harbor")):
+    slot = dat.civs[1].units[uid].resource_storages[2]
+    check(f"bonus 339 opened the {name}'s third storage slot to food",
+          slot.type == 0 and slot.flag == 8, f"slot = {(slot.type, slot.amount, slot.flag)}")
+check("bonus 339 did not disturb a building whose slot was already food",
+      dat.civs[1].units[45].resource_storages[2].type == 0)
 
 print(f"\n{'All checks passed.' if not failures else f'{failures} check(s) failed.'}")
 sys.exit(0 if not failures else 1)

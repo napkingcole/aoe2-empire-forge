@@ -12,7 +12,8 @@ class ids came from `~/Sites/aoe2/AoE2DE_UGC_Guide-main` (object-class constants
 ## Status
 
 **Round 1 landed 2026-09-10** — all six Tier 1 items and five Tier 2 items.
-**Round 2 landed 2026-09-13** — the remaining five Tier 2 items, closing Tiers 1 and 2 entirely.
+**Round 2 landed 2026-09-13** — the remaining five Tier 2 items, closing Tiers 1 and 2.
+**Round 3 landed 2026-09-15** — all of Tier 3 and Tier 4. **The sweep is complete.**
 
 Both rounds were triaged by the user against current DE behaviour, and that mattered: a large
 share turned out to be bonuses the game itself has since changed, where the right fix was to
@@ -227,29 +228,53 @@ card in the catalog (31, 126, 217, 275, 288) includes it.
 | Bonus | Card says | Effect actually does |
 |---|---|---|
 | 5   | Foragers work **10%** faster | `×1.15` → **+15%** — **FIXED**, card now says 15% (this is the Franks bonus at its patched value) |
-| 359 | train/upgrade **+25%** faster | `×0.869565` = 1/1.15 → **+15%** |
-| 180 | Cav Archers train **33%** faster | `TrainTime ×0.8` → **+25%** |
-| 340 | regen **10 / 20 / 30** HP/min | techs add 10, **5**, 15 → **10 / 15 / 30** |
-| 346 | **+15%** / +30% HP | effect 1058 is `×1.2` → **+20%** / +30% |
-| 339 | **+65** food per building | effect adds **+55** (the effect is even named "+55f") |
+| 359 | train/upgrade **+25%** faster | `×0.869565` = 1/1.15 → **+15%** — **FIXED**, card follows the effect |
+| 180 | Cav Archers train **33%** faster | `TrainTime ×0.8` → **+25%** — **FIXED**, card follows the effect |
+| 340 | regen **10 / 20 / 30** HP/min | techs add 10, **5**, 15 → **10 / 15 / 30** — **FIXED**, card follows the effect |
+| 346 | **+15%** / +30% HP | effect 1058 is `×1.2` → **+20%** / +30% — **FIXED**, card follows the effect |
+| 339 | **+65** food per building | effect adds **+55** — **FIXED**, and see below: the scope was the real bug |
+
+### Bonus 339 — the number was the small half of the problem
+
+Vanilla tech 1084 is `ADD class 3 Building attr 27 += 55`: **every building**, Houses, Mills, Farms
+and Town Centers included, not the military buildings and Docks the card names. Now a handler
+(`_FOOD_BUILDINGS`) listing 19 ids — Dock ×4 + Harbor, Barracks ×4, Stable ×3, Archery Range ×3,
+Siege Workshop ×2, Castle, Krepost — at the effect's +55.
+
+**Attribute 27 is `AmountThirdStorage`, i.e. `resource_storages[2]`,** and on every military
+building and Dock that slot already ships as `(type 0 = food, amount 0, flag 8)`, which is why
+adding to it yields food. **The Krepost and the Harbor ship that slot empty (`type -1`)** — and an
+EffectCommand can change a slot's *amount* but never its *type*, so no command could ever have fed
+them. The handler opens those two slots directly on the civ's own unit copies first, the same kind
+of unit-data write bonus 330 does for 2×2 farms.
 | 306 | **-60%** gold | `×0.5` → **-50%** — **FIXED**, card now says -50% |
 
 ---
 
-## Tier 4 — cosmetic / wording
+## Tier 4 — cosmetic / wording — **ALL FIXED**
 
-- **Bonus 10** — the card's `heading` is the literal placeholder string **`"test"`**.
-- **Bonus 59 / 267** — "+10 Pop per House" and "+50 Population" state the *total*, not the delta.
-  The effects add +5 and +30; base values are 5 (House) and 20 (Castle/Krepost), so the totals are
-  right and only the "+" is wrong.
+- **Bonus 10** — the card's `heading` was the literal placeholder string **`"test"`**. It was also
+  a `progression` card with a `prog_label` but **no `ages` rows and no `entity`**, so it rendered
+  with no icon and an empty per-age table. Now carries the four age rows (-15/-20/-25/-30%) and an
+  infantry icon, with no heading at all — progression cost cards don't use one (cf. 3, 78).
+- **Bonus 59 / 267** — "+10 Pop per House" and "+50 Population" stated the *total* as if it were
+  the delta. Reworded to "Supports 10 population" / "Supports 50 population", which is true either
+  way and sidesteps the ambiguity.
 - **Bonus 208** — stat reads "Elephant units have +25% attack"; the effect is attack **speed**
   (`AttackReloadTime ×0.8`). The heading's `[reload]` icon is right, the sentence isn't.
-- **Bonus 376** — card text leaks an implementation note to players: "…+10 population space
-  **(team effect via type=10)**".
-- **Bonus 371** — "training speed improves per age" omits that Feudal multiplies train time by
-  **2.15** first; Castle (×0.75) and Imperial (×0.62) only claw it back to roughly parity.
-- **Ten visible cards carry no explanatory text at all** (no heading, stat, prog_label, lines or
-  ages — just an icon and a label): **12, 16, 18, 27, 28, 61, 297, 338, 344, 349**.
+- **Bonus 376** — card text leaked an implementation note to players, "…+10 population space
+  **(team effect via type=10)**". Removed.
+- **Bonus 371** — "training speed improves per age" omitted that Feudal multiplies train time by
+  **×2.15** first, with Castle (×0.75) and Imperial (×0.62) only clawing it back to roughly parity.
+  The claim is dropped rather than documented; the card now just says "Can be trained at
+  Settlements".
+- **Blank cards.** The original count of ten was wrong: **cards carry their own `hidden: true`
+  flag** (`builder.js:1655` → `type: 'hidden'` → skipped at 2015/2089), and my visibility check
+  only consulted `bonus_names.json` minus `unsupported_bonuses()` minus `DEPRECATED_BONUSES`. Six
+  of the ten — **61, 245, 297, 331, 338, 344, 349** — were already hidden from the picker and never
+  rendered at all. The genuinely blank, genuinely visible set was **12, 18, 27, 28** (plus 16, done
+  in round 1), and all four now carry `lines`. Bonus 27 had no `description` either, so it drew a
+  completely empty card.
 
 ---
 
@@ -275,9 +300,11 @@ card in the catalog (31, 126, 217, 275, 288) includes it.
 
 ## Still open
 
-All of Tier 1 and Tier 2 are resolved. Remaining: **Tier 3** items 359, 180, 340, 346 and 339, and
-all of **Tier 4** — including bonus 10's literal `"test"` heading and the nine blank cards (12, 18,
-27, 28, 61, 297, 338, 344, 349).
+Nothing. All 28 findings are resolved across three rounds.
+
+Two of them turned out to be **my analysis error rather than a defect**: bonus 213 (Onagers already
+cut trees, so the omission was correct) and six of the ten "blank cards", which were already hidden
+from the picker by a card-level flag I had not checked.
 
 ## Reproducing
 

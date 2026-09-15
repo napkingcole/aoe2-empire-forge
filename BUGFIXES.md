@@ -5,6 +5,42 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-15 — Bonus 339 fed every building; the rest of the sweep was card text
+
+**Symptom:** round 3 of the catalog sweep, closing Tiers 3 and 4.
+
+**Bonus 339 was the only real defect.** The card says "Military production buildings and Docks
+provide +65 food", but vanilla tech 1084 is `ADD class 3 Building attr 27 += 55` — **every**
+building, Houses, Mills, Farms and Town Centers included.
+
+**Root cause of the tricky half:** attribute 27 is `AmountThirdStorage`, i.e.
+`resource_storages[2]`. On every military building and Dock that slot already ships as
+`(type 0 = food, amount 0, flag 8)`, which is why adding to it yields food at all. **The Krepost
+and the Harbor ship that slot empty (`type -1`)**, and an EffectCommand can change a slot's
+*amount* but never its *type* — so no command could ever have fed them, and a class-wide command
+silently skipped them while hitting every House.
+
+**Fix:** bonus 339 became a handler. It opens the two empty slots directly on the civ's own unit
+copies (the same unit-data write bonus 330 does for 2×2 farms), then emits `ADD attr 27 += 55` on
+19 explicit ids — Dock ×4 + Harbor, Barracks ×4, Stable ×3, Archery Range ×3, Siege Workshop ×2,
+Castle, Krepost. Kept the effect's +55 over the card's +65, matching the other Tier 3 rulings.
+
+**Everything else was text.** Tier 3 cards 359, 180, 340 and 346 now state what their effects do
+(+15% not +25%, +25% not +33%, 10/15/30 not 10/20/30, +20%/+30% not +15%/+30%). Tier 4: bonus 10's
+heading was the literal string `"test"` and its progression card had no `ages` rows and no
+`entity`; 59/267 stated a total as a delta; 208 said "attack" for attack speed; 376 leaked
+"(team effect via type=10)" to players; 371 advertised a per-age training speedup without
+mentioning the ×2.15 Feudal penalty that precedes it.
+
+**Correction to the 2026-09-09 audit.** It reported ten blank visible cards. **Cards carry their
+own `hidden: true` flag** (`builder.js:1655`), and the audit's visibility check only consulted
+`bonus_names.json` minus `unsupported_bonuses()` minus `DEPRECATED_BONUSES`. Six of the ten — 61,
+245, 297, 331, 338, 344, 349 — were already hidden and never rendered. The real set was 12, 18, 27
+and 28, all now filled in. Any future "is this bonus visible?" check must consult the card flag as
+well as the two Python sets.
+
+---
+
 ## 2026-09-13 — Five more bonus cards claimed things their effects never did (sweep round 2)
 
 **Symptom:** round 2 of the catalog sweep (`docs/AUDIT-bonus-catalog-mismaps.md`), closing out

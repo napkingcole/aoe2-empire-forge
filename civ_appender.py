@@ -11,7 +11,7 @@ from genieutils.datfile import DatFile
 from genieutils.civ import Civ
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import Tech, ResearchLocation, ResearchResourceCost
-from genieutils.unit import TrainLocation, ResourceCost
+from genieutils.unit import TrainLocation, ResourceCost, ResourceStorage
 
 from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list, team_bonus_ec_list
 import km_custom_uu
@@ -1932,6 +1932,7 @@ HANDLED_BONUS_IDS = {
     239, 400,
     222, 356, 401,
     286,
+    339,   # Military buildings + Docks give food (vanilla hit every building)
     403,   # Settlement unlock (handled via Step 5b of _apply_tree_wiring)
     404,   # Mining Camp techs free (Bohemians)
     *_UNLOCK_UNIT_BONUSES,   # 405-416: regional / second unique unit unlocks
@@ -1986,6 +1987,36 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _add_auto_fire_tech(dat, civ_index,
                             _free_tech_cmds([_REDEMPTION]),
                             name="C-Bonus, free Redemption")
+        return True
+
+    if bonus_id == 339:          # Military production buildings and Docks provide food
+        # Vanilla tech 1084 does `ADD class 3 Building attr 27 += 55`, i.e. EVERY
+        # building including Houses, Mills and Farms.  Scope it to the buildings
+        # the card names instead.
+        #
+        # Attribute 27 is AmountThirdStorage — resource_storages[2].  On every
+        # military building and Dock that slot already ships as (type 0 = food,
+        # amount 0, flag 8), so adding to it yields food.  Two exceptions ship
+        # the slot EMPTY (type -1), and an EffectCommand can only change a slot's
+        # amount, never its type — so the Krepost and the Harbor need the slot
+        # opened by hand first, on this civ's own unit copies.
+        amount = 55.0 * mult
+        for uid in _FOOD_BUILDING_SLOT_FIXUPS:
+            if uid >= len(dat.civs[civ_index].units):
+                continue
+            u = dat.civs[civ_index].units[uid]
+            if u is None or len(u.resource_storages) < 3:
+                continue
+            if u.resource_storages[2].type == -1:
+                slots = list(u.resource_storages)
+                slots[2] = ResourceStorage(type=0, amount=0.0, flag=8)
+                u.resource_storages = tuple(slots)
+        cmds = [EffectCommand(type=EC_ADD, a=uid, b=-1, c=27, d=amount)
+                for uid in _FOOD_BUILDINGS]
+        _add_auto_fire_tech(dat, civ_index, cmds,
+                            name="C-Bonus, military buildings + Docks give food")
+        print(f"       Food buildings: {len(cmds)} buildings give +{amount:g} food "
+              f"({len(_FOOD_BUILDING_SLOT_FIXUPS)} storage slots opened)")
         return True
 
     if bonus_id == 404:          # Mining Camp technologies free (Bohemians)
@@ -3300,6 +3331,25 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     bonus_result["team_applied"] = team_applied
     bonus_result["team_total"]   = len(team_entries)
     return bonus_result
+
+
+# Bonus 339 — "Military production buildings and Docks provide +55 food".
+# Every age of every building the card names: missing one leaves that age giving
+# nothing (see _DROPOFF_BUILDINGS for why ages get their own ids).
+_FOOD_BUILDINGS = (
+    45, 133, 47, 51, 1189,   # Dock (4 ages) + Harbor
+    12, 498, 132, 20,        # Barracks
+    101, 86, 153,            # Stable
+    87, 10, 14,              # Archery Range
+    49, 150,                 # Siege Workshop
+    82,                      # Castle
+    1251,                    # Krepost
+)
+
+# …of those, the two that ship resource_storages[2] as type -1 (an unused slot).
+# EffectCommands can set a slot's amount but never its type, so these need the
+# slot opened directly on the civ's unit copy before attribute 27 means anything.
+_FOOD_BUILDING_SLOT_FIXUPS = (1189, 1251)
 
 
 # Bonus 312 — "Wood and mining upgrades are 40% more effective, economic
