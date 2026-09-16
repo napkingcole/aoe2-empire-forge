@@ -233,8 +233,18 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             bullets.append(f"• {txt}" + (f" [x{mult}]" if mult > 1 else ""))
     desc_parts.append("\\n".join(bullets))
     desc_parts.append(f"\\n\\n<b>Unique Unit:<b> \\n{uu_display}")
+    # Name AND description.  This used to interpolate the two names alone, so the
+    # civ-selection screen said "Unique Techs: • Foo • Bar" and nothing about what
+    # they did (issue #36) — while the CLI door showed them, because build_all's
+    # castle_ut_name is KM's packed "Name (description)" string and this one is
+    # just the name.  Another instance of one field, two shapes, two readers.
     desc_parts.append(
-        f"\\n\\n<b>Unique Techs:<b> \\n• {castle_ut_name}\\n• {imp_ut_name}"
+        "\\n\\n<b>Unique Techs:<b> \\n"
+        + "\\n".join(
+            f"• {nm}" + (f" — {dsc}" if dsc else "")
+            for nm, dsc in ((castle_ut_name, castle_ut_desc_text),
+                            (imp_ut_name, imp_ut_desc_text))
+        )
     )
     if team_entries:
         # Team bonus ids are their own namespace, not civ bonus ids — every one
