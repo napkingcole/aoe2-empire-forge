@@ -66,7 +66,7 @@
   "64": "Siege Workshop units 15% cheaper",
   "65": "All units cost -20% gold",
   "66": "Foragers generate a trickle of wood (33%)",
-  "67": "Ships +10% HP",
+  "67": "Ships +10% HP Feudal, +15% Castle, +20% Imperial Age",
   "68": "Can build Feitoria in Imperial Age",
   "69": "Can build Caravels in docks",
   "70": "Foot archers fire 18% faster",
@@ -391,5 +391,10 @@
   "258": "Villagers carry +1 per Town Center technology",
   "277": "Gunpowder units +1 attack per University tech",
   "278": "Buildings +3% HP per University technology",
-  "279": "Each Monastery technology spawns a free Monk"
+  "279": "Each Monastery technology spawns a free Monk",
+  "418": "Villagers drop off +10% food",
+  "419": "Villagers drop off +10% wood",
+  "420": "Villagers drop off +10% stone",
+  "421": "Fishing Ships drop off +10% food",
+  "422": "Villagers and Fishing Ships drop off +5% food"
 }

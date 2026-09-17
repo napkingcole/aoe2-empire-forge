@@ -673,10 +673,25 @@
     "description": "Foragers"
   },
   "67": {
-    "heading": "+10% [heart]",
-    "stat": "All Ships +10% Hit Points",
+    "type": "progression",
+    "stat": "Hit Points",
     "entity": "ship",
-    "description": "Ships"
+    "description": "All Ships",
+    "prog_label": "HP bonus per age:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "+10%"
+      },
+      {
+        "age": "castle",
+        "value": "+15%"
+      },
+      {
+        "age": "imperial",
+        "value": "+20%"
+      }
+    ]
   },
   "68": {
     "heading": "UNLOCK",
@@ -2185,7 +2200,7 @@
   },
   "302": {
     "heading": "+Armor",
-    "stat": "Ships receive additional armor from Blacksmith upgrades",
+    "stat": "Galley-line and Dromons gain +1 melee and +1 pierce armor",
     "entity": "ship",
     "description": "Navy"
   },
@@ -3230,5 +3245,45 @@
     "description": "Monks",
     "type": "dual",
     "entity2": "monastery"
+  },
+  "418": {
+    "type": "dual",
+    "heading": "+10% [food]",
+    "stat": "Villagers drop off +10% food from every source",
+    "entity": "villager",
+    "entity2": "food",
+    "description": "Villagers"
+  },
+  "419": {
+    "type": "dual",
+    "heading": "+10% [wood]",
+    "stat": "Lumberjacks drop off +10% wood",
+    "entity": "villager",
+    "entity2": "lumber_camp",
+    "description": "Lumberjacks"
+  },
+  "420": {
+    "type": "dual",
+    "heading": "+10% [stone]",
+    "stat": "Stone miners drop off +10% stone",
+    "entity": "villager",
+    "entity2": "stone_mining",
+    "description": "Stone Miners"
+  },
+  "421": {
+    "type": "dual",
+    "heading": "+10% [food]",
+    "stat": "Fishing Ships drop off +10% food",
+    "entity": "fishing_ship",
+    "entity2": "fish",
+    "description": "Fishing Ships"
+  },
+  "422": {
+    "type": "dual",
+    "heading": "+5% [food]",
+    "stat": "Villagers and Fishing Ships drop off +5% food",
+    "entity": "villager",
+    "entity2": "fishing_ship",
+    "description": "Villagers + Fishing Ships"
   }
 }

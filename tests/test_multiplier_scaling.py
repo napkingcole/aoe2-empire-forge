@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 from genieutils.effect import EffectCommand            # noqa: E402
 from civ_appender import (_scale_ec_for_multiplier,    # noqa: E402
+                          EC_MUL_RESOURCE,
                           EC_SET, EC_RESOURCE, EC_ADD, EC_MULTIPLY,
                           EC_TECH_COST, EC_TECH_TIME,
                           TECH_MODE_SET, TECH_MODE_MULTIPLY)
@@ -52,6 +53,21 @@ check("tech time x2", scaled(EC_TECH_TIME, TECH_MODE_MULTIPLY, 0.5, 2), 0.25)
 print("\n=== accumulating (a flat amount applied N times) ===")
 check("EC_ADD +5 x3", scaled(EC_ADD, 9, 5, 3), 15)
 check("EC_RESOURCE +100 x2", scaled(EC_RESOURCE, -1, 100, 2), 200)
+
+print("\n=== cMulResource compounds like EC_MULTIPLY ===")
+# Type 6 scales a player RESOURCE, not a unit attribute, and it is the lever
+# behind every "drop off +N%" and "resources last N% longer" bonus.  It used to
+# fall through to "left alone", which was worse than a no-op: the "last longer"
+# family pairs it with a compensating work-rate CUT that IS an EC_MULTIPLY, so
+# at x2 the villager slowed to d**2 while productivity stayed at d — the card's
+# own multiplier cost the player income.
+check("cMulResource +15% x2 compounds", round(scaled(EC_MUL_RESOURCE, -1, 1.15, 2), 6), 1.3225)
+check("cMulResource +15% x3 compounds", round(scaled(EC_MUL_RESOURCE, -1, 1.15, 3), 6), 1.520875)
+check("cMulResource +10% x2 compounds", round(scaled(EC_MUL_RESOURCE, -1, 1.1, 2), 6), 1.21)
+# and it must stay in step with the work-rate cut it is paired with
+prod = scaled(EC_MUL_RESOURCE, -1, 2.0, 2)      # trees last +100%, x2
+rate = scaled(EC_MULTIPLY, 13, 0.5, 2)          # its compensating lumberjack cut
+check("bonus 235 at x2 keeps income flat (prod * rate == 1)", round(prod * rate, 6), 1.0)
 
 print("\n=== packed armor keeps its class byte ===")
 # d = class_id<<8 | amount; scaling the whole int would change the armor class

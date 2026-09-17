@@ -5,6 +5,48 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-17 — cMulResource never scaled, so 13 cards' multipliers were half-broken
+
+**Symptom:** found while building the "+% drop off" bonus family. `_scale_ec_for_multiplier`
+handled EC_MULTIPLY, mode-2 EC_TECH_COST/TIME, EC_ADD and EC_RESOURCE — but **not type 6
+`cMulResource`**, the lever behind every "drop off +N%" and "resources last N% longer" bonus.
+
+**Root cause:** type 6 fell through to "left alone". Thirteen visible bonuses contain type-6
+commands: 7, 75, 94, 108, 132, 235, 236, 237, 238, 240, 281, 357, 368.
+
+**Worse than a no-op for the "last longer" family.** 132 and 235-240 pair a productivity gain
+with a *compensating work-rate cut*, and the cut is an EC_MULTIPLY, which did scale. So at x2 the
+villager slowed to `d**2` while productivity stayed at `d` — **the card's own multiplier reduced
+the player's income.** Bonus 235 at x2: lumberjacks at quarter speed, wood productivity still only
+doubled. Same inversion as the 2026-09-09 mode-2 EC_TECH_COST bug, in a different command type.
+For 108 and 357 (type-6 only) the multiplier did nothing at all.
+
+**Fix:** `EC_MUL_RESOURCE = 6` compounds `d ** N`, exactly like EC_MULTIPLY. `bonus 235 at x2`
+now keeps `productivity × rate == 1.0`, which `tests/test_multiplier_scaling.py` pins directly.
+
+**Also in this batch, from a scan for vanilla bonus techs the catalog never references:**
+
+- **67 "Ships +10% HP" was missing its Castle and Imperial steps.** Techs 1398 (`req 102`,
+  x1.0476) and 1399 (`req 103`, x1.0454) compound with 560 to +10/+15/+20%. Identical gap to
+  bonus 76's missing Feudal tech; the card is now a progression.
+- **302 "Navy armor" was hand-rolled and wrong.** Vanilla tech **888** gives Galley, War Galley,
+  Galleon and Dromon **+1/+1**. Our `ec_list` gave the upgraded three +2/+2 and needed the Galleon
+  bolted on by hand (2026-09-10). Now mapped to 888 and the `ec_list` is gone.
+- **Checked and NOT a bug:** techs 1199-1201 scale bonus 134's lumberjack food with the lumber
+  upgrades and are absent from the catalog — but they are `civ=-1`, referenced by no type=8 and
+  disabled by no type=102, so they fire on their own. Contrast bonus 281's scaling techs 806/807,
+  which are `civ=38` and therefore *do* need allocating. **Whether a scaling tech needs claiming
+  depends entirely on its `civ` field.**
+
+**New bonuses (418-422), the "+% drop off" family.** `cMulResource` on a *Productivity* resource
+plus carry capacity on the gatherers is what AoE2 DE means by "drop off +N%" — confirmed by the
+UGC guide, which documents the gather-rate side effect and the Mayan compensation, and by the
+upcoming Danes bonus. 418 food (resource **190**, "food from all sources" — a lever nothing in the
+catalog used), 419 wood (189), 420 stone (79), 421 fishing ships (219), 422 the Danes-style
+combined food card. Gold was already bonus 75.
+
+---
+
 ## 2026-09-15 — Bonus 339 fed every building; the rest of the sweep was card text
 
 **Symptom:** round 3 of the catalog sweep, closing Tiers 3 and 4.

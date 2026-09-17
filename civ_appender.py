@@ -23,6 +23,9 @@ EC_ENABLE    = 2
 EC_UPGRADE   = 3
 EC_ADD       = 4
 EC_MULTIPLY  = 5
+EC_MUL_RESOURCE = 6  # cMulResource: a=resource_id, d=multiplier.  Scales a player
+                     # resource rather than a unit attribute — the lever behind
+                     # every "drop off +N%" and "resources last N% longer" bonus.
 EC_TECH_COST = 101   # Modify tech research cost: a=tech_id, b=res(0-3), c=mode, d=val
 EC_TECH_TIME = 103   # Modify tech research time: a=tech_id, c=mode, d=val
 
@@ -1330,8 +1333,9 @@ def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
 def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectCommand:
     """Return a copy of ec whose d value is scaled so that applying the result
     once produces the same game effect as applying the original ec multiplier
-    times.  EC_MULTIPLY and mode-2 EC_TECH_COST/EC_TECH_TIME compound (d ** N);
-    EC_ADD and EC_RESOURCE accumulate (d * N); everything else is left alone.
+    times.  EC_MULTIPLY, EC_MUL_RESOURCE and mode-2 EC_TECH_COST/EC_TECH_TIME
+    compound (d ** N); EC_ADD and EC_RESOURCE accumulate (d * N); everything
+    else is left alone.
 
     Leaving a command alone is not always the same as "it is idempotent".  Some
     are genuinely unscalable — EC_SET with c=57 (ATTR_DEAD_UNIT) carries a unit
@@ -1350,6 +1354,15 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
     if multiplier <= 1:
         return result
     if result.type == EC_MULTIPLY:
+        result.d = result.d ** multiplier
+    elif result.type == EC_MUL_RESOURCE:
+        # cMulResource multiplies a player resource, so it compounds exactly
+        # like EC_MULTIPLY.  Leaving it alone was worse than a no-op for the
+        # "resources last N% longer" family (132, 235-240): those pair a
+        # productivity gain with a compensating work-rate CUT, and the cut is an
+        # EC_MULTIPLY that did scale.  At x2 the villager slowed to d**2 while
+        # the productivity stayed at d, so the card's own multiplier reduced the
+        # player's income.  Same inversion the mode-2 EC_TECH_COST bug had.
         result.d = result.d ** multiplier
     elif (result.type in (EC_TECH_COST, EC_TECH_TIME)
           and int(result.c) == TECH_MODE_MULTIPLY):

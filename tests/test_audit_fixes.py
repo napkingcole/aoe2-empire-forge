@@ -41,6 +41,10 @@ BONUSES = [
     [312, 1],   # Drop-off buildings -25%  — only the Mule Cart was discounted
     # ── round 3 (2026-09-15) ──
     [339, 1],   # Buildings give food      — vanilla hit every building, incl. Houses
+    # ── round 4 (2026-09-17) ──
+    [67, 1],    # Ships +10/15/20% HP      — the Castle and Imperial techs were missing
+    [418, 1],   # Villagers drop off +10% food   — new, the 190 "all sources" lever
+    [422, 1],   # Villagers + Fishing Ships +5%  — the Danes-style combined card
 ]
 
 CIV_DEF = {
@@ -83,10 +87,10 @@ check("bonus 108 no longer unlocks the Flemish Militia",
 farm_food = [c for c in all_cmds if c.type == 6 and c.a == 69]
 check("bonus 108 still grants the farm food bonus", bool(farm_food))
 
-# ── 302: Galleon gets the armor ──────────────────────────────────────────────
-for uid, name in ((21, "Galley"), (442, "War Galley"), (539, "Galleon")):
-    got = [c.d for c in all_cmds if c.type == 4 and c.a == uid and c.c == 8]
-    check(f"bonus 302 arms the {name} ({uid})", len(got) == 2, f"found {got}")
+# ── 302: now vanilla tech 888, which covers all four hulls at +1/+1 ──────────
+for uid, name in ((21, "Galley"), (442, "War Galley"), (539, "Galleon"), (1795, "Dromon")):
+    got = sorted(c.d for c in all_cmds if c.type == 4 and c.a == uid and c.c == 8)
+    check(f"bonus 302 arms the {name} ({uid}) +1/+1", got == [769.0, 1025.0], f"found {got}")
 
 # ── 306 / 342: the RESERVED techs are gone, the real work remains ────────────
 gold = [c for c in all_cmds if c.type == 5 and c.a in (279, 542) and c.c == 105]
@@ -174,6 +178,25 @@ for uid, name in ((1251, "Krepost"), (1189, "Harbor")):
           slot.type == 0 and slot.flag == 8, f"slot = {(slot.type, slot.amount, slot.flag)}")
 check("bonus 339 did not disturb a building whose slot was already food",
       dat.civs[1].units[45].resource_storages[2].type == 0)
+
+# ── 67: all three age steps, compounding to +20% ─────────────────────────────
+ship_hp = sorted({round(c.d, 4) for c in all_cmds
+                  if c.type == 5 and c.a == -1 and c.b == 22 and c.c == 0})
+check("bonus 67 applies three ship-HP steps, not one", len(ship_hp) == 3, f"found {ship_hp}")
+prod = 1.0
+for d in ship_hp:
+    prod *= d
+check("bonus 67's steps compound to ~+20%", abs(prod - 1.20) < 0.01, f"product = {prod}")
+
+# ── the drop-off family: productivity pool AND carry capacity ────────────────
+prod6 = {c.a: round(c.d, 4) for c in all_cmds if c.type == 6}
+check("bonus 418 multiplies Food Gathering Productivity (190)", prod6.get(190) is not None,
+      f"type-6 commands: {prod6}")
+check("bonus 422 multiplies Fishing Productivity (219)", prod6.get(219) is not None)
+carry = [c for c in all_cmds if c.type == 5 and c.c == 14]
+check("the drop-off family also raises carry capacity", len(carry) >= 12, f"found {len(carry)}")
+check("carry covers fishing boats by class, not just villagers",
+      any(c.a == -1 and c.b == 21 for c in carry))
 
 print(f"\n{'All checks passed.' if not failures else f'{failures} check(s) failed.'}")
 sys.exit(0 if not failures else 1)
