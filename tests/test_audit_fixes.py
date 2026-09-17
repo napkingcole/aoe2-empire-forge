@@ -45,6 +45,11 @@ BONUSES = [
     [67, 1],    # Ships +10/15/20% HP      — the Castle and Imperial techs were missing
     [418, 1],   # Villagers drop off +10% food   — new, the 190 "all sources" lever
     [422, 1],   # Villagers + Fishing Ships +5%  — the Danes-style combined card
+    # ── round 5 (2026-09-17) ──
+    [25, 1],    # TC + Dock 2x HP          — the Dock half (tech 349) was missing
+    [73, 1],    # Buildings -15% wood      — the Town Center step (156) was missing
+    [345, 1],   # Free villager per eco up — 4 of the 14 techs were missing
+    [356, 1],   # Pastures                 — the Khitan Mill upgrades never came
 ]
 
 CIV_DEF = {
@@ -197,6 +202,45 @@ carry = [c for c in all_cmds if c.type == 5 and c.c == 14]
 check("the drop-off family also raises carry capacity", len(carry) >= 12, f"found {len(carry)}")
 check("carry covers fishing boats by class, not just villagers",
       any(c.a == -1 and c.b == 21 for c in carry))
+
+# ── 25: the Dock half ────────────────────────────────────────────────────────
+DOCKS = (45, 133, 47, 51, 805, 806, 807, 808)
+dbl = {c.a for c in all_cmds if c.type == 5 and c.c == 0 and c.d == 2.0}
+check("bonus 25 doubles Dock HP, not just Town Centers", set(DOCKS) <= dbl,
+      f"missing {sorted(set(DOCKS) - dbl)}")
+check("bonus 25 still doubles Town Centers", 109 in dbl)
+
+# ── 73: the Nomad-gated Town Center step.  tech 595 discounts building classes
+# then cancels it for Town Centers; tech 156 re-applies it once tech 307
+# ("Shadow TC Annex") fires, which is the documented Nomad carve-out.
+tc_wood = sorted(round(c.d, 4) for c in all_cmds
+                 if c.type == 5 and c.a == 109 and c.c == 104)
+check("bonus 73 both cancels and re-applies the TC wood discount",
+      tc_wood == [0.85, 1.1765], f"found {tc_wood}")
+check("…composing with the class-wide 0.85 to a net 15% off",
+      abs(0.85 * 1.1765 * 0.85 - 0.85) < 0.001)
+step = next((t for i, t in civ_techs if t.effect_id == dat.techs[156].effect_id
+             or (0 <= t.effect_id < len(dat.effects)
+                 and any(c.a == 109 and c.c == 104 and abs(c.d - 0.85) < 1e-4
+                         for c in dat.effects[t.effect_id].effect_commands))), None)
+check("the TC step is still gated on a completed Town Center (tech 307)",
+      step is not None and 307 in step.required_techs,
+      f"reqs = {step.required_techs if step else None}")
+
+# ── 345: every economic upgrade ──────────────────────────────────────────────
+spawns = [c for c in all_cmds if c.type == 7]
+check("bonus 345 spawns a villager for all 14 economic upgrades",
+      len(spawns) == 14, f"found {len(spawns)}")
+
+# ── 356: Pastures must bring their own Mill upgrades ─────────────────────────
+KHITAN_MILL = {"Grazing Grasslands", "Enclosures", "Livestock Husbandry"}
+got = {t.name.strip("\x00") for _, t in civ_techs} & KHITAN_MILL
+check("bonus 356 allocates the Khitan Mill upgrades it replaces the Mill line with",
+      got == KHITAN_MILL, f"found {sorted(got)}")
+check("bonus 356 still disables the vanilla Mill line",
+      {14, 13, 12} <= {int(c.d) for c in
+                       dat.effects[dat.civs[1].tech_tree_id].effect_commands
+                       if c.type == 102})
 
 print(f"\n{'All checks passed.' if not failures else f'{failures} check(s) failed.'}")
 sys.exit(0 if not failures else 1)

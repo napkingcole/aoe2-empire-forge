@@ -3032,6 +3032,10 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _HORSE_COLLAR    = 14
         _HEAVY_PLOW      = 13
         _CROP_ROTATION   = 12
+        # …and what replaces them at the same Mill button for a Pasture civ.
+        _LIVESTOCK_HUSBANDRY = 1014   # Feudal
+        _ENCLOSURES          = 1013   # Castle
+        _GRAZING_GRASSLANDS  = 1012   # Imperial
         tt_eff_id = dat.civs[civ_index].tech_tree_id
         tt_eff = dat.effects[tt_eff_id]
         tt_eff.effect_commands.append(
@@ -3041,6 +3045,20 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             tt_eff.effect_commands.append(
                 EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(tid))
             )
+        # Disabling the Mill line without granting its replacement left the civ
+        # with no Mill economy upgrades at all.  The Khitan substitutes ship as
+        # Livestock Husbandry (Feudal) → Enclosures (Castle) → Grazing Grasslands
+        # (Imperial), all on Mill button 1 where Horse Collar/Heavy Plow/Crop
+        # Rotation used to sit — and all civ=53, so they can never fire for us
+        # until they are copied (CLAUDE.md quirk 9).  Allocating the Imperial one
+        # pulls the other two through its required_techs chain; the shared `seen`
+        # keeps that to one copy each.
+        seen_p: dict[int, int] = {}
+        for tid in (_GRAZING_GRASSLANDS, _ENCLOSURES, _LIVESTOCK_HUSBANDRY):
+            _allocate_tech(dat, tid, civ_index, seen_p, tech_remaps)
+        if seen_p:
+            print(f"       Pastures: {len(seen_p)} Khitan Mill upgrades allocated "
+                  f"{tuple(sorted(seen_p))}")
         return True
 
     return False  # not handled

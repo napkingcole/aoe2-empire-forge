@@ -305,7 +305,7 @@
   "342": "Careening and Dry Dock are free",
   "343": "Can recruit Jian Swordsmen",
   "344": "Gain access to Sun Jian",
-  "345": "Receive one free Villager for each Mill, Lumber- and Mining Camp technology researched",
+  "345": "Receive one free Villager for each economic upgrade researched",
   "346": "Hei Guang Cavalry and Xianbei Raider +20/30% HP in Castle/Imperial Age",
   "347": "Traction Trebuchets and Lou Chuans cost -25%",
   "348": "Can recruit Xianbei Raiders",
@@ -396,5 +396,10 @@
   "419": "Villagers drop off +10% wood",
   "420": "Villagers drop off +10% stone",
   "421": "Fishing Ships drop off +10% food",
-  "422": "Villagers and Fishing Ships drop off +5% food"
+  "422": "Villagers and Fishing Ships drop off +5% food",
+  "423": "Archery Ranges and Stables cost -75 wood",
+  "424": "Start with +50 food",
+  "425": "Start with +50 wood",
+  "426": "Start with +50 stone",
+  "427": "Start with +50 gold"
 }

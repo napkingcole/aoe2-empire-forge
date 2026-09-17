@@ -616,7 +616,7 @@
   },
   "58": {
     "heading": "-15% [stone]",
-    "stat": "Building Stone Cost",
+    "stat": "All buildings cost -15% stone (not the first Town Center on Nomad starts)",
     "entity": "castle",
     "entity2": "tower",
     "description": "All Buildings"
@@ -730,7 +730,7 @@
   },
   "73": {
     "heading": "-15% [wood]",
-    "stat": "Building Wood Cost",
+    "stat": "All buildings cost -15% wood (not the first Town Center on Nomad starts)",
     "entity": "lumber_camp",
     "description": "All Buildings"
   },
@@ -2555,9 +2555,9 @@
   },
   "345": {
     "heading": "+1 Villager",
-    "stat": "Receive a free Villager per Mill, Lumber Camp, or Mining Camp tech",
+    "stat": "Per economic upgrade researched, at any building",
     "entity": "villager",
-    "description": "Eco Technologies"
+    "description": "Economic Upgrades"
   },
   "346": {
     "type": "progression",
@@ -3285,5 +3285,37 @@
     "entity": "villager",
     "entity2": "fishing_ship",
     "description": "Villagers + Fishing Ships"
+  },
+  "423": {
+    "type": "dual",
+    "heading": "-75 [wood]",
+    "stat": "Archery Ranges and Stables cost -75 wood",
+    "entity": "archery_range",
+    "entity2": "stable",
+    "description": "Range + Stable"
+  },
+  "424": {
+    "heading": "+50 [food]",
+    "stat": "Start with +50 food",
+    "entity": "food",
+    "description": "Starting Resources"
+  },
+  "425": {
+    "heading": "+50 [wood]",
+    "stat": "Start with +50 wood",
+    "entity": "wood",
+    "description": "Starting Resources"
+  },
+  "426": {
+    "heading": "+50 [stone]",
+    "stat": "Start with +50 stone",
+    "entity": "stone",
+    "description": "Starting Resources"
+  },
+  "427": {
+    "heading": "+50 [gold]",
+    "stat": "Start with +50 gold",
+    "entity": "gold",
+    "description": "Starting Resources"
   }
 }

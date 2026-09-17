@@ -37,6 +37,17 @@ DEPRECATED_BONUSES: dict[int, int] = {
     # 161 frees Gold Mining, Gold Shaft Mining, Stone Mining and Stone Shaft
     # Mining — exactly _MINING_CAMP_TECHS, which is what 404's handler does.
     161: 404,
+    # Starting resources, standardised 2026-09-17.  These six were a mixed bag
+    # of amounts and pairings (+150 wood, +100 stone, +70 food/+30 gold, …).
+    # 424-427 give +50 of a single resource each, so any amount is reachable
+    # with the multiplier (x5 = +250) and any combination by picking two cards.
+    # The retired ids still build for civs that already carry them.
+    24:  424,   # +50 wood AND food   → take 424 + 425
+    44:  427,   # +50 gold
+    174: 425,   # +150 wood           → 425 at x3
+    175: 426,   # +100 stone          → 426 at x2
+    176: 425,   # +50 wood AND stone  → take 425 + 426
+    177: 424,   # +70 food, +30 gold  → take 424 + 427
     # Dragon Ships. 402 now maps to the same vanilla tech (1010) as 362, so it
     # still works for civs that carry it — it just isn't offered twice.
     402: 362,

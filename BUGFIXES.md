@@ -5,6 +5,59 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-17 (b) — two team bonuses pointed at the wrong tech, and four civ bonuses were partial
+
+From reviewing the 27 vanilla bonus techs the catalog never references. The user supplied the
+game-side truth for each; several "gaps" turned out to be correct vanilla behaviour.
+
+**Two team bonuses were mismapped — both the shape fixed once already on 2026-07-03.**
+
+- **Team 8 "Farms +10% food" pointed at tech 402**, `C-Bonus, Hunting bonuses` (Goths): hunter
+  carry capacity and hunt productivity. A team picking "Farms +10% food" got Goth hunting.
+  The Chinese team bonus is tech **232**, which multiplies resource 69, *Farm Food Multiplier*.
+- **Team 30 "Military buildings provide +5 population room" pointed at tech 758**, which is
+  `Feudal eco tech requirement` with **effect_id = -1** — nothing. 758 is tech **721**'s *effect*
+  id: a tech/effect id mix-up. 721 is the Slavic team bonus, `type=10` +5 pop on 12 military
+  buildings. **Team bonus ids are their own namespace and a plausible-looking tech id in that
+  column may be an effect id — check `dat.techs[x].name` before trusting it.**
+
+**Four civ bonuses were missing techs:**
+
+- **25 "Town Center, Dock 2x hit points"** doubled Town Centers only; tech **349** `Super Dock`
+  (same civ) is the Dock half, covering all eight Dock ids including the SDOC variants.
+- **345** promised a free Villager per Mill/Lumber/Mining Camp tech but the real bonus is *every
+  economic upgrade*. Added Wheelbarrow, Hand Cart, Fishing Lines and Gillnets (1049/1050/1054/
+  1051); Caravan and Guilds (1052/1053) stay out as Market techs. 10 techs → 14.
+- **356 "Pastures"** disabled the Mill line (Farms, Horse Collar, Heavy Plow, Crop Rotation) and
+  granted nothing back, so a Pasture civ had **no Mill economy upgrades at all**. The Khitan
+  substitutes are Livestock Husbandry → Enclosures → Grazing Grasslands, on the same Mill button,
+  all `civ=53` and therefore invisible to us until copied (quirk 9). Now allocated.
+- **73 / 58 "Buildings cost -15% wood/stone"** — **not a bug.** Techs 595/519 discount the
+  building classes then multiply Town Centers back up, and techs **156/158** re-apply the discount
+  to Town Centers gated on tech **307 "Shadow TC Annex"** (a Town Center has been completed).
+  That is precisely the documented Malian/Incan **Nomad-start carve-out**: the discount never
+  reaches the first Town Center you build. Adding 156/158 reproduces vanilla exactly — the net is
+  `0.85 × 1.1765 × 0.85 = 0.85` once a TC exists. Game Update 81058 lists the same carve-out for
+  Bulgarians, Aztecs, Persians, Sicilians and Spanish.
+
+**Starting resources standardised.** The offered set was a mixed bag — +50 wood *and* food, +50
+gold, +150 wood, +100 stone, +50 wood *and* stone, +70 food/+30 gold. Now four cards, +50 of a
+single resource each (424 food, 425 wood, 426 stone, 427 gold), so any amount is reachable with
+the multiplier (x5 = +250) and any pairing by taking two cards. The six old ids are deprecated,
+not deleted, so civs already carrying them still build.
+
+**Also added:** 423, Cumans' "Archery Ranges and Stables cost -75 wood" (tech 664) — we offered
+the two halves separately but never the combined card.
+
+**Checked and left alone:** the Mayan per-age archer cost steps (53/56, covered by bonus 133's
+handler); Slavs' "Monks 20% faster" tech 510 (bonus 219 does it via `ec_list`, and keeping our own
+copy means a future vanilla rebalance cannot silently change the number out from under the card
+text); Bohemians' 808 (covered by bonus 202). The Spanish "Builders work +30% faster" is already
+bonus 127 via resource 195, *Construction Rate Modifier* — **no vanilla effect sets 195 at all**,
+so that one is ours and covers Town Centers too, making vanilla's tech 159 unnecessary here.
+
+---
+
 ## 2026-09-17 — cMulResource never scaled, so 13 cards' multipliers were half-broken
 
 **Symptom:** found while building the "+% drop off" bonus family. `_scale_ec_for_multiplier`
