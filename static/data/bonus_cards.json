@@ -2960,5 +2960,275 @@
     "entity": "savar",
     "description": "Upgrades the Knight line",
     "multiplier": false
+  },
+  "111": {
+    "heading": "FREE",
+    "stat": "Forging, Iron Casting and Blast Furnace",
+    "entity": "blacksmith",
+    "description": "Blacksmith",
+    "type": "dual",
+    "entity2": "infantry"
+  },
+  "113": {
+    "heading": "FREE",
+    "stat": "Town Watch and Town Patrol",
+    "entity": "town_center",
+    "description": "Town Center Techs"
+  },
+  "114": {
+    "heading": "FREE",
+    "stat": "Murder Holes and Herbal Medicine",
+    "entity": "tower",
+    "description": "Defensive Techs",
+    "type": "dual",
+    "entity2": "monastery"
+  },
+  "115": {
+    "heading": "FREE",
+    "stat": "Chemistry",
+    "entity": "chemistry",
+    "description": "Chemistry"
+  },
+  "116": {
+    "heading": "FREE",
+    "stat": "Light Cavalry, Hussar and Winged Hussar",
+    "entity": "hussar",
+    "description": "Light Cavalry line",
+    "type": "dual",
+    "entity2": "stable"
+  },
+  "117": {
+    "heading": "FREE",
+    "stat": "Wheelbarrow and Hand Cart, researched instantly",
+    "entity": "villager",
+    "description": "Villager Techs",
+    "type": "dual",
+    "entity2": "town_center"
+  },
+  "118": {
+    "heading": "FREE",
+    "stat": "Guard Tower, Keep and Bombard Tower",
+    "entity": "tower",
+    "description": "Tower Upgrades",
+    "type": "dual",
+    "entity2": "bombard_tower"
+  },
+  "119": {
+    "heading": "FREE",
+    "stat": "Conscription",
+    "entity": "castle",
+    "description": "Conscription"
+  },
+  "147": {
+    "heading": "FREE",
+    "stat": "Elite Skirmisher, Imperial Skirmisher and Elite Genitour",
+    "entity": "skirmisher",
+    "description": "Skirmisher line",
+    "type": "dual",
+    "entity2": "archery_range"
+  },
+  "148": {
+    "heading": "FREE",
+    "stat": "Heavy Camel Rider",
+    "entity": "camel_rider",
+    "description": "Camel line",
+    "type": "dual",
+    "entity2": "stable"
+  },
+  "149": {
+    "heading": "FREE",
+    "stat": "Scale, Chain and Plate Mail Armor",
+    "entity": "blacksmith",
+    "description": "Infantry Armor",
+    "type": "dual",
+    "entity2": "infantry"
+  },
+  "150": {
+    "heading": "FREE",
+    "stat": "Scale, Chain and Plate Barding Armor",
+    "entity": "blacksmith",
+    "description": "Cavalry Armor",
+    "type": "dual",
+    "entity2": "cavalry"
+  },
+  "151": {
+    "heading": "FREE",
+    "stat": "Fletching, Bodkin Arrow and Bracer",
+    "entity": "blacksmith",
+    "description": "Archer Attack",
+    "type": "dual",
+    "entity2": "archer"
+  },
+  "152": {
+    "heading": "FREE",
+    "stat": "Redemption",
+    "entity": "monk",
+    "description": "Redemption"
+  },
+  "153": {
+    "heading": "FREE",
+    "stat": "Squires",
+    "entity": "barracks",
+    "description": "Squires",
+    "type": "dual",
+    "entity2": "infantry"
+  },
+  "154": {
+    "heading": "FREE",
+    "stat": "Heavy Eagle Warrior and Elite Eagle Warrior",
+    "entity": "infantry",
+    "description": "Eagle Warriors",
+    "type": "dual",
+    "entity2": "barracks"
+  },
+  "155": {
+    "heading": "FREE",
+    "stat": "Elite Battle Elephant, and Royal Battle Elephant if that bonus is also taken",
+    "entity": "battle_elephant",
+    "description": "Battle Elephants",
+    "type": "dual",
+    "entity2": "stable"
+  },
+  "156": {
+    "heading": "FREE",
+    "stat": "Sanctity and Fervor",
+    "entity": "monastery",
+    "description": "Monastery Techs",
+    "type": "dual",
+    "entity2": "monk"
+  },
+  "157": {
+    "heading": "FREE",
+    "stat": "Atonement and Illumination",
+    "entity": "monastery",
+    "description": "Monastery Techs",
+    "type": "dual",
+    "entity2": "monk"
+  },
+  "158": {
+    "heading": "FREE",
+    "stat": "Theocracy and Block Printing",
+    "entity": "monastery",
+    "description": "Monastery Techs",
+    "type": "dual",
+    "entity2": "monk"
+  },
+  "159": {
+    "heading": "FREE",
+    "stat": "Hoardings and Fortified Wall",
+    "entity": "castle",
+    "description": "Fortifications",
+    "type": "dual",
+    "entity2": "stone_wall"
+  },
+  "160": {
+    "heading": "FREE",
+    "stat": "Masonry and Architecture",
+    "entity": "university",
+    "description": "Masonry Line",
+    "type": "dual",
+    "entity2": "castle"
+  },
+  "162": {
+    "heading": "FREE",
+    "stat": "Sappers and Stone Cutting",
+    "entity": "university",
+    "description": "University Techs",
+    "type": "dual",
+    "entity2": "villager"
+  },
+  "163": {
+    "heading": "FREE",
+    "stat": "Galleon",
+    "entity": "galley",
+    "description": "Galleon",
+    "type": "dual",
+    "entity2": "dock"
+  },
+  "165": {
+    "heading": "FREE",
+    "stat": "Fast Fire Ship",
+    "entity": "fire_ship",
+    "description": "Fast Fire Ship",
+    "type": "dual",
+    "entity2": "dock"
+  },
+  "166": {
+    "heading": "FREE",
+    "stat": "Heavy Demolition Ship",
+    "entity": "demolition_ship",
+    "description": "Heavy Demo Ship",
+    "type": "dual",
+    "entity2": "dock"
+  },
+  "167": {
+    "heading": "FREE",
+    "stat": "Gillnets",
+    "entity": "fishing_ship",
+    "description": "Gillnets",
+    "type": "dual",
+    "entity2": "dock"
+  },
+  "168": {
+    "heading": "FREE",
+    "stat": "War Galley",
+    "entity": "galley",
+    "description": "War Galley",
+    "type": "dual",
+    "entity2": "dock"
+  },
+  "169": {
+    "heading": "FREE",
+    "stat": "Heavy Cavalry Archer",
+    "entity": "cavalry_archer",
+    "description": "Heavy Cav Archer",
+    "type": "dual",
+    "entity2": "archery_range"
+  },
+  "170": {
+    "heading": "FREE",
+    "stat": "Capped Ram, Siege Ram and Elite Armored Elephant",
+    "entity": "battering_ram",
+    "description": "Ram line",
+    "type": "dual",
+    "entity2": "siege_workshop"
+  },
+  "195": {
+    "heading": "FREE",
+    "stat": "Each Blacksmith upgrade becomes free one age after it unlocks",
+    "entity": "blacksmith",
+    "description": "Blacksmith"
+  },
+  "258": {
+    "heading": "+1 Carry",
+    "stat": "Per Town Center technology researched",
+    "entity": "villager",
+    "description": "Villagers",
+    "type": "dual",
+    "entity2": "town_center"
+  },
+  "277": {
+    "heading": "+1 [attack]",
+    "stat": "Per University technology researched",
+    "entity": "hand_cannoneer",
+    "description": "Gunpowder Units",
+    "type": "dual",
+    "entity2": "university"
+  },
+  "278": {
+    "heading": "+3% [heart]",
+    "stat": "Per University technology researched",
+    "entity": "castle",
+    "description": "All Buildings",
+    "type": "dual",
+    "entity2": "university"
+  },
+  "279": {
+    "heading": "+1 Monk",
+    "stat": "Per Monastery technology researched",
+    "entity": "monk",
+    "description": "Monks",
+    "type": "dual",
+    "entity2": "monastery"
   }
 }

@@ -25,6 +25,18 @@ DEPRECATED_BONUSES: dict[int, int] = {
     # Both give Archery Range units +1 melee armor per age. 364 is the vanilla
     # tech copy and also covers Champi Warriors, so it strictly supersedes 245.
     245: 364,
+    # Found when the 37 implemented-but-unnamed bonuses were given cards
+    # (2026-09-16).  These two are functional duplicates of cards that were
+    # already offered, so naming them would have put the same effect on the
+    # picker twice under two different labels.
+    #
+    # 164 zeroes Careening (374) and Dry Dock (375) across all four resources;
+    # 342's tech 1079 zeroes the two they actually cost, plus research time.
+    # Same outcome, and 342 is the one with a card.
+    164: 342,
+    # 161 frees Gold Mining, Gold Shaft Mining, Stone Mining and Stone Shaft
+    # Mining — exactly _MINING_CAMP_TECHS, which is what 404's handler does.
+    161: 404,
     # Dragon Ships. 402 now maps to the same vanilla tech (1010) as 362, so it
     # still works for civs that carry it — it just isn't offered twice.
     402: 362,
