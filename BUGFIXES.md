@@ -77,24 +77,67 @@ value in `team` must be some civ's own `team_bonus_id`, or one of three named te
 effects.** It also builds the reporter's 15-bonus pick and asserts the guard stays quiet, and a
 deliberately overweight pick and asserts it fires.
 
-**Still open — content, not structure.** Five confirmed wrong unit ids survive inside otherwise
-correctly-keyed entries, found while resolving the lists but out of scope here:
-
-- **55** *"Elephant units +4 attack vs. buildings"* targets `829 UWAGO` (**War Wagon**, Castle
-  button 1) and `1137 TIGER` (**class 10 wild animal**, 25 HP, no train location). No elephants.
-- **39** *"Trade units +50 HP"* includes `1026 OSTRICH` (class 9 animal, 5 HP).
-- **45** *"…Scout-lines train 20% faster"* has `594 SHEEPG` where Scout Cavalry (`448`) belongs,
-  and `1572 MERCHANT` where Imperial Skirmisher (`1155`) belongs.
-
-**48** *"Infantry +5 attack vs. Elephant units"* is a mechanism question rather than a typo: its
-`D=4869` unpacks to armour class **19**, which the DAT shows is the **unique-unit** class (every
-Castle UU carries it), not elephants. These want the same treatment the civ bonuses got in
-`docs/AUDIT-bonus-catalog-mismaps.md` — a sweep of all 20 entries against what they claim.
-
 **Not verified in-game.** The `type=10` commands on ids 30 and 83 are copied into
 `civ.team_bonus_id`, which is itself the ally-application channel. 758 was the value for ten weeks
 before `beb679d` changed it, so this restores known behaviour rather than introducing it, but
 whether a team-scoped command nested inside a team effect actually lands has never been confirmed.
+
+### Content sweep of the 20 surviving entries
+
+Re-keying put each list under the right card. This is the second half: what each one actually
+targets. **Twelve of the twenty were wrong**, in ways no key check could ever see.
+
+**The tool that made it tractable was resolving display names.** `unit.name` is an internal
+codename and routinely lies — `775` is `MONKY` (the **Missionary**), `1137` is `TIGER` (an
+elephant-adjacent slot that is a **wild animal**), `1572` is `MERCHANT`, `594` is `SHEEPG`. Reading
+the lists as codenames, they look plausible. `civ_appender.unit_label()` now resolves
+`language_dll_name` against the shipped `vanilla/key-value/key-value-strings-utf8.txt`, and the
+same helper feeds the build log, so warnings say `775 (Missionary)` instead of `775 (MONKY)`.
+
+**Two bonuses did nothing whatsoever.** Both "built 100% faster" cards (**43**, **63**) were
+`EC_SET attribute 20 = 1.0`, and **attribute 20 is Minimum Range**. A building's construction time
+is its `creatable.train_time` — attribute **101** — confirmed against the in-game numbers (Mill
+35s, Dock 35s, Market 60s, Monastery 40s, House 25s all match exactly). Both are now
+`EC_MULTIPLY attr 101 ×0.5`.
+
+**Two more were aimed at armour classes that cannot do what the card says:**
+
+- **47** *"Scout-line +2 attack vs. gunpowder units"* packed armour class **31**, which the UGC
+  guide lists as **Unused** — so the attack bonus landed nowhere. Gunpowder is **23**. Its target
+  classes were wrong too: object class **12** (`cCavalryClass`, i.e. *every* cavalry unit) and
+  **58** (`cLivestockClass` — **sheep**). The scout line straddles two object classes (448 is 47
+  `cScoutCavalry`, the rest are 12), so it can only be hit by explicit id.
+- **48** *"Infantry +5 attack vs. Elephant units"* packed armour class **19**, which is
+  **Unique Units** — every Castle UU carries it. Elephants are **5**, verified to cover all ten
+  trainable elephants.
+
+**Wrong units, now that they could be read:** **55** *"Elephant units"* was the **Elite War Wagon**
+and a **wild tiger**, and is now the ten real elephants; **39** *"Trade units"* included an
+**Ostrich**; **45** had a **Sheep** for Scout Cavalry and the **Merchant** for Imperial Skirmisher;
+**45** and **54** both listed the **Militia** as a spearman.
+
+**Missing upgrade tiers — the Tier-2 shape from the civ-bonus audit, where a bonus evaporates the
+moment the unit upgrades:** **56** *"Shock Infantry"* had no Elite Eagle Warrior or Elite Jaguar
+Warrior; **45/48/54** had no **Pikeman** at all; **48** had no Champion; **58** covered one of four
+Monasteries and **59** one of three Markets; **43** covered one of four Lumber Camps and one of
+four Mining Camps. **50** had the male Hunter but not the female — vanilla pairs the genders in
+all 16 effects that name either.
+
+Spear-line entries now include the three Donjon copies (1786/1787/1788), matching vanilla: 14 of
+the 31 shipped effects that name the spear line carry them, including every civ-bonus one.
+
+**Checked and correct:** 41 (object class 18 is `cMonkClass`), 44 (all 142 entries verified to
+train at Castle/Krepost/Donjon), 49, 50's mechanism, 51, 53, 57, 65 (*"when empty"* really is the
+empty cart id only), 67.
+
+**Known structural limit, not fixed:** **49** *"Explosive units +20% speed"* uses object class 35
+(`cPetardClass`), which cannot reach **demolition ships** — they are class 22 (`cWarshipClass`),
+shared with Galleys. Same constraint recorded for civ bonus 191 on 2026-09-13; it needs explicit
+ids, which is a behaviour change rather than a fix.
+
+**Not verified in-game:** attribute 101 on a *building* is the construction-time lever by
+inference from `train_time` matching every in-game build time. That inference is strong but
+untested, and it is what both "built 100% faster" cards now rest on.
 
 ---
 

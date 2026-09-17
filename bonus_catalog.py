@@ -119,6 +119,42 @@ TEAM BONUSES — two traps, both of which have bitten (2026-09-18):
   60, 61, 62, 66, 68, 72, 73, 75.  They fall out of the picker through
   `unsupported_team_bonuses()` and are listed on /limitations.
 
+  CONTENT SWEEP of the 20 survivors (2026-09-18, same day).  Re-keying put each
+  list under the right card; the sweep checked what each one actually targets.
+  **Twelve of the twenty were wrong.**  Read BUGFIXES.md for the full table; the
+  traps worth carrying forward:
+
+    - **`unit.name` is an internal codename and lies.**  775 is 'MONKY' (the
+      Missionary), 1137 is 'TIGER' (a wild animal), 1572 is 'MERCHANT', 594 is
+      'SHEEPG'.  Read lists through `civ_appender.unit_label()`, which resolves
+      `language_dll_name` against `vanilla/key-value/key-value-strings-utf8.txt`.
+      Three wrong units had sat in these lists unnoticed precisely because the
+      codenames looked plausible.
+    - **Attribute 20 is Minimum Range, not build rate.**  Both "built 100%
+      faster" cards (43, 63) were `EC_SET attr 20 = 1.0` and did nothing.  A
+      building's construction time is its `creatable.train_time` — attribute
+      101 — confirmed against in-game numbers (Mill 35s, Market 60s, House 25s).
+    - **Armour class 19 is Unique Units and 31 is Unused.**  Bonus 48 ("vs.
+      Elephant units") used 19; elephants are 5.  Bonus 47 ("vs. gunpowder")
+      used 31, so it landed nowhere; gunpowder is 23.  Table:
+      UGC guide `docs/general/damage_calculation.md`.
+    - **The scout line straddles two object classes** — 448 is 47
+      `cScoutCavalryClass`, Light Cav/Hussar/Winged Hussar are 12
+      `cCavalryClass` — so it can only be targeted by explicit id.  Bonus 47 had
+      used class 12 (every cavalry unit) plus class 58, which is `cLivestock`.
+    - **Missing upgrade tiers everywhere** — no Pikeman in any of the three
+      spear entries, no Champion, no Elite Eagle/Jaguar Warrior, one Monastery
+      of four, one Market of three, one Lumber/Mining Camp of four.  Same shape
+      as the civ-bonus Tier 2 findings.
+    - Spear entries now carry the Donjon copies (1786/1787/1788): 14 of the 31
+      vanilla effects naming the spear line do, including every civ-bonus one.
+
+  Still not fixed, deliberately: bonus **49** ("Explosive units +20% speed")
+  targets object class 35 `cPetardClass`, which cannot reach demolition ships —
+  they are class 22 `cWarshipClass`, shared with Galleys.  Identical constraint
+  to civ bonus 191; reaching them needs explicit ids, a behaviour change rather
+  than a fix.
+
 "createCivBonus" bonuses (those that build effects from scratch in the C++)
 are not in this catalog — they require custom EffectCommand lists and are
 logged as skipped at build time.

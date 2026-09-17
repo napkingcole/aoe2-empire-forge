@@ -120,10 +120,12 @@ EXPECTED = {
     "44": (142, 142, "Unique Units +5% HP — one MULTIPLY per unique unit; the "
                      "only entry that may be this large, and on its own it eats "
                      "three quarters of the ~189 effect-command budget."),
-    "54": (3, 3, "Spearmen +3 attack vs. cavalry — Spearman, Pikeman, Halberdier."),
+    "54": (6, 6, "Spearmen +3 attack vs. cavalry — Spearman/Pikeman/Halberdier "
+                 "plus the three Donjon copies, which 14 of the 31 vanilla "
+                 "effects naming the spear line also carry."),
     "53": (2, 2, "Steppe Lancers +3 LOS — base and elite."),
-    "58": (1, 1, "Monasteries 3x HP — one building id."),
-    "59": (1, 1, "Markets 3x HP — one building id."),
+    "58": (4, 4, "Monasteries 3x HP — one id per age/architecture (30/31/32/104)."),
+    "59": (3, 3, "Markets 3x HP — one id per age (84/116/137)."),
     "50": (25, 35, "All resources last 5% longer — the productivity ids plus a "
                    "compensating work-rate cut per gatherer."),
     "67": (15, 25, "Town Centers +4 LOS — every per-age/per-architecture TC id."),
@@ -133,6 +135,80 @@ for key, (lo, hi, why) in EXPECTED.items():
     n = len(entry) if entry else 0
     check(f"team_ec_list[{key}] ({names.get(key, '?')[:38]!r}) has {lo}..{hi} commands",
           entry is not None and lo <= n <= hi, f"got {n} — {why}")
+
+# ── 2b. Content sweep results (2026-09-18) ──────────────────────────────────
+# Re-keying put each ec_list under the right card; the sweep then checked what
+# each one actually targets.  Twelve were wrong in ways no key check can see, so
+# the specific corrections are pinned here.  Unit rosters were resolved through
+# language_dll_name against the vanilla string table — `unit.name` is an internal
+# codename and lies (775 'MONKY' is the Missionary, 1137 'TIGER' is an elephant
+# slot, 1572 'MERCHANT' is not the Imperial Skirmisher).
+ARMOUR = {"cavalry": 8, "war_elephants": 5, "standard_buildings": 21,
+          "gunpowder": 23, "unique_units": 19, "unused_31": 31}
+
+
+def ids_in(key):
+    return [e["A"] for e in team_ec.get(key, [])]
+
+
+def attrs_in(key):
+    return {e["C"] for e in team_ec.get(key, [])}
+
+
+def packed_armour(key):
+    return {int(e["D"]) >> 8 for e in team_ec.get(key, []) if e["C"] == 9}
+
+
+# Attribute 20 is Minimum Range (UGC guide), so "built 100% faster" did nothing
+# at all.  A building's construction time is its creatable.train_time — attribute
+# 101 — verified against the in-game numbers (Mill 35s, Market 60s, House 25s).
+for key in ("43", "63"):
+    check(f"team_ec_list[{key}] ({names[key][:34]!r}) uses train time, not Minimum Range",
+          attrs_in(key) == {101},
+          f"attributes present: {sorted(attrs_in(key))} — 20 is Minimum Range, inert here")
+
+# Armour classes that make the card true, and the two that made it a no-op.
+check("48 'vs. Elephant units' hits armour class 5, not 19 (Unique Units)",
+      packed_armour("48") == {ARMOUR["war_elephants"]},
+      f"got {packed_armour('48')}")
+check("47 'vs. gunpowder units' hits armour class 23, not 31 (Unused)",
+      packed_armour("47") == {ARMOUR["gunpowder"]},
+      f"got {packed_armour('47')}")
+check("54 'vs. cavalry' hits armour class 8",
+      packed_armour("54") == {ARMOUR["cavalry"]}, f"got {packed_armour('54')}")
+check("55 'vs. buildings' hits armour class 21",
+      packed_armour("55") == {ARMOUR["standard_buildings"]}, f"got {packed_armour('55')}")
+
+# Rosters: the wrong ids that were actually in there, and the upgrade tiers that
+# were missing so the bonus evaporated when the unit upgraded.
+WRONG_IDS = {
+    "39": [(1026, "an Ostrich, in 'Trade units +50 HP'")],
+    "45": [(1572, "the Merchant, standing in for Imperial Skirmisher 1155"),
+           (594, "a Sheep, standing in for Scout Cavalry 448"),
+           (74, "the Militia, which is not a spearman")],
+    "54": [(74, "the Militia, which is not a spearman")],
+    "55": [(829, "the Elite War Wagon"), (1137, "a wild tiger")],
+}
+for key, bad in WRONG_IDS.items():
+    for uid, why in bad:
+        check(f"team_ec_list[{key}] no longer targets {uid} ({why})",
+              uid not in ids_in(key))
+
+MUST_CONTAIN = {
+    "45": [(1155, "Imperial Skirmisher"), (448, "Scout Cavalry"), (358, "Pikeman")],
+    "48": [(567, "Champion"), (358, "Pikeman")],
+    "54": [(358, "Pikeman")],
+    "55": [(1132, "Battle Elephant"), (873, "Elephant Archer"), (1744, "Armored Elephant")],
+    "56": [(752, "Elite Eagle Warrior"), (726, "Elite Jaguar Warrior")],
+    "58": [(30, "Monastery age 1"), (31, "Monastery age 2"), (32, "Monastery age 3")],
+    "59": [(116, "Market age 2"), (137, "Market age 3")],
+    "43": [(565, "Lumber Camp age 4"), (587, "Mining Camp age 4")],
+    "50": [(216, "the female Hunter — vanilla pairs the genders in all 16 "
+                 "effects that name either")],
+}
+for key, wanted in MUST_CONTAIN.items():
+    for uid, why in wanted:
+        check(f"team_ec_list[{key}] includes {uid} ({why})", uid in ids_in(key))
 
 # No id may be implemented twice: the effect map wins in _apply_bonuses, so an
 # ec_list sharing its key is dead code that reads like a live implementation.

@@ -265,6 +265,75 @@ _KM_UU_NAMES: dict[int, str] = {
     93: "Temple Guard",
 }
 
+# ── Display names for build-log messages ─────────────────────────────────────
+# `unit.name` is the DAT's internal codename, which is frequently nothing like
+# what the player sees — 775 is 'MONKY' (the Missionary), 1137 is 'TIGER' (an
+# elephant slot), 1572 is 'MERCHANT'.  A warning naming 'MONKY' sends the user
+# hunting for a unit that does not exist under that name, so log messages
+# resolve the real name through unit.language_dll_name against the shipped
+# vanilla string table, and keep the id and codename alongside it.
+_VANILLA_STRINGS_PATH = Path(__file__).parent / "vanilla" / "key-value" / "key-value-strings-utf8.txt"
+_STRING_LINE_RE = re.compile(r'^\s*(\d+)\s+"(.*)"\s*$')
+_vanilla_strings: dict[int, str] | None = None
+
+
+def _string_table() -> dict[int, str]:
+    """id -> English display string, from the shipped vanilla key-value file."""
+    global _vanilla_strings
+    if _vanilla_strings is None:
+        table: dict[int, str] = {}
+        try:
+            with open(_VANILLA_STRINGS_PATH, encoding="utf-8") as fh:
+                for line in fh:
+                    m = _STRING_LINE_RE.match(line)
+                    if m:
+                        table[int(m.group(1))] = m.group(2)
+        except OSError:
+            pass          # log prettiness is never worth failing a build over
+        _vanilla_strings = table
+    return _vanilla_strings
+
+
+def unit_label(dat: DatFile, civ_index: int, unit_id: int) -> str:
+    """'775 (Missionary)' for logs — display name, falling back to the codename.
+
+    Always keeps the id, because the id is what the user reports back to us and
+    what every other tool in the pipeline speaks.
+    """
+    try:
+        unit = dat.civs[civ_index].units[unit_id]
+    except (IndexError, TypeError):
+        unit = None
+    if unit is None:
+        return f"{unit_id} (?)"
+    name = _string_table().get(getattr(unit, "language_dll_name", -1) or -1)
+    if not name:
+        name = getattr(unit, "name", None) or "?"
+    return f"{unit_id} ({name})"
+
+
+def unit_labels(dat: DatFile, civ_index: int, unit_ids) -> str:
+    """Comma-joined unit_label() for a collection, in id order."""
+    return ", ".join(unit_label(dat, civ_index, u) for u in sorted(unit_ids))
+
+
+_TEAM_BONUS_NAMES_PATH = Path(__file__).parent / "team_bonus_names.json"
+_team_bonus_names: dict[str, str] | None = None
+
+
+def team_bonus_label(tb_id: int) -> str:
+    """'#75 (Mounted archers -50% frame delay)' for logs."""
+    global _team_bonus_names
+    if _team_bonus_names is None:
+        try:
+            _team_bonus_names = json.loads(
+                _TEAM_BONUS_NAMES_PATH.read_text(encoding="utf-8"))
+        except OSError:
+            _team_bonus_names = {}
+    name = _team_bonus_names.get(str(tb_id))
+    return f"#{tb_id} ({name})" if name else f"#{tb_id}"
+
+
 # ── String ID allocation ──────────────────────────────────────────────────────
 # Confirmed by scanning the actual shipped key-value-strings-utf8.txt (a real
 # extract, not a guess): vanilla content is NOT confined to a low range like
@@ -1126,7 +1195,7 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     if _extra_disable or _forced_off:
         print(f"       Unticked entities: {len(_extra_disable)} make-avail techs disabled"
               + (f", {len(_forced_off)} units forced off (no make-avail tech): "
-                 f"{sorted(_forced_off)}" if _forced_off else ""))
+                 f"{unit_labels(dat, civ_index, _forced_off)}" if _forced_off else ""))
 
     # ── Step 5: Dragon Ship.
     #
@@ -1250,11 +1319,9 @@ def _warn_train_button_conflicts(dat: DatFile, civ_index: int, civ_def: dict | N
         if uid not in spec["units"] and _train_button(dat, civ_index, uid) in slots
     )
     if clashes:
-        names = ", ".join(
-            f"{uid} ({dat.civs[civ_index].units[uid].name})" for uid in clashes
-        )
         print(f"       WARNING: {spec['name']} shares a training button with "
-              f"tree unit(s) {names} — only one will be reachable in-game")
+              f"tree unit(s) {unit_labels(dat, civ_index, clashes)} — only one "
+              f"will be reachable in-game")
 
 
 def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
@@ -4316,7 +4383,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     if _tb_cmd_count > _EFFECT_COMMAND_SOFT_LIMIT:
         _worst = sorted(bonus_results.get("team_cmd_counts", []),
                         key=lambda p: -p[1])[:3]
-        _worst_txt = ", ".join(f"#{i} ({n} cmds)" for i, n in _worst)
+        _worst_txt = ", ".join(f"{team_bonus_label(i)} — {n} cmds" for i, n in _worst)
         _msg = (f"Team bonus effect has {_tb_cmd_count} commands "
                 f"(soft limit {_EFFECT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
                 f"The game will likely crash at startup — drop a team bonus. "
@@ -4325,7 +4392,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         warnings.append(_msg)
 
     if bonus_results.get("team_skipped"):
-        _ids = ", ".join(f"#{i}" for i in bonus_results["team_skipped"])
+        _ids = ", ".join(team_bonus_label(i) for i in bonus_results["team_skipped"])
         _msg = (f"Team bonus {_ids} has no implementation in the catalog and was "
                 f"skipped. Pick a different team bonus if you want one.")
         print(f"  WARNING: {_msg}")
