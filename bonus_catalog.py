@@ -78,6 +78,47 @@ DELIBERATE DIVERGENCE FROM KM — do not "restore" these from his source:
     it.  `_apply_dropoff_discount` runs as a supplement after the tech branch,
     the same shape bonus 105 uses after its ec_list.
 
+TEAM BONUSES — two traps, both of which have bitten (2026-09-18):
+
+  `team` holds EFFECT indices, not tech ids.  `_apply_bonuses` does
+  `dat.effects[eff_idx]` directly.  Tech ids and effect ids are both small
+  integers, so a tech id in that column does not fail — it reads back as a
+  valid, wrong effect.  Three entries were wrong that way:
+    - **8** ("Farms +10% food") held 232, the *tech* id, which as an effect is
+      `Make Fire Galley Avail` — the bonus handed allies a Fire Galley.  The
+      effect is 240, `Chinese TB (Reapply)` = `dat.techs[232].effect_id`.
+    - **30** ("Military buildings provide +5 population room") held 721, the
+      *tech* id, which as an effect is `Elite Leitis` — the bonus handed allies
+      a free Elite Leitis upgrade.  The effect is 758 = `techs[721].effect_id`.
+    - **45** ("Skirmishers, Spearmen, and Scout-lines train 20% faster") held
+      601, `Carrack` (ships +1/+1 armour), since extraction.  It has no vanilla
+      effect; the entry was removed so its `team_ec_list` entry is used.
+  Note 8/30/83 are the modern DE shape: the civ's own `team_bonus_id` is an
+  empty or trivial stub and the real commands live in a tech's effect (type=10
+  for 30 and 83).  `tests/test_team_bonus_catalog.py` pins all of this by
+  asserting every `team` value is some civ's `team_bonus_id` or one of three
+  named tech-delivered effects.
+
+  `team_ec_list` was keyed to the PRE-2026-07-03 team bonus names.  That day
+  `team_bonus_names.json` was rewritten into KM's authoritative ordering to fix
+  a shuffle from index 11 on (see BUGFIXES.md), but the 30 `team_ec_list`
+  entries — authored a week earlier, on 2026-06-26 — were never re-keyed, so
+  every one of them did a different bonus's job for ten weeks.  Re-keyed
+  2026-09-18 by matching each entry's old name to its current id; the mapping
+  was exact and unambiguous for all 30.  Ten then duplicated a real vanilla
+  team-bonus effect (the effect map wins in `_apply_bonuses`, so they were dead
+  code) and were dropped, leaving 20.
+
+  The loudest case, and the one that found this: id **54** read "Spearmen +3
+  attack vs. cavalry" (3 commands) and carried "Unique Units +5% HP" — 142
+  EC_MULTIPLY commands.  On a civ with 15 team bonuses that pushed the merged
+  team-bonus effect to 246 commands, over the engine's ~189 ceiling, and the
+  game crashed before the main menu.
+
+  Eleven ids lost their (wrong) implementation and now have none: 40, 42, 46,
+  60, 61, 62, 66, 68, 72, 73, 75.  They fall out of the picker through
+  `unsupported_team_bonuses()` and are listed on /limitations.
+
 "createCivBonus" bonuses (those that build effects from scratch in the C++)
 are not in this catalog — they require custom EffectCommand lists and are
 logged as skipped at build time.

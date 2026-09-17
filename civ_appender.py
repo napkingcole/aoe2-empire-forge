@@ -3326,8 +3326,13 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                     "extra_unit_strings": extra_unit_strings, "bonus_tech_map": bonus_tech_map}
 
     # ── Team bonus ────────────────────────────────────────────────────────────
+    # Every picked team bonus is merged into ONE effect, so the per-entry command
+    # counts add up against the engine's ~189-command ceiling.  Track them so
+    # apply_civ can name the expensive ones when the total gets close.
     team_entries = get_team_bonuses(civ_def)
     team_applied = 0
+    team_cmd_counts: list[tuple[int, int]] = []   # (team_bonus_id, commands added)
+    team_skipped: list[int] = []                  # ids with no implementation at all
     for entry in team_entries:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
             continue
@@ -3340,27 +3345,33 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         if eff_idx is None or not (0 <= eff_idx < len(dat.effects)):
             ec_dicts = team_bonus_ec_list(tb_id)
             if not ec_dicts:
+                team_skipped.append(tb_id)
                 continue
             for ec_dict in ec_dicts:
                 cmd = EffectCommand(type=ec_dict["type"], a=ec_dict["A"],
                                     b=ec_dict["B"], c=ec_dict["C"], d=float(ec_dict["D"]))
                 dat.effects[tb_eff_id].effect_commands.append(
                     _scale_ec_for_multiplier(cmd, multiplier))
+            team_cmd_counts.append((tb_id, len(ec_dicts)))
             team_applied += 1
             continue
 
         safe_cmds = list(dat.effects[eff_idx].effect_commands)
         if not safe_cmds:
+            team_skipped.append(tb_id)
             continue
         for ec in safe_cmds:
             dat.effects[tb_eff_id].effect_commands.append(
                 _scale_ec_for_multiplier(ec, multiplier))
+        team_cmd_counts.append((tb_id, len(safe_cmds)))
         team_applied += 1
 
     print(f"       Team bonus: {team_applied}/{len(team_entries)} entries applied")
 
-    bonus_result["team_applied"] = team_applied
-    bonus_result["team_total"]   = len(team_entries)
+    bonus_result["team_applied"]     = team_applied
+    bonus_result["team_total"]       = len(team_entries)
+    bonus_result["team_cmd_counts"]  = team_cmd_counts
+    bonus_result["team_skipped"]     = team_skipped
     return bonus_result
 
 
@@ -4280,22 +4291,48 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     if _n_locked:
         print(f"       Opt-in lockdown: {_n_locked} unclaimed regional techs disabled")
 
-    # Guard: TT effects exceeding ~189 commands crash the game at startup.
-    _TT_COMMAND_SOFT_LIMIT = 185
+    # Guard: ANY effect exceeding ~189 commands crashes the game at startup.
+    # Two of ours accumulate without bound — the tech tree effect (a command per
+    # unticked node) and the team bonus effect (every picked team bonus merged
+    # into one) — so both are checked against the same soft limit.
+    _EFFECT_COMMAND_SOFT_LIMIT = 185
     _tt_cmd_count = len(dat.effects[tt_eff_id].effect_commands)
-    if _tt_cmd_count > _TT_COMMAND_SOFT_LIMIT:
+    if _tt_cmd_count > _EFFECT_COMMAND_SOFT_LIMIT:
         # Surfaced to the user, not just the console: the tree sweep now emits a
         # command per unticked node, so a heavily-pruned civ can reach the cap,
         # and the failure mode is a startup crash with no clue attached.
         _msg = (f"Tech tree effect has {_tt_cmd_count} commands "
-                f"(soft limit {_TT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
+                f"(soft limit {_EFFECT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
                 f"The game may crash at startup — re-enable some tech tree nodes "
                 f"or drop a bonus.")
         print(f"  WARNING: {_msg}")
         warnings.append(_msg)
 
+    # Same guard for the TEAM BONUS effect.  Every picked team bonus is merged
+    # into this one effect, so a civ with many of them overruns the same ceiling
+    # — and the failure mode is identical: the game crashes before the main menu
+    # with nothing to point at.  A reporter's 15-team-bonus civ landed at 246.
+    _tb_cmd_count = len(dat.effects[tb_eff_id].effect_commands)
+    if _tb_cmd_count > _EFFECT_COMMAND_SOFT_LIMIT:
+        _worst = sorted(bonus_results.get("team_cmd_counts", []),
+                        key=lambda p: -p[1])[:3]
+        _worst_txt = ", ".join(f"#{i} ({n} cmds)" for i, n in _worst)
+        _msg = (f"Team bonus effect has {_tb_cmd_count} commands "
+                f"(soft limit {_EFFECT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
+                f"The game will likely crash at startup — drop a team bonus. "
+                f"Biggest contributors: {_worst_txt}.")
+        print(f"  WARNING: {_msg}")
+        warnings.append(_msg)
+
+    if bonus_results.get("team_skipped"):
+        _ids = ", ".join(f"#{i}" for i in bonus_results["team_skipped"])
+        _msg = (f"Team bonus {_ids} has no implementation in the catalog and was "
+                f"skipped. Pick a different team bonus if you want one.")
+        print(f"  WARNING: {_msg}")
+        warnings.append(_msg)
+
     print(f"       tech_tree_id(eff)={tt_eff_id}  team_bonus_id(eff)={tb_eff_id}  "
-          f"TT_commands={_tt_cmd_count}")
+          f"TT_commands={_tt_cmd_count}  TB_commands={_tb_cmd_count}")
     return {
         "civ_index":             civ_index,
         "lang_val":              lang_val,

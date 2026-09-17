@@ -127,9 +127,12 @@ def unsupported_unique_techs(castle: bool) -> list[dict]:
     return [{"id": i, "name": name} for i, name in enumerate(table) if i not in covered]
 
 
-# Total team-bonus card count in KM's source (indices 0-79) — confirmed via
-# the card image set (team_0..team_79).
-_TEAM_BONUS_COUNT = 80
+# Total team-bonus card count.  KM's source stops at 79 (confirmed via the card
+# image set, team_0..team_79); 80-83 are the DLC team bonuses we added on top —
+# Wu, Muisca, Mapuche, Tupi.  This bound has to cover them, because it is what
+# unsupported_team_bonuses() iterates: while it said 80, ids 81-83 were offered
+# in the picker but never checked for an implementation.
+_TEAM_BONUS_COUNT = 84
 
 # These vanilla effect IDs belong to the Chronicles DLC civ pool, which is
 # separate from the standard AoE2 DE civ pool. Chronicles civs cannot be

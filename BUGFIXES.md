@@ -5,6 +5,99 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-18 — every `team_ec_list` entry was under the wrong id, and one of them crashed the game
+
+**Symptom:** a reporter's civ (`ignore/sandbox/bugfixing/maruviel`, 105 civ bonuses, 15 team
+bonuses) crashed AoE2 DE at launch, before the main menu. He asked whether he had "overdone it
+with bonuses". He had not — the civ bonuses were fine. Rebuilding his civ and scanning the
+produced DAT found exactly one effect over the engine's ceiling: **`Ionians Team Bonus`, 246
+commands**, against a ~189 limit and a vanilla maximum of 189 (`Hero Shadow Tech`).
+
+**Root cause — a ten-week key drift.** `bonus_catalog_raw.json["team_ec_list"]` is keyed by team
+bonus id and was authored **2026-06-26**. On **2026-07-03** `team_bonus_names.json` was rewritten
+into KM's authoritative `card_descriptions[4]` ordering to fix a shuffle from index 11 on (entry
+below). The names moved; the 30 `team_ec_list` entries did not. From that day every one of them
+implemented a different bonus than its card promised.
+
+Checked by diffing each entry against the **pre-rewrite** names file: all 30 matched their old
+name exactly — `Trade units +50 HP` is four `ADD attr 0 += 50`, `Docks cost -15%` is five
+`MULT attr 100 ×0.85`, and so on. There was no ambiguity and nothing unmatched, which is what
+makes the re-key safe to do mechanically.
+
+The crash came from the worst pairing. Id **54** reads *"Spearmen +3 attack vs. cavalry"* — three
+commands. It carried *"Unique Units +5% HP"*: **142** `EC_MULTIPLY` commands, one per unique unit.
+Team bonuses are all merged into the single effect `civ.team_bonus_id` points at, so 54 plus
+fourteen ordinary picks came to 246. The reporter's civ now builds at **83**.
+
+**The guard only ever covered half the problem.** `apply_civ` has checked the *tech tree* effect
+against a 185-command soft limit since 2026-08-28, with a user-visible warning. The team bonus
+effect — the one memory explicitly calls "the most dangerous", and the one that produced the
+original 443-command crash — was never checked at all.
+
+**Three `team` entries pointed at effects that are not team bonuses.** That column holds **effect
+indices**; `_apply_bonuses` does `dat.effects[eff_idx]`. Tech ids and effect ids are both small
+integers, so a tech id there does not fail, it silently resolves to the wrong effect:
+
+| id | card | held | which as an effect is | should be |
+|----|------|------|----------------------|-----------|
+| 8  | Farms +10% food | 232 | `Make Fire Galley Avail` — gave allies a Fire Galley | **240** (`techs[232].effect_id`) |
+| 30 | Military buildings +5 pop room | 721 | `Elite Leitis` — gave allies a free Elite Leitis upgrade | **758** (`techs[721].effect_id`) |
+| 45 | Skirmishers/Spearmen/Scout-lines train 20% faster | 601 | `Carrack` — ships +1/+1 armour | *(none; use its ec_list)* |
+
+8 and 30 are a regression from `beb679d` (2026-09-17), the commit immediately below — which fixed
+a real mismap by writing the **tech** ids into the effect column, the exact trap its own entry
+warns about. 30 had been correct (758) since 2026-07-03. 45 has been wrong since extraction.
+
+These three are the modern DE shape: the civ's own `team_bonus_id` is an empty or trivial stub and
+the real commands live in a tech's effect, using `type=10` (team-scoped) commands for 30 and 83.
+
+**Fix:**
+- Re-keyed `team_ec_list` to the current names. Ten entries then duplicated a real vanilla
+  team-bonus effect — and the effect map wins in `_apply_bonuses`, so they were dead code reading
+  like live implementations — and were dropped. 30 entries → 20.
+- `team`: `8 → 240`, `30 → 758`, `45` removed.
+- `apply_civ` now guards the **team bonus** effect on the same soft limit as the tech tree, and
+  the warning names the three biggest contributors so the user knows what to drop.
+- A team bonus the catalog cannot implement is now reported as a warning instead of vanishing
+  inside `Team bonus: 14/15 entries applied`.
+- `/api/builder/bonuses/catalog` filters team bonuses through `unsupported_team_bonuses()`, the
+  way it has always filtered civ bonuses. It did not, so an unimplementable team bonus was
+  pickable and then silently dropped at build time.
+- `_TEAM_BONUS_COUNT` 80 → 84. It bounds the loop in `unsupported_team_bonuses()`, so while it
+  said 80 the DLC ids 81-83 were offered in the picker but never checked for an implementation.
+
+**Eleven ids lost their (wrong) implementation and now have none:** 40, 42, 46, 60, 61, 62, 66,
+68, 72, 73, 75. They are KM-invented bonuses with no vanilla effect to copy, so each needs a
+hand-written `ec_list`. They drop out of the picker automatically and are listed on
+`/limitations`.
+
+`tests/test_team_bonus_catalog.py` pins both halves and was verified to produce 18 failures
+against the pre-fix catalog. The invariant that catches the id-namespace trap for good: **every
+value in `team` must be some civ's own `team_bonus_id`, or one of three named tech-delivered
+effects.** It also builds the reporter's 15-bonus pick and asserts the guard stays quiet, and a
+deliberately overweight pick and asserts it fires.
+
+**Still open — content, not structure.** Five confirmed wrong unit ids survive inside otherwise
+correctly-keyed entries, found while resolving the lists but out of scope here:
+
+- **55** *"Elephant units +4 attack vs. buildings"* targets `829 UWAGO` (**War Wagon**, Castle
+  button 1) and `1137 TIGER` (**class 10 wild animal**, 25 HP, no train location). No elephants.
+- **39** *"Trade units +50 HP"* includes `1026 OSTRICH` (class 9 animal, 5 HP).
+- **45** *"…Scout-lines train 20% faster"* has `594 SHEEPG` where Scout Cavalry (`448`) belongs,
+  and `1572 MERCHANT` where Imperial Skirmisher (`1155`) belongs.
+
+**48** *"Infantry +5 attack vs. Elephant units"* is a mechanism question rather than a typo: its
+`D=4869` unpacks to armour class **19**, which the DAT shows is the **unique-unit** class (every
+Castle UU carries it), not elephants. These want the same treatment the civ bonuses got in
+`docs/AUDIT-bonus-catalog-mismaps.md` — a sweep of all 20 entries against what they claim.
+
+**Not verified in-game.** The `type=10` commands on ids 30 and 83 are copied into
+`civ.team_bonus_id`, which is itself the ally-application channel. 758 was the value for ten weeks
+before `beb679d` changed it, so this restores known behaviour rather than introducing it, but
+whether a team-scoped command nested inside a team effect actually lands has never been confirmed.
+
+---
+
 ## 2026-09-17 (b) — two team bonuses pointed at the wrong tech, and four civ bonuses were partial
 
 From reviewing the 27 vanilla bonus techs the catalog never references. The user supplied the
