@@ -1349,7 +1349,8 @@ def api_builder_techtree_civs():
 
 @app.route("/api/builder/bonuses/catalog")
 def api_builder_bonuses_catalog():
-    from bonus_names import unsupported_bonuses, DEPRECATED_BONUSES
+    from bonus_names import (unsupported_bonuses, unsupported_team_bonuses,
+                             DEPRECATED_BONUSES)
     with open(Path(__file__).parent / "bonus_names.json", encoding="utf-8") as f:
         names = json.load(f)
     with open(Path(__file__).parent / "team_bonus_names.json", encoding="utf-8") as f:
@@ -1363,9 +1364,15 @@ def api_builder_bonuses_catalog():
         for k, v in sorted(names.items(), key=lambda x: int(x[0]))
         if int(k) not in hidden_ids
     ]
+    # Team bonuses get the same treatment as civ bonuses: an id the catalog
+    # cannot implement is not offered.  This list used to be unfiltered, so a
+    # team bonus with no catalog entry was pickable and then silently dropped at
+    # build time.
+    unsupported_team_ids = {b["id"] for b in unsupported_team_bonuses()}
     team_bonuses = [
         {"id": int(k), "label": v}
         for k, v in sorted(team_names.items(), key=lambda x: int(x[0]))
+        if int(k) not in unsupported_team_ids
     ]
     return jsonify({"civ": civ_bonuses, "team": team_bonuses})
 

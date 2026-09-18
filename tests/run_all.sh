@@ -41,6 +41,8 @@ run "UT cost override"            "$PY" tests/test_ut_cost_override.py
 run "multiplier scaling"          "$PY" tests/test_multiplier_scaling.py
 run "bonus 54 fishermen"          "$PY" tests/test_bonus_54_fishermen.py
 run "audit fixes (python)"        "$PY" tests/test_audit_fixes.py
+run "team bonus catalog"          "$PY" tests/test_team_bonus_catalog.py
+run "spawn scaling + UU flags"    "$PY" tests/test_spawn_and_flags.py
 
 # Build smoke: builds ONE civ end to end (~25s, of which ~17s is loading the
 # DAT).  Everything above this line is a pure data check that never builds a

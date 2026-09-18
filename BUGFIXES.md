@@ -5,6 +5,289 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-18 (b) — four findings from the pre-release in-game test round
+
+The user built a civ carrying the new and changed bonuses and played a game. Starting resources,
+Pastures, food from military buildings and the 73/58 Nomad carve-out all worked. Four things did
+not, and three of them were our bugs.
+
+### 1. The multiplier did nothing on any "start with / spawn N" bonus
+
+**Symptom:** bonus 345 ("a free Villager for each economic upgrade") at **x3** still produced one
+Villager.
+
+**Root cause:** `EC_SPAWN` (type 7) keeps its **count in `c`**, and `d` is `0.0` on **all 17**
+vanilla spawn commands — so `_scale_ec_for_multiplier`, which only ever scaled `d`, could not
+move it. Verified against the shipped DAT: *Start w/ 6 villagers* is `c=3`, *Free Villagers* `c=2`,
+*First Crusade* `c=5` Serjeants.
+
+**The fix needed two halves, and the first one alone did nothing.** `_multiply_effect` — the path
+the catalog tech branch actually uses — copied back **only `ec.d`**, on the reasonable assumption
+(stated in its own docstring) that every scalable command carries its magnitude there. It now
+copies back `c` and `d`. The delegation between the two functions exists specifically to stop a
+new scalable type being handled in one and not the other, and it *still* failed, because the
+delegation discarded the field it did not expect to change.
+
+**Resource 234 is deliberately NOT scaled.** It is `Spawn Limit` — how many spawning *buildings*
+may participate, not how many units each produces. Scaling it turned the card into "one Villager
+from each of up to N Town Centers", which is exactly why the bonus looked inert on one Town
+Center and would have multiplied per-TC on several.
+
+**Eight bonuses were affected**, not just 345: **18, 46, 192, 223, 294, 313, 318, 345** — every
+"start with N villagers / a Mule Cart / a free Horse / Forage Bushes / a free relic" card.
+
+### 2. Bonuses 345 and 356 could not see each other
+
+**Symptom:** the user noticed the Mill has **three Pasture techs** and 345 paid nothing for them.
+
+**Root cause:** 345's fourteen techs name the vanilla Mill line (Horse Collar / Heavy Plow / Crop
+Rotation). A Pasture civ does not have those — 356 replaces them with Livestock Husbandry /
+Enclosures / Grazing Grasslands, which are `civ=53` and therefore **copied to fresh tech ids**
+(quirk 9). So the free-Villager techs named upgrades the player could never research.
+
+**Fix:** `_apply_pasture_free_villagers`, which clones 345's template tech three more times with
+`required_techs = (the Pasture copy, 639 Town Center Spawn)`. It runs **after the whole bonus
+loop**, because bonus order in a civ_def is whatever the user clicked and 356 may not have run
+yet when 345 does — the test builds the civ both ways round. 356 now publishes its clones into
+`tech_remaps`, which is what that dict is for.
+
+### 3. `ignore_armor` reduced the unique unit to 1 damage
+
+**Symptom:** an Elite Janissary set to **25 attack** was hitting for **1**. Hand Cannoneers on the
+same civ were fine at 17+12, which correctly pointed the user at the flag rather than at the stat
+override.
+
+**Root cause:** the flag replaced the unit's Base Melee/Base Pierce attacks with a single attack on
+**armour class 50**. No unit in the game has armour class 50 — 0 of 421 trainable attacking units —
+and the damage formula is `dmg = max( Σ max(At_i − Ar_i, 0), 1 )` where a missing armour class on
+the defender resolves to the base armour value, *"almost always 1000"* (UGC guide,
+`damage_calculation.md`). So `max(25 − 1000, 0) = 0`, and the engine's minimum damage of 1 applied.
+The flag did not weaken the unit, it deleted its offence.
+
+**There is no correct replacement, so the flag is now a no-op with a loud warning.** Two candidates
+were checked and rejected:
+- **Armour class 31** looks perfect at first — 99.3% of trainable attacking units carry it, 96% at
+  zero. It is the **cavalry-vs-buildings** class: every cavalry unit attacks it, and the only
+  non-zero holders are Castles (8), Kreposts (8), Fortified Churches (4), towers and Docks (1-3).
+  Using it would grant nothing and *penalise* the unit against exactly the targets it should beat.
+- **Copying the Leitis**, the game's own armour-ignoring unit. Diffing it against a Knight across
+  every scalar field of `unit`, `type_50` and `creatable` turns up only graphics, stats and string
+  ids. Its behaviour is hardcoded in the engine by unit id and cannot be granted through the DAT.
+
+**Withdrawn from the builder.** The checkbox is hidden and disabled (kept in the markup so the
+element ids still resolve), `_UA_TOP_FLAGS` no longer counts it toward the flag badge, `_uaLoad`
+deletes it from a saved draft on load, and `civ_schema.RETIRED_UU_FLAGS` strips it on **both**
+doors — `to_draft` on the way in and `from_draft` on the way out — so an old `.civbuilder.json`
+keeps loading and stops carrying a flag nothing implements. The build still warns once if a civ
+reaches it with the flag set, which is how a user finds out their old civ changed.
+
+### 4. Castle UT "Coiled Serpent Array" did not affect the unique unit — and cannot
+
+**Symptom:** the aura worked for the user's spearmen but not for their unique unit. Their guess —
+"maybe it's still looking for the Shu default" — was essentially right.
+
+**Root cause, and it is not a wiring bug.** The whole effect is **one command**:
+`EC_RESOURCE a=33 d=6`. Resource **33** is `Effect Function Number` — writing a non-zero N makes
+the engine call **`EffectFunction<N>` from its own `Effects.xs`**. The tech is implemented in a
+**game script**, not in the DAT. The script decides which units get the aura, it names the Shu
+unique unit by id, and we ship a DAT — we cannot edit it. The spearman half worked precisely
+because that half is not civ-specific.
+
+**24 vanilla effects are script-driven this way, and 10 are offered as UT presets**: Castle —
+Burgundian Vineyards, Stronghold, Viking Chieftains, Bimaristan, **Coiled Serpent Array**, Red
+Cliffs Tactics, Tuntian; Imperial — Vietnamese UT (Paper Money), Ordo Cavalry, Curare. They are
+not all broken: Vineyards and Paper Money are known to work, and most carry real DAT commands
+alongside the script hook. The three that are **only** the hook (Coiled Serpent Array, Ordo
+Cavalry, Bimaristan) have nothing we can retarget at all.
+
+**The triage, and the rule that decides it.** The script has its unit ids baked in, so being
+script-driven is only a *problem* when the script names a unit our civ does not have — in practice,
+another civ's unique unit. A script that works on Monks, cavalry, farmers or lumberjacks is fine,
+because our civ has those too. Reading each UT's card text next to the DAT commands its effect
+still carries:
+
+| UT | script targets | verdict |
+|----|----------------|---------|
+| Burgundian Vineyards | farmers | **works** — confirmed, once `repeatable` was fixed |
+| Paper Money | lumberjacks | **works** — same |
+| Bimaristan | Monks | safe — Monks are unit 125 for every civ |
+| Ordo Cavalry | cavalry | safe — a class, not a unit |
+| Tuntian | soldiers | safe |
+| Stronghold | infantry healing; the fire-rate half is in the DAT | safe |
+| Viking Chieftains | infantry; DAT half is class 6 | safe |
+| Curare | foot archers + fortifications; 84 DAT commands, mostly generic projectiles | safe |
+| **Red Cliffs Tactics** | its DAT half names **1968/1970 Fire Archer** (Wu UU) and 2044 Zhou Yu | **partial** — a civ without Fire Archers loses that half |
+| **Coiled Serpent Array** | the Shu unique unit, by name | **broken** — confirmed in-game |
+
+So the user's read was right: Coiled Serpent Array is the only one that is fundamentally about a
+unique unit, with Red Cliffs Tactics a partial second. `_XS_UT_NOTES` warns about exactly those
+two and says what will and will not fire; the other eight get no warning, because a blanket one
+would be noise on six safe techs and actively wrong on the two known-good ones.
+
+**Shipping our own `Effects.xs` is not a route.** XS scripts live in the *game install*
+(`AoE2DE/resources/_common/xs`), not in a mod's payload, and overriding the file would mean
+replacing every `EffectFunction` the game has — fragile across patches and liable to break other
+civs. The only real alternative for Coiled Serpent Array would be to reimplement its intent in the
+DAT and drop the proximity condition, which changes what the card does.
+
+`tests/test_spawn_and_flags.py` pins 1-3. `tests/test_audit_fixes.py` expected exactly 14 spawn
+techs for 345 and now expects 17, since its probe civ carries 356 as well.
+
+---
+
+## 2026-09-18 — every `team_ec_list` entry was under the wrong id, and one of them crashed the game
+
+**Symptom:** a reporter's civ (`ignore/sandbox/bugfixing/maruviel`, 105 civ bonuses, 15 team
+bonuses) crashed AoE2 DE at launch, before the main menu. He asked whether he had "overdone it
+with bonuses". He had not — the civ bonuses were fine. Rebuilding his civ and scanning the
+produced DAT found exactly one effect over the engine's ceiling: **`Ionians Team Bonus`, 246
+commands**, against a ~189 limit and a vanilla maximum of 189 (`Hero Shadow Tech`).
+
+**Root cause — a ten-week key drift.** `bonus_catalog_raw.json["team_ec_list"]` is keyed by team
+bonus id and was authored **2026-06-26**. On **2026-07-03** `team_bonus_names.json` was rewritten
+into KM's authoritative `card_descriptions[4]` ordering to fix a shuffle from index 11 on (entry
+below). The names moved; the 30 `team_ec_list` entries did not. From that day every one of them
+implemented a different bonus than its card promised.
+
+Checked by diffing each entry against the **pre-rewrite** names file: all 30 matched their old
+name exactly — `Trade units +50 HP` is four `ADD attr 0 += 50`, `Docks cost -15%` is five
+`MULT attr 100 ×0.85`, and so on. There was no ambiguity and nothing unmatched, which is what
+makes the re-key safe to do mechanically.
+
+The crash came from the worst pairing. Id **54** reads *"Spearmen +3 attack vs. cavalry"* — three
+commands. It carried *"Unique Units +5% HP"*: **142** `EC_MULTIPLY` commands, one per unique unit.
+Team bonuses are all merged into the single effect `civ.team_bonus_id` points at, so 54 plus
+fourteen ordinary picks came to 246. The reporter's civ now builds at **83**.
+
+**The guard only ever covered half the problem.** `apply_civ` has checked the *tech tree* effect
+against a 185-command soft limit since 2026-08-28, with a user-visible warning. The team bonus
+effect — the one memory explicitly calls "the most dangerous", and the one that produced the
+original 443-command crash — was never checked at all.
+
+**Three `team` entries pointed at effects that are not team bonuses.** That column holds **effect
+indices**; `_apply_bonuses` does `dat.effects[eff_idx]`. Tech ids and effect ids are both small
+integers, so a tech id there does not fail, it silently resolves to the wrong effect:
+
+| id | card | held | which as an effect is | should be |
+|----|------|------|----------------------|-----------|
+| 8  | Farms +10% food | 232 | `Make Fire Galley Avail` — gave allies a Fire Galley | **240** (`techs[232].effect_id`) |
+| 30 | Military buildings +5 pop room | 721 | `Elite Leitis` — gave allies a free Elite Leitis upgrade | **758** (`techs[721].effect_id`) |
+| 45 | Skirmishers/Spearmen/Scout-lines train 20% faster | 601 | `Carrack` — ships +1/+1 armour | *(none; use its ec_list)* |
+
+8 and 30 are a regression from `beb679d` (2026-09-17), the commit immediately below — which fixed
+a real mismap by writing the **tech** ids into the effect column, the exact trap its own entry
+warns about. 30 had been correct (758) since 2026-07-03. 45 has been wrong since extraction.
+
+These three are the modern DE shape: the civ's own `team_bonus_id` is an empty or trivial stub and
+the real commands live in a tech's effect, using `type=10` (team-scoped) commands for 30 and 83.
+
+**Fix:**
+- Re-keyed `team_ec_list` to the current names. Ten entries then duplicated a real vanilla
+  team-bonus effect — and the effect map wins in `_apply_bonuses`, so they were dead code reading
+  like live implementations — and were dropped. 30 entries → 20.
+- `team`: `8 → 240`, `30 → 758`, `45` removed.
+- `apply_civ` now guards the **team bonus** effect on the same soft limit as the tech tree, and
+  the warning names the three biggest contributors so the user knows what to drop.
+- A team bonus the catalog cannot implement is now reported as a warning instead of vanishing
+  inside `Team bonus: 14/15 entries applied`.
+- `/api/builder/bonuses/catalog` filters team bonuses through `unsupported_team_bonuses()`, the
+  way it has always filtered civ bonuses. It did not, so an unimplementable team bonus was
+  pickable and then silently dropped at build time.
+- `_TEAM_BONUS_COUNT` 80 → 84. It bounds the loop in `unsupported_team_bonuses()`, so while it
+  said 80 the DLC ids 81-83 were offered in the picker but never checked for an implementation.
+
+**Eleven ids lost their (wrong) implementation and now have none:** 40, 42, 46, 60, 61, 62, 66,
+68, 72, 73, 75. They are KM-invented bonuses with no vanilla effect to copy, so each needs a
+hand-written `ec_list`. They drop out of the picker automatically and are listed on
+`/limitations`.
+
+`tests/test_team_bonus_catalog.py` pins both halves and was verified to produce 18 failures
+against the pre-fix catalog. The invariant that catches the id-namespace trap for good: **every
+value in `team` must be some civ's own `team_bonus_id`, or one of three named tech-delivered
+effects.** It also builds the reporter's 15-bonus pick and asserts the guard stays quiet, and a
+deliberately overweight pick and asserts it fires.
+
+**Not verified in-game.** The `type=10` commands on ids 30 and 83 are copied into
+`civ.team_bonus_id`, which is itself the ally-application channel. 758 was the value for ten weeks
+before `beb679d` changed it, so this restores known behaviour rather than introducing it, but
+whether a team-scoped command nested inside a team effect actually lands has never been confirmed.
+
+### Content sweep of the 20 surviving entries
+
+Re-keying put each list under the right card. This is the second half: what each one actually
+targets. **Twelve of the twenty were wrong**, in ways no key check could ever see.
+
+**The tool that made it tractable was resolving display names.** `unit.name` is an internal
+codename and routinely lies — `775` is `MONKY` (the **Missionary**), `1137` is `TIGER` (an
+elephant-adjacent slot that is a **wild animal**), `1572` is `MERCHANT`, `594` is `SHEEPG`. Reading
+the lists as codenames, they look plausible. `civ_appender.unit_label()` now resolves
+`language_dll_name` against the shipped `vanilla/key-value/key-value-strings-utf8.txt`, and the
+same helper feeds the build log, so warnings say `775 (Missionary)` instead of `775 (MONKY)`.
+
+**Two bonuses did nothing whatsoever.** Both "built 100% faster" cards (**43**, **63**) were
+`EC_SET attribute 20 = 1.0`, and **attribute 20 is Minimum Range**. A building's construction time
+is its `creatable.train_time` — attribute **101** — confirmed against the in-game numbers (Mill
+35s, Dock 35s, Market 60s, Monastery 40s, House 25s all match exactly). Both are now
+`EC_MULTIPLY attr 101 ×0.5`.
+
+**Two more were aimed at armour classes that cannot do what the card says:**
+
+- **47** *"Scout-line +2 attack vs. gunpowder units"* packed armour class **31**, which the UGC
+  guide lists as **Unused** — so the attack bonus landed nowhere. Gunpowder is **23**. Its target
+  classes were wrong too: object class **12** (`cCavalryClass`, i.e. *every* cavalry unit) and
+  **58** (`cLivestockClass` — **sheep**). The scout line straddles two object classes (448 is 47
+  `cScoutCavalry`, the rest are 12), so it can only be hit by explicit id.
+- **48** *"Infantry +5 attack vs. Elephant units"* packed armour class **19**, which is
+  **Unique Units** — every Castle UU carries it. Elephants are **5**, verified to cover all ten
+  trainable elephants.
+
+**Wrong units, now that they could be read:** **55** *"Elephant units"* was the **Elite War Wagon**
+and a **wild tiger**, and is now the ten real elephants; **39** *"Trade units"* included an
+**Ostrich**; **45** had a **Sheep** for Scout Cavalry and the **Merchant** for Imperial Skirmisher;
+**45** and **54** both listed the **Militia** as a spearman.
+
+**Missing upgrade tiers — the Tier-2 shape from the civ-bonus audit, where a bonus evaporates the
+moment the unit upgrades:** **56** *"Shock Infantry"* had no Elite Eagle Warrior or Elite Jaguar
+Warrior; **45/48/54** had no **Pikeman** at all; **48** had no Champion; **58** covered one of four
+Monasteries and **59** one of three Markets; **43** covered one of four Lumber Camps and one of
+four Mining Camps. **50** had the male Hunter but not the female — vanilla pairs the genders in
+all 16 effects that name either.
+
+Spear-line entries now include the three Donjon copies (1786/1787/1788), matching vanilla: 14 of
+the 31 shipped effects that name the spear line carry them, including every civ-bonus one.
+
+**Checked and correct:** 41 (object class 18 is `cMonkClass`), 44 (all 142 entries verified to
+train at Castle/Krepost/Donjon), 49, 50's mechanism, 51, 53, 57, 65 (*"when empty"* really is the
+empty cart id only), 67.
+
+**Known structural limit, not fixed:** **49** *"Explosive units +20% speed"* uses object class 35
+(`cPetardClass`), which cannot reach **demolition ships** — they are class 22 (`cWarshipClass`),
+shared with Galleys. Same constraint recorded for civ bonus 191 on 2026-09-13; it needs explicit
+ids, which is a behaviour change rather than a fix.
+
+**Attribute 101 on a building is confirmed, by vanilla's own naming.** Scanning every shipped
+effect for an attribute-101 write to an object-class-3 unit returns **seven**, and the techs are
+called `C-Bonus, TC constr time`, `Change TC constr time1` / `2`, and `C-Bonus, Fast Castle and TC`
+— `MULTIPLY Town Center attr 101 ×0.769` is the Spanish "Town Centers built 30% faster". So the
+lever is right and no in-game test is needed for it. **Searching for a vanilla effect that already
+does the thing settles a mechanism question faster than reasoning about the field.**
+
+**That scan also found a bonus we had written off.** `Wu TB local` (effect **1089**) is
+`MULTIPLY attr 101 ×0.5` on all six House ids — exactly team bonus **40, "Houses built 100%
+faster"**, one of the eleven declared to have no vanilla implementation. That claim was an
+assumption, not a check. 40 now maps to 1089.
+
+Wu's team bonus is also the first **type=18 indirection** we have seen: civ 50's `team_bonus_id`
+is effect **1031**, which holds a single `type=18, a=1089` command pointing at the effect above.
+Team bonus **80** is Wu, so 40 and 80 are the same bonus; 80 has no card text and is therefore
+unreachable in the picker, and should stay that way rather than be named into a duplicate.
+
+The remaining **ten** orphans (42, 46, 60, 61, 62, 66, 68, 72, 73, 75) were then re-checked by the
+same method — searching for the characteristic command shape rather than trusting the earlier
+assumption — and genuinely have nothing in the DAT to copy. They stay unsupported.
+
+---
+
 ## 2026-09-17 (b) — two team bonuses pointed at the wrong tech, and four civ bonuses were partial
 
 From reviewing the 27 vanilla bonus techs the catalog never references. The user supplied the

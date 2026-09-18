@@ -78,6 +78,90 @@ DELIBERATE DIVERGENCE FROM KM — do not "restore" these from his source:
     it.  `_apply_dropoff_discount` runs as a supplement after the tech branch,
     the same shape bonus 105 uses after its ec_list.
 
+TEAM BONUSES — two traps, both of which have bitten (2026-09-18):
+
+  `team` holds EFFECT indices, not tech ids.  `_apply_bonuses` does
+  `dat.effects[eff_idx]` directly.  Tech ids and effect ids are both small
+  integers, so a tech id in that column does not fail — it reads back as a
+  valid, wrong effect.  Three entries were wrong that way:
+    - **8** ("Farms +10% food") held 232, the *tech* id, which as an effect is
+      `Make Fire Galley Avail` — the bonus handed allies a Fire Galley.  The
+      effect is 240, `Chinese TB (Reapply)` = `dat.techs[232].effect_id`.
+    - **30** ("Military buildings provide +5 population room") held 721, the
+      *tech* id, which as an effect is `Elite Leitis` — the bonus handed allies
+      a free Elite Leitis upgrade.  The effect is 758 = `techs[721].effect_id`.
+    - **45** ("Skirmishers, Spearmen, and Scout-lines train 20% faster") held
+      601, `Carrack` (ships +1/+1 armour), since extraction.  It has no vanilla
+      effect; the entry was removed so its `team_ec_list` entry is used.
+  Note 8/30/83 are the modern DE shape: the civ's own `team_bonus_id` is an
+  empty or trivial stub and the real commands live in a tech's effect (type=10
+  for 30 and 83).  `tests/test_team_bonus_catalog.py` pins all of this by
+  asserting every `team` value is some civ's `team_bonus_id` or one of three
+  named tech-delivered effects.
+
+  `team_ec_list` was keyed to the PRE-2026-07-03 team bonus names.  That day
+  `team_bonus_names.json` was rewritten into KM's authoritative ordering to fix
+  a shuffle from index 11 on (see BUGFIXES.md), but the 30 `team_ec_list`
+  entries — authored a week earlier, on 2026-06-26 — were never re-keyed, so
+  every one of them did a different bonus's job for ten weeks.  Re-keyed
+  2026-09-18 by matching each entry's old name to its current id; the mapping
+  was exact and unambiguous for all 30.  Ten then duplicated a real vanilla
+  team-bonus effect (the effect map wins in `_apply_bonuses`, so they were dead
+  code) and were dropped, leaving 20.
+
+  The loudest case, and the one that found this: id **54** read "Spearmen +3
+  attack vs. cavalry" (3 commands) and carried "Unique Units +5% HP" — 142
+  EC_MULTIPLY commands.  On a civ with 15 team bonuses that pushed the merged
+  team-bonus effect to 246 commands, over the engine's ~189 ceiling, and the
+  game crashed before the main menu.
+
+  Ten ids lost their (wrong) implementation and now have none: 42, 46, 60, 61,
+  62, 66, 68, 72, 73, 75.  They fall out of the picker through
+  `unsupported_team_bonuses()` and are listed on /limitations.  (It was eleven
+  until a scan for vanilla attribute-101 writes to buildings turned up
+  `Wu TB local`, effect **1089** — `MULTIPLY attr 101 x0.5` on all six House
+  ids, which is exactly **40 "Houses built 100% faster"**.  Wu's own
+  `team_bonus_id`, effect 1031, is a single `type=18` indirection command
+  pointing at 1089 — the first of those we have seen.  Team bonus **80** is Wu,
+  so 40 and 80 are the same bonus; 80 has no card text and should stay
+  unreachable rather than be named into a duplicate.)
+
+  CONTENT SWEEP of the 20 survivors (2026-09-18, same day).  Re-keying put each
+  list under the right card; the sweep checked what each one actually targets.
+  **Twelve of the twenty were wrong.**  Read BUGFIXES.md for the full table; the
+  traps worth carrying forward:
+
+    - **`unit.name` is an internal codename and lies.**  775 is 'MONKY' (the
+      Missionary), 1137 is 'TIGER' (a wild animal), 1572 is 'MERCHANT', 594 is
+      'SHEEPG'.  Read lists through `civ_appender.unit_label()`, which resolves
+      `language_dll_name` against `vanilla/key-value/key-value-strings-utf8.txt`.
+      Three wrong units had sat in these lists unnoticed precisely because the
+      codenames looked plausible.
+    - **Attribute 20 is Minimum Range, not build rate.**  Both "built 100%
+      faster" cards (43, 63) were `EC_SET attr 20 = 1.0` and did nothing.  A
+      building's construction time is its `creatable.train_time` — attribute
+      101 — confirmed against in-game numbers (Mill 35s, Market 60s, House 25s).
+    - **Armour class 19 is Unique Units and 31 is Unused.**  Bonus 48 ("vs.
+      Elephant units") used 19; elephants are 5.  Bonus 47 ("vs. gunpowder")
+      used 31, so it landed nowhere; gunpowder is 23.  Table:
+      UGC guide `docs/general/damage_calculation.md`.
+    - **The scout line straddles two object classes** — 448 is 47
+      `cScoutCavalryClass`, Light Cav/Hussar/Winged Hussar are 12
+      `cCavalryClass` — so it can only be targeted by explicit id.  Bonus 47 had
+      used class 12 (every cavalry unit) plus class 58, which is `cLivestock`.
+    - **Missing upgrade tiers everywhere** — no Pikeman in any of the three
+      spear entries, no Champion, no Elite Eagle/Jaguar Warrior, one Monastery
+      of four, one Market of three, one Lumber/Mining Camp of four.  Same shape
+      as the civ-bonus Tier 2 findings.
+    - Spear entries now carry the Donjon copies (1786/1787/1788): 14 of the 31
+      vanilla effects naming the spear line do, including every civ-bonus one.
+
+  Still not fixed, deliberately: bonus **49** ("Explosive units +20% speed")
+  targets object class 35 `cPetardClass`, which cannot reach demolition ships —
+  they are class 22 `cWarshipClass`, shared with Galleys.  Identical constraint
+  to civ bonus 191; reaching them needs explicit ids, a behaviour change rather
+  than a fix.
+
 "createCivBonus" bonuses (those that build effects from scratch in the C++)
 are not in this catalog — they require custom EffectCommand lists and are
 logged as skipped at build time.

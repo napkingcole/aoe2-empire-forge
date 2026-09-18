@@ -26,6 +26,12 @@ EC_MULTIPLY  = 5
 EC_MUL_RESOURCE = 6  # cMulResource: a=resource_id, d=multiplier.  Scales a player
                      # resource rather than a unit attribute — the lever behind
                      # every "drop off +N%" and "resources last N% longer" bonus.
+EC_SPAWN     = 7     # Spawn units: a=unit_id, b=building_id, c=COUNT, d unused.
+                     # The count lives in `c`, and `d` is 0.0 on all 17 vanilla
+                     # spawn commands — so this is the one scalable command type
+                     # whose multiplier does NOT touch `d`.  Verified against the
+                     # shipped DAT: "Start w/ 6 villagers" is c=3, "Free
+                     # Villagers" c=2, "First Crusade" c=5 Serjeants.
 EC_TECH_COST = 101   # Modify tech research cost: a=tech_id, b=res(0-3), c=mode, d=val
 EC_TECH_TIME = 103   # Modify tech research time: a=tech_id, c=mode, d=val
 
@@ -38,6 +44,47 @@ EC_TECH_TIME = 103   # Modify tech research time: a=tech_id, c=mode, d=val
 # cost" civ bonus is expressed.  Mode 2 therefore scales like EC_MULTIPLY.
 TECH_MODE_SET      = 0
 TECH_MODE_MULTIPLY = 2
+
+# Resource 234, "Spawn Limit" (UGC guide): the number of spawning BUILDINGS that
+# may produce units from an EC_SPAWN command in a technology.  Paired with an
+# EC_SPAWN in every vanilla per-building spawn bonus, and never scaled by a card
+# multiplier — see _scale_ec_for_multiplier.
+RES_SPAWN_LIMIT = 234
+
+# Resource 33, "Effect Function Number" (UGC guide): writing a non-zero N makes
+# the engine call EffectFunction<N> in its own Effects.xs.  A tech that does this
+# is implemented in a GAME SCRIPT, not in the DAT, so we cannot retarget what it
+# affects — 24 vanilla effects use it and 10 are offered as UT presets here.
+RES_EFFECT_FUNCTION = 33
+
+# The ten unique techs that write resource 33 are implemented in the game's own
+# Effects.xs, which we do not ship and cannot edit — the script has its unit ids
+# baked in.  That only *matters* when the script names a unit our civ does not
+# have, which in practice means another civ's unique unit; a script that works on
+# Monks, cavalry, farmers or lumberjacks is fine, because we have those too.
+#
+# Keyed by EffectFunction number.  Only the ones we have something to say about
+# are listed — a UT absent from this table gets no warning.
+#   6  Coiled Serpent Array  CONFIRMED broken in-game 2026-09-18: the spearman
+#      half of the aura worked, the unique-unit half did not, because the script
+#      names the Shu White Feather Guard by id.
+#   10 Red Cliffs Tactics    its DAT half sets fire damage on units 1968/1970
+#      (Fire Archer, the Wu unique unit) and 2044 (Zhou Yu), so a civ without
+#      Fire Archers loses that half; the scripted half very likely names them too.
+# Known GOOD and deliberately not warned about: 14 Burgundian Vineyards and
+# 15 Paper Money (both confirmed working once tech.repeatable was fixed).
+# Untested but structurally safe — the card describes generic units only:
+# 3 Ordo Cavalry (cavalry), 7 Bimaristan (Monks), 4 Tuntian (soldiers),
+# 8 Stronghold (castles/towers), 5 Viking Chieftains (infantry), 25 Curare
+# (foot archers + fortifications).
+_XS_UT_NOTES: dict[int, str] = {
+    6:  ("Coiled Serpent Array is implemented in one of the game's own scripts, "
+         "which grants the bonus to the Shu unique unit by name. The Spearman "
+         "half will work for your civ; the unique-unit half cannot be "
+         "redirected and will not fire."),
+    10: ("Red Cliffs Tactics targets the Wu Fire Archer specifically. Unless "
+         "your civ fields Fire Archers, only the Demolition Ship half applies."),
+}
 
 # ── Building IDs ──────────────────────────────────────────────────────────────
 BUILDING_CASTLE      = 82
@@ -264,6 +311,75 @@ _KM_UU_NAMES: dict[int, str] = {
     92: "Guecha Warrior",
     93: "Temple Guard",
 }
+
+# ── Display names for build-log messages ─────────────────────────────────────
+# `unit.name` is the DAT's internal codename, which is frequently nothing like
+# what the player sees — 775 is 'MONKY' (the Missionary), 1137 is 'TIGER' (an
+# elephant slot), 1572 is 'MERCHANT'.  A warning naming 'MONKY' sends the user
+# hunting for a unit that does not exist under that name, so log messages
+# resolve the real name through unit.language_dll_name against the shipped
+# vanilla string table, and keep the id and codename alongside it.
+_VANILLA_STRINGS_PATH = Path(__file__).parent / "vanilla" / "key-value" / "key-value-strings-utf8.txt"
+_STRING_LINE_RE = re.compile(r'^\s*(\d+)\s+"(.*)"\s*$')
+_vanilla_strings: dict[int, str] | None = None
+
+
+def _string_table() -> dict[int, str]:
+    """id -> English display string, from the shipped vanilla key-value file."""
+    global _vanilla_strings
+    if _vanilla_strings is None:
+        table: dict[int, str] = {}
+        try:
+            with open(_VANILLA_STRINGS_PATH, encoding="utf-8") as fh:
+                for line in fh:
+                    m = _STRING_LINE_RE.match(line)
+                    if m:
+                        table[int(m.group(1))] = m.group(2)
+        except OSError:
+            pass          # log prettiness is never worth failing a build over
+        _vanilla_strings = table
+    return _vanilla_strings
+
+
+def unit_label(dat: DatFile, civ_index: int, unit_id: int) -> str:
+    """'775 (Missionary)' for logs — display name, falling back to the codename.
+
+    Always keeps the id, because the id is what the user reports back to us and
+    what every other tool in the pipeline speaks.
+    """
+    try:
+        unit = dat.civs[civ_index].units[unit_id]
+    except (IndexError, TypeError):
+        unit = None
+    if unit is None:
+        return f"{unit_id} (?)"
+    name = _string_table().get(getattr(unit, "language_dll_name", -1) or -1)
+    if not name:
+        name = getattr(unit, "name", None) or "?"
+    return f"{unit_id} ({name})"
+
+
+def unit_labels(dat: DatFile, civ_index: int, unit_ids) -> str:
+    """Comma-joined unit_label() for a collection, in id order."""
+    return ", ".join(unit_label(dat, civ_index, u) for u in sorted(unit_ids))
+
+
+_TEAM_BONUS_NAMES_PATH = Path(__file__).parent / "team_bonus_names.json"
+_team_bonus_names: dict[str, str] | None = None
+
+
+def team_bonus_label(tb_id: int) -> str:
+    """'#75 (Mounted archers -50% frame delay)' for logs."""
+    global _team_bonus_names
+    if _team_bonus_names is None:
+        try:
+            _team_bonus_names = json.loads(
+                _TEAM_BONUS_NAMES_PATH.read_text(encoding="utf-8"))
+        except OSError:
+            _team_bonus_names = {}
+    name = _team_bonus_names.get(str(tb_id))
+    return f"#{tb_id} ({name})" if name else f"#{tb_id}"
+
 
 # ── String ID allocation ──────────────────────────────────────────────────────
 # Confirmed by scanning the actual shipped key-value-strings-utf8.txt (a real
@@ -1126,7 +1242,7 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     if _extra_disable or _forced_off:
         print(f"       Unticked entities: {len(_extra_disable)} make-avail techs disabled"
               + (f", {len(_forced_off)} units forced off (no make-avail tech): "
-                 f"{sorted(_forced_off)}" if _forced_off else ""))
+                 f"{unit_labels(dat, civ_index, _forced_off)}" if _forced_off else ""))
 
     # ── Step 5: Dragon Ship.
     #
@@ -1250,11 +1366,9 @@ def _warn_train_button_conflicts(dat: DatFile, civ_index: int, civ_def: dict | N
         if uid not in spec["units"] and _train_button(dat, civ_index, uid) in slots
     )
     if clashes:
-        names = ", ".join(
-            f"{uid} ({dat.civs[civ_index].units[uid].name})" for uid in clashes
-        )
         print(f"       WARNING: {spec['name']} shares a training button with "
-              f"tree unit(s) {names} — only one will be reachable in-game")
+              f"tree unit(s) {unit_labels(dat, civ_index, clashes)} — only one "
+              f"will be reachable in-game")
 
 
 def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
@@ -1374,6 +1488,20 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
         class_id = d_int >> 8
         amount   = d_int & 0xFF
         result.d = float((class_id << 8) | (amount * multiplier))
+    elif result.type == EC_SPAWN:
+        # The only scalable type whose count is not in `d`.  `d` is 0.0 on every
+        # vanilla spawn command, so the generic "scale d" rule could never do
+        # anything here — which is exactly how civ bonus 345 ("free Villager per
+        # economic upgrade") shipped with a multiplier control that spawned the
+        # same single Villager at x3 (reported in-game 2026-09-18).
+        result.c = int(result.c) * multiplier
+    elif result.type == EC_RESOURCE and int(result.a) == RES_SPAWN_LIMIT:
+        # Deliberately NOT scaled.  Resource 234 is "Spawn Limit" — how many
+        # spawning BUILDINGS may participate, a different axis from how many
+        # units each one produces.  Scaling it turned "1 Villager from your Town
+        # Center" into "1 Villager from each of up to N Town Centers", so the
+        # card did nothing on one TC and multiplied per-TC on several.
+        pass
     elif result.type in (EC_ADD, EC_RESOURCE):
         result.d = result.d * multiplier
     return result
@@ -1388,12 +1516,18 @@ def _multiply_effect(dat: DatFile, effect_id: int, multiplier: int) -> None:
     lists.  Delegates to _scale_ec_for_multiplier so the two cannot drift
     apart — this logic used to be copy-pasted in both, which is how a new
     scalable command type would have been added to one and not the other.
-    Only `d` is ever changed, so copying it back is equivalent to rebuilding
-    the command."""
+
+    Copies back **both `c` and `d`**, the two fields the scaler may touch.  It
+    used to copy back `d` alone, on the reasonable assumption that every
+    scalable command carries its magnitude there — which held until EC_SPAWN,
+    whose count is in `c` and whose `d` is always 0.0.  Delegating was supposed
+    to stop exactly this kind of divergence and did not, because the delegation
+    discarded the part of the result it did not expect to change."""
     if multiplier <= 1 or effect_id < 0 or effect_id >= len(dat.effects):
         return
     for ec in dat.effects[effect_id].effect_commands:
-        ec.d = _scale_ec_for_multiplier(ec, multiplier).d
+        scaled = _scale_ec_for_multiplier(ec, multiplier)
+        ec.c, ec.d = scaled.c, scaled.d
 
 
 def _apply_ec_list_entry(dat: DatFile, civ_index: int, ec_entry: dict,
@@ -3056,6 +3190,14 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         seen_p: dict[int, int] = {}
         for tid in (_GRAZING_GRASSLANDS, _ENCLOSURES, _LIVESTOCK_HUSBANDRY):
             _allocate_tech(dat, tid, civ_index, seen_p, tech_remaps)
+        # Publish the clones so later work can find them.  Bonus 345 ("a free
+        # Villager for each economic upgrade") needs them by id: the Pasture
+        # upgrades replace Horse Collar / Heavy Plow / Crop Rotation on the same
+        # Mill button, so a Pasture civ researches the clone, and any tech that
+        # wants to fire "when the player researches Enclosures" must name the
+        # clone rather than the civ=53 original.
+        if tech_remaps is not None:
+            tech_remaps.update(seen_p)
         if seen_p:
             print(f"       Pastures: {len(seen_p)} Khitan Mill upgrades allocated "
                   f"{tuple(sorted(seen_p))}")
@@ -3318,6 +3460,21 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         else:
             skipped.append(bonus_id)
 
+    # Cross-bonus wiring, after every bonus has had its turn: 345 pays a free
+    # Villager per eco upgrade, and 356 replaces three of those upgrades with
+    # Pasture ones at fresh tech ids.  Neither branch can see the other while
+    # the loop is running, because bonus order is whatever the user clicked.
+    _picked = {int(e[0]) for e in civ_bonuses
+               if isinstance(e, (list, tuple)) and len(e) >= 1}
+    if {_FREE_VILL_BONUS, _PASTURE_BONUS} <= _picked:
+        _mult = next((int(e[1]) if len(e) > 1 else 1 for e in civ_bonuses
+                      if isinstance(e, (list, tuple)) and int(e[0]) == _FREE_VILL_BONUS), 1)
+        _n = _apply_pasture_free_villagers(dat, civ_index, _mult, tech_remaps)
+        if _n:
+            applied += _n
+            print(f"       Bonus {_FREE_VILL_BONUS} + {_PASTURE_BONUS}: "
+                  f"{_n} free-Villager tech(s) added for the Pasture Mill upgrades")
+
     print(f"       Bonuses: {applied} techs applied, "
           f"{len(skipped)} bonus IDs skipped (not in catalog): {skipped[:8]}"
           + ("…" if len(skipped) > 8 else ""))
@@ -3326,8 +3483,13 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                     "extra_unit_strings": extra_unit_strings, "bonus_tech_map": bonus_tech_map}
 
     # ── Team bonus ────────────────────────────────────────────────────────────
+    # Every picked team bonus is merged into ONE effect, so the per-entry command
+    # counts add up against the engine's ~189-command ceiling.  Track them so
+    # apply_civ can name the expensive ones when the total gets close.
     team_entries = get_team_bonuses(civ_def)
     team_applied = 0
+    team_cmd_counts: list[tuple[int, int]] = []   # (team_bonus_id, commands added)
+    team_skipped: list[int] = []                  # ids with no implementation at all
     for entry in team_entries:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
             continue
@@ -3340,27 +3502,33 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         if eff_idx is None or not (0 <= eff_idx < len(dat.effects)):
             ec_dicts = team_bonus_ec_list(tb_id)
             if not ec_dicts:
+                team_skipped.append(tb_id)
                 continue
             for ec_dict in ec_dicts:
                 cmd = EffectCommand(type=ec_dict["type"], a=ec_dict["A"],
                                     b=ec_dict["B"], c=ec_dict["C"], d=float(ec_dict["D"]))
                 dat.effects[tb_eff_id].effect_commands.append(
                     _scale_ec_for_multiplier(cmd, multiplier))
+            team_cmd_counts.append((tb_id, len(ec_dicts)))
             team_applied += 1
             continue
 
         safe_cmds = list(dat.effects[eff_idx].effect_commands)
         if not safe_cmds:
+            team_skipped.append(tb_id)
             continue
         for ec in safe_cmds:
             dat.effects[tb_eff_id].effect_commands.append(
                 _scale_ec_for_multiplier(ec, multiplier))
+        team_cmd_counts.append((tb_id, len(safe_cmds)))
         team_applied += 1
 
     print(f"       Team bonus: {team_applied}/{len(team_entries)} entries applied")
 
-    bonus_result["team_applied"] = team_applied
-    bonus_result["team_total"]   = len(team_entries)
+    bonus_result["team_applied"]     = team_applied
+    bonus_result["team_total"]       = len(team_entries)
+    bonus_result["team_cmd_counts"]  = team_cmd_counts
+    bonus_result["team_skipped"]     = team_skipped
     return bonus_result
 
 
@@ -3400,6 +3568,51 @@ _DROPOFF_BUILDINGS = (
     1734, 1711, 1720,       # Folwark     (replaces the Mill for some civs)
     2556, 2558, 2560,       # Settlement  (125 wood, not 100)
 )
+
+
+_FREE_VILL_BONUS   = 345
+_PASTURE_BONUS     = 356
+_FREE_VILL_TEMPLATE = 1039    # 'C-Bonus, Fre vill + Bit Axe' — req (202, 639), count 2
+_TC_SPAWN_TECH      = 639     # 'Town Center Spawn', global; the engine hook
+_PASTURE_MILL_TECHS = (1014, 1013, 1012)   # Livestock Husbandry → Enclosures → Grazing Grasslands
+
+
+def _apply_pasture_free_villagers(dat: DatFile, civ_index: int, multiplier: int,
+                                  tech_remaps: dict) -> int:
+    """Give bonus 345 its three missing Pasture upgrades.
+
+    345 pays a free Villager for each economic upgrade, and its fourteen vanilla
+    techs cover the Mill line as Horse Collar / Heavy Plow / Crop Rotation.  A
+    civ that also takes bonus 356 does not have those — Pastures replace them
+    with Livestock Husbandry / Enclosures / Grazing Grasslands on the same Mill
+    button — so the two bonuses together silently paid nothing for three of the
+    player's eco upgrades (reported in-game 2026-09-18).
+
+    Has to run after the whole bonus loop rather than inside 345's branch: the
+    Pasture upgrades are civ=53, so 356 copies them to fresh ids, and the tech
+    that fires "when the player researches Enclosures" must name *that copy*.
+    Bonus order in a civ_def is whatever the user clicked, so 356 may not have
+    run yet when 345 does.  Returns the number of techs created.
+    """
+    created = 0
+    for original in _PASTURE_MILL_TECHS:
+        clone = tech_remaps.get(original)
+        if clone is None:          # 356 did not run, or did not copy this one
+            continue
+        new_tid = _allocate_tech(dat, _FREE_VILL_TEMPLATE, civ_index, {}, tech_remaps)
+        if new_tid < 0:
+            continue
+        tech = dat.techs[new_tid]
+        tech.name = f"C-Bonus, Fre vill + {dat.techs[original].name}"
+        # Same shape as every sibling: (the upgrade, the Town Center spawn hook).
+        reqs = [-1] * len(tech.required_techs)
+        reqs[0], reqs[1] = clone, _TC_SPAWN_TECH
+        tech.required_techs = reqs
+        tech.required_tech_count = 2
+        if multiplier > 1 and 0 <= tech.effect_id < len(dat.effects):
+            _multiply_effect(dat, tech.effect_id, multiplier)
+        created += 1
+    return created
 
 
 def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> None:
@@ -4049,11 +4262,13 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
          castle_ut_desc_sid, imp_ut_desc_sid,
          castle_ut_help_sid, imp_ut_help_sid,
          castle_ut_pending_uu_subs, imp_ut_pending_uu_subs,
-         castle_ut_pending_base_uu_subs, imp_ut_pending_base_uu_subs) = (
+         castle_ut_pending_base_uu_subs, imp_ut_pending_base_uu_subs,
+         _ut_warnings) = (
             _append_unique_tech_stubs(
                 dat, civ_index, alias,
                 castle_ut_entries, imperial_ut_entries)
         )
+        warnings.extend(_ut_warnings)
 
     # 5. Team bonus and tech tree effects.
     # tech_tree_id and team_bonus_id are EFFECT indices (not tech indices).
@@ -4280,22 +4495,48 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     if _n_locked:
         print(f"       Opt-in lockdown: {_n_locked} unclaimed regional techs disabled")
 
-    # Guard: TT effects exceeding ~189 commands crash the game at startup.
-    _TT_COMMAND_SOFT_LIMIT = 185
+    # Guard: ANY effect exceeding ~189 commands crashes the game at startup.
+    # Two of ours accumulate without bound — the tech tree effect (a command per
+    # unticked node) and the team bonus effect (every picked team bonus merged
+    # into one) — so both are checked against the same soft limit.
+    _EFFECT_COMMAND_SOFT_LIMIT = 185
     _tt_cmd_count = len(dat.effects[tt_eff_id].effect_commands)
-    if _tt_cmd_count > _TT_COMMAND_SOFT_LIMIT:
+    if _tt_cmd_count > _EFFECT_COMMAND_SOFT_LIMIT:
         # Surfaced to the user, not just the console: the tree sweep now emits a
         # command per unticked node, so a heavily-pruned civ can reach the cap,
         # and the failure mode is a startup crash with no clue attached.
         _msg = (f"Tech tree effect has {_tt_cmd_count} commands "
-                f"(soft limit {_TT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
+                f"(soft limit {_EFFECT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
                 f"The game may crash at startup — re-enable some tech tree nodes "
                 f"or drop a bonus.")
         print(f"  WARNING: {_msg}")
         warnings.append(_msg)
 
+    # Same guard for the TEAM BONUS effect.  Every picked team bonus is merged
+    # into this one effect, so a civ with many of them overruns the same ceiling
+    # — and the failure mode is identical: the game crashes before the main menu
+    # with nothing to point at.  A reporter's 15-team-bonus civ landed at 246.
+    _tb_cmd_count = len(dat.effects[tb_eff_id].effect_commands)
+    if _tb_cmd_count > _EFFECT_COMMAND_SOFT_LIMIT:
+        _worst = sorted(bonus_results.get("team_cmd_counts", []),
+                        key=lambda p: -p[1])[:3]
+        _worst_txt = ", ".join(f"{team_bonus_label(i)} — {n} cmds" for i, n in _worst)
+        _msg = (f"Team bonus effect has {_tb_cmd_count} commands "
+                f"(soft limit {_EFFECT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
+                f"The game will likely crash at startup — drop a team bonus. "
+                f"Biggest contributors: {_worst_txt}.")
+        print(f"  WARNING: {_msg}")
+        warnings.append(_msg)
+
+    if bonus_results.get("team_skipped"):
+        _ids = ", ".join(team_bonus_label(i) for i in bonus_results["team_skipped"])
+        _msg = (f"Team bonus {_ids} has no implementation in the catalog and was "
+                f"skipped. Pick a different team bonus if you want one.")
+        print(f"  WARNING: {_msg}")
+        warnings.append(_msg)
+
     print(f"       tech_tree_id(eff)={tt_eff_id}  team_bonus_id(eff)={tb_eff_id}  "
-          f"TT_commands={_tt_cmd_count}")
+          f"TT_commands={_tt_cmd_count}  TB_commands={_tb_cmd_count}")
     return {
         "civ_index":             civ_index,
         "lang_val":              lang_val,
@@ -4596,6 +4837,7 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
     used_tech_ids: list[int | None] = []
     pending_subs_per_slot: list[list] = []
     pending_base_subs_per_slot: list[list] = []
+    ut_warnings: list[str] = []
     for (btn, label, age_req, entries, cost_food, cost_b_type, cost_b, icon,
          name_sid, help_sid, ut_lookup) in ut_configs:
         # String slots for a UT, and what each one actually drives.  For civ 24's
@@ -4687,6 +4929,23 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         _append_tech(dat, tech)
         used_tech_ids.append(len(dat.techs) - 1)
         print(f"       {label}: {len(cmds)} effect commands (sid={name_sid})")
+        # Some unique techs are not implemented in the DAT at all.  Writing
+        # resource 33, "Effect Function Number", tells the engine to run
+        # EffectFunction<N> from its own Effects.xs script, and that script — not
+        # anything we ship — decides which units the tech affects.  24 vanilla
+        # effects work this way and 10 of them are offered as UT presets here.
+        # Coiled Serpent Array is the confirmed case (in-game 2026-09-18): the
+        # spearman half worked and the unique-unit half did not, because the
+        # script names the Shu unique unit by id and we cannot edit the script.
+        _xs = [c for c in cmds if c.type in (EC_RESOURCE, EC_MUL_RESOURCE)
+               and int(c.a) == RES_EFFECT_FUNCTION]
+        if _xs:
+            _fn = int(_xs[0].d)
+            _note = _XS_UT_NOTES.get(_fn)
+            if _note:
+                _msg = f"{label}: {_note}"
+                print(f"       WARNING: {_msg}")
+                ut_warnings.append(_msg)
     return (
         used_name_sids[0], used_name_sids[1],
         used_tech_ids[0] if len(used_tech_ids) > 0 else None,
@@ -4697,4 +4956,5 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         pending_subs_per_slot[1] if len(pending_subs_per_slot) > 1 else [],
         pending_base_subs_per_slot[0] if len(pending_base_subs_per_slot) > 0 else [],
         pending_base_subs_per_slot[1] if len(pending_base_subs_per_slot) > 1 else [],
+        ut_warnings,
     )

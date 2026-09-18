@@ -542,14 +542,21 @@
             </div>
           </div>
 
-          {# Attack Ignores Armor #}
-          <div class="col-12">
+          {# Attack Ignores Armor — REMOVED 2026-09-18, kept hidden so a saved civ
+             that still carries the flag loads without error.  AoE2 has no
+             data-level way to grant it: the old implementation pointed the
+             attack at armour class 50, which no unit in the game has, and a
+             missing armour class resolves to the base armour value (~1000) — so
+             the unit dealt the engine's minimum of 1 damage to everything.
+             The Leitis's behaviour is hardcoded in the engine by unit id; see
+             BUGFIXES.md 2026-09-18 (b) for the two rejected alternatives. #}
+          <div class="col-12 d-none" id="ua-row-ignore-armor">
             <div class="form-check">
-              <input class="form-check-input ua-check" type="checkbox" id="ua-ignore-armor">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-ignore-armor" disabled>
               <label class="form-check-label small fw-semibold" for="ua-ignore-armor">
                 Attack Ignores Armor
               </label>
-              <div class="form-text mt-0">Attacks deal full damage regardless of target armor (like the Leitis).</div>
+              <div class="form-text mt-0">Not supported by the game's data files — this option has been removed.</div>
             </div>
           </div>
 
