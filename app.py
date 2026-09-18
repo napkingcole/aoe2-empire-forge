@@ -175,6 +175,18 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.1.0": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Fixed a crash on game startup for civs with many team bonuses — team bonuses are merged into one effect and could exceed the engine's limit. The builder now warns you before you hit it",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Team bonuses were doing each other's jobs.</strong> An internal list drifted out of alignment in July, so hand-written team bonuses ran a different bonus entirely — \"Spearmen +3 attack vs. cavalry\" was secretly \"Unique Units +5% HP\". All re-aligned",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Reviewed every team bonus for what it actually targets and fixed 12 — some were buffing a war wagon, an ostrich, a sheep and a wild tiger. Two others did nothing at all",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Audited all 350 civ bonus cards against their real in-game effects and fixed everything that didn't match — including several that did nothing, one that secretly unlocked Flemish Militia, and several that stopped working when the unit upgraded",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus multipliers — several were making bonuses <em>weaker</em> at x2 and x3. \"Start with…\" and \"free Villager\" cards ignored the multiplier entirely",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Editing a saved civ no longer erases both of its unique techs. If you edited a civ before and its UTs stopped working, this was why — please check them",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> The civ-selection screen now shows what your unique techs do, and shows the correct team bonus",
+        "<strong class=\"color-accent-2\">NEW:</strong> 40 new bonus cards — 35 bonuses that already worked but were unreachable, plus a new \"drop off +%\" family for food, wood, stone and fishing",
+        "<strong class=\"color-accent-2\">CHANGED:</strong> 10 team bonuses and the unique unit \"Attack Ignores Armor\" option have been removed — none of them worked, and the armor option left the unit dealing 1 damage. Saved civs still load; the builder tells you what was skipped",
+        "Build messages now name units instead of listing raw ID numbers",
+    ],
     "2.0.1": [
         "<strong class=\"color-accent-2\">NEW:</strong> Empire Forge is now a full civilization and mod builder — design tech trees, bonuses, team bonuses, unique units, unique technologies, and hero units natively",
         "<strong class=\"color-accent-2\">NEW:</strong> 'Convert KM Civ' tool imports existing KrakenMeister civ JSON files into the new format, so existing civs carry forward",
