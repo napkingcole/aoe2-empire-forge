@@ -115,9 +115,16 @@ TEAM BONUSES — two traps, both of which have bitten (2026-09-18):
   team-bonus effect to 246 commands, over the engine's ~189 ceiling, and the
   game crashed before the main menu.
 
-  Eleven ids lost their (wrong) implementation and now have none: 40, 42, 46,
-  60, 61, 62, 66, 68, 72, 73, 75.  They fall out of the picker through
-  `unsupported_team_bonuses()` and are listed on /limitations.
+  Ten ids lost their (wrong) implementation and now have none: 42, 46, 60, 61,
+  62, 66, 68, 72, 73, 75.  They fall out of the picker through
+  `unsupported_team_bonuses()` and are listed on /limitations.  (It was eleven
+  until a scan for vanilla attribute-101 writes to buildings turned up
+  `Wu TB local`, effect **1089** — `MULTIPLY attr 101 x0.5` on all six House
+  ids, which is exactly **40 "Houses built 100% faster"**.  Wu's own
+  `team_bonus_id`, effect 1031, is a single `type=18` indirection command
+  pointing at 1089 — the first of those we have seen.  Team bonus **80** is Wu,
+  so 40 and 80 are the same bonus; 80 has no card text and should stay
+  unreachable rather than be named into a duplicate.)
 
   CONTENT SWEEP of the 20 survivors (2026-09-18, same day).  Re-keying put each
   list under the right card; the sweep checked what each one actually targets.

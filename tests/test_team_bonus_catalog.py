@@ -76,6 +76,10 @@ TECH_DELIVERED = {
          "effect 402, which only makes tech 232 free and instant.",
     1403: "Tupi team bonus — techs[1403].effect_id; civ 59's team_bonus_id is "
           "effect 1359. 3 type=10 population commands.",
+    1089: "Wu TB local — techs[1089].effect_id, and what civ 50's team_bonus_id "
+          "(effect 1031) points at: 1031 holds a single type=18 indirection "
+          "command naming 1089. The commands live here, so this is what team "
+          "bonus 40 'Houses built 100% faster' copies.",
 }
 
 try:
@@ -209,6 +213,14 @@ MUST_CONTAIN = {
 for key, wanted in MUST_CONTAIN.items():
     for uid, why in wanted:
         check(f"team_ec_list[{key}] includes {uid} ({why})", uid in ids_in(key))
+
+# 40 is the Wu team bonus, found by scanning vanilla for attribute-101 writes to
+# buildings.  It had been written off with the other ten orphans as "KM-invented,
+# no vanilla effect to copy"; that was an assumption, and for this one it was
+# wrong.  The other ten were then re-checked by the same method and really do
+# have nothing to copy.
+check("40 'Houses built 100% faster' maps to the Wu effect",
+      team_map.get("40") == 1089, f"got {team_map.get('40')}")
 
 # No id may be implemented twice: the effect map wins in _apply_bonuses, so an
 # ec_list sharing its key is dead code that reads like a live implementation.

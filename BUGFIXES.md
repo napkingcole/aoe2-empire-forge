@@ -135,9 +135,26 @@ empty cart id only), 67.
 shared with Galleys. Same constraint recorded for civ bonus 191 on 2026-09-13; it needs explicit
 ids, which is a behaviour change rather than a fix.
 
-**Not verified in-game:** attribute 101 on a *building* is the construction-time lever by
-inference from `train_time` matching every in-game build time. That inference is strong but
-untested, and it is what both "built 100% faster" cards now rest on.
+**Attribute 101 on a building is confirmed, by vanilla's own naming.** Scanning every shipped
+effect for an attribute-101 write to an object-class-3 unit returns **seven**, and the techs are
+called `C-Bonus, TC constr time`, `Change TC constr time1` / `2`, and `C-Bonus, Fast Castle and TC`
+— `MULTIPLY Town Center attr 101 ×0.769` is the Spanish "Town Centers built 30% faster". So the
+lever is right and no in-game test is needed for it. **Searching for a vanilla effect that already
+does the thing settles a mechanism question faster than reasoning about the field.**
+
+**That scan also found a bonus we had written off.** `Wu TB local` (effect **1089**) is
+`MULTIPLY attr 101 ×0.5` on all six House ids — exactly team bonus **40, "Houses built 100%
+faster"**, one of the eleven declared to have no vanilla implementation. That claim was an
+assumption, not a check. 40 now maps to 1089.
+
+Wu's team bonus is also the first **type=18 indirection** we have seen: civ 50's `team_bonus_id`
+is effect **1031**, which holds a single `type=18, a=1089` command pointing at the effect above.
+Team bonus **80** is Wu, so 40 and 80 are the same bonus; 80 has no card text and is therefore
+unreachable in the picker, and should stay that way rather than be named into a duplicate.
+
+The remaining **ten** orphans (42, 46, 60, 61, 62, 66, 68, 72, 73, 75) were then re-checked by the
+same method — searching for the characteristic command shape rather than trusting the earlier
+assumption — and genuinely have nothing in the DAT to copy. They stay unsupported.
 
 ---
 
