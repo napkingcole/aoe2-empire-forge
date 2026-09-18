@@ -57,6 +57,35 @@ RES_SPAWN_LIMIT = 234
 # affects — 24 vanilla effects use it and 10 are offered as UT presets here.
 RES_EFFECT_FUNCTION = 33
 
+# The ten unique techs that write resource 33 are implemented in the game's own
+# Effects.xs, which we do not ship and cannot edit — the script has its unit ids
+# baked in.  That only *matters* when the script names a unit our civ does not
+# have, which in practice means another civ's unique unit; a script that works on
+# Monks, cavalry, farmers or lumberjacks is fine, because we have those too.
+#
+# Keyed by EffectFunction number.  Only the ones we have something to say about
+# are listed — a UT absent from this table gets no warning.
+#   6  Coiled Serpent Array  CONFIRMED broken in-game 2026-09-18: the spearman
+#      half of the aura worked, the unique-unit half did not, because the script
+#      names the Shu White Feather Guard by id.
+#   10 Red Cliffs Tactics    its DAT half sets fire damage on units 1968/1970
+#      (Fire Archer, the Wu unique unit) and 2044 (Zhou Yu), so a civ without
+#      Fire Archers loses that half; the scripted half very likely names them too.
+# Known GOOD and deliberately not warned about: 14 Burgundian Vineyards and
+# 15 Paper Money (both confirmed working once tech.repeatable was fixed).
+# Untested but structurally safe — the card describes generic units only:
+# 3 Ordo Cavalry (cavalry), 7 Bimaristan (Monks), 4 Tuntian (soldiers),
+# 8 Stronghold (castles/towers), 5 Viking Chieftains (infantry), 25 Curare
+# (foot archers + fortifications).
+_XS_UT_NOTES: dict[int, str] = {
+    6:  ("Coiled Serpent Array is implemented in one of the game's own scripts, "
+         "which grants the bonus to the Shu unique unit by name. The Spearman "
+         "half will work for your civ; the unique-unit half cannot be "
+         "redirected and will not fire."),
+    10: ("Red Cliffs Tactics targets the Wu Fire Archer specifically. Unless "
+         "your civ fields Fire Archers, only the Demolition Ship half applies."),
+}
+
 # ── Building IDs ──────────────────────────────────────────────────────────────
 BUILDING_CASTLE      = 82
 BUILDING_WONDER      = 276
@@ -4911,12 +4940,12 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         _xs = [c for c in cmds if c.type in (EC_RESOURCE, EC_MUL_RESOURCE)
                and int(c.a) == RES_EFFECT_FUNCTION]
         if _xs:
-            _msg = (f"{label} is driven by one of the game's own scripts "
-                    f"(EffectFunction{int(_xs[0].d)}), not by the mod data. Parts of "
-                    f"it that target a specific civ's unique unit cannot be "
-                    f"retargeted to yours and will not fire.")
-            print(f"       WARNING: {_msg}")
-            ut_warnings.append(_msg)
+            _fn = int(_xs[0].d)
+            _note = _XS_UT_NOTES.get(_fn)
+            if _note:
+                _msg = f"{label}: {_note}"
+                print(f"       WARNING: {_msg}")
+                ut_warnings.append(_msg)
     return (
         used_name_sids[0], used_name_sids[1],
         used_tech_ids[0] if len(used_tech_ids) > 0 else None,

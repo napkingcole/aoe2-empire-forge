@@ -27,6 +27,14 @@ _DRAFT_VER   = 4   # current wizard draft version
 # Legacy format key accepted on read (but never written)
 _FORMAT_KEY_V1 = "civbuilder_v1"
 
+# Unique-unit advanced flags that were offered once and have been withdrawn.
+# Dropped silently on both doors so an older saved civ keeps loading, rather
+# than carrying a flag nothing implements.
+#   ignore_armor — removed 2026-09-18.  AoE2 has no data-level way to grant it;
+#     the implementation aimed the attack at armour class 50, which no unit has,
+#     so the unit dealt the engine minimum of 1 damage to everything.
+RETIRED_UU_FLAGS = frozenset({"ignore_armor"})
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,7 +78,8 @@ def to_draft(schema: dict) -> dict:
 
     # Strip null values so the build functions treat absence == "no override"
     overrides = {k: v for k, v in overrides.items() if v is not None}
-    adv_flags = {k: v for k, v in adv_flags.items() if v is not None and v is not False}
+    adv_flags = {k: v for k, v in adv_flags.items()
+                 if v is not None and v is not False and k not in RETIRED_UU_FLAGS}
 
     uu = {
         "km_idx":      raw_uu.get("km_idx"),
@@ -178,7 +187,8 @@ def from_draft(draft: dict) -> dict:
     """
     uu_raw   = draft.get("unique_unit") or {}
     overrides = uu_raw.get("overrides") or {}
-    adv_flags = uu_raw.get("advanced_flags") or {}
+    adv_flags = {k: v for k, v in (uu_raw.get("advanced_flags") or {}).items()
+                 if k not in RETIRED_UU_FLAGS}
 
     def _ut_out(ut_raw: dict | None) -> dict:
         ut_raw = ut_raw or {}

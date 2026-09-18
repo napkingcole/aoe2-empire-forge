@@ -3249,10 +3249,17 @@ function _uaSetCheck(id, val) {
 }
 
 function _uaLoad() {
+  // "Attack ignores armor" was removed on 2026-09-18 — AoE2 has no data-level
+  // way to grant it, and the old implementation left the unit dealing 1 damage
+  // to everything.  Drop it from any saved civ that still carries it, so the
+  // flag count is honest and the build stops warning about it.
+  if (draft.unique_unit?.advanced_flags?.ignore_armor) {
+    delete draft.unique_unit.advanced_flags.ignore_armor;
+    saveDraft();
+  }
   const flags = draft.unique_unit?.advanced_flags || {};
 
   _uaSetCheck("ua-no-convert",   flags.no_convert);
-  _uaSetCheck("ua-ignore-armor", flags.ignore_armor);
   _uaSetCheck("ua-trample",      flags.trample);
 
   _uaSetCheck("ua-regen-hp", flags.regen_hp);
@@ -3295,7 +3302,7 @@ function _uaSave(key, val) {
 }
 
 // Only count top-level traits (checkbox-gated), not sub-inputs like regen_amount.
-const _UA_TOP_FLAGS = new Set(["no_convert","ignore_armor","trample","regen_hp","bonus_dmg_resist","charge_pool"]);
+const _UA_TOP_FLAGS = new Set(["no_convert","trample","regen_hp","bonus_dmg_resist","charge_pool"]);
 
 function _uaUpdateBadge() {
   const badge = document.getElementById("ua-badge");
@@ -3309,8 +3316,6 @@ function _uaUpdateBadge() {
 function _wireUUAdvanced() {
   document.getElementById("ua-no-convert")
     ?.addEventListener("change", e => _uaSave("no_convert", e.target.checked || null));
-  document.getElementById("ua-ignore-armor")
-    ?.addEventListener("change", e => _uaSave("ignore_armor", e.target.checked || null));
   document.getElementById("ua-trample")
     ?.addEventListener("change", e => _uaSave("trample", e.target.checked || null));
   document.getElementById("ua-regen-hp")?.addEventListener("change", e => {

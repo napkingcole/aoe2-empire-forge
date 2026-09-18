@@ -74,8 +74,12 @@ were checked and rejected:
   every scalar field of `unit`, `type_50` and `creatable` turns up only graphics, stats and string
   ids. Its behaviour is hardcoded in the engine by unit id and cannot be granted through the DAT.
 
-The builder still offers this flag in the UI; **that needs a decision** — hide it, or relabel it as
-unsupported.
+**Withdrawn from the builder.** The checkbox is hidden and disabled (kept in the markup so the
+element ids still resolve), `_UA_TOP_FLAGS` no longer counts it toward the flag badge, `_uaLoad`
+deletes it from a saved draft on load, and `civ_schema.RETIRED_UU_FLAGS` strips it on **both**
+doors — `to_draft` on the way in and `from_draft` on the way out — so an old `.civbuilder.json`
+keeps loading and stops carrying a flag nothing implements. The build still warns once if a civ
+reaches it with the flag set, which is how a user finds out their old civ changed.
 
 ### 4. Castle UT "Coiled Serpent Array" did not affect the unique unit — and cannot
 
@@ -96,9 +100,35 @@ not all broken: Vineyards and Paper Money are known to work, and most carry real
 alongside the script hook. The three that are **only** the hook (Coiled Serpent Array, Ordo
 Cavalry, Bimaristan) have nothing we can retarget at all.
 
-`_append_unique_tech_stubs` now warns when a chosen UT writes resource 33, and the warning reaches
-`apply_civ`'s `warnings` list. **Which of the other nine actually work is unknown and needs a test
-round of its own.**
+**The triage, and the rule that decides it.** The script has its unit ids baked in, so being
+script-driven is only a *problem* when the script names a unit our civ does not have — in practice,
+another civ's unique unit. A script that works on Monks, cavalry, farmers or lumberjacks is fine,
+because our civ has those too. Reading each UT's card text next to the DAT commands its effect
+still carries:
+
+| UT | script targets | verdict |
+|----|----------------|---------|
+| Burgundian Vineyards | farmers | **works** — confirmed, once `repeatable` was fixed |
+| Paper Money | lumberjacks | **works** — same |
+| Bimaristan | Monks | safe — Monks are unit 125 for every civ |
+| Ordo Cavalry | cavalry | safe — a class, not a unit |
+| Tuntian | soldiers | safe |
+| Stronghold | infantry healing; the fire-rate half is in the DAT | safe |
+| Viking Chieftains | infantry; DAT half is class 6 | safe |
+| Curare | foot archers + fortifications; 84 DAT commands, mostly generic projectiles | safe |
+| **Red Cliffs Tactics** | its DAT half names **1968/1970 Fire Archer** (Wu UU) and 2044 Zhou Yu | **partial** — a civ without Fire Archers loses that half |
+| **Coiled Serpent Array** | the Shu unique unit, by name | **broken** — confirmed in-game |
+
+So the user's read was right: Coiled Serpent Array is the only one that is fundamentally about a
+unique unit, with Red Cliffs Tactics a partial second. `_XS_UT_NOTES` warns about exactly those
+two and says what will and will not fire; the other eight get no warning, because a blanket one
+would be noise on six safe techs and actively wrong on the two known-good ones.
+
+**Shipping our own `Effects.xs` is not a route.** XS scripts live in the *game install*
+(`AoE2DE/resources/_common/xs`), not in a mod's payload, and overriding the file would mean
+replacing every `EffectFunction` the game has — fragile across patches and liable to break other
+civs. The only real alternative for Coiled Serpent Array would be to reimplement its intent in the
+DAT and drop the proximity condition, which changes what the card does.
 
 `tests/test_spawn_and_flags.py` pins 1-3. `tests/test_audit_fixes.py` expected exactly 14 spawn
 techs for 345 and now expects 17, since its probe civ carries 356 as well.

@@ -177,6 +177,26 @@ for uid, label in ((46, "Janissary"), (557, "Elite Janissary")):
 check("ignore_armor says plainly that it was ignored", "not supported" in out,
       f"output was: {out!r}")
 
+# Retired on both schema doors, so an old saved civ stops carrying a dead flag.
+from civ_schema import RETIRED_UU_FLAGS, to_draft, from_draft   # noqa: E402
+
+check("ignore_armor is on the retired list", "ignore_armor" in RETIRED_UU_FLAGS)
+legacy = {
+    "format": "empireforge_v2", "schema_version": 2, "alias": "Legacy",
+    "unique_unit": {"km_idx": 9, "advanced_flags":
+                    {"ignore_armor": True, "no_convert": True}},
+}
+d = to_draft(legacy)
+flags = (d.get("unique_unit") or {}).get("advanced_flags") or {}
+check("to_draft drops ignore_armor from a saved civ", "ignore_armor" not in flags,
+      f"flags={flags}")
+check("to_draft keeps the flags that still work", flags.get("no_convert") is True,
+      f"flags={flags}")
+back = from_draft(d)
+out_flags = (back.get("unique_unit") or {}).get("advanced_flags") or {}
+check("from_draft never writes ignore_armor back out",
+      "ignore_armor" not in out_flags, f"flags={out_flags}")
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)
