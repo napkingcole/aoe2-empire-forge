@@ -26,6 +26,12 @@ EC_MULTIPLY  = 5
 EC_MUL_RESOURCE = 6  # cMulResource: a=resource_id, d=multiplier.  Scales a player
                      # resource rather than a unit attribute — the lever behind
                      # every "drop off +N%" and "resources last N% longer" bonus.
+EC_SPAWN     = 7     # Spawn units: a=unit_id, b=building_id, c=COUNT, d unused.
+                     # The count lives in `c`, and `d` is 0.0 on all 17 vanilla
+                     # spawn commands — so this is the one scalable command type
+                     # whose multiplier does NOT touch `d`.  Verified against the
+                     # shipped DAT: "Start w/ 6 villagers" is c=3, "Free
+                     # Villagers" c=2, "First Crusade" c=5 Serjeants.
 EC_TECH_COST = 101   # Modify tech research cost: a=tech_id, b=res(0-3), c=mode, d=val
 EC_TECH_TIME = 103   # Modify tech research time: a=tech_id, c=mode, d=val
 
@@ -38,6 +44,18 @@ EC_TECH_TIME = 103   # Modify tech research time: a=tech_id, c=mode, d=val
 # cost" civ bonus is expressed.  Mode 2 therefore scales like EC_MULTIPLY.
 TECH_MODE_SET      = 0
 TECH_MODE_MULTIPLY = 2
+
+# Resource 234, "Spawn Limit" (UGC guide): the number of spawning BUILDINGS that
+# may produce units from an EC_SPAWN command in a technology.  Paired with an
+# EC_SPAWN in every vanilla per-building spawn bonus, and never scaled by a card
+# multiplier — see _scale_ec_for_multiplier.
+RES_SPAWN_LIMIT = 234
+
+# Resource 33, "Effect Function Number" (UGC guide): writing a non-zero N makes
+# the engine call EffectFunction<N> in its own Effects.xs.  A tech that does this
+# is implemented in a GAME SCRIPT, not in the DAT, so we cannot retarget what it
+# affects — 24 vanilla effects use it and 10 are offered as UT presets here.
+RES_EFFECT_FUNCTION = 33
 
 # ── Building IDs ──────────────────────────────────────────────────────────────
 BUILDING_CASTLE      = 82
@@ -1441,6 +1459,20 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
         class_id = d_int >> 8
         amount   = d_int & 0xFF
         result.d = float((class_id << 8) | (amount * multiplier))
+    elif result.type == EC_SPAWN:
+        # The only scalable type whose count is not in `d`.  `d` is 0.0 on every
+        # vanilla spawn command, so the generic "scale d" rule could never do
+        # anything here — which is exactly how civ bonus 345 ("free Villager per
+        # economic upgrade") shipped with a multiplier control that spawned the
+        # same single Villager at x3 (reported in-game 2026-09-18).
+        result.c = int(result.c) * multiplier
+    elif result.type == EC_RESOURCE and int(result.a) == RES_SPAWN_LIMIT:
+        # Deliberately NOT scaled.  Resource 234 is "Spawn Limit" — how many
+        # spawning BUILDINGS may participate, a different axis from how many
+        # units each one produces.  Scaling it turned "1 Villager from your Town
+        # Center" into "1 Villager from each of up to N Town Centers", so the
+        # card did nothing on one TC and multiplied per-TC on several.
+        pass
     elif result.type in (EC_ADD, EC_RESOURCE):
         result.d = result.d * multiplier
     return result
@@ -1455,12 +1487,18 @@ def _multiply_effect(dat: DatFile, effect_id: int, multiplier: int) -> None:
     lists.  Delegates to _scale_ec_for_multiplier so the two cannot drift
     apart — this logic used to be copy-pasted in both, which is how a new
     scalable command type would have been added to one and not the other.
-    Only `d` is ever changed, so copying it back is equivalent to rebuilding
-    the command."""
+
+    Copies back **both `c` and `d`**, the two fields the scaler may touch.  It
+    used to copy back `d` alone, on the reasonable assumption that every
+    scalable command carries its magnitude there — which held until EC_SPAWN,
+    whose count is in `c` and whose `d` is always 0.0.  Delegating was supposed
+    to stop exactly this kind of divergence and did not, because the delegation
+    discarded the part of the result it did not expect to change."""
     if multiplier <= 1 or effect_id < 0 or effect_id >= len(dat.effects):
         return
     for ec in dat.effects[effect_id].effect_commands:
-        ec.d = _scale_ec_for_multiplier(ec, multiplier).d
+        scaled = _scale_ec_for_multiplier(ec, multiplier)
+        ec.c, ec.d = scaled.c, scaled.d
 
 
 def _apply_ec_list_entry(dat: DatFile, civ_index: int, ec_entry: dict,
@@ -3123,6 +3161,14 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         seen_p: dict[int, int] = {}
         for tid in (_GRAZING_GRASSLANDS, _ENCLOSURES, _LIVESTOCK_HUSBANDRY):
             _allocate_tech(dat, tid, civ_index, seen_p, tech_remaps)
+        # Publish the clones so later work can find them.  Bonus 345 ("a free
+        # Villager for each economic upgrade") needs them by id: the Pasture
+        # upgrades replace Horse Collar / Heavy Plow / Crop Rotation on the same
+        # Mill button, so a Pasture civ researches the clone, and any tech that
+        # wants to fire "when the player researches Enclosures" must name the
+        # clone rather than the civ=53 original.
+        if tech_remaps is not None:
+            tech_remaps.update(seen_p)
         if seen_p:
             print(f"       Pastures: {len(seen_p)} Khitan Mill upgrades allocated "
                   f"{tuple(sorted(seen_p))}")
@@ -3385,6 +3431,21 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         else:
             skipped.append(bonus_id)
 
+    # Cross-bonus wiring, after every bonus has had its turn: 345 pays a free
+    # Villager per eco upgrade, and 356 replaces three of those upgrades with
+    # Pasture ones at fresh tech ids.  Neither branch can see the other while
+    # the loop is running, because bonus order is whatever the user clicked.
+    _picked = {int(e[0]) for e in civ_bonuses
+               if isinstance(e, (list, tuple)) and len(e) >= 1}
+    if {_FREE_VILL_BONUS, _PASTURE_BONUS} <= _picked:
+        _mult = next((int(e[1]) if len(e) > 1 else 1 for e in civ_bonuses
+                      if isinstance(e, (list, tuple)) and int(e[0]) == _FREE_VILL_BONUS), 1)
+        _n = _apply_pasture_free_villagers(dat, civ_index, _mult, tech_remaps)
+        if _n:
+            applied += _n
+            print(f"       Bonus {_FREE_VILL_BONUS} + {_PASTURE_BONUS}: "
+                  f"{_n} free-Villager tech(s) added for the Pasture Mill upgrades")
+
     print(f"       Bonuses: {applied} techs applied, "
           f"{len(skipped)} bonus IDs skipped (not in catalog): {skipped[:8]}"
           + ("…" if len(skipped) > 8 else ""))
@@ -3478,6 +3539,51 @@ _DROPOFF_BUILDINGS = (
     1734, 1711, 1720,       # Folwark     (replaces the Mill for some civs)
     2556, 2558, 2560,       # Settlement  (125 wood, not 100)
 )
+
+
+_FREE_VILL_BONUS   = 345
+_PASTURE_BONUS     = 356
+_FREE_VILL_TEMPLATE = 1039    # 'C-Bonus, Fre vill + Bit Axe' — req (202, 639), count 2
+_TC_SPAWN_TECH      = 639     # 'Town Center Spawn', global; the engine hook
+_PASTURE_MILL_TECHS = (1014, 1013, 1012)   # Livestock Husbandry → Enclosures → Grazing Grasslands
+
+
+def _apply_pasture_free_villagers(dat: DatFile, civ_index: int, multiplier: int,
+                                  tech_remaps: dict) -> int:
+    """Give bonus 345 its three missing Pasture upgrades.
+
+    345 pays a free Villager for each economic upgrade, and its fourteen vanilla
+    techs cover the Mill line as Horse Collar / Heavy Plow / Crop Rotation.  A
+    civ that also takes bonus 356 does not have those — Pastures replace them
+    with Livestock Husbandry / Enclosures / Grazing Grasslands on the same Mill
+    button — so the two bonuses together silently paid nothing for three of the
+    player's eco upgrades (reported in-game 2026-09-18).
+
+    Has to run after the whole bonus loop rather than inside 345's branch: the
+    Pasture upgrades are civ=53, so 356 copies them to fresh ids, and the tech
+    that fires "when the player researches Enclosures" must name *that copy*.
+    Bonus order in a civ_def is whatever the user clicked, so 356 may not have
+    run yet when 345 does.  Returns the number of techs created.
+    """
+    created = 0
+    for original in _PASTURE_MILL_TECHS:
+        clone = tech_remaps.get(original)
+        if clone is None:          # 356 did not run, or did not copy this one
+            continue
+        new_tid = _allocate_tech(dat, _FREE_VILL_TEMPLATE, civ_index, {}, tech_remaps)
+        if new_tid < 0:
+            continue
+        tech = dat.techs[new_tid]
+        tech.name = f"C-Bonus, Fre vill + {dat.techs[original].name}"
+        # Same shape as every sibling: (the upgrade, the Town Center spawn hook).
+        reqs = [-1] * len(tech.required_techs)
+        reqs[0], reqs[1] = clone, _TC_SPAWN_TECH
+        tech.required_techs = reqs
+        tech.required_tech_count = 2
+        if multiplier > 1 and 0 <= tech.effect_id < len(dat.effects):
+            _multiply_effect(dat, tech.effect_id, multiplier)
+        created += 1
+    return created
 
 
 def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> None:
@@ -4127,11 +4233,13 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
          castle_ut_desc_sid, imp_ut_desc_sid,
          castle_ut_help_sid, imp_ut_help_sid,
          castle_ut_pending_uu_subs, imp_ut_pending_uu_subs,
-         castle_ut_pending_base_uu_subs, imp_ut_pending_base_uu_subs) = (
+         castle_ut_pending_base_uu_subs, imp_ut_pending_base_uu_subs,
+         _ut_warnings) = (
             _append_unique_tech_stubs(
                 dat, civ_index, alias,
                 castle_ut_entries, imperial_ut_entries)
         )
+        warnings.extend(_ut_warnings)
 
     # 5. Team bonus and tech tree effects.
     # tech_tree_id and team_bonus_id are EFFECT indices (not tech indices).
@@ -4700,6 +4808,7 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
     used_tech_ids: list[int | None] = []
     pending_subs_per_slot: list[list] = []
     pending_base_subs_per_slot: list[list] = []
+    ut_warnings: list[str] = []
     for (btn, label, age_req, entries, cost_food, cost_b_type, cost_b, icon,
          name_sid, help_sid, ut_lookup) in ut_configs:
         # String slots for a UT, and what each one actually drives.  For civ 24's
@@ -4791,6 +4900,23 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         _append_tech(dat, tech)
         used_tech_ids.append(len(dat.techs) - 1)
         print(f"       {label}: {len(cmds)} effect commands (sid={name_sid})")
+        # Some unique techs are not implemented in the DAT at all.  Writing
+        # resource 33, "Effect Function Number", tells the engine to run
+        # EffectFunction<N> from its own Effects.xs script, and that script — not
+        # anything we ship — decides which units the tech affects.  24 vanilla
+        # effects work this way and 10 of them are offered as UT presets here.
+        # Coiled Serpent Array is the confirmed case (in-game 2026-09-18): the
+        # spearman half worked and the unique-unit half did not, because the
+        # script names the Shu unique unit by id and we cannot edit the script.
+        _xs = [c for c in cmds if c.type in (EC_RESOURCE, EC_MUL_RESOURCE)
+               and int(c.a) == RES_EFFECT_FUNCTION]
+        if _xs:
+            _msg = (f"{label} is driven by one of the game's own scripts "
+                    f"(EffectFunction{int(_xs[0].d)}), not by the mod data. Parts of "
+                    f"it that target a specific civ's unique unit cannot be "
+                    f"retargeted to yours and will not fire.")
+            print(f"       WARNING: {_msg}")
+            ut_warnings.append(_msg)
     return (
         used_name_sids[0], used_name_sids[1],
         used_tech_ids[0] if len(used_tech_ids) > 0 else None,
@@ -4801,4 +4927,5 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         pending_subs_per_slot[1] if len(pending_subs_per_slot) > 1 else [],
         pending_base_subs_per_slot[0] if len(pending_base_subs_per_slot) > 0 else [],
         pending_base_subs_per_slot[1] if len(pending_base_subs_per_slot) > 1 else [],
+        ut_warnings,
     )

@@ -228,9 +228,15 @@ check("the TC step is still gated on a completed Town Center (tech 307)",
       f"reqs = {step.required_techs if step else None}")
 
 # ── 345: every economic upgrade ──────────────────────────────────────────────
+# 14 vanilla eco upgrades, plus 3 more because this civ also takes 356: Pastures
+# replace Horse Collar / Heavy Plow / Crop Rotation with Khitan techs at fresh
+# ids, and 345 used to pay nothing for them (found in-game 2026-09-18).  The
+# pairing is covered properly in tests/test_spawn_and_flags.py; here it just has
+# to not be 14 any more.
 spawns = [c for c in all_cmds if c.type == 7]
-check("bonus 345 spawns a villager for all 14 economic upgrades",
-      len(spawns) == 14, f"found {len(spawns)}")
+check("bonus 345 spawns a villager for all 14 economic upgrades, "
+      "plus the 3 Pasture upgrades this civ also has",
+      len(spawns) == 17, f"found {len(spawns)}")
 
 # ── 356: Pastures must bring their own Mill upgrades ─────────────────────────
 KHITAN_MILL = {"Grazing Grasslands", "Enclosures", "Livestock Husbandry"}

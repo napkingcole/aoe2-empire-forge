@@ -15,7 +15,6 @@ keys so both functions are safe no-ops when called on them.
 
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import ResearchLocation, ResearchResourceCost, Tech
-from genieutils.unit import AttackOrArmor
 
 from civ_appender import (HERO_POOL_OFFSET, _campaign_sid,
                           format_unit_tooltip_help, format_unit_extended_tooltip)
@@ -278,14 +277,33 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
                 if not u.type_50.blast_width:
                     u.type_50.blast_width = 0.5
 
-    # Runs after attack override so displayed_attack reflects the user's value.
+    # DISABLED — this flag cannot be expressed in the DAT, and the previous
+    # implementation reduced the unit to 1 damage against everything.
+    #
+    # It replaced the unit's Base Melee/Base Pierce attacks with a single attack
+    # on armour class 50.  **No unit in the game has armour class 50** (checked:
+    # 0 of 421 trainable attacking units), and the damage formula is
+    #     dmg = max( Σ max(At_i − Ar_i, 0), 1 )
+    # where a missing armour class on the defender means Ar_i = the base armour
+    # value, "almost always 1000" (UGC guide, damage_calculation.md).  So the one
+    # remaining attack line resolved to max(25 − 1000, 0) = 0 and the unit dealt
+    # the engine minimum of 1.  Confirmed in-game 2026-09-18 on a 25-attack
+    # Janissary that was hitting for 1.
+    #
+    # There is no correct replacement available to us.  Armour class 31 looks
+    # like a candidate (99.3% of units carry it, 96% at zero) but it is the
+    # cavalry-vs-buildings class — every cavalry unit attacks it, and the only
+    # non-zero holders are Castles, towers and Docks, so using it would give the
+    # unit nothing and penalise it against exactly the targets it should beat.
+    # And diffing the Leitis, the game's own armour-ignoring unit, against a
+    # Knight across every scalar field on unit/type_50/creatable turns up only
+    # graphics and stats — its behaviour is hardcoded in the engine by unit id,
+    # not something the DAT can grant to an arbitrary unit.
     if flags.get("ignore_armor"):
-        for u, _ in tiers:
-            if u and u.type_50:
-                disp = u.type_50.displayed_attack or 0
-                new_attacks = [a for a in u.type_50.attacks if a.class_ not in (3, 4)]
-                new_attacks.insert(0, AttackOrArmor(class_=50, amount=int(disp)))
-                u.type_50.attacks = new_attacks
+        print("       WARNING: the unique unit's 'ignore armor' flag is not "
+              "supported and was ignored. AoE2 has no data-level way to grant "
+              "it — the unit keeps its normal attack. (The previous behaviour "
+              "was worse: it reduced the unit to 1 damage.)")
 
     if flags.get("bonus_dmg_resist") is not None:
         pct = float(flags["bonus_dmg_resist"])

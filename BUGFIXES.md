@@ -5,6 +5,106 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-18 (b) — four findings from the pre-release in-game test round
+
+The user built a civ carrying the new and changed bonuses and played a game. Starting resources,
+Pastures, food from military buildings and the 73/58 Nomad carve-out all worked. Four things did
+not, and three of them were our bugs.
+
+### 1. The multiplier did nothing on any "start with / spawn N" bonus
+
+**Symptom:** bonus 345 ("a free Villager for each economic upgrade") at **x3** still produced one
+Villager.
+
+**Root cause:** `EC_SPAWN` (type 7) keeps its **count in `c`**, and `d` is `0.0` on **all 17**
+vanilla spawn commands — so `_scale_ec_for_multiplier`, which only ever scaled `d`, could not
+move it. Verified against the shipped DAT: *Start w/ 6 villagers* is `c=3`, *Free Villagers* `c=2`,
+*First Crusade* `c=5` Serjeants.
+
+**The fix needed two halves, and the first one alone did nothing.** `_multiply_effect` — the path
+the catalog tech branch actually uses — copied back **only `ec.d`**, on the reasonable assumption
+(stated in its own docstring) that every scalable command carries its magnitude there. It now
+copies back `c` and `d`. The delegation between the two functions exists specifically to stop a
+new scalable type being handled in one and not the other, and it *still* failed, because the
+delegation discarded the field it did not expect to change.
+
+**Resource 234 is deliberately NOT scaled.** It is `Spawn Limit` — how many spawning *buildings*
+may participate, not how many units each produces. Scaling it turned the card into "one Villager
+from each of up to N Town Centers", which is exactly why the bonus looked inert on one Town
+Center and would have multiplied per-TC on several.
+
+**Eight bonuses were affected**, not just 345: **18, 46, 192, 223, 294, 313, 318, 345** — every
+"start with N villagers / a Mule Cart / a free Horse / Forage Bushes / a free relic" card.
+
+### 2. Bonuses 345 and 356 could not see each other
+
+**Symptom:** the user noticed the Mill has **three Pasture techs** and 345 paid nothing for them.
+
+**Root cause:** 345's fourteen techs name the vanilla Mill line (Horse Collar / Heavy Plow / Crop
+Rotation). A Pasture civ does not have those — 356 replaces them with Livestock Husbandry /
+Enclosures / Grazing Grasslands, which are `civ=53` and therefore **copied to fresh tech ids**
+(quirk 9). So the free-Villager techs named upgrades the player could never research.
+
+**Fix:** `_apply_pasture_free_villagers`, which clones 345's template tech three more times with
+`required_techs = (the Pasture copy, 639 Town Center Spawn)`. It runs **after the whole bonus
+loop**, because bonus order in a civ_def is whatever the user clicked and 356 may not have run
+yet when 345 does — the test builds the civ both ways round. 356 now publishes its clones into
+`tech_remaps`, which is what that dict is for.
+
+### 3. `ignore_armor` reduced the unique unit to 1 damage
+
+**Symptom:** an Elite Janissary set to **25 attack** was hitting for **1**. Hand Cannoneers on the
+same civ were fine at 17+12, which correctly pointed the user at the flag rather than at the stat
+override.
+
+**Root cause:** the flag replaced the unit's Base Melee/Base Pierce attacks with a single attack on
+**armour class 50**. No unit in the game has armour class 50 — 0 of 421 trainable attacking units —
+and the damage formula is `dmg = max( Σ max(At_i − Ar_i, 0), 1 )` where a missing armour class on
+the defender resolves to the base armour value, *"almost always 1000"* (UGC guide,
+`damage_calculation.md`). So `max(25 − 1000, 0) = 0`, and the engine's minimum damage of 1 applied.
+The flag did not weaken the unit, it deleted its offence.
+
+**There is no correct replacement, so the flag is now a no-op with a loud warning.** Two candidates
+were checked and rejected:
+- **Armour class 31** looks perfect at first — 99.3% of trainable attacking units carry it, 96% at
+  zero. It is the **cavalry-vs-buildings** class: every cavalry unit attacks it, and the only
+  non-zero holders are Castles (8), Kreposts (8), Fortified Churches (4), towers and Docks (1-3).
+  Using it would grant nothing and *penalise* the unit against exactly the targets it should beat.
+- **Copying the Leitis**, the game's own armour-ignoring unit. Diffing it against a Knight across
+  every scalar field of `unit`, `type_50` and `creatable` turns up only graphics, stats and string
+  ids. Its behaviour is hardcoded in the engine by unit id and cannot be granted through the DAT.
+
+The builder still offers this flag in the UI; **that needs a decision** — hide it, or relabel it as
+unsupported.
+
+### 4. Castle UT "Coiled Serpent Array" did not affect the unique unit — and cannot
+
+**Symptom:** the aura worked for the user's spearmen but not for their unique unit. Their guess —
+"maybe it's still looking for the Shu default" — was essentially right.
+
+**Root cause, and it is not a wiring bug.** The whole effect is **one command**:
+`EC_RESOURCE a=33 d=6`. Resource **33** is `Effect Function Number` — writing a non-zero N makes
+the engine call **`EffectFunction<N>` from its own `Effects.xs`**. The tech is implemented in a
+**game script**, not in the DAT. The script decides which units get the aura, it names the Shu
+unique unit by id, and we ship a DAT — we cannot edit it. The spearman half worked precisely
+because that half is not civ-specific.
+
+**24 vanilla effects are script-driven this way, and 10 are offered as UT presets**: Castle —
+Burgundian Vineyards, Stronghold, Viking Chieftains, Bimaristan, **Coiled Serpent Array**, Red
+Cliffs Tactics, Tuntian; Imperial — Vietnamese UT (Paper Money), Ordo Cavalry, Curare. They are
+not all broken: Vineyards and Paper Money are known to work, and most carry real DAT commands
+alongside the script hook. The three that are **only** the hook (Coiled Serpent Array, Ordo
+Cavalry, Bimaristan) have nothing we can retarget at all.
+
+`_append_unique_tech_stubs` now warns when a chosen UT writes resource 33, and the warning reaches
+`apply_civ`'s `warnings` list. **Which of the other nine actually work is unknown and needs a test
+round of its own.**
+
+`tests/test_spawn_and_flags.py` pins 1-3. `tests/test_audit_fixes.py` expected exactly 14 spawn
+techs for 345 and now expects 17, since its probe civ carries 356 as well.
+
+---
+
 ## 2026-09-18 — every `team_ec_list` entry was under the wrong id, and one of them crashed the game
 
 **Symptom:** a reporter's civ (`ignore/sandbox/bugfixing/maruviel`, 105 civ bonuses, 15 team
