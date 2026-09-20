@@ -1625,6 +1625,16 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
     # fires for a civ whose tree lacks them — which is the right behaviour.
     416: {"name": "Legionary",        "techs": (885,),       "units": (1793,)},
     417: {"name": "Savar",            "techs": (526,),       "units": (1813,)},
+    # Added 2026-09-20 to restore a unit that lost its only path.  Bonus 108
+    # ("Farm upgrades +125% food") used to map techs 773/774 alongside its own
+    # 772, so every civ taking a FARM bonus silently gained the Flemish Militia.
+    # Trimming 108 to {772} on 2026-09-10 was right — and removed the only way
+    # to reach the unit, because 1699 is not a node in FULL.json either.
+    # Only 773 needs claiming: 774 ("Flemish Militia Age3", +15 HP and attack)
+    # is civ=-1, so it fires on its own once the unit exists.
+    # Shares Barracks button 4 with the Eagle Warrior and Fire Lancer —
+    # _warn_button_collision already covers that at build time.
+    428: {"name": "Flemish Militia",  "techs": (773,),       "units": (1699,)},
 }
 
 # Mining Camp tech IDs (vanilla AoE2 DE) — the four techs the Bohemians get

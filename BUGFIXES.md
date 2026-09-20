@@ -5,6 +5,57 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-20 — the Flemish Militia lost its only path when a farm bonus stopped carrying it
+
+**Symptom:** a user on v2.1.0 reported "I can't find the Flemish Militia."
+
+**Root cause — a correct fix with a consequence nobody followed up.** Bonus 108 ("Farm upgrades
+provide +125% additional food") used to map `{772, 773, 774}`, and **773/774 are the Flemish
+Militia make-avail and its Castle-Age stat boost**. So every civ taking a farm bonus silently
+gained a unit line. Trimming 108 to `{772}` on 2026-09-10 was right — but 773 was the *only* thing
+in the whole app that enabled unit 1699, and **1699 is not a node in `FULL.json` either**, so the
+tech tree editor cannot reach it. Removing the accidental path removed the only path.
+
+This was actually written down at the time (`project_github_issue_triage`, under #37) and still got
+missed, because it read as a note about a resolved collision rather than an open gap.
+
+**Fix:** bonus **428**, "Unlock the Flemish Militia", joining the thirteen existing
+`_UNLOCK_UNIT_BONUSES` cards that exist for exactly this reason (quirk 9 — the unit is `civ`-gated,
+so the card is the only path). Only tech **773** needs claiming: 774 is `civ=-1` and fires on its
+own once the unit exists. Unit 1699 trains at **Barracks button 4**, shared with the Eagle Warrior
+and Fire Lancer, which the existing build-time collision warning already covers.
+
+`tests/test_unlock_unit_bonuses.py` checks **the whole class rather than this one card**: it builds
+one civ carrying all 14 unlock bonuses and asserts each allocated a civ-owned tech that enables its
+units, plus that each has a name and a card — because an implemented bonus with no entry in
+`bonus_names.json` is just as unreachable, which is how 35 working bonuses sat invisible until
+2026-09-17.
+
+### Reported at the same time, and *not* bugs
+
+Two other reports from the same user turned out to be discoverability, not breakage. Both were
+verified working in the browser against his own civ file, and `git log -S` puts both in
+**6b29706, 2026-07-01** — months before v2.1.0, so neither is a regression:
+
+- **"Is it no longer possible to customise Castle & Unique techs?"** The effects picker is behind a
+  **Pick Vanilla Tech / Build Custom** toggle that defaults to Vanilla, so the custom panel is
+  hidden until you switch. Clicking it shows name, description, cost and the effects search, and
+  persists `mode: "custom"` — confirmed with his civ loaded.
+- **"Unique units no longer display stats."** Stats are in a **hover popup** over the unit grid.
+  Verified rendering correctly (`position: fixed`, opacity 1, z-index 9999, in viewport) with real
+  content — HP, attack, armour, range, reload, speed and cost.
+
+Both features work; neither announces itself. That is a UX finding worth acting on separately, and
+it is the second time this release that "it's gone" meant "it's behind an interaction".
+
+**The crash could not be reproduced.** Rebuilding his new `.civbuilder.json` gives a clean mod:
+tech-tree effect 93 commands, team bonus effect 39, **no effect over the ~189 ceiling**, no tech
+pointing past the effect table, no empty `research_locations`, and a strings file with no malformed
+lines or duplicate ids. Since his previous civ *did* crash for a now-fixed reason, the first thing
+to rule out is **the old mod still being installed and enabled alongside the new one**.
+
+---
+
 ## 2026-09-18 (b) — four findings from the pre-release in-game test round
 
 The user built a civ carrying the new and changed bonuses and played a game. Starting resources,
