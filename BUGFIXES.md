@@ -31,9 +31,38 @@ units, plus that each has a name and a card — because an implemented bonus wit
 `bonus_names.json` is just as unreachable, which is how 35 working bonuses sat invisible until
 2026-09-17.
 
-### Reported at the same time, and *not* bugs
+### Unique unit stats — a real bug after all, found by the user's own hypothesis
 
-Two other reports from the same user turned out to be discoverability, not breakage. Both were
+First written off as discoverability ("the stats are in a hover popup"), because they rendered
+correctly on this machine.  The user's follow-up — *"perhaps he isn't seeing stats because the DAT
+isn't loaded yet for him?"* — was right, and better than the original diagnosis.
+
+**The chain.** `civ_schema` **strips `dat_path` when a civ is saved**, correctly: it is
+machine-specific and has no business in a shared `.civbuilder.json`.  So a draft loaded from a
+saved civ has no `dat_path`.  `/builder/build` has always fallen back to `session["dat_path"]`,
+so **builds kept working** — but `/api/builder/uu/catalog` read the query parameter only, returned
+`stats: null` for all 92 units with a 200, and `_build_all_uu_stats` swallowed any failure in a
+bare `except Exception: pass`.  `_buildUUPopupHTML` then rendered **"No stats available"** on every
+unit, indistinguishable from units that genuinely have no stats.
+
+So: **open a saved civ and the stats vanish, while the civ still builds fine.**  Nothing connects
+those two facts from the outside, which is why it read as a v2.1.0 regression when the UI code
+dates to 2026-07-01.
+
+Measured before the fix — `92 units, 0 with stats` for a missing, empty *or* stale `dat_path`;
+`92 with stats` only for an explicit valid one.
+
+**Fix:** `_resolve_dat_path()` — request arg, then session, then `find_game_dat()`, with each
+candidate required to **exist on disk** before it wins, so a stale path (moved install, hand-edited
+civ file, unmounted drive) falls through rather than being honoured into a blank screen.  Applied
+to all three read-only helper routes that had the same pattern (`prewarm`, `uu/catalog`,
+`ut/costs`).  The swallowed exception now prints a warning naming the path.
+
+Verified in the browser against a draft with no `dat_path`: full stats render.
+
+### Also reported, and genuinely not a bug
+
+One other report from the same user turned out to be discoverability, not breakage. Both were
 verified working in the browser against his own civ file, and `git log -S` puts both in
 **6b29706, 2026-07-01** — months before v2.1.0, so neither is a regression:
 
@@ -41,12 +70,10 @@ verified working in the browser against his own civ file, and `git log -S` puts 
   **Pick Vanilla Tech / Build Custom** toggle that defaults to Vanilla, so the custom panel is
   hidden until you switch. Clicking it shows name, description, cost and the effects search, and
   persists `mode: "custom"` — confirmed with his civ loaded.
-- **"Unique units no longer display stats."** Stats are in a **hover popup** over the unit grid.
-  Verified rendering correctly (`position: fixed`, opacity 1, z-index 9999, in viewport) with real
-  content — HP, attack, armour, range, reload, speed and cost.
-
-Both features work; neither announces itself. That is a UX finding worth acting on separately, and
-it is the second time this release that "it's gone" meant "it's behind an interaction".
+The custom-UT toggle works; it just does not announce itself.  Worth making more discoverable —
+but note the lesson from the stats report above: **"the feature is just hidden" is a comfortable
+diagnosis and it was wrong once in this same batch.**  Reach for it only after checking the data
+path.
 
 **The crash could not be reproduced.** Rebuilding his new `.civbuilder.json` gives a clean mod:
 tech-tree effect 93 commands, team bonus effect 39, **no effect over the ~189 ceiling**, no tech

@@ -1603,6 +1603,34 @@ def _build_all_uu_stats(dat_path: str) -> dict[int, dict]:
     return out
 
 
+def _resolve_dat_path(arg: str | None = None) -> str:
+    """The DAT to read, from the request, then the session, then detection.
+
+    The wizard sends `draft.dat_path`, but **`civ_schema` strips `dat_path`
+    when a civ is saved** — correctly, since it is machine-specific and has no
+    business in a shared `.civbuilder.json`.  So every draft loaded from a saved
+    civ arrives without one.
+
+    `/builder/build` has always fallen back to the session, so builds kept
+    working; these read-only helper routes did not, so they silently returned
+    nothing.  The visible result was that **loading a saved civ made every
+    unique unit's stat popup read "No stats available"** while the civ still
+    built fine — reported by a user 2026-09-21, and impossible to connect to
+    "you opened a saved civ" from the outside.
+
+    Each candidate has to exist on disk before it wins, so a path that has gone
+    stale — a moved install, a civ file edited by hand, a drive that is not
+    mounted — falls through to the next one instead of being honoured into a
+    blank screen.
+    """
+    for candidate in ((arg or "").strip(),
+                      (session.get("dat_path") or "").strip(),
+                      str(find_game_dat() or "")):
+        if candidate and Path(candidate).exists():
+            return candidate
+    return ""
+
+
 @app.route("/api/builder/prewarm")
 def api_builder_prewarm():
     """Start DAT parsing + UU stat computation in a background thread.
@@ -1610,7 +1638,7 @@ def api_builder_prewarm():
     Called by the JS as soon as dat_path is known (step 1 page load), so the
     cache is warm long before the user reaches the UU picker step.
     """
-    dat_path = request.args.get("dat_path", "").strip()
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path:
         return jsonify({"status": "skipped", "reason": "no dat_path"})
     if dat_path in _UU_STATS_CACHE:
@@ -1727,13 +1755,17 @@ def api_builder_uu_catalog():
     catalog = []
 
     # Load full stats from DAT if a path is available
-    dat_path = request.args.get("dat_path", "")
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
     stats_map: dict[int, dict] = {}
     if dat_path:
         try:
             stats_map = _build_all_uu_stats(dat_path)
-        except Exception:
-            pass
+        except Exception as e:                                   # noqa: BLE001
+            # Was a bare `pass`.  A DAT that will not parse then looked exactly
+            # like a unit that has no stats, and the popup said "No stats
+            # available" with nothing anywhere explaining why.
+            print(f"  WARNING: could not read unit stats from {dat_path!r}: {e}",
+                  flush=True)
 
     for km_idx, name in ca._KM_UU_NAMES.items():
         if km_idx in unsupported:
@@ -1787,7 +1819,7 @@ def api_builder_ut_catalog():
 def api_builder_ut_costs():
     """Return vanilla tech research costs (from DAT) for all UT catalog entries."""
     from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
-    dat_path = request.args.get("dat_path", "").strip()
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path or not Path(dat_path).exists():
         return jsonify({"castle": {}, "imperial": {}})
 
