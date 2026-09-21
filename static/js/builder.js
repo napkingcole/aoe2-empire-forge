@@ -2859,6 +2859,11 @@ function addUTEffect(step, id) {
 
 let _uuCatalog = [];
 let _uuCatalogHasStats = false;
+// Set when the enriched fetch came back with stats for NOTHING, which only
+// happens when the server could not read a DAT at all.  Distinguishes "we
+// cannot find your game" from "this unit has no stats", which the popup
+// otherwise reports identically — the failure a user hit on 2026-09-21.
+let _uuStatsUnavailable = false;
 
 // Simple SVG placeholder used when a unit has no icon
 const UU_PLACEHOLDER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='6' fill='%231e293b'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-size='30' fill='%2364748b'%3E%E2%9A%94%3C/text%3E%3C/svg%3E";
@@ -2887,6 +2892,8 @@ async function loadUUCatalog() {
       const res  = await fetch(`/api/builder/uu/catalog?dat_path=${encodeURIComponent(datPath)}`);
       _uuCatalog = await res.json();
       _uuCatalogHasStats = true;
+      // 92 units and not one with stats is a DAT problem, not 92 coincidences.
+      _uuStatsUnavailable = _uuCatalog.length > 0 && !_uuCatalog.some(u => u.stats);
     } catch (e) {
       console.warn("Could not load UU catalog:", e);
     } finally {
@@ -2918,9 +2925,13 @@ function _buildUUPopupHTML(unit) {
 
   // Stats not loaded yet — show a loading indicator if we're still fetching
   if (!s) {
-    const loadingLine = _uuCatalogHasStats
-      ? `<div class="pop-row" style="opacity:.6;font-style:italic;">No stats available</div>`
-      : `<div class="pop-row" style="opacity:.6;"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading stats…</div>`;
+    const loadingLine = !_uuCatalogHasStats
+      ? `<div class="pop-row" style="opacity:.6;"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading stats…</div>`
+      : _uuStatsUnavailable
+        ? `<div class="pop-row" style="opacity:.75;font-style:italic;">`
+          + `<i class="fa-solid fa-triangle-exclamation me-1"></i>`
+          + `Game files not found &mdash; set your DAT path in Step 1</div>`
+        : `<div class="pop-row" style="opacity:.6;font-style:italic;">No stats available</div>`;
     return `<div class="pop-name">${unit.name}</div>
             <div class="pop-row"><span class="pop-label">Type</span><span class="pop-val">${badge}</span></div>
             ${loadingLine}`;

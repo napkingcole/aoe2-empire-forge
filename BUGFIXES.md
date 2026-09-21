@@ -60,6 +60,15 @@ to all three read-only helper routes that had the same pattern (`prewarm`, `uu/c
 
 Verified in the browser against a draft with no `dat_path`: full stats render.
 
+**And when there genuinely is no DAT**, which the fallback cannot conjure one for.  Step 1 already
+warns clearly (orange, with Steam and Microsoft Store path examples), and `detectDat()` re-runs on
+every load so a saved civ normally repopulates its own path — but the popup still said "No stats
+available", blaming the units rather than the missing game files.  `_uuStatsUnavailable` now
+distinguishes the two: **92 units and not one with stats is a DAT problem, not 92 coincidences**,
+so the popup reads *"Game files not found — set your DAT path in Step 1"*.  Three states, all
+verified in the browser: `Loading stats…` while fetching, `No stats available` for a unit that
+genuinely has none, and the new message when the DAT is missing.
+
 ### Also reported, and genuinely not a bug
 
 One other report from the same user turned out to be discoverability, not breakage. Both were
