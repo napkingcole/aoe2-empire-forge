@@ -3509,28 +3509,35 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         # catalog value is an effect index (not a tech index) — matches KM's C++:
         #   tbEffect.EffectCommands += df->Effects[teamBonuses[teamBonusIndex]]
         eff_idx = team_bonus_tech(tb_id)
-        if eff_idx is None or not (0 <= eff_idx < len(dat.effects)):
-            ec_dicts = team_bonus_ec_list(tb_id)
-            if not ec_dicts:
-                team_skipped.append(tb_id)
-                continue
-            for ec_dict in ec_dicts:
-                cmd = EffectCommand(type=ec_dict["type"], a=ec_dict["A"],
-                                    b=ec_dict["B"], c=ec_dict["C"], d=float(ec_dict["D"]))
+        safe_cmds = []
+        if eff_idx is not None and 0 <= eff_idx < len(dat.effects):
+            safe_cmds = list(dat.effects[eff_idx].effect_commands)
+
+        if safe_cmds:
+            # The player's own DAT is the source of truth whenever it still has
+            # one, so a balance patch to a vanilla team bonus rides along free.
+            for ec in safe_cmds:
                 dat.effects[tb_eff_id].effect_commands.append(
-                    _scale_ec_for_multiplier(cmd, multiplier))
-            team_cmd_counts.append((tb_id, len(ec_dicts)))
+                    _scale_ec_for_multiplier(ec, multiplier))
+            team_cmd_counts.append((tb_id, len(safe_cmds)))
             team_applied += 1
             continue
 
-        safe_cmds = list(dat.effects[eff_idx].effect_commands)
-        if not safe_cmds:
+        # No vanilla effect, or the game shipped it EMPTY.  Viking Sagas
+        # (2026-09-22) emptied three — Genitour (1), Llama (14), Condottiero
+        # (16) — when it moved them onto a different gating mechanism, so an
+        # effect that had commands last patch may have none this patch.  Falling
+        # through rather than skipping is what keeps a bonus alive across a DLC.
+        ec_dicts = team_bonus_ec_list(tb_id)
+        if not ec_dicts:
             team_skipped.append(tb_id)
             continue
-        for ec in safe_cmds:
+        for ec_dict in ec_dicts:
+            cmd = EffectCommand(type=ec_dict["type"], a=ec_dict["A"],
+                                b=ec_dict["B"], c=ec_dict["C"], d=float(ec_dict["D"]))
             dat.effects[tb_eff_id].effect_commands.append(
-                _scale_ec_for_multiplier(ec, multiplier))
-        team_cmd_counts.append((tb_id, len(safe_cmds)))
+                _scale_ec_for_multiplier(cmd, multiplier))
+        team_cmd_counts.append((tb_id, len(ec_dicts)))
         team_applied += 1
 
     print(f"       Team bonus: {team_applied}/{len(team_entries)} entries applied")

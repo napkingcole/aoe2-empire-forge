@@ -34,15 +34,32 @@ Structure: **civs 60 → 63**, effects 1409 → 1500 (+91), techs unchanged.
   but the shipped file is **MAYANS.json**, and the per-civ tech-tree patch is
   guarded by `if per_civ_path.exists()` — so **replacing the Mayans quietly
   shipped an unpatched tech tree**. Slot-keyed lookup returns MAYANS.
+All the new content follows the standard opt-in shape — globally disabled by
+tech 79, released by a `type=8` in each owning civ's TT effect — so every one of
+these has a vanilla template our code can copy (see bonus 51 above).
+
 - **Mounted Crossbowman + Cranequins** — replaces Cavalry Archers for most
   European civs. This is a *regional unit swap*, the same shape as Eagle Warrior
   vs Fire Lancer, so it likely wants `_REGIONAL_PAIRS` / tech-tree editor work
   rather than a bonus card.
+  Techs **1450** `Mounted Crossbowman (Make avail)` (15 civs), **1451** `Heavy
+  Mounted Crossbowman` (11), **1452** `Cranequins` (7).
 - **Varangian Guard** — new shock infantry that generates gold; Byzantines and
   Vikings gain it. Probably an unlock card.
+  Techs **1453** `Varangian Guard (make avail)` (5 civs), **1454** `Elite
+  Varangian Guard` (6).
 - **Ordonnance Companies** — new Frankish Castle UT (Mounted Crossbowmen -40%
-  gold). New UT preset.
-- **Longboat renamed to Longship.**
+  gold). New UT preset. Tech/effect **1496**.
+- **Longboat renamed to Longship**, tech **272**, now granted to all four Viking
+  civs (Vikings, Saxons, Varangians, Danes).
+
+The three new civs' own content, for when their UU/UT presets are wanted:
+Hearth Troop (**1461**/**1462**) + `Shield Wall` (**1464**); Jarl
+(**1471**/**1472**) + `Vendel Legacy` (**1473**) and `Gothikon` (**1474**);
+Jomsviking (**1481**/**1482**) + `Northmen's Fury` (**1483**, 67 commands) and
+`Hamask` (**1484**); plus `Clerical Recruitment` (**1491**). Their team bonuses
+are effects **1455** (Saxons), **1456** (Varangians), **1457** (Danes) and their
+tech trees **1458**/**1459**/**1460**.
 
 ## Cards whose text is now wrong
 
@@ -64,13 +81,76 @@ Confirmed against the patch notes, not just the command-count diff:
 - **Imperial UT 6, Byzantine Logistica** — effect changed; now covers Varangian
   Guards and drops the +6 vs Infantry.
 
-## Two that need a decision, not just new text
+## Team bonuses 1, 14 and 16 — FIXED 2026-09-22
 
-**Tech 272 `Longboat (make avail)` changed `civ` from 11 (Vikings) to `-1`
-(global).** That matters more than the rename: `_allocate_tech` deliberately
-does *not* copy a `civ=-1` tech, because a global already fires for everyone.
-Bonus 51's mechanism may therefore have changed underneath it — worth a probe
-civ before assuming it still behaves.
+The DLC **emptied three team bonus effects** and left everything else in place:
+names, and the civs still pointing at them. Genitour (bonus 1, effect 38, 3→0
+commands), free Llama (14, effect 4, 2→0) and Condottiero (16, effect 11, 2→0)
+simply stopped doing anything. The build reported `11/13 entries applied`, which
+is the only reason we noticed.
+
+The cause is a **mechanism swap**, and it is worth knowing because it is how DE
+gates regional units generally:
+
+| | pre-DLC | DLC |
+|---|---|---|
+| how the tech is held back | a **cost gate** — an auto-fire tech (`locs=[(-1,1)]`) carrying a 1-food cost that can never be paid, because there is no building to pay it at | **tech 79 `Disable Regionals`** type=102s it (34 → 45 entries) |
+| how the team bonus released it | `type=101` cost→0 + `type=103` time→0 | a `type=8` unlock |
+
+DE made that swap, emptied the three effects, and **never added the type=8** — so
+these three are currently dead in vanilla too. Every *other* tech newly added to
+tech 79 (Longship 272, Mounted Crossbowman 1450, Varangian Guard 1453, …) is
+type=8-unlocked by the civs that should have it; exactly these four (601, 599,
+730, 522) are unlocked by nobody.
+
+Tech 79 is the global type=102 list that is the real machinery behind CLAUDE.md
+**quirk 5** ("opt-in techs need type=8") — worth naming, because the quirk
+described the symptom without ever pointing at the mechanism.
+
+**The fix**, in three parts:
+
+1. `_apply_bonuses` now treats an *empty* mapped effect the same as a missing
+   one and falls through to `team_ec_list`. The player's DAT still wins wherever
+   it has something to say, so a balance patch to a live team bonus rides along
+   for free and only a hollowed-out one reaches our copy.
+2. New `team_ec_list` entries for 1/14/16 emit **both** mechanisms, so one list
+   is right on either side of the patch — `101`/`103` do the work pre-DLC and are
+   no-ops once the cost is already zero; the `type=8` does the work post-DLC and
+   is a no-op where nothing disabled the tech. Verified 3/3 applied against both
+   DATs, with the pre-DLC build still emitting vanilla's commands verbatim.
+3. `dat_drift.py` now diffs the **team bonus effect map**, which it never did —
+   it checked techs we depend on but not the effects we copy wholesale. It would
+   have caught all three before a user did.
+
+Also new: `EMPIREFORGE_DAT` overrides DAT detection, so the suite can be run
+against a DLC build that is not yet the copy on disk. Both branches pass:
+
+```
+./tests/run_all.sh
+EMPIREFORGE_DAT="$PWD/9-22-26 update/empires2_x2_p1.dat" ./tests/run_all.sh
+```
+
+### Why bonus 51 survived the same change, and what that tells us
+
+**Tech 272 `Longboat (make avail)` changed `civ` from 11 (Vikings) to `-1`** and
+joined tech 79's disable list — the identical swap, hitting civ bonus 51 ("Can
+recruit Longboats from docks", techs 272 + 372). `_allocate_tech` deliberately
+does not copy a `civ=-1` tech, so the bonus should have broken too.
+
+It did not. A probe civ on the DLC DAT emits type=8 for both techs, because the
+civ-bonus path **searches every vanilla civ's TT effect for an existing type=8
+on that tech and copies it verbatim** — "find the precedent", implemented in
+code. The DLC gave Vikings, Saxons, Varangians and Danes exactly that command,
+so our build found one and healed itself with no code change.
+
+That is the whole shape of the bug in one sentence: **the self-healing path needs
+a vanilla template to copy, and 601/599/730/522 are the only techs we depend on
+that have none.** A scan of every tech referenced by any bonus, UU or UT preset
+found only 272 and 372 newly globally-disabled, and both are covered. So this
+class is closed, not merely patched — and it is a real demonstration of the
+"keep working as it falls into disrepair" goal doing its job unattended.
+
+## One that still needs a decision, not just new text
 
 **Tech 83 `Frankish Bearded Axe`** — the notes say the UT was *removed*, and the
 audit flags its definition as changed. But its name, `civ`, `effect_id` and its

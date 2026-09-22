@@ -17,6 +17,9 @@ reports only what **we** point at:
   2. **Techs whose effect changed, cross-referenced to the bonus cards that use
      them.** A card whose tech now does something else is the exact failure the
      catalog sweep chased by hand for a month.
+  2b. **Team bonus effects that the game emptied.** `team` maps a card to an
+     effect we copy wholesale, so an effect hollowed out by a patch turns the
+     card into a silent no-op. Viking Sagas did this to three at once.
   3. New `civ=-1` opt-in techs — CLAUDE.md quirk 10. A make-avail tech that is
      referenced by a type=8 and disabled by nobody leaks its unit to the AI, so
      each new one needs to reach `_lock_unclaimed_optin_techs`.
@@ -159,6 +162,39 @@ def main() -> int:
             print(f"      used by {w}")
         if len(who) > 6:
             print(f"      …and {len(who)-6} more")
+
+    # ── 2b. Team bonus effects we copy wholesale ────────────────────────────
+    # `team` maps a bonus id to an EFFECT index, and _apply_bonuses copies that
+    # effect's commands verbatim.  An effect the game EMPTIES therefore turns a
+    # card the user picked into a no-op, with nothing to notice it — which is
+    # exactly what Viking Sagas did to Genitour, Llama and Condottiero.  A
+    # shrinking command count is the signal; zero is the emergency.
+    print("\n═══ Team bonus effects ═══")
+    cat = json.loads((ROOT / "bonus_catalog_raw.json").read_text())
+    tnames = json.loads((ROOT / "team_bonus_names.json").read_text())
+    has_fallback = set(cat.get("team_ec_list", {}))
+    emptied, shrunk = [], []
+    for bid, ei in sorted(cat.get("team", {}).items(), key=lambda kv: int(kv[0])):
+        if not isinstance(ei, int):
+            continue
+        n_o = len(_effect_fingerprint(old, ei) or ())
+        n_n = len(_effect_fingerprint(new, ei) or ())
+        if n_o > 0 and n_n == 0:
+            emptied.append((bid, ei, n_o))
+        elif n_n < n_o:
+            shrunk.append((bid, ei, n_o, n_n))
+    if not emptied and not shrunk:
+        print("  every mapped team bonus effect still has at least as much in it.")
+    for bid, ei, n_o in emptied:
+        covered = "" if bid in has_fallback else "  ← NO team_ec_list fallback"
+        print(f"  ⚠ bonus {bid} (effect {ei}) EMPTIED: {n_o} → 0 commands{covered}")
+        print(f"      {tnames.get(bid, '?')[:68]}")
+    if emptied:
+        print("  → the card now does nothing. Add a team_ec_list entry, which")
+        print("    _apply_bonuses falls through to when the effect is empty.")
+    for bid, ei, n_o, n_n in shrunk:
+        print(f"  bonus {bid} (effect {ei}) shrank {n_o} → {n_n}: "
+              f"{tnames.get(bid, '?')[:52]}")
 
     # ── 3. New opt-in techs (quirk 10) ──────────────────────────────────────
     print("\n═══ New opt-in techs (AI leak risk — quirk 10) ═══")

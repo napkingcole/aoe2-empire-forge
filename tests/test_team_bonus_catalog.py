@@ -222,11 +222,32 @@ for key, wanted in MUST_CONTAIN.items():
 check("40 'Houses built 100% faster' maps to the Wu effect",
       team_map.get("40") == 1089, f"got {team_map.get('40')}")
 
-# No id may be implemented twice: the effect map wins in _apply_bonuses, so an
-# ec_list sharing its key is dead code that reads like a live implementation.
-overlap = sorted(set(team_ec) & set(team_map), key=int)
-check("no id has both a team effect and an ec_list", not overlap,
-      f"ids in both: {overlap}")
+# An ec_list beside a team effect used to be dead code, because the effect map
+# always won.  Viking Sagas changed that: it EMPTIED effects 38/4/11 while
+# leaving their names and the civs pointing at them, so _apply_bonuses now
+# treats an empty mapped effect as a missing one and falls through here.  The
+# overlap is therefore allowed, but only for ids we have actually caught the
+# game hollowing out — anywhere else it is still dead code pretending to be an
+# implementation.
+HOLLOWED = {"1", "14", "16"}          # Genitour, Llama, Condottiero
+overlap = set(team_ec) & set(team_map)
+check("only known hollowed-out bonuses carry both an effect and an ec_list",
+      overlap <= HOLLOWED,
+      f"unexpected ids in both: {sorted(overlap - HOLLOWED, key=int)} — an "
+      f"ec_list beside a live effect never runs")
+
+# ...and the fallback has to be reachable, which means the mapped effect really
+# is empty in a shipped DAT.  Proving that needs the updated DAT; without it we
+# can still prove the entry is shaped to survive BOTH gating mechanisms.
+for bid, techs in (("1", (601, 599)), ("14", (730,)), ("16", (522,))):
+    ecs = team_ec.get(bid, [])
+    unlocked = {int(e["A"]) for e in ecs if e["type"] == 8}
+    freed    = {int(e["A"]) for e in ecs if e["type"] == 101}
+    check(f"team_ec_list[{bid}] type=8-unlocks {set(techs)} (the DLC gate: "
+          f"tech 79 'Disable Regionals')", unlocked == set(techs),
+          f"got {unlocked}")
+    check(f"team_ec_list[{bid}] also zeroes the pre-DLC cost gate on {techs[0]}",
+          techs[0] in freed, f"type=101 targets {freed}")
 
 # Every key on both sides must be a team bonus that actually exists.
 import bonus_names  # noqa: E402
@@ -289,6 +310,35 @@ if dat_path is not None:
           any("#75" in w and "no implementation" in w
               for w in ok.get("warnings", [])),
           f"warnings were: {ok.get('warnings')}")
+
+    # ── 5. The hollowed-out three survive whichever DAT the player has ───────
+    # This is the invariant the DLC broke: on a pre-DLC DAT the vanilla effect
+    # supplies the commands, on a DLC DAT it is empty and team_ec_list does.
+    # Either way the bonus must be APPLIED, never skipped — a skip is a card the
+    # user picked that silently does nothing.
+    three = build_team([1, 14, 16], slot=7)["bonus_results"]
+    check("Genitour/Llama/Condottiero all apply on this DAT",
+          three["team_applied"] == 3,
+          f"applied {three['team_applied']}/3, skipped {three['team_skipped']}")
+    check("...and none of them is reported as unimplemented",
+          three["team_skipped"] == [], f"skipped: {three['team_skipped']}")
+
+    # Whichever side of the patch we are on, the merged effect has to end up
+    # able to release the techs: pre-DLC that means the cost gate is zeroed,
+    # post-DLC it means a type=8 clears tech 79's global disable.
+    merged = dat.effects[dat.civs[7].team_bonus_id].effect_commands
+    disabled_globally = {int(c.d) for c in dat.effects[79].effect_commands
+                         if c.type == 102}
+    for tid in (601, 730, 522):
+        if tid in disabled_globally:
+            ok_cmd = any(c.type == 8 and int(c.a) == tid for c in merged)
+            why = "tech 79 disables it, so only a type=8 unlock releases it"
+        else:
+            ok_cmd = any(c.type == 101 and int(c.a) == tid and float(c.d) == 0
+                         for c in merged)
+            why = "no global disable, so the 1-food cost gate is what holds it"
+        check(f"tech {tid} is released by the right mechanism for this DAT "
+              f"({why})", ok_cmd)
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
