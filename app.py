@@ -175,6 +175,13 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.1.1": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>The Flemish Militia is back.</strong> It was only ever reachable as an accidental side effect of the \"Farm upgrades +125% food\" bonus. Cleaning that up in 2.1.0 removed the unit's only path — it now has its own <strong>Unlock the Flemish Militia</strong> card (Barracks, Feudal Age)",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Unique unit stats no longer disappear when you open a saved civ. Saved civs deliberately don't store your DAT path (it's specific to your PC), and the stats lookup had no fallback — so every unit's popup read \"No stats available\" while the civ still built fine",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> If your game files genuinely can't be found, the unit popup now says so and points you at Step 1, instead of blaming the units",
+        "Unlock cards are now filed under the <strong>Unlock</strong> category automatically, rather than landing under Research",
+        "<em>Thanks to Maruviel on Discord for all three reports.</em>",
+    ],
     "2.1.0": [
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Fixed a crash on game startup for civs with many team bonuses — team bonuses are merged into one effect and could exceed the engine's limit. The builder now warns you before you hit it",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Team bonuses were doing each other's jobs.</strong> An internal list drifted out of alignment in July, so hand-written team bonuses ran a different bonus entirely — \"Spearmen +3 attack vs. cavalry\" was secretly \"Unique Units +5% HP\". All re-aligned",
