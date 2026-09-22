@@ -11,3 +11,11 @@
 .DS_Store
 .claude_tmp
 .cache/
+
+# Game data dropped in for a DLC update. These are Microsoft's files —
+# empires2_x2_p1.dat and the per-civ CivTechTrees — and must never be
+# committed to a public repo. Keep them local; scripts/dat_drift.py reads
+# them by path.
+/*update*/
+/*update*.zip
+empires2_x2_p1.dat
