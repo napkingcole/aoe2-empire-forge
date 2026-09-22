@@ -1436,6 +1436,17 @@ function _classifyBonus(id, label) {
     return _BONUS_CATEGORIES.find(c => c.key === _BONUS_CAT_OVERRIDES[id])
         || _BONUS_CATEGORIES.at(-1);
   }
+  // Every unlock card is an unlock, whatever its label happens to say.  The
+  // keyword pass below is first-match-wins and `research` matches on "age",
+  // which every one of these labels ends with ("… Barracks, Feudal Age") — so
+  // a new unlock card lands under Research unless someone remembers to add it
+  // to _BONUS_CAT_OVERRIDES by hand.  Bonus 428 did exactly that.
+  // _unlockBonusUnits comes from /api/builder/meta, so this tracks
+  // civ_appender._UNLOCK_UNIT_BONUSES automatically and the hardcoded 405-417
+  // entries above are now belt-and-braces rather than load-bearing.
+  if (_isUnlockBonus(id)) {
+    return _BONUS_CATEGORIES.find(c => c.key === 'unlock') || _BONUS_CATEGORIES.at(-1);
+  }
   const lower = label.toLowerCase();
   for (const cat of _BONUS_CATEGORIES) {
     if (cat.kw.some(kw => lower.includes(kw))) return cat;

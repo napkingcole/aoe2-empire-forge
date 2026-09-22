@@ -25,6 +25,18 @@ so the card is the only path). Only tech **773** needs claiming: 774 is `civ=-1`
 own once the unit exists. Unit 1699 trains at **Barracks button 4**, shared with the Eagle Warrior
 and Fire Lancer, which the existing build-time collision warning already covers.
 
+**The card came out filed under Research.** `_classifyBonus` runs a first-match-wins keyword pass
+over the bonus *label*, and the `research` category matches on **`"age"`** — which every unlock
+label ends with ("… Barracks, Feudal Age") — while `unlock` sits four categories later.  That is
+why 405-417 are all listed by hand in `_BONUS_CAT_OVERRIDES`, with a comment warning about exactly
+this; adding a fourteenth card to the Python table does not add it there.
+
+Rather than hand-add 428, `_classifyBonus` now consults **`_isUnlockBonus(id)`** before the keyword
+pass.  That map is served by `/api/builder/meta` straight from `_UNLOCK_UNIT_BONUSES`, so any
+future unlock card is categorised correctly with no second list to remember, and the hardcoded
+405-417 entries become belt-and-braces rather than load-bearing.  No race: `init()` assigns
+`_unlockBonusUnits` from awaited meta before `renderBonusGrid()` runs in the later `.then()`.
+
 `tests/test_unlock_unit_bonuses.py` checks **the whole class rather than this one card**: it builds
 one civ carrying all 14 unlock bonuses and asserts each allocated a civ-owned tech that enables its
 units, plus that each has a name and a card — because an implemented bonus with no entry in
