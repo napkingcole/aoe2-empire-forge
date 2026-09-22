@@ -55,6 +55,8 @@ if [ "${SKIP_SMOKE:-0}" = "1" ]; then
 else
     run "build smoke (python)" "$PY" tests/test_build_smoke.py
     run "civ with no UU (python)" "$PY" tests/test_no_uu_civ.py
+    run "unlock unit bonuses"     "$PY" tests/test_unlock_unit_bonuses.py
+    run "dat_path fallback"       "$PY" tests/test_dat_path_fallback.py
 fi
 
 # Route round-trip builds all 19 saved civs down BOTH routes and compares them —

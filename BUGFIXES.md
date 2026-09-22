@@ -5,6 +5,105 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-20 — the Flemish Militia lost its only path when a farm bonus stopped carrying it
+
+**Symptom:** a user on v2.1.0 reported "I can't find the Flemish Militia."
+
+**Root cause — a correct fix with a consequence nobody followed up.** Bonus 108 ("Farm upgrades
+provide +125% additional food") used to map `{772, 773, 774}`, and **773/774 are the Flemish
+Militia make-avail and its Castle-Age stat boost**. So every civ taking a farm bonus silently
+gained a unit line. Trimming 108 to `{772}` on 2026-09-10 was right — but 773 was the *only* thing
+in the whole app that enabled unit 1699, and **1699 is not a node in `FULL.json` either**, so the
+tech tree editor cannot reach it. Removing the accidental path removed the only path.
+
+This was actually written down at the time (`project_github_issue_triage`, under #37) and still got
+missed, because it read as a note about a resolved collision rather than an open gap.
+
+**Fix:** bonus **428**, "Unlock the Flemish Militia", joining the thirteen existing
+`_UNLOCK_UNIT_BONUSES` cards that exist for exactly this reason (quirk 9 — the unit is `civ`-gated,
+so the card is the only path). Only tech **773** needs claiming: 774 is `civ=-1` and fires on its
+own once the unit exists. Unit 1699 trains at **Barracks button 4**, shared with the Eagle Warrior
+and Fire Lancer, which the existing build-time collision warning already covers.
+
+**The card came out filed under Research.** `_classifyBonus` runs a first-match-wins keyword pass
+over the bonus *label*, and the `research` category matches on **`"age"`** — which every unlock
+label ends with ("… Barracks, Feudal Age") — while `unlock` sits four categories later.  That is
+why 405-417 are all listed by hand in `_BONUS_CAT_OVERRIDES`, with a comment warning about exactly
+this; adding a fourteenth card to the Python table does not add it there.
+
+Rather than hand-add 428, `_classifyBonus` now consults **`_isUnlockBonus(id)`** before the keyword
+pass.  That map is served by `/api/builder/meta` straight from `_UNLOCK_UNIT_BONUSES`, so any
+future unlock card is categorised correctly with no second list to remember, and the hardcoded
+405-417 entries become belt-and-braces rather than load-bearing.  No race: `init()` assigns
+`_unlockBonusUnits` from awaited meta before `renderBonusGrid()` runs in the later `.then()`.
+
+`tests/test_unlock_unit_bonuses.py` checks **the whole class rather than this one card**: it builds
+one civ carrying all 14 unlock bonuses and asserts each allocated a civ-owned tech that enables its
+units, plus that each has a name and a card — because an implemented bonus with no entry in
+`bonus_names.json` is just as unreachable, which is how 35 working bonuses sat invisible until
+2026-09-17.
+
+### Unique unit stats — a real bug after all, found by the user's own hypothesis
+
+First written off as discoverability ("the stats are in a hover popup"), because they rendered
+correctly on this machine.  The user's follow-up — *"perhaps he isn't seeing stats because the DAT
+isn't loaded yet for him?"* — was right, and better than the original diagnosis.
+
+**The chain.** `civ_schema` **strips `dat_path` when a civ is saved**, correctly: it is
+machine-specific and has no business in a shared `.civbuilder.json`.  So a draft loaded from a
+saved civ has no `dat_path`.  `/builder/build` has always fallen back to `session["dat_path"]`,
+so **builds kept working** — but `/api/builder/uu/catalog` read the query parameter only, returned
+`stats: null` for all 92 units with a 200, and `_build_all_uu_stats` swallowed any failure in a
+bare `except Exception: pass`.  `_buildUUPopupHTML` then rendered **"No stats available"** on every
+unit, indistinguishable from units that genuinely have no stats.
+
+So: **open a saved civ and the stats vanish, while the civ still builds fine.**  Nothing connects
+those two facts from the outside, which is why it read as a v2.1.0 regression when the UI code
+dates to 2026-07-01.
+
+Measured before the fix — `92 units, 0 with stats` for a missing, empty *or* stale `dat_path`;
+`92 with stats` only for an explicit valid one.
+
+**Fix:** `_resolve_dat_path()` — request arg, then session, then `find_game_dat()`, with each
+candidate required to **exist on disk** before it wins, so a stale path (moved install, hand-edited
+civ file, unmounted drive) falls through rather than being honoured into a blank screen.  Applied
+to all three read-only helper routes that had the same pattern (`prewarm`, `uu/catalog`,
+`ut/costs`).  The swallowed exception now prints a warning naming the path.
+
+Verified in the browser against a draft with no `dat_path`: full stats render.
+
+**And when there genuinely is no DAT**, which the fallback cannot conjure one for.  Step 1 already
+warns clearly (orange, with Steam and Microsoft Store path examples), and `detectDat()` re-runs on
+every load so a saved civ normally repopulates its own path — but the popup still said "No stats
+available", blaming the units rather than the missing game files.  `_uuStatsUnavailable` now
+distinguishes the two: **92 units and not one with stats is a DAT problem, not 92 coincidences**,
+so the popup reads *"Game files not found — set your DAT path in Step 1"*.  Three states, all
+verified in the browser: `Loading stats…` while fetching, `No stats available` for a unit that
+genuinely has none, and the new message when the DAT is missing.
+
+### Also reported, and genuinely not a bug
+
+One other report from the same user turned out to be discoverability, not breakage. Both were
+verified working in the browser against his own civ file, and `git log -S` puts both in
+**6b29706, 2026-07-01** — months before v2.1.0, so neither is a regression:
+
+- **"Is it no longer possible to customise Castle & Unique techs?"** The effects picker is behind a
+  **Pick Vanilla Tech / Build Custom** toggle that defaults to Vanilla, so the custom panel is
+  hidden until you switch. Clicking it shows name, description, cost and the effects search, and
+  persists `mode: "custom"` — confirmed with his civ loaded.
+The custom-UT toggle works; it just does not announce itself.  Worth making more discoverable —
+but note the lesson from the stats report above: **"the feature is just hidden" is a comfortable
+diagnosis and it was wrong once in this same batch.**  Reach for it only after checking the data
+path.
+
+**The crash could not be reproduced.** Rebuilding his new `.civbuilder.json` gives a clean mod:
+tech-tree effect 93 commands, team bonus effect 39, **no effect over the ~189 ceiling**, no tech
+pointing past the effect table, no empty `research_locations`, and a strings file with no malformed
+lines or duplicate ids. Since his previous civ *did* crash for a now-fixed reason, the first thing
+to rule out is **the old mod still being installed and enabled alongside the new one**.
+
+---
+
 ## 2026-09-18 (b) — four findings from the pre-release in-game test round
 
 The user built a civ carrying the new and changed bonuses and played a game. Starting resources,

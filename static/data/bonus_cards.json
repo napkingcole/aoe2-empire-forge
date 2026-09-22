@@ -3317,5 +3317,12 @@
     "stat": "Start with +50 gold",
     "entity": "gold",
     "description": "Starting Resources"
+  },
+  "428": {
+    "heading": "UNLOCK",
+    "stat": "Flemish Militia can be trained at Barracks",
+    "entity": "flemish_militia",
+    "description": "Barracks — Feudal Age",
+    "multiplier": false
   }
 }
