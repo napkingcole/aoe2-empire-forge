@@ -1181,6 +1181,67 @@ def api_builder_detect_dat():
     return jsonify({"dat_path": dat_path, "civtechtrees_path": ct_path, "found": bool(dat_path)})
 
 
+@app.route("/api/builder/validate-dat")
+def api_builder_validate_dat():
+    """Is this path usable as the game DAT?  Cheap enough to run as you type.
+
+    Auto-detection only knows the default install locations, so anyone with
+    Steam on a second drive (`D:\\SteamLibrary\\...`) has to type the path by
+    hand — and until now the wizard gave them **no** signal either way.  The
+    path was saved to the draft, prewarm was fired and its answer thrown away,
+    and the status line kept showing "Not auto-detected" forever.  A user on a
+    D: drive reported "I entered it manually and it doesn't work"; his path was
+    in fact correct, and nothing told him so (2026-09-22).
+
+    Deliberately does not parse the DAT: that is ~16s, far too slow for typing
+    feedback, and prewarm already does it in the background.  This answers the
+    questions that actually go wrong — wrong drive, folder instead of file,
+    typo in the filename — and reports whether CivTechTrees was found alongside,
+    which is the other half of a usable install.
+    """
+    raw = (request.args.get("dat_path") or "").strip().strip('"')
+    if not raw:
+        return jsonify({"ok": False, "reason": "Enter the path to empires2_x2_p1.dat."})
+
+    p = Path(raw)
+    if p.is_dir():
+        # Same helpfulness the /upload route already has: people paste the folder.
+        candidate = p / "empires2_x2_p1.dat"
+        if candidate.exists():
+            p = candidate
+        else:
+            return jsonify({"ok": False,
+                            "reason": "That's a folder, not the DAT file. "
+                                      "Point to empires2_x2_p1.dat itself."})
+    if not p.exists():
+        hint = ""
+        # A drive letter that isn't there at all is worth calling out — it is the
+        # single most common cause on a machine with more than one drive.
+        if len(raw) > 1 and raw[1] == ":" and not Path(raw[:3]).exists():
+            hint = f" Drive {raw[0].upper()}: isn't reachable from here."
+        return jsonify({"ok": False, "reason": f"No file at that path.{hint}"})
+    if not p.is_file():
+        return jsonify({"ok": False, "reason": "That path isn't a file."})
+    if p.name.lower() != "empires2_x2_p1.dat":
+        return jsonify({"ok": False,
+                        "reason": f"Expected empires2_x2_p1.dat, got {p.name}."})
+    try:
+        size_mb = p.stat().st_size / (1024 * 1024)
+    except OSError as e:                                          # noqa: BLE001
+        return jsonify({"ok": False, "reason": f"Cannot read that file: {e}"})
+    if size_mb < 1:
+        return jsonify({"ok": False,
+                        "reason": f"That file is only {size_mb:.1f} MB — too small "
+                                  f"to be the game DAT."})
+
+    ct = find_civtechtrees(p)
+    return jsonify({"ok": True, "dat_path": str(p), "size_mb": round(size_mb, 1),
+                    "civtechtrees_path": str(ct) if ct else "",
+                    "reason": "" if ct else
+                              "Found the DAT, but no CivTechTrees folder beside it — "
+                              "set that below if your build looks wrong."})
+
+
 @app.route("/api/builder/meta")
 def api_builder_meta():
     # value = dat_index - 1 (KM 0-based convention; 0 = Britons).

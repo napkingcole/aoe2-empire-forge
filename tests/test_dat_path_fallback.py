@@ -82,6 +82,42 @@ _, explicit = stats_count(f"?dat_path={quote(str(dat_path))}")
 check("an explicit valid dat_path still works", explicit == total,
       f"{explicit}/{total}")
 
+print("\n=== validate-dat answers a typed path specifically ===")
+# Auto-detection only knows the default install locations, so anyone with the
+# game on a second drive types the path by hand.  Until 2026-09-22 that produced
+# no feedback whatsoever, and a correct path was indistinguishable from a wrong
+# one — which is exactly how a user concluded a perfectly good path "didn't work".
+
+
+def validate(path):
+    res = client.get("/api/builder/validate-dat",
+                     query_string={"dat_path": path})
+    assert res.status_code == 200, res.status_code
+    return res.get_json()
+
+
+good = validate(str(dat_path))
+check("a real DAT validates", good["ok"] is True, good)
+check("and reports its size so the answer is legible", good.get("size_mb", 0) > 1, good)
+
+folder = validate(str(Path(dat_path).parent))
+check("a pasted FOLDER resolves to the DAT inside it", folder["ok"] is True, folder)
+check("and hands back the corrected path",
+      folder.get("dat_path", "").endswith("empires2_x2_p1.dat"), folder)
+
+missing = validate(r"D:\SteamLibrary\steamapps\common\AoE2DE\resources\_common\dat\empires2_x2_p1.dat")
+check("a path on an absent drive fails with a reason", missing["ok"] is False, missing)
+check("and the reason names the drive rather than shrugging",
+      "D:" in missing.get("reason", ""), missing)
+
+wrong = validate(str(ROOT / "README.md"))
+check("a file that is not the DAT fails by name", wrong["ok"] is False, wrong)
+check("and says what it expected",
+      "empires2_x2_p1.dat" in wrong.get("reason", ""), wrong)
+
+blank = validate("")
+check("an empty path fails rather than 500ing", blank["ok"] is False, blank)
+
 print("\n=== the resolver prefers a real path over a broken one ===")
 with appmod.app.test_request_context():
     resolved = appmod._resolve_dat_path("/nonexistent/empires2_x2_p1.dat")
@@ -96,11 +132,28 @@ with appmod.app.test_request_context():
 
 print("\n=== every route reading dat_path goes through the resolver ===")
 # The bug was two routes disagreeing about where to look.  Keep them agreeing.
+#
+# One route is deliberately exempt.  `/api/builder/validate-dat` exists to answer
+# "is THIS path usable?" for a path the user just typed, so falling back to the
+# session or to auto-detection would make it report success about a different
+# file entirely — a wrong path would come back "Game files found".  Validating a
+# candidate and consuming a DAT are opposite jobs; only the second one falls back.
+EXEMPT_MARKERS = ('.strip().strip(\'"\')',)   # the validate-dat read
 src = (ROOT / "app.py").read_text()
 raw = [ln.strip() for ln in src.splitlines()
-       if 'request.args.get("dat_path"' in ln and "_resolve_dat_path" not in ln]
-check("no route reads the dat_path parameter directly", not raw,
+       if 'request.args.get("dat_path"' in ln
+       and "_resolve_dat_path" not in ln
+       and not any(m in ln for m in EXEMPT_MARKERS)]
+check("no consuming route reads the dat_path parameter directly", not raw,
       "these bypass the fallback:\n       " + "\n       ".join(raw))
+
+# ...and the exempt one must still exist, so the exemption cannot quietly become
+# a hole that swallows a future route.
+exempt_lines = [ln.strip() for ln in src.splitlines()
+                if 'request.args.get("dat_path"' in ln
+                and any(m in ln for m in EXEMPT_MARKERS)]
+check("the validate-dat exemption matches exactly one route", len(exempt_lines) == 1,
+      f"matched {len(exempt_lines)}: {exempt_lines}")
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
