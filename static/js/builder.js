@@ -3806,13 +3806,53 @@ async function init() {
   // Restore saved paths from draft; if blank, auto-detect
   if (draft.dat_path)          datInput.value = draft.dat_path;
   if (draft.civtechtrees_path) ctInput.value  = draft.civtechtrees_path;
-  if (draft.dat_path) _prewarmDat(draft.dat_path);
+  // A path carried in from a saved draft can be stale (moved install, another
+  // machine), so confirm it rather than assuming.  Nothing there → auto-detect.
+  if (draft.dat_path) validateDatPath(draft.dat_path);
   else detectDat();
+
+  // Check a hand-typed path and SAY whether it worked.  Auto-detection only
+  // knows the default install locations, so anyone with Steam on a second drive
+  // types this by hand — and used to get no feedback at all: the path was saved,
+  // prewarm fired and its answer discarded, and the status line still read
+  // "Not auto-detected".  A correct path was indistinguishable from a wrong one.
+  async function validateDatPath(path) {
+    if (!path) { datStatus.textContent = ""; return; }
+    datStatus.textContent = "Checking…";
+    datStatus.className   = "form-text text-muted";
+    try {
+      const r = await fetch(`/api/builder/validate-dat?dat_path=${encodeURIComponent(path)}`);
+      const d = await r.json();
+      if (d.ok) {
+        // The server may have resolved a folder to the file inside it.
+        if (d.dat_path && d.dat_path !== path) {
+          datInput.value = d.dat_path;
+          draft.dat_path = d.dat_path;
+        }
+        if (d.civtechtrees_path && !ctInput.value) {
+          ctInput.value = d.civtechtrees_path;
+          draft.civtechtrees_path = d.civtechtrees_path;
+        }
+        saveDraft();
+        datStatus.textContent = d.reason
+          ? `✓ Found the DAT (${d.size_mb} MB) — ${d.reason}`
+          : `✓ Game files found (${d.size_mb} MB)`;
+        datStatus.className = d.reason ? "form-text text-warning" : "form-text text-success";
+        _prewarmDat(draft.dat_path);
+      } else {
+        datStatus.textContent = `✕ ${d.reason}`;
+        datStatus.className   = "form-text text-danger";
+      }
+    } catch (e) {
+      datStatus.textContent = `Could not check that path: ${e.message}`;
+      datStatus.className   = "form-text text-danger";
+    }
+  }
 
   datInput.addEventListener("change", () => {
     draft.dat_path = datInput.value.trim();
     saveDraft();
-    _prewarmDat(draft.dat_path);
+    validateDatPath(draft.dat_path);
   });
   ctInput.addEventListener("change", () => {
     draft.civtechtrees_path = ctInput.value.trim();

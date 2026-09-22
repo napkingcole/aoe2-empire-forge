@@ -5,6 +5,56 @@ Add a new entry here whenever a bug is fixed. Format: date patched, what broke, 
 
 ---
 
+## 2026-09-22 — a correct DAT path looked exactly like a wrong one
+
+**Symptom:** a user's game is on `D:\SteamLibrary`, so auto-detection missed it — expected, since
+`STEAM_DAT_CANDIDATES` only lists `C:` locations.  He typed the path by hand and reported that
+*that* didn't work either.
+
+**His path was correct.** `D:\SteamLibrary\steamapps\common\AoE2DE\resources\_common\dat\empires2_x2_p1.dat`
+— backslashes are the native Windows separator, `Path` handles them, and the string survives
+`encodeURIComponent` → Flask intact (verified).  Nothing was wrong with what he entered.
+
+**Root cause: the wizard never told him.** The manual-entry handler saved the path, fired
+`_prewarmDat`, and **discarded the answer** (`.catch(() => {})`, no `.then()`).  `prewarm` does not
+validate either — it starts a thread and returns `"warming"` whether or not the file exists.  And
+`dat-detect-status` kept showing the orange *"Not auto-detected — enter path manually"* from the
+failed detection, forever.  So a correct path and a typo produced byte-identical UI.
+
+To the other half of the question — **it scans on `change`**, which fires on blur, so the path
+*was* being saved.  It just never said so.
+
+**Fix:** `/api/builder/validate-dat`, called on manual entry and on a path restored from a saved
+draft (which can be stale — moved install, another machine).  Deliberately does **not** parse the
+DAT: that is ~16s, far too slow for typing feedback, and prewarm already does it in the
+background.  It answers the things that actually go wrong:
+
+| Entered | Response |
+|---|---|
+| the real DAT | `✓ Game files found (10.6 MB)` |
+| the **folder** containing it | `✓` — and rewrites the field to the file inside |
+| a path on an absent drive | `✕ No file at that path. Drive D: isn't reachable from here.` |
+| some other file | `✕ Expected empires2_x2_p1.dat, got README.md.` |
+| empty | `✕ Enter the path to empires2_x2_p1.dat.` |
+
+It also auto-fills CivTechTrees when found, and warns when it is not.
+
+**The route is deliberately exempt from the `_resolve_dat_path` guard** added the day before — and
+`test_dat_path_fallback.py` caught it immediately, which is the guard working.  Validating a
+candidate and consuming a DAT are opposite jobs: if validation fell back to the session or to
+detection, a wrong path would come back *"Game files found"* about a different file entirely.  The
+test now exempts that one read by name and asserts the exemption still matches **exactly one**
+route, so it cannot quietly widen into a hole.
+
+**Not fixed, and worth knowing:** a browser file input cannot supply a real path — browsers report
+`C:\fakepath\...` by design, giving bytes and never a location, and Empire Forge needs the
+location because `CivTechTrees/` and `civilizations.json` sit beside the DAT.  A **Browse…** button
+therefore needs a native OS dialog (tkinter, or Windows `IFileOpenDialog` via ctypes).  `tkinter`
+is not importable on the dev Mac (`No module named '_tkinter'`), so that work cannot be verified
+here and belongs on a Windows build.
+
+---
+
 ## 2026-09-20 — the Flemish Militia lost its only path when a farm bonus stopped carrying it
 
 **Symptom:** a user on v2.1.0 reported "I can't find the Flemish Militia."
