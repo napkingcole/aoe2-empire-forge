@@ -29,6 +29,8 @@ from build_civ import (
     _find_civ_slot,
     _civ_techtree_index,
     _canonical_techtree_id,
+    civ_name_sid,
+    civ_roster,
     _resolve_uu_info,
     _patch_per_civ_techtree,
     _find_adjacent_json,
@@ -150,8 +152,9 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         raise ValueError(f"Cannot find a civ named {replace_civ!r} in the DAT file.")
 
     ui_civ_name = dat.civs[slot].name
-    tt_idx      = _civ_techtree_index(ui_civ_name)
-    name_sid    = 10271 + tt_idx if tt_idx is not None else 10271
+    # Slot-keyed, so a DLC that appends civs needs no code change and a civ
+    # replacing Saxons no longer writes its name over Britons (sid 10271).
+    name_sid    = civ_name_sid(ui_civ_name, dat_path, slot=slot) or 10271
 
     # ── Apply civ to DAT ────────────────────────────────────────────────────
     civ_result = apply_civ(dat, civ_def, target_slot=slot)
@@ -445,16 +448,24 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
                 _put(uu_elite_dll + 21000, _elite_hover)
             _put(uu_elite_dll + DLL_HELP_OFFSET, _elite_hover)
 
-    # Vanilla civ-name + description fallbacks for all unmodified civs
-    replaced_pos = {tt_idx} if tt_idx is not None else set()
-    for i, vanilla_name in enumerate(KM_TECHTREE_ORDER):
-        if i in replaced_pos:
+    # Vanilla civ-name + description fallbacks for all unmodified civs.
+    # Driven by the live roster, so civs a DLC added keep their real names
+    # instead of being skipped (the frozen list stopped at 59).
+    # AoE2 DE key-value files are first-definition-wins, which is why the civ we
+    # replaced has to be left out rather than overwritten later.
+    roster = civ_roster(dat_path)
+    for entry in roster[1:]:                       # slot 0 is Gaia
+        sid = entry["name_sid"]
+        if sid is None or sid == name_sid:
             continue
-        sid = 10271 + i
+        vanilla_name = entry["name"]
         for lang in LANGUAGES:
             string_lines[lang].append(f'{sid} "{vanilla_name}"')
             string_lines[lang].append(f'{sid + 80000} "Click to play as {vanilla_name}."')
-    for i in range(min(len(KM_TECHTREE_ORDER), 45)):
+    # Descriptions exist only for the original 45 civs (sids 120150-120194),
+    # indexed from Britons = 0, i.e. DAT slot - 1.
+    replaced_pos = {name_sid - 10271}
+    for i in range(45):
         if i in replaced_pos:
             continue
         sid  = 120150 + i
@@ -481,7 +492,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     button_pngs: dict[str, bytes] = {}
     flag_png = _decode_flag(civ_def)
     if flag_png:
-        fn = _canonical_techtree_id(ui_civ_name).lower()
+        fn = _canonical_techtree_id(ui_civ_name, dat_path, slot=slot).lower()
         for variant in ("", "_hover", "_pressed"):
             button_pngs[f"menu_techtree_{fn}{variant}.png"] = flag_png
 
@@ -494,7 +505,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     # ── CivTechTrees JSON ────────────────────────────────────────────────────
     per_civ_tt: dict[str, bytes] = {}
     if ct_folder:
-        vanilla_tt_name = _canonical_techtree_id(ui_civ_name)
+        vanilla_tt_name = _canonical_techtree_id(ui_civ_name, dat_path, slot=slot)
         per_civ_path    = ct_folder / f"{vanilla_tt_name}.json"
         if per_civ_path.exists():
             civ_result["castle_ut_name"] = castle_ut_name

@@ -38,6 +38,7 @@ from build_civ import (
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
     _decode_flag, _find_civ_techtrees_folder,
     _patch_per_civ_techtree, _canonical_techtree_id,
+    civ_name_sid, civ_roster,
     _resolve_uu_info, _find_adjacent_json, uu_cost_text,
 )
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
@@ -596,7 +597,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
         # writing vanilla names for them.  AoE2 DE key-value files are
         # first-definition-wins — writing "Britons" first then "Horsey Boys" second
         # would leave the vanilla name in place.
-        replaced_tt_positions: set[int] = set()
+        replaced_name_sids: set[int] = set()
         for _fn in ordered:
             _replace = replace_map.get(_fn, "")
             if not _replace:
@@ -604,15 +605,16 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             _slot = _find_civ_slot(dat, _replace)
             if _slot is None:
                 continue
-            _tti = _civ_techtree_index(dat.civs[_slot].name)
-            if _tti is not None:
-                replaced_tt_positions.add(_tti)
+            _sid = civ_name_sid(dat.civs[_slot].name, dat_path, slot=_slot)
+            if _sid is not None:
+                replaced_name_sids.add(_sid)
 
         # Write vanilla civ name strings upfront, skipping replaced positions.
-        for i, vanilla_name in enumerate(KM_TECHTREE_ORDER):
-            if i in replaced_tt_positions:
+        for entry in civ_roster(dat_path)[1:]:       # slot 0 is Gaia
+            sid = entry["name_sid"]
+            if sid is None or sid in replaced_name_sids:
                 continue
-            sid = 10271 + i
+            vanilla_name = entry["name"]
             for lang in LANGUAGES:
                 string_lines[lang].append(f'{sid} "{vanilla_name}"')
                 string_lines[lang].append(f'{sid + 80000} "Click to play as {vanilla_name}."')
@@ -665,8 +667,9 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             build_results.append(result)
 
             alias = result["alias"]
-            tt_idx   = _civ_techtree_index(ui_civ_name)
-            name_sid = 10271 + tt_idx if tt_idx is not None else 10271
+            # Slot-keyed via the live roster: a civ a DLC added gets its own
+            # name string instead of writing over Britons (the 10271 fallback).
+            name_sid = civ_name_sid(ui_civ_name, dat_path, slot=slot) or 10271
 
             _bonuses_raw_normalized      = get_civ_bonuses(civ_def)
             _team_bonuses_raw_normalized = get_team_bonuses(civ_def)
@@ -930,7 +933,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             if flag_png:
                 # Use canonical civTechTrees name (e.g. "britons") not DAT internal
                 # name (e.g. "british") — game loads icons by canonical name.
-                fn_img = _canonical_techtree_id(ui_civ_name).lower()
+                fn_img = _canonical_techtree_id(ui_civ_name, dat_path, slot=slot).lower()
                 for variant in ("", "_hover", "_pressed"):
                     button_pngs[f"menu_techtree_{fn_img}{variant}.png"] = flag_png
 
@@ -939,7 +942,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             ai_stubs[f"resources/_common/ai/{ai_name}.per"] = AI_PER_STUB
 
             if ct_folder:
-                vanilla_tt_name = _canonical_techtree_id(ui_civ_name)
+                vanilla_tt_name = _canonical_techtree_id(ui_civ_name, dat_path, slot=slot)
                 per_civ_path = ct_folder / f"{vanilla_tt_name}.json"
                 if per_civ_path.exists():
                     patched = _patch_per_civ_techtree(per_civ_path, civ_def, dat, slot,

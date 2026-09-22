@@ -21,11 +21,19 @@ Structure: **civs 60 → 63**, effects 1409 → 1500 (+91), techs unchanged.
 
 ## New content we do not support yet
 
-- **Saxons, Varangians, Danes** — DAT slots 60, 61, 62. Need adding to
-  `build_civ.KM_TECHTREE_ORDER` or their civ-picker name strings (`10271 + index`)
-  land on the wrong slot. The bundled `civilizations.json` also needs refreshing:
-  the game validates its entry count against the DAT civ count, so a 60-entry
-  file against a 63-civ DAT is a hard mismatch.
+- ~~**Saxons, Varangians, Danes** need adding to `KM_TECHTREE_ORDER`~~ — **DONE
+  2026-09-22, and not by adding them.** The roster is now read from the player's
+  own `civilizations.json` (`build_civ.civ_roster`), keyed by **DAT slot**,
+  which carries `internal_name`, `tech_tree_name` and `name_string_id` outright
+  — so the `10271 + index` arithmetic is gone and a future DLC needs no code
+  change at all. Verified: Saxons 10330, Varangians 10331, Danes 10332.
+  The bundled `civilizations.json` needs no refresh either, because the build
+  already prefers the copy beside the player's DAT.
+
+  Fixed a silent bug on the way: `_DAT_TO_TECHTREE_ID` mapped Mayan → `MAYA`,
+  but the shipped file is **MAYANS.json**, and the per-civ tech-tree patch is
+  guarded by `if per_civ_path.exists()` — so **replacing the Mayans quietly
+  shipped an unpatched tech tree**. Slot-keyed lookup returns MAYANS.
 - **Mounted Crossbowman + Cranequins** — replaces Cavalry Archers for most
   European civs. This is a *regional unit swap*, the same shape as Eagle Warrior
   vs Fire Lancer, so it likely wants `_REGIONAL_PAIRS` / tech-tree editor work
