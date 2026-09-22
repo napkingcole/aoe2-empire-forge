@@ -1793,7 +1793,7 @@ def api_builder_uu_catalog():
         48: "166_50730.png",   # Amazon Warrior
         49: "165_50730.png",   # Amazon Archer
         50: "297_50730.png",   # Iroquois Warrior
-        51: "357_50730.png",   # Varangian Guard
+        51: "357_50730.png",   # Hetaireia
         52: "260_50730.png",   # Gendarme
         54: "379_50730.png",   # Ritterbruder
         55: "256_50730.png",   # Kazak

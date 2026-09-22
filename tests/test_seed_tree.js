@@ -44,13 +44,20 @@ function lift(name, kind) {
 
 // main.js owns the regional-swap sets that _filterFullTree reads.
 const mainSrc = fs.readFileSync(path.join(ROOT, 'static/aoe2techtree/js/main.js'), 'utf8');
-const regUnitsLine = mainSrc.match(/const _REGIONAL_UNIT_IDS = new Set\(\[[^\]]*\]\);/)[0];
+// _REGIONAL_UNIT_IDS and _REGIONAL_LINE_TECH_IDS are DERIVED from
+// _REGIONAL_GROUPS (they used to be hand-listed literals and drifted), so lift
+// the whole declaration block rather than scraping a Set literal that no longer
+// exists.  Deliberately anchored on both ends: restructure the block and this
+// throws here instead of silently lifting half of it.
+const regBlock = mainSrc.match(
+  /const _REGIONAL_GROUPS = \[[\s\S]*?const _REGIONAL_LINE_TECH_IDS = new Set\([\s\S]*?\);/
+)[0];
 const swapIds = [...mainSrc
   .match(/const _REGIONAL_BUILDING_SWAPS = \[[\s\S]*?\n\];/)[0]
   .matchAll(/\bid:\s*(\d+)/g)].map(m => Number(m[1]));
 
 const harness = `
-${regUnitsLine}
+${regBlock}
 const _REGIONAL_BUILDING_IDS = new Set(${JSON.stringify(swapIds)});
 let _unlockBonusUnits = UNLOCK_FROM_TEST;
 ${lift('_CIV_UNIQUE_BUILDING_IDS', 'const')}
@@ -97,6 +104,26 @@ console.log('=== A blank civ carries no Unlock-card units ===');
   const present = Object.values(UNLOCK).flat().filter(u => union.units.has(u));
   check('the union really does contain them (test would pass vacuously otherwise)',
         present.length > 0, `only ${present.length} of them are in data.json`);
+}
+
+console.log('\n=== A blank civ carries no regional unit line, or its techs ===');
+{
+  // The three-way button contests: a blank civ keeps the standard line only.
+  const seedTechs = new Set(seed.techs);
+  for (const [uid, what] of [[2700, 'Mounted Crossbowman'], [2701, 'Heavy Mounted Crossbowman'],
+                             [2703, 'Varangian Guard'], [2704, 'Elite Varangian Guard'],
+                             [873, 'Elephant Archer'], [751, 'Eagle Scout']]) {
+    check(`${what} (${uid}) is not seeded`, !seedUnits.has(uid));
+  }
+  for (const [uid, what] of [[39, 'Cavalry Archer'], [1901, 'Fire Lancer']]) {
+    check(`${what} (${uid}) IS seeded — it is the standard side`, seedUnits.has(uid));
+  }
+  // Cranequins upgrades only the Mounted Crossbowman, which was just filtered
+  // out, so seeding it would leave a research node with nothing to research on.
+  check('Cranequins (1452) is not seeded without its unit', !seedTechs.has(1452));
+  check('the union really does contain Cranequins (not vacuous)',
+        union.techs.has(1452),
+        'data.json has no 1452 — refresh static/aoe2techtree/data from upstream');
 }
 
 console.log('\n=== A blank civ carries no civ-unique buildings ===');

@@ -266,7 +266,7 @@ _KM_UU_NAMES: dict[int, str] = {
     48: "Amazon Warrior",
     49: "Amazon Archer",
     50: "Iroquois Warrior",
-    51: "Varangian Guard",
+    51: "Hetaireia",
     52: "Gendarme",
     53: "Cuahchiqueh",
     54: "Ritterbruder",
@@ -1151,6 +1151,18 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     ec8_to_add: set[int] = set()
     for uid in tree_units | tree_buildings:
         for tech_id in ec8_unit_techs.get(uid, []):
+            ec8_to_add.add(tech_id)
+
+    # A tech can be globally disabled in its own right, not only as some unit's
+    # make-avail tech.  Cranequins (1452) is the first: Viking Sagas put a
+    # *researchable* Archery Range tech into tech 79 'Disable Regionals', so
+    # ticking it in the tree is not enough — the civ has to opt in exactly as it
+    # does for a regional unit, or `_lock_unclaimed_optin_techs` turns straight
+    # round and disables the thing the user just asked for.  Keyed on "vanilla
+    # unlocks this tech somewhere", the same template rule used above, so the
+    # next regional tech needs no code change.
+    for tech_id in tree_techs:
+        if tech_id in ec8_info:
             ec8_to_add.add(tech_id)
 
     # ── Step 3c: Mutual exclusions and bonus-driven keep-alive.

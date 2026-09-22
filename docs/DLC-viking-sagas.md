@@ -38,20 +38,68 @@ All the new content follows the standard opt-in shape — globally disabled by
 tech 79, released by a `type=8` in each owning civ's TT effect — so every one of
 these has a vanilla template our code can copy (see bonus 51 above).
 
-- **Mounted Crossbowman + Cranequins** — replaces Cavalry Archers for most
-  European civs. This is a *regional unit swap*, the same shape as Eagle Warrior
-  vs Fire Lancer, so it likely wants `_REGIONAL_PAIRS` / tech-tree editor work
-  rather than a bonus card.
-  Techs **1450** `Mounted Crossbowman (Make avail)` (15 civs), **1451** `Heavy
-  Mounted Crossbowman` (11), **1452** `Cranequins` (7).
-- **Varangian Guard** — new shock infantry that generates gold; Byzantines and
-  Vikings gain it. Probably an unlock card.
-  Techs **1453** `Varangian Guard (make avail)` (5 civs), **1454** `Elite
-  Varangian Guard` (6).
+- ~~**Mounted Crossbowman + Cranequins**~~ and ~~**Varangian Guard**~~ —
+  **DONE 2026-09-22**, see the section below.
 - **Ordonnance Companies** — new Frankish Castle UT (Mounted Crossbowmen -40%
-  gold). New UT preset. Tech/effect **1496**.
+  gold). New UT preset. Tech/effect **1496**, `civ=2`, researched at the Castle
+  (82), `EC_MULTIPLY attr 105 × 0.6` on units 2700/2701. Not done.
 - **Longboat renamed to Longship**, tech **272**, now granted to all four Viking
   civs (Vikings, Saxons, Varangians, Danes).
+
+## Mounted Crossbowman and Varangian Guard — DONE 2026-09-22
+
+Both are regional units contesting a button an existing line already owns, so
+neither is a bonus card: they belong in the tech tree, the same way the Elephant
+Archer does.
+
+| unit | ids | button | contests |
+|---|---|---|---|
+| Mounted Crossbowman / Heavy | 2700 / 2701 | Archery Range (87) btn 3 | Cavalry Archer (39/474), Elephant Archer (873/875) |
+| Varangian Guard / Elite | 2703 / 2704 | Barracks (12) btn 4 | Fire Lancer (1901/1903), Eagle line (751/753/752) |
+
+Verified against `data.json`: **no civ has both** a Cavalry Archer and a Mounted
+Crossbowman, and the Varangian Guard never coexists with a Fire Lancer or Eagle.
+
+**Both buttons are now three-way, which the old `_REGIONAL_PAIRS` table could
+not express** — a pair evicts one rival and leaves the other sitting on the
+button. It is now `_REGIONAL_GROUPS`: one building button, N lines, one of them
+flagged `standard` (the side a blank civ keeps). `_REGIONAL_UNIT_IDS` is
+*derived* from it rather than hand-listed, because those two drifted apart once
+already.
+
+**Cranequins (1452) is a new kind of node.** It is the first *researchable* tech
+that is also in tech 79's global disable list — a scan confirms exactly one such
+tech exists. Two consequences:
+
+1. It needed its own `type=8`. Step 3b of the tree wiring only collected
+   unlocks for tree *units*, so `_lock_unclaimed_optin_techs` turned round and
+   disabled the tech the user had just ticked. Now any tree tech with a vanilla
+   unlock template gets one, so the next regional tech needs no code change.
+2. It belongs to the Mounted Crossbowman and must not outlive it. Lines carry a
+   `techs` list: choosing a rival strips Cranequins along with the unit it
+   upgrades, ticking Cranequins pulls the Mounted Crossbowman in (the layout
+   links it to Thumb Ring, not to 2700, so the generic ancestor cascade cannot),
+   and `_filterFullTree` keeps it out of a blank civ's seed — which would
+   otherwise hand out a research node with nothing to research it on.
+
+**Prerequisite work:** `static/aoe2techtree/data/` was still pre-DLC, so the new
+units had no editor nodes at all. Refreshed from the upstream clone in
+`ignore/aoe2techtree` (53 → 56 civs; the structure was unchanged, only content).
+`FULL.json` is *ours*, not upstream's, so the five nodes were lifted from
+upstream's SAXONS.json and a grid column inserted in each building — beside the
+lines they contest, not appended, or the Varangian Guard renders past the
+Barracks' tech column and reads as belonging to the Stable. Confirmed on screen.
+
+**Also renamed:** KM's custom Castle UU 51 was called *Varangian Guard* and now
+collides with DE's real one. It is **Hetaireia** — the Byzantine imperial guard
+the Varangians actually served in, so the flavour survives. The internal
+`VARANG`/`EVARANG` DAT codenames are unchanged, and saved civs key on the index
+(`unique_unit.km_idx`), not the name, so existing drafts are unaffected.
+
+Verified end to end on the DLC DAT: picking the units emits `type=8` for
+1450/1451/1452/1453/1454 with none of them type=102-disabled, and *not* picking
+them leaves all five disabled — so there is no AI leak (quirk 10).
+**Not yet in-game tested.**
 
 The three new civs' own content, for when their UU/UT presets are wanted:
 Hearth Troop (**1461**/**1462**) + `Shield Wall` (**1464**); Jarl

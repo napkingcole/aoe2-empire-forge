@@ -12,17 +12,20 @@
           null,
           null,
           null,
-          null
-        ],
-        [
-          null,
-          null,
-          null,
-          null,
           null,
           null
         ],
         [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          null,
           null,
           null,
           null,
@@ -36,6 +39,7 @@
           null,
           null,
           null,
+          null,
           null
         ],
         [
@@ -44,9 +48,11 @@
           "Unit_39_87",
           "Tech_437_87",
           "Unit_185_87",
-          "Unit_873_87"
+          "Unit_873_87",
+          "Unit_2700_87"
         ],
         [
+          null,
           null,
           null,
           null,
@@ -60,7 +66,8 @@
           "Unit_474_87",
           "Tech_436_87",
           null,
-          "Unit_875_87"
+          "Unit_875_87",
+          "Unit_2701_87"
         ],
         [
           null,
@@ -68,7 +75,8 @@
           null,
           null,
           null,
-          null
+          null,
+          "Tech_1452_87"
         ]
       ],
       "help_string_id": 105128,
@@ -97,10 +105,12 @@
           null,
           null,
           null,
+          null,
           null
         ],
         [
           "Unit_74_12",
+          null,
           null,
           null,
           null,
@@ -113,11 +123,13 @@
           "Unit_93_12",
           "Unit_751_12",
           null,
+          null,
           "Unit_2588_12",
           null,
           "Tech_602_12"
         ],
         [
+          null,
           null,
           null,
           null,
@@ -131,11 +143,13 @@
           "Unit_358_12",
           "Unit_753_12",
           "Unit_1901_12",
+          "Unit_2703_12",
           "Unit_2552_12",
           null,
           "Tech_875_12"
         ],
         [
+          null,
           null,
           null,
           null,
@@ -149,12 +163,14 @@
           "Unit_359_12",
           "Unit_752_12",
           "Unit_1903_12",
+          "Unit_2704_12",
           "Unit_2554_12",
           null,
           null
         ],
         [
           "Unit_567_12",
+          null,
           null,
           null,
           null,
@@ -4783,6 +4799,101 @@
       "node_type": "RegionalUnit",
       "picture_index": 428,
       "row": 7,
+      "use_type": "Unit"
+    },
+    {
+      "age_id": 3,
+      "building_id": 87,
+      "building_in_new_column": null,
+      "building_upgraded_from_id": null,
+      "grid": null,
+      "help_string_id": 105527,
+      "id": "Unit_2700_87",
+      "link_id": null,
+      "link_node_type": "BuildingTech",
+      "name": "Mounted Crossbowman",
+      "name_string_id": 14527,
+      "node_id": 2700,
+      "node_status": "ResearchedCompleted",
+      "node_type": "RegionalUnit",
+      "picture_index": 900,
+      "row": 4,
+      "use_type": "Unit"
+    },
+    {
+      "age_id": 4,
+      "building_id": 87,
+      "building_in_new_column": null,
+      "building_upgraded_from_id": null,
+      "grid": null,
+      "help_string_id": 105528,
+      "id": "Unit_2701_87",
+      "link_id": 2700,
+      "link_node_type": "RegionalUnit",
+      "name": "Heavy Mounted Crossbowman",
+      "name_string_id": 14528,
+      "node_id": 2701,
+      "node_status": "ResearchedCompleted",
+      "node_type": "RegionalUnit",
+      "picture_index": 901,
+      "row": 6,
+      "use_type": "Unit"
+    },
+    {
+      "age_id": 4,
+      "building_id": 87,
+      "building_in_new_column": null,
+      "building_upgraded_from_id": null,
+      "grid": null,
+      "help_string_id": 607024,
+      "id": "Tech_1452_87",
+      "link_id": 436,
+      "link_node_type": "BuildingTech",
+      "name": "Cranequins",
+      "name_string_id": 517024,
+      "node_id": 1452,
+      "node_status": "ResearchedCompleted",
+      "node_type": "RegionalTech",
+      "picture_index": 56,
+      "row": 7,
+      "use_type": "Tech"
+    },
+    {
+      "age_id": 3,
+      "building_id": 12,
+      "building_in_new_column": null,
+      "building_upgraded_from_id": null,
+      "grid": null,
+      "help_string_id": 105530,
+      "id": "Unit_2703_12",
+      "link_id": null,
+      "link_node_type": "BuildingTech",
+      "name": "Varangian Guard",
+      "name_string_id": 14530,
+      "node_id": 2703,
+      "node_status": "ResearchedCompleted",
+      "node_type": "RegionalUnit",
+      "picture_index": 902,
+      "row": 4,
+      "use_type": "Unit"
+    },
+    {
+      "age_id": 4,
+      "building_id": 12,
+      "building_in_new_column": null,
+      "building_upgraded_from_id": null,
+      "grid": null,
+      "help_string_id": 105531,
+      "id": "Unit_2704_12",
+      "link_id": 2703,
+      "link_node_type": "RegionalUnit",
+      "name": "Elite Varangian Guard",
+      "name_string_id": 14531,
+      "node_id": 2704,
+      "node_status": "ResearchedCompleted",
+      "node_type": "RegionalUnit",
+      "picture_index": 903,
+      "row": 6,
       "use_type": "Unit"
     }
   ]
