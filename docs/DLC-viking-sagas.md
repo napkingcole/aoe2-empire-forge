@@ -291,6 +291,71 @@ any pre-DLC DAT (`type=4` on the Dock ids, attribute 2, `d=5.0`), so a
 to fall through on an empty tech, the way `_apply_bonuses` now does for team
 bonuses. Not done pending that call.
 
+## The identity page — DONE 2026-09-23
+
+Four separate gaps, three of them fixed in code and one waiting on files.
+
+**The civ list was frozen.** Wonder, castle and voice pickers were built from
+our *bundled* `civilizations.json`, so they stuck at 53 civs and the three new
+civs did not exist in the wizard at all — the same class of bug as the frozen
+`KM_TECHTREE_ORDER`. `/api/builder/meta` now reads the player's roster through
+`civ_roster`, which also carries `era` so Chronicles civs stay filtered out.
+56 civs on a DLC DAT, 53 on an older one.
+
+**Viking Sagas gave the Vikings their own architecture and their own Monk**, and
+we offered neither. `icon_set` **13** (Nordic) and Monk partition **19519**
+(civ 11, shared with Varangians and Danes) are both new in this DLC — before it
+the Vikings were Central European with the European Monk, which is why the
+architecture list's first entry no longer names them. Both are now offered, and
+**both are filtered by what the player's DAT actually contains**, so an older
+DAT does not get a "Nordic" option that would quietly copy Central European art
+under a Nordic label. That is the same rule as the unique tech, unique unit and
+bonus catalogs — the fourth place it now lives.
+
+With that, every architecture set and every Monk partition in the DAT is offered
+except the Chronicles Monk, which is deliberately blacklisted.
+
+**Voices need no code at all.** The dropdown is driven by which
+`voice_files/<value>/` folders exist, so dropping one in makes the civ appear —
+verified by creating `voice_files/59/` and watching Saxons show up. Thirteen
+civs have never had one:
+
+| value | civ | | value | civ |
+|---|---|---|---|---|
+| 43 | Armenians | | 52 | Khitans |
+| 44 | Georgians | | 56 | Muisca |
+| 48 | Shu | | 57 | Mapuche |
+| 49 | Wu | | 58 | Tupi |
+| 50 | Wei | | 59 | Saxons |
+| 51 | Jurchens | | 60 | Varangians |
+| | | | 61 | Danes |
+
+Each folder holds the game's 58 `.wem` clips for that civ, named with its own
+prefix (`bkm1.wem` for Britons, `mkm1.wem` for Vikings). `voice_files/` is
+gitignored and not bundled into the exe, so these improve the dev build and mod
+output but not the packaged binary — the standing "bundle voice_files" decision
+is unchanged, just bigger.
+
+### Art still wanted
+
+None of it blocks anything: a slot with no art renders as a labelled placeholder,
+confirmed on screen for both new entries.
+
+| file | what |
+|---|---|
+| `static/img/scene/arch/tc_13.webp` | Nordic Town Center |
+| `static/img/scene/monks/monk_11.webp` | Nordic Monk (scene) |
+| `static/img/scene/monks/icons/monk_11.webp` | Nordic Monk (picker icon) |
+| `static/img/scene/castles/castle_59.webp` | Saxons castle |
+| `static/img/scene/castles/castle_60.webp` | Varangians castle |
+| `static/img/scene/castles/castle_61.webp` | Danes castle |
+| `static/img/scene/wonders/wonder_59.webp` | Saxons wonder |
+| `static/img/scene/wonders/wonder_60.webp` | Varangians wonder |
+| `static/img/scene/wonders/wonder_61.webp` | Danes wonder |
+
+The castle and wonder numbers are the civ's option value (DAT slot − 1); art is
+picked up off disk, so no code change when they land.
+
 ## Team bonuses 1, 14 and 16 — FIXED 2026-09-22
 
 The DLC **emptied three team bonus effects** and left everything else in place:
@@ -375,11 +440,13 @@ commands, now script-driven — warning added) and `463 Viking Chieftains`
 
 1. **In-game testing.** Nothing here has been tested in the game yet. One round
    should cover: team bonuses 1/14/16, the Mounted Crossbowman and Varangian
-   Guard (including Cranequins following its unit), Ordonnance Companies, and
-   the three new unique units and six new unique techs.
-2. **Nine UU picker icons** — the three Viking Sagas units and the six South
-   American ones, which have been missing since that DLC. Table above. They
-   need no code change now; the units work without them.
+   Guard (including Cranequins following its unit), Ordonnance Companies, the
+   three new unique units and six new unique techs, the twelve new civ bonuses
+   (**430 first** — it is the intricate one), and a civ built on the Nordic
+   architecture and Monk.
+2. ~~Nine UU picker icons~~ — **DONE 2026-09-23**, all 95 unique units now have
+   art. Remaining art is the identity-page set listed above (Nordic Town Center
+   and Monk, three castles, three wonders) plus voice clips for thirteen civs.
 3. ~~The three new civs' civ bonuses~~ — **DONE**, see above. One open
    decision left over from it: whether to restore civ bonus 297, which the DLC
    gutted.

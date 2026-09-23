@@ -99,7 +99,9 @@ BUILDING_BLACKSMITH  = 103
 # KM architecture value is 1-based; maps to a representative vanilla DAT civ
 # whose building graphics are copied to the custom civ.
 # Source: KM civbuilder.cpp repArch[] = {3,1,5,8,15,7,20,22,25,28,33}
-_ARCH_REP_CIVS = [3, 1, 5, 8, 15, 7, 20, 22, 25, 28, 33, 21]  # 12 = South American (Inca)
+_ARCH_REP_CIVS = [3, 1, 5, 8, 15, 7, 20, 22, 25, 28, 33, 21, 11]
+# 12 = South American (Inca), 13 = Nordic (Vikings).  icon_set 13 is NEW in
+# Viking Sagas — before it the Vikings were Central European (icon_set 1).
 _ARCH_BUILDING_CLASSES = frozenset({3, 52, 27, 39})   # Building, Wall, Gate, Tower
 _ARCH_MOBILE_CLASSES   = frozenset({59, 18, 43, 19, 22})
 # Units the class filters miss but that still carry regional art.  Unit 134 is
@@ -129,6 +131,12 @@ MONK_SKIN_OPTIONS: list[dict] = [
     {"value": 25, "label": "African",       "example": "Ethiopians, Malians"},
     {"value": 15, "label": "Mesoamerican",  "example": "Aztecs, Mayans"},
     {"value": 21, "label": "Andean",        "example": "Inca, Mapuche, Muisca, Tupi"},
+    # Civ 11's Monk (standing graphic 19519) is its own partition, shared only
+    # with the Varangians and Danes.  NEW in Viking Sagas: before it the Vikings
+    # used the European Monk, so this option is filtered out for a player whose
+    # DAT predates the DLC.  The only other unoffered Monk belongs to the
+    # Chronicles civs, which are deliberately blacklisted.
+    {"value": 11, "label": "Nordic",        "example": "Vikings, Varangians, Danes"},
 ]
 
 # ── Starting scout ────────────────────────────────────────────────────────────

@@ -1155,7 +1155,7 @@ def reset():
 # ── Civ Builder ───────────────────────────────────────────────────────────────
 
 _ARCH_OPTIONS = [
-    {"value": 1,  "label": "Central European",       "example": "Goths, Teutons, Vikings"},
+    {"value": 1,  "label": "Central European",       "example": "Goths, Teutons, Huns"},
     {"value": 2,  "label": "Western European",        "example": "Britons, Franks, Celts"},
     {"value": 3,  "label": "East Asian",              "example": "Japanese, Chinese, Koreans"},
     {"value": 4,  "label": "Middle Eastern",          "example": "Persians, Saracens, Turks"},
@@ -1167,6 +1167,12 @@ _ARCH_OPTIONS = [
     {"value": 10, "label": "Southeast Asian",         "example": "Khmer, Malay, Burmese"},
     {"value": 11, "label": "Central Asian / Nomadic", "example": "Tatars, Cumans, Mongols"},
     {"value": 12, "label": "South American",           "example": "Inca, Mapuche, Muisca, Tupi"},
+    # icon_set 13, NEW in Viking Sagas: the Vikings were Central European until
+    # that DLC gave them their own set, which is why the value-1 example above
+    # no longer names them.  Offered only when the player's DAT actually has
+    # icon_set 13 — on an older one it would copy Central European under a
+    # Nordic label.
+    {"value": 13, "label": "Nordic",                   "example": "Vikings, Varangians, Danes"},
 ]
 
 # Unit the civ starts the game with, written to civ.resources[263].
@@ -1269,32 +1275,79 @@ def api_builder_meta():
     # value = dat_index - 1 (KM 0-based convention; 0 = Britons).
     # Antiquity / Chronicles civs are excluded: their wonder and castle models
     # are not available to base-game civs.
+    # Read the PLAYER's civilizations.json, not our bundled copy, for the same
+    # reason the build does: a DLC adds civs, and a frozen list silently offers
+    # the wrong roster.  Before this, the wonder, castle and voice pickers were
+    # stuck at 53 civs and the three Viking Sagas civs simply did not exist in
+    # the wizard.  Falls back to the bundled copy on its own.
+    from build_civ import civ_roster
+    from civ_appender import _UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, _ARCH_REP_CIVS
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    roster = civ_roster(dat_path) or []
+    if not roster:
+        roster = [{"name": c.get("internal_name", ""), "era": c.get("era", "base")}
+                  for c in _civ_list]
     civ_options = sorted([
-        {"value": i - 1, "label": c.get("internal_name", "")}
-        for i, c in enumerate(_civ_list)
-        if i > 0 and c.get("era", "base") != "antiquity"
+        {"value": i - 1, "label": c.get("name", "")}
+        for i, c in enumerate(roster)
+        if i > 0 and c.get("era", "base") != "antiquity" and c.get("name")
     ], key=lambda x: x["label"])
+
+    # Architecture and Monk sets are partitions of the DAT, so offer only the
+    # ones the player's DAT actually contains.  Viking Sagas added both a
+    # thirteenth architecture and an eleventh Monk; on an older DAT neither
+    # exists, and the option would quietly copy its representative civ's OLD
+    # art under the new label.
+    arch_options = _ARCH_OPTIONS
+    monk_options = MONK_SKIN_OPTIONS
+    if dat_path:
+        try:
+            _pd = _get_dat(dat_path)
+            _sets = {c.icon_set for c in _pd.civs[1:]}
+            arch_options = [a for a in _ARCH_OPTIONS if a["value"] in _sets]
+
+            def _monk_of(idx):
+                u = (_pd.civs[idx].units[125]
+                     if _pd.civs[idx].units and len(_pd.civs[idx].units) > 125 else None)
+                return u.standing_graphic if u else None
+
+            _seen: dict = {}
+            for _i in range(1, len(_pd.civs)):
+                _g = _monk_of(_i)
+                if _g is not None:
+                    _seen.setdefault(_g, []).append(_i)
+            # A Monk option is real here only if its representative civ heads a
+            # partition no earlier option already covers.
+            _claimed: set = set()
+            monk_options = []
+            for _o in MONK_SKIN_OPTIONS:
+                _g = _monk_of(_o["value"])
+                if _g is None or _g in _claimed:
+                    continue
+                _claimed.add(_g)
+                monk_options.append(_o)
+        except Exception:                                        # noqa: BLE001
+            arch_options, monk_options = _ARCH_OPTIONS, MONK_SKIN_OPTIONS
     # Driven by which voice_files/<value>/ folders actually exist, not a fixed
     # count.  build_all bundles those .wem files into the mod, so offering a
     # voice we have no folder for would silently ship a civ with no audio.
     # Drop a new folder in and the option appears.
     voice_options = sorted([
-        {"value": i - 1, "label": c.get("internal_name", "")}
-        for i, c in enumerate(_civ_list)
-        if i > 0 and (i - 1) in _available_voice_values()
+        {"value": i - 1, "label": c.get("name", "")}
+        for i, c in enumerate(roster)
+        if i > 0 and (i - 1) in _available_voice_values() and c.get("name")
     ], key=lambda x: x["label"])
     # bonus_id → unit_ids, so the wizard can derive the "Unlock ..." bonuses
     # from the tech tree without keeping its own copy of the table.
-    from civ_appender import _UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, _ARCH_REP_CIVS
     unlock_bonuses = {
         str(bid): list(spec["units"]) for bid, spec in _UNLOCK_UNIT_BONUSES.items()
     }
     return jsonify({
-        "architectures": _ARCH_OPTIONS,
+        "architectures": arch_options,
         "civs": civ_options,
         "voices": voice_options,
         "starting_scouts": _SCOUT_OPTIONS,
-        "monk_skins": MONK_SKIN_OPTIONS,
+        "monk_skins": monk_options,
         "unlock_bonuses": unlock_bonuses,
         # Display names for the identity scene ("Hagia Sophia" rather than
         # "Byzantines").  Written by scripts/import_km_art.py; absent until that

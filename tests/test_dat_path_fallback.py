@@ -155,6 +155,16 @@ exempt_lines = [ln.strip() for ln in src.splitlines()
 check("the validate-dat exemption matches exactly one route", len(exempt_lines) == 1,
       f"matched {len(exempt_lines)}: {exempt_lines}")
 
+# NOTE ON CROSS-VERSION TESTING.  The checks below are written to assert against
+# whatever DAT is installed, so they pass either side of a patch — but that also
+# means running them once proves only one branch.  To exercise the other, point
+# EMPIREFORGE_DAT at a DAT from before the content in question:
+#
+#     EMPIREFORGE_DAT="$PWD/ignore/6-6-26/empires2_x2_p1.dat" ./tests/run_all.sh
+#
+# That copy is clean vanilla from before Viking Sagas (60 civs, 1409 effects),
+# which is exactly the shape of a player who has not updated.  Worth keeping:
+# once the installed DAT is updated there is no way back to it.
 print("\n=== the UT catalog only offers what the player's DAT implements ===")
 # A UT preset works by cloning a vanilla tech's effect commands, so a preset
 # whose tech is an empty placeholder in THIS DAT would research and do nothing
@@ -181,6 +191,11 @@ def tech_has_effect(path, tech_id):
         return False
     eid = d.techs[tech_id].effect_id
     return 0 <= eid < len(d.effects) and bool(d.effects[eid].effect_commands)
+
+
+def _roster_for_test(path):
+    from build_civ import civ_roster
+    return civ_roster(str(path))
 
 
 def _probe_team_effect(bonus_id):
@@ -239,6 +254,66 @@ check("every vanilla UU that IS buildable here is still offered",
 custom = set(_KM_UU_NAMES_FOR_TEST) - set(_KM_UU_TECHS_FOR_TEST) - {47, 75}
 check("KM-custom UUs are untouched by the filter", custom <= offered,
       f"wrongly hidden: {sorted(custom - offered)}")
+
+print("\n=== the identity page reads the player's roster, not a frozen list ===")
+# Wonder, castle and voice pickers are built from the civ list.  That list used
+# to be our bundled civilizations.json, so it stuck at 53 civs and the three
+# Viking Sagas civs did not exist in the wizard at all — the same class of bug
+# as the frozen KM_TECHTREE_ORDER.
+meta = client.get("/api/builder/meta",
+                  query_string={"dat_path": str(dat_path)}).get_json()
+roster_names = {c["name"] for c in _roster_for_test(dat_path)[1:]
+                if c.get("era", "base") != "antiquity"}
+offered_civs = {o["label"] for o in meta["civs"]}
+check("every playable civ in this DAT's roster is offered",
+      roster_names <= offered_civs | {""},
+      f"missing: {sorted(roster_names - offered_civs)}")
+check("...and no Chronicles civ leaks in",
+      not (offered_civs & {"Achaemenids", "Athenians", "Spartans",
+                           "Macedonians", "Thracians", "Puru"}),
+      f"leaked: {sorted(offered_civs & {'Achaemenids','Athenians','Spartans'})}")
+
+# Architecture and Monk options must each name a real partition in this DAT:
+# an option whose representative civ does not actually carry that icon_set or
+# Monk would copy the wrong art silently.
+from civ_appender import _ARCH_REP_CIVS, MONK_SKIN_OPTIONS   # noqa: E402
+
+# Judge the OFFERED options, not the raw tables: Viking Sagas added a thirteenth
+# architecture and an eleventh Monk, so on an older DAT those options are
+# correctly filtered out rather than pointing at art that does not exist yet.
+offered_arch = {a["value"] for a in meta["architectures"]}
+dat_sets = {c.icon_set for c in _probe_dat.civs[1:]}
+check("every offered architecture names a civ that really has that icon_set",
+      all(_probe_dat.civs[_ARCH_REP_CIVS[v - 1]].icon_set == v for v in offered_arch),
+      str([(v, _probe_dat.civs[_ARCH_REP_CIVS[v - 1]].name,
+            _probe_dat.civs[_ARCH_REP_CIVS[v - 1]].icon_set)
+           for v in sorted(offered_arch)
+           if _probe_dat.civs[_ARCH_REP_CIVS[v - 1]].icon_set != v]))
+check("every icon_set this DAT uses is offered", dat_sets <= offered_arch,
+      f"uncovered: {sorted(dat_sets - offered_arch)}")
+check("...and nothing is offered that this DAT does not have",
+      offered_arch <= dat_sets, f"phantom: {sorted(offered_arch - dat_sets)}")
+
+# Every Monk partition is offered except the Chronicles one, which is blacklisted.
+_monk_groups = {}
+for _i, _c in enumerate(_probe_dat.civs):
+    if _i == 0:
+        continue
+    _u = _c.units[125] if _c.units and len(_c.units) > 125 else None
+    if _u:
+        _monk_groups.setdefault(_u.standing_graphic, []).append(_i)
+_offered_monks = {o["value"] for o in meta["monk_skins"]}
+_CHRONICLES = {46, 47, 48, 54, 55, 56}
+_unoffered = [m for m in _monk_groups.values() if not (_offered_monks & set(m))]
+check("every Monk partition is offered except the Chronicles one",
+      all(set(m) <= _CHRONICLES for m in _unoffered),
+      f"unoffered non-Chronicles partitions: {[m for m in _unoffered if not set(m) <= _CHRONICLES]}")
+check("...and each offered Monk covers a distinct partition",
+      len({tuple(m) for o in _offered_monks
+           for m in _monk_groups.values() if o in m}) == len(_offered_monks),
+      f"{len(_offered_monks)} options collapse to fewer partitions")
+check("...and no Monk option is offered that this DAT cannot supply",
+      all(any(o in m for m in _monk_groups.values()) for o in _offered_monks))
 
 print("\n=== the bonus catalog only offers what this DAT can implement ===")
 # Third place this rule lives, after unique techs and unique units.  A civ bonus

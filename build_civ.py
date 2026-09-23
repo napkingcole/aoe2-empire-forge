@@ -1100,17 +1100,21 @@ def civ_roster(dat_path: str | Path | None = None) -> list[dict]:
             {"name":        e.get("internal_name", ""),
              "techtree_id": (e.get("tech_tree_name") or
                              e.get("internal_name", "").upper().replace(" ", "_")),
-             "name_sid":    e.get("name_string_id")}
+             "name_sid":    e.get("name_string_id"),
+             # Carried so the wizard can filter Chronicles civs (era
+             # "antiquity") without opening civilizations.json a second time.
+             "era":         e.get("era", "base")}
             for e in entries
         ]
         break
 
     if not roster:
         # Last resort: the frozen list.  Slot 0 is Gaia, which the list omits.
-        roster = [{"name": "Gaia", "techtree_id": "GAIA", "name_sid": 10102}]
+        roster = [{"name": "Gaia", "techtree_id": "GAIA", "name_sid": 10102,
+                   "era": "base"}]
         roster += [{"name": n, "techtree_id": _DAT_TO_TECHTREE_ID.get(
                         n.lower().replace(" ", "_"), n.upper().replace(" ", "_")),
-                    "name_sid": 10271 + i}
+                    "name_sid": 10271 + i, "era": "base"}
                    for i, n in enumerate(KM_TECHTREE_ORDER)]
 
     _ROSTER_CACHE[key] = roster
