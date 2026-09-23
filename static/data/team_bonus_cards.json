@@ -625,5 +625,25 @@
     "heading": "+10 Population",
     "stat": "Towers and Castles provide +10 population space",
     "description": "Towers and Castles"
+  },
+  "84": {
+    "entity": "villager",
+    "heading": "+25% repair",
+    "stat": "Repairers work +25% faster",
+    "description": "Repairing"
+  },
+  "85": {
+    "type": "dual",
+    "entity": "knight",
+    "entity2": "infantry",
+    "heading": "+1 ATK vs Infantry",
+    "stat": "Knight-line +1 attack vs. Infantry",
+    "description": "Knight-line"
+  },
+  "86": {
+    "entity": "mangonel",
+    "heading": "+2 LOS",
+    "stat": "Siege Weapons +2 line of sight",
+    "description": "Siege Weapons"
   }
 }

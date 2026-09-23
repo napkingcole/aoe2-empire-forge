@@ -402,5 +402,17 @@
   "425": "Start with +50 wood",
   "426": "Start with +50 stone",
   "427": "Start with +50 gold",
-  "428": "Unlock the Flemish Militia (Burgundian infantry, Barracks, Feudal Age)"
+  "428": "Unlock the Flemish Militia (Burgundian infantry, Barracks, Feudal Age)",
+  "429": "Mills, Lumber Camps and Mining Camps provide +35 food and +10 stone when built",
+  "430": "Foot Soldiers cost -5% per Town Center or Castle controlled (maximum -20%)",
+  "431": "Towers and Castles fire +100% base arrows starting in the Castle Age",
+  "432": "Longships and Catapult Galleons +20% HP",
+  "433": "Shepherding, fishing, and hunting also generate gold",
+  "434": "Bloodlines and Caravan effects +50%",
+  "435": "Varangian Guards attack +25% faster and generate +50% gold",
+  "436": "Longships and Catapult Galleons attack +15% faster",
+  "437": "Fishing Ships and Villagers drop off +5% food",
+  "438": "Loot 25% of the resource cost of each destroyed building",
+  "439": "Barracks and Siege Workshop upgrades cost -66% gold",
+  "440": "Varangian Guards and Longships move +10% faster"
 }

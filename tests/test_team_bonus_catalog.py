@@ -82,6 +82,10 @@ TECH_DELIVERED = {
           "bonus 40 'Houses built 100% faster' copies.",
 }
 
+# Team bonuses whose effect only exists in a DAT newer than some players have.
+# Viking Sagas added the Saxons, Varangians and Danes as effects 1455-1457.
+DLC_ONLY_TEAM_BONUSES = {84, 85, 86}
+
 try:
     from dat_reader import find_game_dat, load_dat
     dat_path = find_game_dat()
@@ -97,8 +101,22 @@ else:
     for key in sorted(team_map, key=int):
         eff_idx = team_map[key]
         label = f"team {key} ({names.get(key, '?')[:40]!r}) -> effect {eff_idx}"
-        if not isinstance(eff_idx, int) or not (0 <= eff_idx < len(dat.effects)):
+        if not isinstance(eff_idx, int) or eff_idx < 0:
             check(label, False, "not a valid effect index")
+            continue
+        if eff_idx >= len(dat.effects):
+            # The catalog may legitimately name an effect this DAT is too old to
+            # have: the three new civs' team bonuses are effects 1455-1457, added
+            # by Viking Sagas.  That is a DAT older than the catalog, not a bad
+            # mapping — and the catalog route hides such a bonus rather than
+            # offering a card that cannot fire (pinned in test_dat_path_fallback).
+            #
+            # Named explicitly rather than waved through, because "past the end
+            # of this DAT" is also what a typo looks like.
+            check(f"{label} — out of range here, and known to be DLC-only",
+                  int(key) in DLC_ONLY_TEAM_BONUSES,
+                  f"effect {eff_idx} is past this DAT's {len(dat.effects)} "
+                  f"effects and team bonus {key} is not in DLC_ONLY_TEAM_BONUSES")
             continue
         eff_name = dat.effects[eff_idx].name
         check(label, eff_idx in owned or eff_idx in TECH_DELIVERED,

@@ -132,7 +132,7 @@ def unsupported_unique_techs(castle: bool) -> list[dict]:
 # Wu, Muisca, Mapuche, Tupi.  This bound has to cover them, because it is what
 # unsupported_team_bonuses() iterates: while it said 80, ids 81-83 were offered
 # in the picker but never checked for an implementation.
-_TEAM_BONUS_COUNT = 84
+_TEAM_BONUS_COUNT = 87   # +3: Saxons, Varangians, Danes (Viking Sagas)
 
 # These vanilla effect IDs belong to the Chronicles DLC civ pool, which is
 # separate from the standard AoE2 DE civ pool. Chronicles civs cannot be

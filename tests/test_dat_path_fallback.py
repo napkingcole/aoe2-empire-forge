@@ -183,6 +183,11 @@ def tech_has_effect(path, tech_id):
     return 0 <= eid < len(d.effects) and bool(d.effects[eid].effect_commands)
 
 
+def _probe_team_effect(bonus_id):
+    from bonus_catalog import team_bonus_tech
+    return team_bonus_tech(bonus_id)
+
+
 ids = castle_ids(dat_path)
 check("the catalog is not empty", len(ids) > 40, f"{len(ids)} entries")
 # Whichever DAT is installed, the answer must MATCH that DAT rather than be
@@ -234,6 +239,52 @@ check("every vanilla UU that IS buildable here is still offered",
 custom = set(_KM_UU_NAMES_FOR_TEST) - set(_KM_UU_TECHS_FOR_TEST) - {47, 75}
 check("KM-custom UUs are untouched by the filter", custom <= offered,
       f"wrongly hidden: {sorted(custom - offered)}")
+
+print("\n=== the bonus catalog only offers what this DAT can implement ===")
+# Third place this rule lives, after unique techs and unique units.  A civ bonus
+# is built by cloning its techs' effect commands, so the twelve Viking Sagas
+# cards are inert on a DAT from before the DLC.  Only bonuses that HAVE techs
+# are judged: plenty are implemented from `ec_list` and carry none, and hiding
+# those would empty the picker.
+import json                                                      # noqa: E402
+from bonus_catalog import civ_bonus_techs, team_bonus_ec_list     # noqa: E402
+
+bc = client.get("/api/builder/bonuses/catalog",
+                query_string={"dat_path": str(dat_path)}).get_json()
+civ_offered = {b["id"] for b in bc["civ"]}
+team_offered = {b["id"] for b in bc["team"]}
+check("the bonus catalog is not empty", len(civ_offered) > 300,
+      f"{len(civ_offered)} civ bonuses")
+
+all_names = json.loads((ROOT / "bonus_names.json").read_text())
+dead = set()
+for k in all_names:
+    techs = civ_bonus_techs(int(k)) or []
+    if techs and not any(tech_has_effect(dat_path, int(x)) for x in techs):
+        dead.add(int(k))
+check("no civ bonus whose every tech is empty here is offered",
+      not (civ_offered & dead),
+      f"offered anyway: {sorted(civ_offered & dead)[:8]}")
+# ...and the rule must not be hiding bonuses that carry no techs at all.
+techless = {int(k) for k in all_names if not (civ_bonus_techs(int(k)) or [])}
+check("bonuses implemented without techs are untouched",
+      len(techless & civ_offered) > 20,
+      f"only {len(techless & civ_offered)} of {len(techless)} techless bonuses offered")
+
+# Team bonuses copy a vanilla effect wholesale, so an effect this DAT lacks
+# means a dead card — unless a team_ec_list entry stands in.
+team_names_j = json.loads((ROOT / "team_bonus_names.json").read_text())
+dead_team = set()
+for k in team_names_j:
+    ei = _probe_team_effect(int(k))
+    if ei is None:
+        continue
+    live = 0 <= ei < len(_probe_dat.effects) and bool(_probe_dat.effects[ei].effect_commands)
+    if not live and not team_bonus_ec_list(int(k)):
+        dead_team.add(int(k))
+check("no team bonus whose effect is missing or empty here is offered",
+      not (team_offered & dead_team),
+      f"offered anyway: {sorted(team_offered & dead_team)}")
 
 print("\n=== UU picker icons are derived, and never point at a missing file ===")
 # An icon entry naming a PNG that is not there renders as a broken image; None

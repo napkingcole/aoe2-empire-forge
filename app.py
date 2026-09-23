@@ -1461,6 +1461,31 @@ def api_builder_bonuses_catalog():
     # Deprecated bonuses still build for civs that reference them; they are just
     # not offered for new picks. See bonus_names.DEPRECATED_BONUSES.
     hidden_ids = unsupported_ids | set(DEPRECATED_BONUSES)
+
+    # ...and, as for unique techs and unique units, a bonus the PLAYER's OWN DAT
+    # cannot implement.  A card is built by cloning its techs' effect commands,
+    # so the twelve Viking Sagas bonuses are inert for anyone still on the
+    # previous patch, where those tech slots are nameless and empty.  Only
+    # bonuses that HAVE techs are judged this way: plenty are implemented from
+    # `ec_list` instead and carry none, and hiding those would empty the picker.
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if dat_path:
+        try:
+            _d = _get_dat(dat_path)
+            from bonus_catalog import civ_bonus_techs, team_bonus_tech
+
+            def _live(tech_id: int) -> bool:
+                if tech_id >= len(_d.techs):
+                    return False
+                eid = _d.techs[tech_id].effect_id
+                return 0 <= eid < len(_d.effects) and bool(_d.effects[eid].effect_commands)
+
+            for k in names:
+                techs = civ_bonus_techs(int(k)) or []
+                if techs and not any(_live(int(x)) for x in techs):
+                    hidden_ids.add(int(k))
+        except Exception:                                        # noqa: BLE001
+            pass
     civ_bonuses = [
         {"id": int(k), "label": v}
         for k, v in sorted(names.items(), key=lambda x: int(x[0]))
@@ -1471,6 +1496,27 @@ def api_builder_bonuses_catalog():
     # team bonus with no catalog entry was pickable and then silently dropped at
     # build time.
     unsupported_team_ids = {b["id"] for b in unsupported_team_bonuses()}
+    # Same for team bonuses, which copy a vanilla effect wholesale: an effect
+    # this DAT ships empty leaves the card doing nothing, unless a team_ec_list
+    # entry stands in for it (which is exactly how the three bonuses Viking
+    # Sagas hollowed out keep working).
+    if dat_path:
+        try:
+            from bonus_catalog import team_bonus_ec_list
+            for k in team_names:
+                ei = team_bonus_tech(int(k))
+                if ei is None:
+                    continue                      # no mapping; ec_list decides
+                # Out of range counts as empty, not as "cannot tell": the three
+                # new civs' effects (1455-1457) simply do not exist in a DAT
+                # from before the DLC, which is precisely when the card must
+                # not be offered.
+                live = (0 <= ei < len(_d.effects)
+                        and bool(_d.effects[ei].effect_commands))
+                if not live and not team_bonus_ec_list(int(k)):
+                    unsupported_team_ids.add(int(k))
+        except Exception:                                        # noqa: BLE001
+            pass
     team_bonuses = [
         {"id": int(k), "label": v}
         for k, v in sorted(team_names.items(), key=lambda x: int(x[0]))

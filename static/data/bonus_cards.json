@@ -3324,5 +3324,95 @@
     "entity": "flemish_militia",
     "description": "Barracks — Feudal Age",
     "multiplier": false
+  },
+  "429": {
+    "type": "dual",
+    "heading": "+35 [food] +10 [stone]",
+    "stat": "Mills, Lumber Camps and Mining Camps provide +35 food and +10 stone when built",
+    "entity": "mill",
+    "entity2": "lumber_camp",
+    "description": "Dropsites"
+  },
+  "430": {
+    "heading": "-5% [food]",
+    "stat": "Foot Soldiers cost -5% per Town Center or Castle controlled (maximum -20%)",
+    "entity": "infantry",
+    "description": "Per Town Center / Castle"
+  },
+  "431": {
+    "type": "dual",
+    "heading": "x2 arrows",
+    "stat": "Towers and Castles fire +100% base arrows starting in the Castle Age",
+    "entity": "castle",
+    "entity2": "tower",
+    "description": "Castle Age"
+  },
+  "432": {
+    "type": "dual",
+    "heading": "+20% HP",
+    "stat": "Longships and Catapult Galleons +20% HP",
+    "entity": "longboat",
+    "entity2": "catapult_galleon",
+    "description": "Longship + Catapult Galleon"
+  },
+  "433": {
+    "type": "dual",
+    "heading": "+[gold]",
+    "stat": "Shepherding, fishing, and hunting also generate gold",
+    "entity": "sheep",
+    "entity2": "fish",
+    "description": "Food gathering"
+  },
+  "434": {
+    "type": "dual",
+    "heading": "+50%",
+    "stat": "Bloodlines and Caravan effects +50%",
+    "entity": "cavalry",
+    "entity2": "trade_cart",
+    "description": "Bloodlines + Caravan"
+  },
+  "435": {
+    "heading": "+25% ATK",
+    "stat": "Varangian Guards attack +25% faster and generate +50% gold",
+    "entity": "varangian_guard",
+    "description": "Varangian Guard"
+  },
+  "436": {
+    "type": "dual",
+    "heading": "+15% ATK",
+    "stat": "Longships and Catapult Galleons attack +15% faster",
+    "entity": "longboat",
+    "entity2": "catapult_galleon",
+    "description": "Longship + Catapult Galleon"
+  },
+  "437": {
+    "type": "dual",
+    "heading": "+5% [food]",
+    "stat": "Fishing Ships and Villagers drop off +5% food",
+    "entity": "villager",
+    "entity2": "fishing_ship",
+    "description": "Drop off"
+  },
+  "438": {
+    "heading": "25% loot",
+    "stat": "Loot 25% of the resource cost of each destroyed building",
+    "entity": "gold",
+    "description": "Razing buildings"
+  },
+  "439": {
+    "type": "dual",
+    "heading": "-66% [gold]",
+    "stat": "Barracks and Siege Workshop upgrades cost -66% gold",
+    "entity": "barracks",
+    "entity2": "siege_workshop",
+    "description": "Unit upgrades"
+  },
+  "440": {
+    "type": "dual",
+    "heading": "+10% speed",
+    "stat": "Varangian Guards and Longships move +10% faster",
+    "entity": "varangian_guard",
+    "entity2": "longboat",
+    "description": "Varangian Guard + Longship"
   }
 }

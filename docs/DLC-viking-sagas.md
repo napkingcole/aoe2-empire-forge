@@ -236,6 +236,61 @@ Dropping a PNG into `uniticons/` is the whole job. The 36 KM-custom entries stay
 hand-listed, because their cloned base unit does not carry the right icon, and
 they still win as an override.
 
+## The three new civs' bonus cards — DONE 2026-09-23
+
+Twelve civ bonuses (ids **429-440**) and three team bonuses (**84-86**), all
+worded from DE's own civ descriptions in the game strings rather than from the
+internal tech names — which lie here in three places: techs named `+65%`,
+`+33%` and `+10%` are described by the game as +50%, +50% and +5%. The tech is
+cloned wholesale, so whatever DE's civ does our civ does, and DE's player-facing
+text is therefore the accurate one.
+
+| card | civ | techs |
+|---|---|---|
+| 429 Mills/Lumber/Mining Camps +35 food, +10 stone when built | Saxons | 1465 |
+| 430 Foot Soldiers -5% per TC or Castle (max -20%) | Saxons | 1469 |
+| 431 Towers and Castles fire +100% base arrows (Castle Age) | Saxons | 1493 |
+| 432 Longships and Catapult Galleons +20% HP | Saxons | 1470 |
+| 433 Shepherding, fishing and hunting also generate gold | Varangians | 1475 |
+| 434 Bloodlines and Caravan effects +50% | Varangians | 1489, 1490 |
+| 435 Varangian Guards attack +25% faster, generate +50% gold | Varangians | 1478, 1488 |
+| 436 Longships and Catapult Galleons attack +15% faster | Varangians | 1479 |
+| 437 Fishing Ships and Villagers drop off +5% food | Danes | 1494 |
+| 438 Loot 25% of the resource cost of each destroyed building | Danes | 1485 |
+| 439 Barracks and Siege Workshop upgrades cost -66% gold | Danes | 1492 |
+| 440 Varangian Guards and Longships move +10% faster | Danes | 1486 |
+| team 84 Repairers work +25% faster | Saxons | effect 1455 |
+| team 85 Knight-line +1 attack vs. Infantry | Varangians | effect 1456 |
+| team 86 Siege Weapons +2 line of sight | Danes | effect 1457 |
+
+Every source tech is `civ=60/61/62`, so quirk 9 applies — verified that all 14
+get a copy allocated to the custom civ's own slot, not merely referenced.
+
+**Worth flagging for the test round:** three are `resource 33` script calls
+(433 → `EffectFunction 34`, 438 → `36`, 437 → `35`), and **430** is the most
+intricate thing in the set — a live counter that sets attribute 66 on Castles
+and Town Centers and leans on helper techs 1497/1498 (`Castle/TC Built` and
+`Destroyed`, both `civ=-1` and self-disabling) to track how many you control.
+If anything here fails in game, 430 is the first place to look.
+
+**The catalog now filters by DAT, the third place that rule lives** (after
+unique techs and unique units): a bonus whose every tech is an empty slot in the
+player's DAT is not offered, and neither is a team bonus whose effect that DAT
+lacks. Bonuses implemented from `ec_list` carry no techs and are untouched.
+
+### That filter immediately found a regression we had not noticed
+
+**Civ bonus 297, "Can garrison Docks with Fishing Ships", is dead on a DLC DAT.**
+Tech 855 went from `civ=42, effect_id=870, 5 commands` to `civ=0,
+effect_id=-1` — DE gutted it, matching the note *"Gurjaras — Docks +5 garrison
+capacity civilization bonus removed"*. The filter hides it automatically, which
+is the safe default, but **whether to restore it is a product decision** of the
+same shape as Bearded Axe. The five commands are trivial and recoverable from
+any pre-DLC DAT (`type=4` on the Dock ids, attribute 2, `d=5.0`), so a
+`civ_ec_list` entry could bring it back — note this would also need the civ path
+to fall through on an empty tech, the way `_apply_bonuses` now does for team
+bonuses. Not done pending that call.
+
 ## Team bonuses 1, 14 and 16 — FIXED 2026-09-22
 
 The DLC **emptied three team bonus effects** and left everything else in place:
@@ -325,8 +380,8 @@ commands, now script-driven — warning added) and `463 Viking Chieftains`
 2. **Nine UU picker icons** — the three Viking Sagas units and the six South
    American ones, which have been missing since that DLC. Table above. They
    need no code change now; the units work without them.
-3. **The three new civs' 12 civ bonuses** (effects 1465, 1469, 1470, 1475, 1478,
-   1479, 1485, 1486, 1488, 1489, 1490, 1492, 1493, 1494) are not offered as
-   bonus cards. This is the last body of DLC content we do not expose.
+3. ~~The three new civs' civ bonuses~~ — **DONE**, see above. One open
+   decision left over from it: whether to restore civ bonus 297, which the DLC
+   gutted.
 4. **Ship it** — `main` still carries the unpushed `bugfix/dat-path-feedback`
    merge, to be released together with this branch.
