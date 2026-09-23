@@ -33,11 +33,33 @@ the game has also re-encoded since KM's snapshot: his clips are Wwise Vorbis at
 and ~10x larger.  No FNV-1/FNV-1a variant of the clip names hits a package id
 either.
 
-Civ voices go through the DRS system instead: every civ-bound `SoundItem`
-carries a `resource_id` in the 5501-9159 range, numbered sequentially per civ
-(Japanese `jvmb.wav` is 5501, `jvmfa.wav` 5502, ...).  That is the same path the
-mod override uses — `resources/_common/drs/sounds/<name>.wem` — so the vanilla
-clips are a sibling of `wwise/`, under `resources/_common/drs/`, not inside it.
+Every civ-bound `SoundItem` carries a `resource_id` in the 5501-9159 range,
+numbered sequentially per civ (Japanese `jvmb.wav` is 5501, `jvmfa.wav` 5502).
+That looks like a DRS id, but the shipped `resources/_common/drs/` has no
+`sounds/` folder at all — it holds gamedata_x2, graphics, interface and
+small-trees.  `drs/sounds/` is a path the engine checks for OVERRIDES, which is
+why our mods work; vanilla playback does not come from there.
+
+THE AUDIO IS IN THE BANKS, AND IT IS NOT USABLE.  The clips are embedded inside
+the Wwise banks rather than the stream tables: `Base.pck` bank 232745270 is
+149 MB holding 6150 embedded media at ~10 KB median, exactly the profile of
+one-second unit barks, and 9776 across all banks.  They extract fine — the DIDX
+chunk gives offset and size for each.
+
+What does not exist anywhere in the shipped files is a NAME.  The banks carry
+only `BKHD` + `DIDX` + `DATA`: no `STID`, no `HIRC` name table, and the install
+ships no `SoundbanksInfo.xml`.  The media ids are opaque 32-bit values spanning
+47786 to 1073577617 with no relationship to the DAT's resource ids, and no
+FNV-1 or FNV-1a variant of a clip name (bare, +.wav, +.wem, upper, play_ prefix)
+matches one — tested against both the package entry ids and the embedded media
+ids, which are separate id spaces.
+
+So the name -> id mapping lives in the Wwise authoring project, which Microsoft
+does not ship, and extraction alone cannot recover it.  Matching by decoded
+audio against KM's clips could name the ones we ALREADY have, but by definition
+not the thirteen we lack.  Unless a community ID table turns up, the realistic
+answer is that these civs have no voice — which costs little, since a custom civ
+can borrow any of the 43 that do.
 
 """
 
