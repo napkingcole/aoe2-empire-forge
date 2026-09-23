@@ -58,7 +58,11 @@
     "60": { "icon": "skirmisher.png",       "category": "archers"   },
     "61": { "icon": "champi.png",           "category": "infantry"  },
     "62": { "icon": "archer.png",           "category": "archers"   },
-    "63": { "icon": "dock.png",             "category": "naval"     }
+    "63": { "icon": "dock.png",             "category": "naval"     },
+    "64": { "icon": "cavalry_archer.png",    "category": "archers"   },
+    "65": { "icon": "monk.png",              "category": "monk"      },
+    "66": { "icon": "knight.png",            "category": "cavalry"   },
+    "67": { "icon": "infantry.png",          "category": "infantry"  }
   },
   "imperial": {
     "0":  { "icon": "infantry.png",         "category": "infantry"  },
@@ -113,6 +117,9 @@
     "58": { "icon": "cavalry.png",          "category": "cavalry"   },
     "59": { "icon": "unique_unit.png",      "category": "unique"    },
     "60": { "icon": "archer.png",           "category": "archers"   },
-    "61": { "icon": "slinger.png",          "category": "archers"   }
+    "61": { "icon": "slinger.png",          "category": "archers"   },
+    "62": { "icon": "infantry.png",          "category": "infantry"  },
+    "63": { "icon": "varangian_guard.png",   "category": "unique"    },
+    "64": { "icon": "mangonel.png",          "category": "siege"     }
   }
 }

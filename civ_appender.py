@@ -1536,6 +1536,16 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
         # Center" into "1 Villager from each of up to N Town Centers", so the
         # card did nothing on one TC and multiplied per-TC on several.
         pass
+    elif result.type == EC_RESOURCE and int(result.a) == RES_EFFECT_FUNCTION:
+        # Also deliberately NOT scaled, and this one is worse than a no-op.
+        # Resource 33 is "Effect Function Number": its `d` SELECTS which routine
+        # in the game's own Effects.xs runs.  Multiplying it does not make the
+        # effect stronger, it calls a DIFFERENT function — x2 would turn
+        # Hamask's 30 into 60, Shield Wall's 31 into 62, Coiled Serpent Array's
+        # 6 into 12.  Whatever that number lands on is unrelated to the card,
+        # and `ut_overrides.json` currently marks Coiled Serpent Array as
+        # scalable, so this was reachable.
+        pass
     elif result.type in (EC_ADD, EC_RESOURCE):
         result.d = result.d * multiplier
     return result

@@ -17,7 +17,8 @@
     "25": { "multiplier": false, "_label": "Nomads — EC_UPGRADE house remove, idempotent" },
     "26": { "multiplier": false, "_label": "Kamandaran — EC_ADD on gold/wood cost; negative costs at high mult" },
     "28": { "multiplier": false, "_label": "Madrasah — EC_UPGRADE monk gold-on-death, idempotent" },
-    "29": { "multiplier": false, "_label": "First Crusade — conversion resistance binary; TC spawn non-scalable" }
+    "29": { "multiplier": false, "_label": "First Crusade — conversion resistance binary; TC spawn non-scalable" },
+    "67": { "multiplier": false, "_label": "Hamask — single resource 33 command; the value selects an Effects.xs routine, so it cannot be scaled" }
   },
   "imperial": {
     "4":  { "multiplier": false, "_label": "Flemish Revolution — EC_ENABLE + EC_UPGRADE unit conversion" },
@@ -27,6 +28,7 @@
     "44": { "multiplier": false, "_label": "Wootz Steel — EC_ADD on armor-ignore attribute; already maxed at x1" },
     "45": { "multiplier": false, "_label": "Mahayana — EC_SET pop space flag, idempotent" },
     "49": { "multiplier": false, "_label": "Aznauri Cavalry — EC_SET pop space flag, idempotent" },
-    "57": { "multiplier": false, "_label": "Thunderclap Bombs — EC_SET detonate flag, idempotent" }
+    "57": { "multiplier": false, "_label": "Thunderclap Bombs — EC_SET detonate flag, idempotent" },
+    "62": { "multiplier": false, "_label": "Shield Wall — single resource 33 command; the value selects an Effects.xs routine, so it cannot be scaled" }
   }
 }
