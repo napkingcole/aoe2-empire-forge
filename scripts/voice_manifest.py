@@ -54,12 +54,32 @@ FNV-1 or FNV-1a variant of a clip name (bare, +.wav, +.wem, upper, play_ prefix)
 matches one — tested against both the package entry ids and the embedded media
 ids, which are separate id spaces.
 
-So the name -> id mapping lives in the Wwise authoring project, which Microsoft
-does not ship, and extraction alone cannot recover it.  Matching by decoded
-audio against KM's clips could name the ones we ALREADY have, but by definition
-not the thirteen we lack.  Unless a community ID table turns up, the realistic
-answer is that these civs have no voice — which costs little, since a custom civ
-can borrow any of the 43 that do.
+The audio DOES extract, and it can be identified — for clips we already have.
+Decoding both sides (vgmstream + ffmpeg) and correlating a coarse RMS envelope
+matches KM's clips to bank indices essentially perfectly: **2432 of 2434 known
+clips at >0.98**, most at 1.000.  So anything we hold a reference for can be
+located in the bank and re-extracted at the current quality (Opus 48 kHz rather
+than KM's Vorbis 22 kHz).
+
+What that CANNOT do is name a clip we have no reference for, and that is exactly
+the thirteen civs.  Three independent routes were tried and all are dead:
+
+  * Structure.  Indices do not group by civ (Britons span 556-4420) and are not
+    monotonic by civ for any clip type — DIDX is ordered by media id, which is
+    effectively random.  Nothing to extrapolate from.  (It does confirm a known
+    quirk: Goths and Teutons share one voice set, and so share indices.)
+  * Per-DLC banks.  Every DLC .pck bank holds ~60-90 clips at a ~0.12 s median:
+    UI blips and footsteps, not speech.  No DLC ships a civ voice set.
+  * Hashing.  With 2422 ground-truth (name, media_id) pairs in hand, seven
+    schemes were tested — FNV-1 and FNV-1a over the bare name, +.wav, +.wem,
+    uppercase, and a 30-bit mask.  **Zero hits.**  The ids come from the Wwise
+    project, not the filename.
+
+3587 unclaimed voice-length clips remain in the bank, so the thirteen civs'
+voices are almost certainly among them — mixed in with campaign and hero speech,
+and separable only by listening.  Unless a community id table turns up, the
+realistic answer is that these civs have no voice, which costs little: a custom
+civ can borrow any of the 43 that do.
 
 """
 

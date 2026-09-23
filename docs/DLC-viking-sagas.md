@@ -352,10 +352,15 @@ FNV-1a variant of a clip name matches one, tested against **both** id spaces
 has no `sounds/` folder at all — that path is an *override* the engine checks,
 which is why our mods work, not where vanilla audio lives.
 
-So the name→id mapping is in the Wwise authoring project, which Microsoft does
-not ship. Matching by decoded audio against KM's clips could name the ones we
-already have, but by definition not the thirteen we lack. **Recommendation: stop
-here.** The cost is small — a custom civ can borrow any of the 43 voices that do
+The audio does extract, and clips we already have a reference for can be
+identified exactly: decoding both sides and correlating an RMS envelope matched
+**2432 of 2434** known clips at >0.98, most at 1.000. Three routes to the *other*
+civs were then tried and all are dead — indices do not group by civ, the per-DLC
+banks hold only ~0.12 s UI blips, and seven hash schemes tested against **2422
+ground-truth (name, media_id) pairs** scored **zero**. The ids come from the
+Wwise project, not the filename. 3587 unclaimed voice-length clips remain, so the
+thirteen civs are almost certainly in there — separable only by listening.
+**Recommendation: stop here.** The cost is small — a custom civ can borrow any of the 43 voices that do
 work, and the picker already omits the rest cleanly.
 
 `--check` turns up something worth knowing: **all 43 existing folders are 8
