@@ -330,11 +330,30 @@ function loadJson(file, callback) {
     xobj.send(null);
 }
 
+// Node labels are centred on a card barely wider than the icon, so a long name
+// with nowhere to break runs over its neighbours.  The game's own strings carry
+// a <br> where they expect the break.
+const _NAME_WRAP_AT = 17;
+
 function formatName(name) {
     if (name === undefined || name === null) return '?';
     // Keep <br>\n as a plain \n so SVG.js creates two tspan lines for long names.
     // Strip the HTML tag but preserve the newline character.
-    return name.replace(/<br\s*\/?>\n?/gi, '\n').trim();
+    const out = name.replace(/<br\s*\/?>\n?/gi, '\n').trim();
+    if (out.includes('\n') || out.length < _NAME_WRAP_AT) return out;
+
+    // No break supplied and too long to fit.  Every name this hits today came
+    // with Viking Sagas — "Mounted Crossbowman" and "Clerical Recruitment";
+    // every pre-existing long name already carries its own <br>, so this is a
+    // fallback, not a second wrapping policy.  Break at the space closest to
+    // the middle so the two lines come out as even as possible.
+    let best = -1;
+    for (let i = out.indexOf(' '); i !== -1; i = out.indexOf(' ', i + 1)) {
+        if (best === -1 || Math.abs(i - out.length / 2) < Math.abs(best - out.length / 2)) {
+            best = i;
+        }
+    }
+    return best === -1 ? out : out.slice(0, best) + '\n' + out.slice(best + 1);
 }
 
 function resetHighlightPath() {

@@ -1869,21 +1869,47 @@ def _split_ut_label(label: str) -> tuple[str, str]:
 def api_builder_ut_catalog():
     from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
 
-    castle = []
-    for i, label in enumerate(_UNIQUE_CASTLE_STRINGS):
-        if i not in _KM_CASTLE_UT_TECHS:
-            continue
-        name, desc = _split_ut_label(label)
-        castle.append({"id": i, "label": label, "name": name, "desc": desc})
+    # A preset is only offered if the PLAYER's OWN DAT implements its source
+    # tech, because the preset works by cloning that tech's effect commands.
+    # Ordonnance Companies (castle 64) is tech 1496, which is a nameless empty
+    # placeholder until Viking Sagas fills it in — offering it to someone who
+    # has not updated would ship a unique tech that researches and does
+    # nothing.  Exactly one preset is affected today, but keying on "does this
+    # tech have an effect here" rather than a version check means the next DLC
+    # preset is safe the day it is added.
+    #
+    # If no DAT can be read we offer everything, which is the old behaviour:
+    # the catalog is also used for browsing, and hiding the whole list because
+    # we could not find a DAT would be worse than listing one dud.
+    has_effect = None
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if dat_path and Path(dat_path).exists():
+        try:
+            dat = _get_dat(dat_path)
 
-    imperial = []
-    for i, label in enumerate(_UNIQUE_IMP_STRINGS):
-        if i not in _KM_IMP_UT_TECHS:
-            continue
-        name, desc = _split_ut_label(label)
-        imperial.append({"id": i, "label": label, "name": name, "desc": desc})
+            def has_effect(tech_id: int) -> bool:       # noqa: F811
+                if tech_id >= len(dat.techs):
+                    return False
+                eid = dat.techs[tech_id].effect_id
+                return (0 <= eid < len(dat.effects)
+                        and bool(dat.effects[eid].effect_commands))
+        except Exception:
+            has_effect = None
 
-    return jsonify({"castle": castle, "imperial": imperial})
+    def _entries(strings, table):
+        out = []
+        for i, label in enumerate(strings):
+            tech_id = table.get(i)
+            if tech_id is None:
+                continue
+            if has_effect is not None and not has_effect(tech_id):
+                continue
+            name, desc = _split_ut_label(label)
+            out.append({"id": i, "label": label, "name": name, "desc": desc})
+        return out
+
+    return jsonify({"castle":   _entries(_UNIQUE_CASTLE_STRINGS, _KM_CASTLE_UT_TECHS),
+                    "imperial": _entries(_UNIQUE_IMP_STRINGS, _KM_IMP_UT_TECHS)})
 
 
 @app.route("/api/builder/ut/costs")

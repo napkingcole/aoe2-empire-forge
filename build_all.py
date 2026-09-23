@@ -116,6 +116,9 @@ _UNIQUE_CASTLE_STRINGS = [
     "Herbalism (Archer-line and Champi Warriors move +15% faster)",
     # Naval rework — Portuguese (slot 63)
     "Circumnavigation (Reveals the map; Ships train 33% faster)",
+    # Viking Sagas — Franks (slot 64).  Only does anything for a civ that
+    # fields Mounted Crossbowmen, the same way Malon needs Bolas Riders.
+    "Ordonnance Companies (Mounted Crossbowmen cost -40% gold)",
 ]
 
 _UNIQUE_IMP_STRINGS = [

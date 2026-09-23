@@ -4616,6 +4616,10 @@ _KM_CASTLE_UT_TECHS: dict[int, int] = {
     60: 1379, 61: 1392, 62: 1365,
     # Naval rework — Portuguese: Circumnavigation (reveal map + ships -25% train time)
     63: 1404,
+    # Viking Sagas — Franks: Ordonnance Companies (Mounted Crossbowmen -40% gold).
+    # EC_MULTIPLY attribute 105 (Gold Costs) x0.6 on units 2700 and 2701, so it
+    # is inert unless the civ also took the Mounted Crossbowman line.
+    64: 1496,
 }
 
 _KM_IMP_UT_TECHS: dict[int, int] = {

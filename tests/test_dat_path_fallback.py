@@ -155,6 +155,58 @@ exempt_lines = [ln.strip() for ln in src.splitlines()
 check("the validate-dat exemption matches exactly one route", len(exempt_lines) == 1,
       f"matched {len(exempt_lines)}: {exempt_lines}")
 
+print("\n=== the UT catalog only offers what the player's DAT implements ===")
+# A UT preset works by cloning a vanilla tech's effect commands, so a preset
+# whose tech is an empty placeholder in THIS DAT would research and do nothing
+# — the "a card that does nothing is worse than no card" rule, applied to a DAT
+# the user has not updated yet.  Ordonnance Companies (castle 64) is tech 1496,
+# a nameless empty slot until Viking Sagas fills it in.
+ORDONNANCE, ORDONNANCE_TECH = 64, 1496
+
+
+def castle_ids(path):
+    res = client.get("/api/builder/ut/catalog", query_string={"dat_path": str(path)})
+    assert res.status_code == 200, res.status_code
+    return {e["id"] for e in res.get_json()["castle"]}
+
+
+# load_dat is ~16s, so read it ONCE — the first draft of this called it per
+# preset and took over five minutes.
+_probe_dat = appmod._get_dat(str(dat_path))
+
+
+def tech_has_effect(path, tech_id):
+    d = _probe_dat
+    if tech_id >= len(d.techs):
+        return False
+    eid = d.techs[tech_id].effect_id
+    return 0 <= eid < len(d.effects) and bool(d.effects[eid].effect_commands)
+
+
+ids = castle_ids(dat_path)
+check("the catalog is not empty", len(ids) > 40, f"{len(ids)} entries")
+# Whichever DAT is installed, the answer must MATCH that DAT rather than be
+# hardcoded — so the test works either side of the patch.
+implemented = tech_has_effect(dat_path, ORDONNANCE_TECH)
+check(f"Ordonnance Companies offered == its tech is implemented here "
+      f"({'implemented' if implemented else 'empty placeholder'})",
+      (ORDONNANCE in ids) == implemented,
+      f"offered={ORDONNANCE in ids}, tech {ORDONNANCE_TECH} implemented={implemented}")
+
+# And the filter must be surgical: it is there to drop unimplemented presets,
+# not to thin the catalog.  Every other preset whose tech IS implemented must
+# survive it.
+from civ_appender import _KM_CASTLE_UT_TECHS      # noqa: E402
+expected = {i for i, t in _KM_CASTLE_UT_TECHS.items() if tech_has_effect(dat_path, t)}
+check("every preset whose tech is implemented is still offered", ids == expected,
+      f"missing: {sorted(expected - ids)}  unexpected: {sorted(ids - expected)}")
+
+# Without a readable DAT the catalog must still answer, rather than hiding
+# everything because it could not check.
+res = client.get("/api/builder/ut/catalog", query_string={"dat_path": "/nope/x.dat"})
+check("an unreadable dat_path still returns a catalog",
+      res.status_code == 200 and len(res.get_json()["castle"]) > 40)
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

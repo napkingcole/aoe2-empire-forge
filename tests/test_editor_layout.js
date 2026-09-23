@@ -32,6 +32,7 @@ module.exports = {
   hint: _variantHint,
   SWAPS: _REGIONAL_BUILDING_SWAPS,
   CAMPS: _CAMP_BUILDING_IDS,
+  formatName,
 };
 `;
 // Stub the browser globals main.js touches when our entry points run.
@@ -349,6 +350,31 @@ console.log('\n=== Siege ship nodes are locked in the tree ===');
   check('hint points at the picker',
         T.hint({ use_type: 'Unit', node_id: 420 }).includes('Siege Ship picker'));
   check('non-siege units unaffected', T.hint({ use_type: 'Unit', node_id: 74 }) === '');
+}
+
+console.log('\n=== Long node names wrap instead of running over their neighbours ===');
+{
+  // A node card is barely wider than its icon, so the label needs a break.  The
+  // game's own strings carry a <br> where they expect one; two names shipped by
+  // Viking Sagas do not, and "Mounted Crossbowman" rendered across the top of
+  // "Elephant Archer" next to it.
+  check('an explicit <br> is still honoured',
+        T.formatName('Heavy Mounted<br>Crossbowman') === 'Heavy Mounted\nCrossbowman',
+        JSON.stringify(T.formatName('Heavy Mounted<br>Crossbowman')));
+  check('a long name with no <br> is wrapped at a space',
+        T.formatName('Mounted Crossbowman') === 'Mounted\nCrossbowman',
+        JSON.stringify(T.formatName('Mounted Crossbowman')));
+  check('...and so is the other one Viking Sagas added',
+        T.formatName('Clerical Recruitment') === 'Clerical\nRecruitment',
+        JSON.stringify(T.formatName('Clerical Recruitment')));
+  // The break goes nearest the middle, so the two lines come out even.
+  check('the break lands nearest the middle, not at the first space',
+        T.formatName('A Very Long Unit Name') === 'A Very Long\nUnit Name',
+        JSON.stringify(T.formatName('A Very Long Unit Name')));
+  check('short names are left alone', T.formatName('Knight') === 'Knight');
+  check('a long single word cannot be wrapped and is left alone',
+        T.formatName('Aaaaaaaaaaaaaaaaaaaa') === 'Aaaaaaaaaaaaaaaaaaaa');
+  check('a null name is still the placeholder', T.formatName(null) === '?');
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
