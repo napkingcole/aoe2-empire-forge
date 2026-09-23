@@ -1052,10 +1052,124 @@ _DAT_TO_TECHTREE_ID: dict[str, str] = {
 }
 
 
-def _canonical_techtree_id(civ_name: str) -> str:
-    """Map a raw DAT civ name to the civTechTrees.json civ_id (uppercase)."""
+# ── The live civ roster ──────────────────────────────────────────────────────
+# KM_TECHTREE_ORDER and _DAT_TO_TECHTREE_ID above are a frozen snapshot of the
+# roster, and every DLC makes them a little more wrong.  Viking Sagas took the
+# game from 60 civs to 63; the list still had 59, so Saxons, Varangians and
+# Danes resolved to index None and a civ replacing one of them wrote its name
+# over **Britons** (sid 10271, the fallback).
+#
+# The user's own `civilizations.json` already carries everything we hardcode —
+# `internal_name`, `tech_tree_name` (the CivTechTrees filename), and
+# `name_string_id` outright, so even the `10271 + index` arithmetic becomes a
+# lookup.  Reading it means the app tracks a DLC the day it lands, which is the
+# whole premise of reading the player's live files rather than shipping a copy.
+#
+# It also fixes a bug the snapshot had already drifted into: `_DAT_TO_TECHTREE_ID`
+# maps Mayan → `MAYA`, but the shipped file is **MAYANS.json**.  The per-civ
+# tech-tree patch is guarded by `if per_civ_path.exists()`, so replacing the
+# Mayans silently shipped an unpatched tech tree.  `tech_tree_name` says MAYANS.
+_ROSTER_CACHE: dict[str, list[dict]] = {}
+
+
+def civ_roster(dat_path: str | Path | None = None) -> list[dict]:
+    """One entry per DAT civ slot: {name, techtree_id, name_sid}.
+
+    Prefers the `civilizations.json` beside the player's DAT, falls back to the
+    copy we ship, and finally synthesises from KM_TECHTREE_ORDER so a missing or
+    unreadable file degrades instead of breaking the build.
+    """
+    key = str(dat_path or "")
+    if key in _ROSTER_CACHE:
+        return _ROSTER_CACHE[key]
+
+    candidates: list[Path] = []
+    if dat_path:
+        found = _find_adjacent_json(Path(dat_path), "civilizations.json")
+        if found:
+            candidates.append(found)
+    candidates.append(Path(__file__).parent / "civilizations.json")
+
+    roster: list[dict] = []
+    for path in candidates:
+        try:
+            entries = json.loads(path.read_text(encoding="utf-8"))["civilization_list"]
+        except (OSError, json.JSONDecodeError, KeyError, TypeError):
+            continue
+        roster = [
+            {"name":        e.get("internal_name", ""),
+             "techtree_id": (e.get("tech_tree_name") or
+                             e.get("internal_name", "").upper().replace(" ", "_")),
+             "name_sid":    e.get("name_string_id"),
+             # Carried so the wizard can filter Chronicles civs (era
+             # "antiquity") without opening civilizations.json a second time.
+             "era":         e.get("era", "base")}
+            for e in entries
+        ]
+        break
+
+    if not roster:
+        # Last resort: the frozen list.  Slot 0 is Gaia, which the list omits.
+        roster = [{"name": "Gaia", "techtree_id": "GAIA", "name_sid": 10102,
+                   "era": "base"}]
+        roster += [{"name": n, "techtree_id": _DAT_TO_TECHTREE_ID.get(
+                        n.lower().replace(" ", "_"), n.upper().replace(" ", "_")),
+                    "name_sid": 10271 + i, "era": "base"}
+                   for i, n in enumerate(KM_TECHTREE_ORDER)]
+
+    _ROSTER_CACHE[key] = roster
+    return roster
+
+
+def civ_slot_info(slot: int, dat_path: str | Path | None = None) -> dict | None:
+    """Roster entry for a DAT civ slot, or None if the slot is off the end."""
+    roster = civ_roster(dat_path)
+    return roster[slot] if 0 <= slot < len(roster) else None
+
+
+def _canonical_techtree_id(civ_name: str, dat_path: str | Path | None = None,
+                           slot: int | None = None) -> str:
+    """Map a raw DAT civ name to the civTechTrees.json civ_id (uppercase).
+
+    Pass `slot` whenever the caller has it — it is the only reliable key.  The
+    DAT and civilizations.json disagree on several names (DAT "Mayan" vs
+    "Mayans", "British" vs "Britons", "French" vs "Franks"), but **entry N of
+    civilizations.json is DAT slot N**, so indexing sidesteps the whole problem.
+    Name matching stays as the fallback for callers that only have a name.
+    """
+    if slot is not None:
+        entry = civ_slot_info(slot, dat_path)
+        if entry and entry["techtree_id"]:
+            return entry["techtree_id"]
     key = civ_name.lower().replace(" ", "_")
+    for entry in civ_roster(dat_path):
+        if entry["name"].lower().replace(" ", "_") == key and entry["techtree_id"]:
+            return entry["techtree_id"]
     return _DAT_TO_TECHTREE_ID.get(key, civ_name.upper().replace(" ", "_"))
+
+
+def civ_name_sid(civ_name: str, dat_path: str | Path | None = None,
+                 slot: int | None = None) -> int | None:
+    """The civ-picker name string id for a vanilla civ, or None if unknown.
+
+    Replaces the `10271 + _civ_techtree_index(name)` arithmetic: the roster
+    carries `name_string_id` outright, so a DLC that appends civs works with no
+    code change (Saxons 10330, Varangians 10331, Danes 10332).
+    """
+    if slot is not None:
+        entry = civ_slot_info(slot, dat_path)
+        if entry and entry["name_sid"] is not None:
+            return entry["name_sid"]
+    key = civ_name.lower().replace(" ", "_")
+    canon = _canonical_techtree_id(civ_name, dat_path)
+    for entry in civ_roster(dat_path):
+        if entry["name_sid"] is None:
+            continue
+        if (entry["name"].lower().replace(" ", "_") == key
+                or entry["techtree_id"] == canon):
+            return entry["name_sid"]
+    idx = _civ_techtree_index(civ_name)
+    return 10271 + idx if idx is not None else None
 
 
 def _civ_techtree_index(civ_name: str) -> int | None:
@@ -1063,6 +1177,9 @@ def _civ_techtree_index(civ_name: str) -> int | None:
     Return the 0-based index of this civ in civTechTrees.json, or None.
     The KM name-string formula is: 10271 + civTechTrees_index.
     civ_name should be the vanilla civ name (e.g. 'Saracens').
+
+    Superseded by civ_name_sid(), which reads the roster instead of this frozen
+    list; kept as its fallback and for callers that genuinely want an index.
     """
     # Build lookup by canonical civTechTrees ID → index.
     lookup: dict[str, int] = {name.upper(): i for i, name in enumerate(KM_TECHTREE_ORDER)}

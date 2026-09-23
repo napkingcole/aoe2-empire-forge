@@ -625,5 +625,24 @@
     "heading": "+10 Population",
     "stat": "Towers and Castles provide +10 population space",
     "description": "Towers and Castles"
+  },
+  "T84": {
+    "entity": "villager",
+    "heading": "+25% [workrate]",
+    "stat": "Repairers work +25% faster",
+    "description": "Repairing"
+  },
+  "T85": {
+    "type": "value",
+    "entity": "knight",
+    "heading": "+1 [attack] vs Infantry",
+    "stat": "Knight-line +1 attack vs. Infantry",
+    "description": "Knight-line"
+  },
+  "T86": {
+    "entity": "mangonel",
+    "heading": "+2 LOS",
+    "stat": "Siege Weapons +2 line of sight",
+    "description": "Siege Weapons"
   }
 }

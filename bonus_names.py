@@ -21,7 +21,10 @@ SKIP_REASONS: dict[int, str] = {
 # civ build silently without the bonus. Hiding it only stops *new* civs from
 # picking it, which is the whole point — old civs keep working and keep their
 # label in build output.
-DEPRECATED_BONUSES: dict[int, int] = {
+# Retired bonus id -> the card that supersedes it, or None where the game
+# simply removed the mechanic.  Only the KEYS are consumed (the picker hides
+# them); the values are documentation for whoever asks why an id vanished.
+DEPRECATED_BONUSES: dict[int, int | None] = {
     # Both give Archery Range units +1 melee armor per age. 364 is the vanilla
     # tech copy and also covers Champi Warriors, so it strictly supersedes 245.
     245: 364,
@@ -51,6 +54,14 @@ DEPRECATED_BONUSES: dict[int, int] = {
     # Dragon Ships. 402 now maps to the same vanilla tech (1010) as 362, so it
     # still works for civs that carry it — it just isn't offered twice.
     402: 362,
+    # "Can garrison Docks with Fishing Ships", retired 2026-09-23 because the
+    # GAME removed it: Viking Sagas gutted tech 855 (civ 42, effect 870, five
+    # commands -> civ 0, effect_id -1), matching the patch note "Gurjaras: Docks
+    # +5 garrison capacity civilization bonus removed".  Nothing supersedes it —
+    # the mechanic is gone.  Found by the DAT-capability filter on the bonus
+    # catalog, which had already stopped offering it on an updated DAT; this
+    # retires it everywhere, including for players still on the old one.
+    297: None,
 }
 
 
@@ -132,7 +143,7 @@ def unsupported_unique_techs(castle: bool) -> list[dict]:
 # Wu, Muisca, Mapuche, Tupi.  This bound has to cover them, because it is what
 # unsupported_team_bonuses() iterates: while it said 80, ids 81-83 were offered
 # in the picker but never checked for an implementation.
-_TEAM_BONUS_COUNT = 84
+_TEAM_BONUS_COUNT = 87   # +3: Saxons, Varangians, Danes (Viking Sagas)
 
 # These vanilla effect IDs belong to the Chronicles DLC civ pool, which is
 # separate from the standard AoE2 DE civ pool. Chronicles civs cannot be

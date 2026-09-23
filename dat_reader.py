@@ -5,6 +5,7 @@ Auto-detects the Steam/Xbox Game Pass/Microsoft Store installation on Mac and Wi
 Call load_dat() to get a DatFile object ready for modification.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -31,7 +32,18 @@ STEAM_DAT_CANDIDATES = [
 
 
 def find_game_dat() -> Path | None:
-    """Return the path to the installed game DAT, or None if not found."""
+    """Return the path to the installed game DAT, or None if not found.
+
+    `EMPIREFORGE_DAT` overrides detection.  It exists so the test suite can be
+    pointed at a DAT that is not the installed one — a DLC build lands as a
+    folder of files well before it is the copy on disk, and the interesting
+    assertions are exactly the ones that differ between versions.
+    """
+    override = os.environ.get("EMPIREFORGE_DAT")
+    if override:
+        p = Path(override).expanduser()
+        return p if p.exists() else None
+
     for candidate in STEAM_DAT_CANDIDATES:
         if candidate.exists():
             return candidate

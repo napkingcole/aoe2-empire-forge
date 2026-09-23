@@ -114,10 +114,25 @@ def _tree():
         bldgs.update(cv.get("Building", []))
         techs.update(cv.get("Tech", []))
     main = (ROOT / "static/aoe2techtree/js/main.js").read_text()
-    regional = set(map(int, re.search(
-        r"const _REGIONAL_UNIT_IDS = new Set\(\[([^\]]*)\]\)",
-        main).group(1).replace(" ", "").split(",")))
+    # _REGIONAL_UNIT_IDS is derived from _REGIONAL_GROUPS rather than written
+    # out, so read the group table itself: every line without `standard: true`
+    # is opt-in, and its line-owned techs go with it (Cranequins cannot be
+    # seeded without the Mounted Crossbowman it upgrades).
+    block = re.search(r"const _REGIONAL_GROUPS = \[(.*?)\n\];", main, re.S)
+    assert block, "could not find _REGIONAL_GROUPS in main.js"
+    regional, line_techs = set(), set()
+    lines = re.findall(r"\{\s*name:\s*\"([^\"]+)\",\s*ids:\s*\[([^\]]*)\](.*?)\}",
+                       block.group(1), re.S)
+    assert lines, "parsed no lines out of _REGIONAL_GROUPS"
+    for _name, ids, rest in lines:
+        if "standard: true" in rest:
+            continue
+        regional.update(int(x) for x in ids.replace(" ", "").split(",") if x)
+        t = re.search(r"techs:\s*\[([^\]]*)\]", rest)
+        if t:
+            line_techs.update(int(x) for x in t.group(1).replace(" ", "").split(",") if x)
     units -= regional
+    techs -= line_techs
     units -= {125}                    # Monk: make the sweep disable something
     techs -= {55, 278}                # Gold/Stone Mining: ditto
 

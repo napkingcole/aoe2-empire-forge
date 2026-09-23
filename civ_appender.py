@@ -84,6 +84,10 @@ _XS_UT_NOTES: dict[int, str] = {
          "redirected and will not fire."),
     10: ("Red Cliffs Tactics targets the Wu Fire Archer specifically. Unless "
          "your civ fields Fire Archers, only the Demolition Ship half applies."),
+    51: ("Butalmapu's Castle unique unit discount now runs from one of the "
+         "game's own scripts, which knows the vanilla unique units by name. "
+         "The Bolas Rider half still applies if your civ fields them; the "
+         "discount will not reach your own unique unit."),
 }
 
 # ── Building IDs ──────────────────────────────────────────────────────────────
@@ -95,7 +99,9 @@ BUILDING_BLACKSMITH  = 103
 # KM architecture value is 1-based; maps to a representative vanilla DAT civ
 # whose building graphics are copied to the custom civ.
 # Source: KM civbuilder.cpp repArch[] = {3,1,5,8,15,7,20,22,25,28,33}
-_ARCH_REP_CIVS = [3, 1, 5, 8, 15, 7, 20, 22, 25, 28, 33, 21]  # 12 = South American (Inca)
+_ARCH_REP_CIVS = [3, 1, 5, 8, 15, 7, 20, 22, 25, 28, 33, 21, 11]
+# 12 = South American (Inca), 13 = Nordic (Vikings).  icon_set 13 is NEW in
+# Viking Sagas — before it the Vikings were Central European (icon_set 1).
 _ARCH_BUILDING_CLASSES = frozenset({3, 52, 27, 39})   # Building, Wall, Gate, Tower
 _ARCH_MOBILE_CLASSES   = frozenset({59, 18, 43, 19, 22})
 # Units the class filters miss but that still carry regional art.  Unit 134 is
@@ -125,6 +131,12 @@ MONK_SKIN_OPTIONS: list[dict] = [
     {"value": 25, "label": "African",       "example": "Ethiopians, Malians"},
     {"value": 15, "label": "Mesoamerican",  "example": "Aztecs, Mayans"},
     {"value": 21, "label": "Andean",        "example": "Inca, Mapuche, Muisca, Tupi"},
+    # Civ 11's Monk (standing graphic 19519) is its own partition, shared only
+    # with the Varangians and Danes.  NEW in Viking Sagas: before it the Vikings
+    # used the European Monk, so this option is filtered out for a player whose
+    # DAT predates the DLC.  The only other unoffered Monk belongs to the
+    # Chronicles civs, which are deliberately blacklisted.
+    {"value": 11, "label": "Nordic",        "example": "Vikings, Varangians, Danes"},
 ]
 
 # ── Starting scout ────────────────────────────────────────────────────────────
@@ -208,6 +220,12 @@ _KM_UU_TECHS: dict[int, tuple[int, int]] = {
     91: (1390, 1391), # Ibirapema Warrior (Tupi)
     92: (1363, 1364), # Guecha Warrior (Muisca)
     93: (1400, 1401), # Temple Guard (Muisca)
+    # Viking Sagas unique units.  Same shape as the Mesoamerican set: the
+    # make-avail tech is civ-gated (60/61/62) and auto-fires in the Castle Age,
+    # the elite upgrade researches at the Castle.
+    94: (1461, 1462), # Hearth Troop (Saxons)
+    95: (1471, 1472), # Jarl (Varangians)
+    96: (1481, 1482), # Jomsviking (Danes)
 }
 
 # Display names for KM UU indices. Vanilla indices (0-38, 78-87) are creatable
@@ -266,7 +284,7 @@ _KM_UU_NAMES: dict[int, str] = {
     48: "Amazon Warrior",
     49: "Amazon Archer",
     50: "Iroquois Warrior",
-    51: "Varangian Guard",
+    51: "Hetaireia",
     52: "Gendarme",
     53: "Cuahchiqueh",
     54: "Ritterbruder",
@@ -310,6 +328,10 @@ _KM_UU_NAMES: dict[int, str] = {
     91: "Ibirapema Warrior",
     92: "Guecha Warrior",
     93: "Temple Guard",
+    # Viking Sagas
+    94: "Hearth Troop",
+    95: "Jarl",
+    96: "Jomsviking",
 }
 
 # ── Display names for build-log messages ─────────────────────────────────────
@@ -1153,6 +1175,18 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         for tech_id in ec8_unit_techs.get(uid, []):
             ec8_to_add.add(tech_id)
 
+    # A tech can be globally disabled in its own right, not only as some unit's
+    # make-avail tech.  Cranequins (1452) is the first: Viking Sagas put a
+    # *researchable* Archery Range tech into tech 79 'Disable Regionals', so
+    # ticking it in the tree is not enough — the civ has to opt in exactly as it
+    # does for a regional unit, or `_lock_unclaimed_optin_techs` turns straight
+    # round and disables the thing the user just asked for.  Keyed on "vanilla
+    # unlocks this tech somewhere", the same template rule used above, so the
+    # next regional tech needs no code change.
+    for tech_id in tree_techs:
+        if tech_id in ec8_info:
+            ec8_to_add.add(tech_id)
+
     # ── Step 3c: Mutual exclusions and bonus-driven keep-alive.
     # Armored Elephants replace the ram-line for Indian civs — disable rams when present.
     _ARMORED_ELEPHANT_MAKE_AVAIL = 837
@@ -1501,6 +1535,16 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
         # units each one produces.  Scaling it turned "1 Villager from your Town
         # Center" into "1 Villager from each of up to N Town Centers", so the
         # card did nothing on one TC and multiplied per-TC on several.
+        pass
+    elif result.type == EC_RESOURCE and int(result.a) == RES_EFFECT_FUNCTION:
+        # Also deliberately NOT scaled, and this one is worse than a no-op.
+        # Resource 33 is "Effect Function Number": its `d` SELECTS which routine
+        # in the game's own Effects.xs runs.  Multiplying it does not make the
+        # effect stronger, it calls a DIFFERENT function — x2 would turn
+        # Hamask's 30 into 60, Shield Wall's 31 into 62, Coiled Serpent Array's
+        # 6 into 12.  Whatever that number lands on is unrelated to the card,
+        # and `ut_overrides.json` currently marks Coiled Serpent Array as
+        # scalable, so this was reachable.
         pass
     elif result.type in (EC_ADD, EC_RESOURCE):
         result.d = result.d * multiplier
@@ -3509,28 +3553,35 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         # catalog value is an effect index (not a tech index) — matches KM's C++:
         #   tbEffect.EffectCommands += df->Effects[teamBonuses[teamBonusIndex]]
         eff_idx = team_bonus_tech(tb_id)
-        if eff_idx is None or not (0 <= eff_idx < len(dat.effects)):
-            ec_dicts = team_bonus_ec_list(tb_id)
-            if not ec_dicts:
-                team_skipped.append(tb_id)
-                continue
-            for ec_dict in ec_dicts:
-                cmd = EffectCommand(type=ec_dict["type"], a=ec_dict["A"],
-                                    b=ec_dict["B"], c=ec_dict["C"], d=float(ec_dict["D"]))
+        safe_cmds = []
+        if eff_idx is not None and 0 <= eff_idx < len(dat.effects):
+            safe_cmds = list(dat.effects[eff_idx].effect_commands)
+
+        if safe_cmds:
+            # The player's own DAT is the source of truth whenever it still has
+            # one, so a balance patch to a vanilla team bonus rides along free.
+            for ec in safe_cmds:
                 dat.effects[tb_eff_id].effect_commands.append(
-                    _scale_ec_for_multiplier(cmd, multiplier))
-            team_cmd_counts.append((tb_id, len(ec_dicts)))
+                    _scale_ec_for_multiplier(ec, multiplier))
+            team_cmd_counts.append((tb_id, len(safe_cmds)))
             team_applied += 1
             continue
 
-        safe_cmds = list(dat.effects[eff_idx].effect_commands)
-        if not safe_cmds:
+        # No vanilla effect, or the game shipped it EMPTY.  Viking Sagas
+        # (2026-09-22) emptied three — Genitour (1), Llama (14), Condottiero
+        # (16) — when it moved them onto a different gating mechanism, so an
+        # effect that had commands last patch may have none this patch.  Falling
+        # through rather than skipping is what keeps a bonus alive across a DLC.
+        ec_dicts = team_bonus_ec_list(tb_id)
+        if not ec_dicts:
             team_skipped.append(tb_id)
             continue
-        for ec in safe_cmds:
+        for ec_dict in ec_dicts:
+            cmd = EffectCommand(type=ec_dict["type"], a=ec_dict["A"],
+                                b=ec_dict["B"], c=ec_dict["C"], d=float(ec_dict["D"]))
             dat.effects[tb_eff_id].effect_commands.append(
-                _scale_ec_for_multiplier(ec, multiplier))
-        team_cmd_counts.append((tb_id, len(safe_cmds)))
+                _scale_ec_for_multiplier(cmd, multiplier))
+        team_cmd_counts.append((tb_id, len(ec_dicts)))
         team_applied += 1
 
     print(f"       Team bonus: {team_applied}/{len(team_entries)} entries applied")
@@ -4597,6 +4648,14 @@ _KM_CASTLE_UT_TECHS: dict[int, int] = {
     60: 1379, 61: 1392, 62: 1365,
     # Naval rework — Portuguese: Circumnavigation (reveal map + ships -25% train time)
     63: 1404,
+    # Viking Sagas — Franks: Ordonnance Companies (Mounted Crossbowmen -40% gold).
+    # EC_MULTIPLY attribute 105 (Gold Costs) x0.6 on units 2700 and 2701, so it
+    # is inert unless the civ also took the Mounted Crossbowman line.
+    64: 1496,
+    # Viking Sagas — the three new civs' CASTLE unique techs.
+    65: 1491,   # Clerical Recruitment (Saxons)
+    66: 1473,   # Vendel Legacy (Varangians)
+    67: 1484,   # Hamask (Danes) — resource 33, EffectFunction 30
 }
 
 _KM_IMP_UT_TECHS: dict[int, int] = {
@@ -4609,6 +4668,10 @@ _KM_IMP_UT_TECHS: dict[int, int] = {
     49: 924, 54: 1069, 55: 1081, 56: 1062, 57: 997, 58: 1007,
     # Mesoamerican DLC — Mapuche: Butalmapu, Tupi: Curare, Muisca: Huaracas
     59: 1380, 60: 1393, 61: 1366,
+    # Viking Sagas — the three new civs' IMPERIAL unique techs.
+    62: 1464,   # Shield Wall (Saxons) — resource 33, EffectFunction 31
+    63: 1474,   # Gothikon (Varangians) — targets the Varangian Guard only
+    64: 1483,   # Northmen's Fury (Danes)
 }
 
 

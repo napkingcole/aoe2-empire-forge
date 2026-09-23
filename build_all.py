@@ -43,6 +43,7 @@ from build_civ import (
     _find_civ_techtrees_folder,
     _patch_per_civ_techtree,
     _canonical_techtree_id, _resolve_uu_info, uu_cost_text,
+    civ_name_sid, civ_roster,
 )
 from civ_appender import _KM_UU_NAMES
 
@@ -84,9 +85,9 @@ _UNIQUE_CASTLE_STRINGS = [
     "Ironclad (Siege units extra melee armor)",
     "Sipahi (Cavalry Archers +20 HP)",
     "Chatras (Elephant units +100 HP)",
-    "Chieftains (Infantry deal bonus damage to cavalry, generate gold from kills)",
+    "Chieftains (Infantry deal bonus damage to cavalry)",
     "Szlachta Privileges (Knight-line costs -60% gold)",
-    "Wagenburg Tactics (Gunpowder units move 15% faster)",
+    "Wagenburg Tactics (Gunpowder units move 10% faster)",
     "Deconstruction (Siege units fire 33% faster)",
     "Obsidian Arrows (Archer-line +6 attack vs. buildings)",
     "Tortoise Engineers (Rams train 100% faster)",
@@ -115,6 +116,14 @@ _UNIQUE_CASTLE_STRINGS = [
     "Herbalism (Archer-line and Champi Warriors move +15% faster)",
     # Naval rework — Portuguese (slot 63)
     "Circumnavigation (Reveals the map; Ships train 33% faster)",
+    # Viking Sagas — Franks (slot 64).  Only does anything for a civ that
+    # fields Mounted Crossbowmen, the same way Malon needs Bolas Riders.
+    "Ordonnance Companies (Mounted Crossbowmen cost -40% gold)",
+    # Viking Sagas — Saxons, Varangians, Danes (slots 65-67).  Descriptions are
+    # DE's own, read out of the game's +21000 tooltip strings.
+    "Clerical Recruitment (Monks +1 conversion range; train +33% faster)",
+    "Vendel Legacy (Knight-line deals trample damage)",
+    "Hamask (Infantry deal more damage as they lose HP)",
 ]
 
 _UNIQUE_IMP_STRINGS = [
@@ -131,7 +140,7 @@ _UNIQUE_IMP_STRINGS = [
     "Torsion Engines (increases blast radius of Siege Workshop units)",
     "Chivalry (Stables work 40% faster)",
     "Perfusion (Barracks work 100% faster)",
-    "Atheism (+100 years for Relic, Wonder victories; enemy relics -50% resources)",
+    "Atheism (+100 years to enemy and neutral Relic/Wonder victories; their relic income -50%)",
     "Fabric Shields (Shock Infantry, Slingers, Unique Unit +1/+2 armor)",
     "Shatagni (Hand Cannoneers +2 range)",
     "Pirotechnia (Hand Cannoneers deal +15% pass through damage and are more accurate)",
@@ -181,6 +190,10 @@ _UNIQUE_IMP_STRINGS = [
     "Butalmapu (Team: Castle Unique Units and Bolas Riders cost -15%)",
     "Curare (Foot Archers and Fortifications deal poison damage)",
     "Huaracas (Slingers +1 range; train +50% faster)",
+    # Viking Sagas — Saxons, Varangians, Danes (slots 62-64).
+    "Shield Wall (Infantry gain additional armor when massed)",
+    "Gothikon (Varangian Guards throw axes periodically)",
+    "Northmen's Fury (Mangonel-line and Catapult Galleons +1 range; Siege Weapons and Siege Warships +40% attack vs buildings)",
 ]
 
 _BONUS_NAMES: dict[str, str] = json.loads(
@@ -430,7 +443,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     # we can skip writing vanilla names for those positions.  AoE2 DE key-value
     # string files are first-definition-wins, so writing "Britons" first then
     # "Horsey Boys" second would leave the vanilla name in place.
-    replaced_tt_positions: set[int] = set()
+    replaced_name_sids: set[int] = set()
     for entry in civ_defs:
         _jp = Path(entry["json"])
         if not _jp.exists():
@@ -438,9 +451,9 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         _slot = _find_civ_slot(dat, entry["replace"])
         if _slot is None:
             continue
-        _tti = _civ_techtree_index(dat.civs[_slot].name)
-        if _tti is not None:
-            replaced_tt_positions.add(_tti)
+        _sid = civ_name_sid(dat.civs[_slot].name, dat_path, slot=_slot)
+        if _sid is not None:
+            replaced_name_sids.add(_sid)
 
     # NOTE: Custom civ strings are written FIRST (in the loop below), and
     # vanilla civ name fallbacks are written LAST (after the loop). This
@@ -472,13 +485,14 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
             continue
 
         ui_civ_name = dat.civs[slot].name
-        tt_idx      = _civ_techtree_index(ui_civ_name)
-        if tt_idx is None:
-            print(f"  ERROR: {replace_name!r} (DAT name {ui_civ_name!r}) not found in KM_TECHTREE_ORDER — "
-                  f"cannot assign a civ name string ID. Add an alias to _civ_techtree_index or choose a "
-                  f"different replacement civ. Skipping {alias!r}.")
+        # Slot-keyed via the live roster, so a civ a DLC added is usable the day
+        # it ships rather than being refused for missing the frozen list.
+        name_sid = civ_name_sid(ui_civ_name, dat_path, slot=slot)
+        if name_sid is None:
+            print(f"  ERROR: no civ-picker name string id for {replace_name!r} "
+                  f"(DAT name {ui_civ_name!r}, slot {slot}) — is civilizations.json "
+                  f"missing beside the DAT? Skipping {alias!r}.")
             continue
-        name_sid = 10271 + tt_idx
 
         print(f"\n  [{slot}] {replace_name!r} → {alias!r}  (string ID {name_sid})")
 
@@ -787,7 +801,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # internal name (e.g. "british") — the game loads icons by canonical name.
         flag_png = _decode_flag(civ_def)
         if flag_png:
-            fn = _canonical_techtree_id(ui_civ_name).lower()
+            fn = _canonical_techtree_id(ui_civ_name, dat_path, slot=slot).lower()
             for variant in ("", "_hover", "_pressed"):
                 button_pngs[f"menu_techtree_{fn}{variant}.png"] = flag_png
 
@@ -798,7 +812,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
 
         # Per-civ CivTechTrees JSON.
         if ct_folder:
-            vanilla_tt_name = _canonical_techtree_id(ui_civ_name)
+            vanilla_tt_name = _canonical_techtree_id(ui_civ_name, dat_path, slot=slot)
             per_civ_path = ct_folder / f"{vanilla_tt_name}.json"
             if per_civ_path.exists():
                 patched = _patch_per_civ_techtree(per_civ_path, civ_def, dat, slot,
@@ -816,10 +830,11 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     # Vanilla civ-name fallbacks: AFTER all custom civ entries, fill in the
     # remaining slots so the picker still shows correct names for unmodified
     # civs. First-definition-wins keeps custom entries above untouched.
-    for i, vanilla_name in enumerate(KM_TECHTREE_ORDER):
-        if i in replaced_tt_positions:
+    for entry in civ_roster(dat_path)[1:]:          # slot 0 is Gaia
+        sid = entry["name_sid"]
+        if sid is None or sid in replaced_name_sids:
             continue
-        sid = 10271 + i
+        vanilla_name = entry["name"]
         for lang in LANGUAGES:
             string_lines[lang].append(f'{sid} "{vanilla_name}"')
             string_lines[lang].append(f'{sid + 80000} "Click to play as {vanilla_name}."')
@@ -828,8 +843,10 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     # so the full block is present (KM/NKC ship this — see project memory).
     # (Previously suspected of crashing the lobby; turned out to be a corrupted
     # Steam game-file install masquerading as a mod bug. See feedback memory.)
-    for i in range(min(len(KM_TECHTREE_ORDER), 45)):
-        if i in replaced_tt_positions:
+    # Descriptions exist only for the original 45 civs, indexed Britons = 0.
+    _replaced_pos = {sid - 10271 for sid in replaced_name_sids}
+    for i in range(45):
+        if i in _replaced_pos:
             continue
         sid = 120150 + i
         text = _VANILLA_CIV_DESCRIPTIONS.get(sid)

@@ -84,6 +84,8 @@ What follows is the always-in-context summary of the most critical facts.
 
 5. **Opt-in techs need type=8.** Battle Elephants, Elephant Archers, and similar units are globally disabled and not in any civ's type=102 pool. They require an explicit type=8 command in the civ's TT effect to appear.
 
+    "Globally disabled" is **tech 79 `Disable Regionals`** — a `civ=-1`, no-prereq, auto-fire tech whose effect is one big type=102 list. That is the mechanism behind this quirk, and DE actively moves units onto it: Viking Sagas took it 34 → 45 entries, converting the Genitour, Llama, Condottiero and Longship away from the older **cost gate** (an auto-fire tech carrying a 1-food cost that can never be paid, since there is no building to pay it at). Our bonus code finds the unlock by **copying an existing type=8 for that tech from any vanilla civ's TT effect**, so a unit some civ legitimately has heals itself across a patch; a tech no civ unlocks has no template and needs an explicit entry. `b=12, c=-1, d=1.0` is the shape vanilla uses for every make-avail unlock. See `docs/DLC-viking-sagas.md`.
+
 6. **Empty research_locations crashes silently.** Always provide at least one `ResearchLocation(location_id=-1, research_time=0)` for auto-fire techs.
 
 7. **Hero one-at-a-time is attributes 126/127, not `hero_mode`.** `hero_mode=1` only grants hero status (gold border, regen, conversion immunity). The cap is `EC_SET(unit, c=126, d=1)` + `EC_ADD(unit, c=127, d=4)` in the hero's make-avail tech — 127 flag `4` = limited but retrainable after death, `2` = never retrainable. See `llm/advanced_techniques.md`'s "Hero Units (One-at-a-Time)" (confirmed in-game 2026-08-26).

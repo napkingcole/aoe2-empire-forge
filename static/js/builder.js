@@ -3620,6 +3620,10 @@ const _CIV_UNIQUE_BUILDING_IDS = new Set([
 function _filterFullTree(data) {
   const regUnits = typeof _REGIONAL_UNIT_IDS     !== 'undefined' ? _REGIONAL_UNIT_IDS     : new Set();
   const regBldgs = typeof _REGIONAL_BUILDING_IDS !== 'undefined' ? _REGIONAL_BUILDING_IDS : new Set();
+  // Techs owned by a regional unit line.  The line itself is filtered out just
+  // below as a regional unit, so keeping its tech would seed a blank civ with
+  // Cranequins and no Mounted Crossbowman to research it on.
+  const regTechs = typeof _REGIONAL_LINE_TECH_IDS !== 'undefined' ? _REGIONAL_LINE_TECH_IDS : new Set();
 
   // Units behind an "Unlock ..." card (Bolas Rider, Xianbei Raider, ...).  They
   // have no tree node either, so leaving them in the seed is what pre-ticks a
@@ -3634,7 +3638,7 @@ function _filterFullTree(data) {
     units:     (data.units     || []).filter(id => !regUnits.has(id) && !unlockUnits.has(id)),
     buildings: (data.buildings || []).filter(id => !regBldgs.has(id)
                                                 && !_CIV_UNIQUE_BUILDING_IDS.has(id)),
-    techs:     (data.techs     || []).slice(),
+    techs:     (data.techs     || []).filter(id => !regTechs.has(id)),
   };
 }
 

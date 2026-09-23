@@ -81,6 +81,30 @@ check("tech cost mode=set stays put", scaled(EC_TECH_COST, TECH_MODE_SET, 0.0, 4
 check("tech time mode=set stays put", scaled(EC_TECH_TIME, TECH_MODE_SET, 0.0, 4), 0.0)
 check("EC_SET work rate is left alone", scaled(EC_SET, 13, 1.1, 2), 1.1)
 
+print("\n=== resources whose value is an INDEX, not an amount ===")
+# Some EC_RESOURCE commands carry a selector in `d`, and scaling one does not
+# make the effect stronger — it points the effect somewhere else entirely.
+from civ_appender import RES_SPAWN_LIMIT, RES_EFFECT_FUNCTION   # noqa: E402
+
+
+def scaled_res(resource_id, d, mult):
+    return _scale_ec_for_multiplier(
+        EffectCommand(type=EC_RESOURCE, a=resource_id, b=0, c=-1,
+                      d=float(d)), mult).d
+
+
+# Resource 33 selects which routine in the game's own Effects.xs runs, so x2
+# would turn Hamask's function 30 into 60 and Coiled Serpent Array's 6 into 12 —
+# unrelated functions, not a stronger version of the card.
+for fn, mult in ((30, 2), (31, 3), (6, 2), (51, 4), (56, 2)):
+    check(f"EffectFunction {fn} is not scaled at x{mult}",
+          scaled_res(RES_EFFECT_FUNCTION, fn, mult), float(fn))
+# Spawn Limit counts participating buildings, a different axis from unit count.
+check("Spawn Limit is not scaled at x3", scaled_res(RES_SPAWN_LIMIT, 1, 3), 1.0)
+# ...while an ordinary resource amount still scales.
+check("an ordinary resource amount still scales at x3",
+      scaled_res(0, 100, 3), 300.0)
+
 print("\n=== multiplier <= 1 is always identity ===")
 for m in (0, 1):
     check(f"x{m} leaves EC_MULTIPLY alone", scaled(EC_MULTIPLY, 13, 1.1, m), 1.1)

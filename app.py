@@ -38,6 +38,7 @@ from build_civ import (
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
     _decode_flag, _find_civ_techtrees_folder,
     _patch_per_civ_techtree, _canonical_techtree_id,
+    civ_name_sid, civ_roster,
     _resolve_uu_info, _find_adjacent_json, uu_cost_text,
 )
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
@@ -86,6 +87,22 @@ def _uu_stats_cache_path(dat_path: str) -> Path:
     return _CACHE_DIR / f"uu_stats_{h}.json"
 
 
+def _uu_table_fingerprint() -> str:
+    """Fingerprint of the UU table the cached stats were computed from.
+
+    The cache keyed on DAT mtime alone, which is only half the story: the stats
+    are produced by walking `_KM_UU_TECHS`, so ADDING a unit leaves a valid
+    cache that simply has no entry for it.  That is exactly what happened when
+    Viking Sagas added the Hearth Troop, Jarl and Jomsviking — the catalog
+    offered them and every stat popup said "No stats available", with a DAT
+    that could answer perfectly well sitting right there.  Fingerprinting the
+    table means the next DLC invalidates the cache by itself.
+    """
+    import civ_appender as ca
+    raw = repr(sorted((k, tuple(v)) for k, v in ca._KM_UU_TECHS.items()))
+    return hashlib.md5(raw.encode()).hexdigest()[:12]
+
+
 def _load_uu_stats_disk(dat_path: str) -> dict | None:
     """Return cached stats dict from disk, or None if missing/stale."""
     try:
@@ -95,6 +112,8 @@ def _load_uu_stats_disk(dat_path: str) -> dict | None:
         with open(f) as fh:
             data = json.load(fh)
         if data.get("_v") != _UU_STATS_DISK_VERSION:
+            return None
+        if data.get("_tbl") != _uu_table_fingerprint():
             return None
         if int(data.get("_mtime", 0)) != int(Path(dat_path).stat().st_mtime):
             return None
@@ -109,6 +128,7 @@ def _save_uu_stats_disk(dat_path: str, stats: dict) -> None:
         _CACHE_DIR.mkdir(exist_ok=True)
         payload: dict = {
             "_v":     _UU_STATS_DISK_VERSION,
+            "_tbl":   _uu_table_fingerprint(),
             "_mtime": int(Path(dat_path).stat().st_mtime),
         }
         payload.update({str(k): v for k, v in stats.items()})
@@ -596,7 +616,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
         # writing vanilla names for them.  AoE2 DE key-value files are
         # first-definition-wins — writing "Britons" first then "Horsey Boys" second
         # would leave the vanilla name in place.
-        replaced_tt_positions: set[int] = set()
+        replaced_name_sids: set[int] = set()
         for _fn in ordered:
             _replace = replace_map.get(_fn, "")
             if not _replace:
@@ -604,15 +624,16 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             _slot = _find_civ_slot(dat, _replace)
             if _slot is None:
                 continue
-            _tti = _civ_techtree_index(dat.civs[_slot].name)
-            if _tti is not None:
-                replaced_tt_positions.add(_tti)
+            _sid = civ_name_sid(dat.civs[_slot].name, dat_path, slot=_slot)
+            if _sid is not None:
+                replaced_name_sids.add(_sid)
 
         # Write vanilla civ name strings upfront, skipping replaced positions.
-        for i, vanilla_name in enumerate(KM_TECHTREE_ORDER):
-            if i in replaced_tt_positions:
+        for entry in civ_roster(dat_path)[1:]:       # slot 0 is Gaia
+            sid = entry["name_sid"]
+            if sid is None or sid in replaced_name_sids:
                 continue
-            sid = 10271 + i
+            vanilla_name = entry["name"]
             for lang in LANGUAGES:
                 string_lines[lang].append(f'{sid} "{vanilla_name}"')
                 string_lines[lang].append(f'{sid + 80000} "Click to play as {vanilla_name}."')
@@ -665,8 +686,9 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             build_results.append(result)
 
             alias = result["alias"]
-            tt_idx   = _civ_techtree_index(ui_civ_name)
-            name_sid = 10271 + tt_idx if tt_idx is not None else 10271
+            # Slot-keyed via the live roster: a civ a DLC added gets its own
+            # name string instead of writing over Britons (the 10271 fallback).
+            name_sid = civ_name_sid(ui_civ_name, dat_path, slot=slot) or 10271
 
             _bonuses_raw_normalized      = get_civ_bonuses(civ_def)
             _team_bonuses_raw_normalized = get_team_bonuses(civ_def)
@@ -930,7 +952,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             if flag_png:
                 # Use canonical civTechTrees name (e.g. "britons") not DAT internal
                 # name (e.g. "british") — game loads icons by canonical name.
-                fn_img = _canonical_techtree_id(ui_civ_name).lower()
+                fn_img = _canonical_techtree_id(ui_civ_name, dat_path, slot=slot).lower()
                 for variant in ("", "_hover", "_pressed"):
                     button_pngs[f"menu_techtree_{fn_img}{variant}.png"] = flag_png
 
@@ -939,7 +961,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             ai_stubs[f"resources/_common/ai/{ai_name}.per"] = AI_PER_STUB
 
             if ct_folder:
-                vanilla_tt_name = _canonical_techtree_id(ui_civ_name)
+                vanilla_tt_name = _canonical_techtree_id(ui_civ_name, dat_path, slot=slot)
                 per_civ_path = ct_folder / f"{vanilla_tt_name}.json"
                 if per_civ_path.exists():
                     patched = _patch_per_civ_techtree(per_civ_path, civ_def, dat, slot,
@@ -1133,7 +1155,7 @@ def reset():
 # ── Civ Builder ───────────────────────────────────────────────────────────────
 
 _ARCH_OPTIONS = [
-    {"value": 1,  "label": "Central European",       "example": "Goths, Teutons, Vikings"},
+    {"value": 1,  "label": "Central European",       "example": "Goths, Teutons, Huns"},
     {"value": 2,  "label": "Western European",        "example": "Britons, Franks, Celts"},
     {"value": 3,  "label": "East Asian",              "example": "Japanese, Chinese, Koreans"},
     {"value": 4,  "label": "Middle Eastern",          "example": "Persians, Saracens, Turks"},
@@ -1145,6 +1167,12 @@ _ARCH_OPTIONS = [
     {"value": 10, "label": "Southeast Asian",         "example": "Khmer, Malay, Burmese"},
     {"value": 11, "label": "Central Asian / Nomadic", "example": "Tatars, Cumans, Mongols"},
     {"value": 12, "label": "South American",           "example": "Inca, Mapuche, Muisca, Tupi"},
+    # icon_set 13, NEW in Viking Sagas: the Vikings were Central European until
+    # that DLC gave them their own set, which is why the value-1 example above
+    # no longer names them.  Offered only when the player's DAT actually has
+    # icon_set 13 — on an older one it would copy Central European under a
+    # Nordic label.
+    {"value": 13, "label": "Nordic",                   "example": "Vikings, Varangians, Danes"},
 ]
 
 # Unit the civ starts the game with, written to civ.resources[263].
@@ -1247,32 +1275,79 @@ def api_builder_meta():
     # value = dat_index - 1 (KM 0-based convention; 0 = Britons).
     # Antiquity / Chronicles civs are excluded: their wonder and castle models
     # are not available to base-game civs.
+    # Read the PLAYER's civilizations.json, not our bundled copy, for the same
+    # reason the build does: a DLC adds civs, and a frozen list silently offers
+    # the wrong roster.  Before this, the wonder, castle and voice pickers were
+    # stuck at 53 civs and the three Viking Sagas civs simply did not exist in
+    # the wizard.  Falls back to the bundled copy on its own.
+    from build_civ import civ_roster
+    from civ_appender import _UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, _ARCH_REP_CIVS
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    roster = civ_roster(dat_path) or []
+    if not roster:
+        roster = [{"name": c.get("internal_name", ""), "era": c.get("era", "base")}
+                  for c in _civ_list]
     civ_options = sorted([
-        {"value": i - 1, "label": c.get("internal_name", "")}
-        for i, c in enumerate(_civ_list)
-        if i > 0 and c.get("era", "base") != "antiquity"
+        {"value": i - 1, "label": c.get("name", "")}
+        for i, c in enumerate(roster)
+        if i > 0 and c.get("era", "base") != "antiquity" and c.get("name")
     ], key=lambda x: x["label"])
+
+    # Architecture and Monk sets are partitions of the DAT, so offer only the
+    # ones the player's DAT actually contains.  Viking Sagas added both a
+    # thirteenth architecture and an eleventh Monk; on an older DAT neither
+    # exists, and the option would quietly copy its representative civ's OLD
+    # art under the new label.
+    arch_options = _ARCH_OPTIONS
+    monk_options = MONK_SKIN_OPTIONS
+    if dat_path:
+        try:
+            _pd = _get_dat(dat_path)
+            _sets = {c.icon_set for c in _pd.civs[1:]}
+            arch_options = [a for a in _ARCH_OPTIONS if a["value"] in _sets]
+
+            def _monk_of(idx):
+                u = (_pd.civs[idx].units[125]
+                     if _pd.civs[idx].units and len(_pd.civs[idx].units) > 125 else None)
+                return u.standing_graphic if u else None
+
+            _seen: dict = {}
+            for _i in range(1, len(_pd.civs)):
+                _g = _monk_of(_i)
+                if _g is not None:
+                    _seen.setdefault(_g, []).append(_i)
+            # A Monk option is real here only if its representative civ heads a
+            # partition no earlier option already covers.
+            _claimed: set = set()
+            monk_options = []
+            for _o in MONK_SKIN_OPTIONS:
+                _g = _monk_of(_o["value"])
+                if _g is None or _g in _claimed:
+                    continue
+                _claimed.add(_g)
+                monk_options.append(_o)
+        except Exception:                                        # noqa: BLE001
+            arch_options, monk_options = _ARCH_OPTIONS, MONK_SKIN_OPTIONS
     # Driven by which voice_files/<value>/ folders actually exist, not a fixed
     # count.  build_all bundles those .wem files into the mod, so offering a
     # voice we have no folder for would silently ship a civ with no audio.
     # Drop a new folder in and the option appears.
     voice_options = sorted([
-        {"value": i - 1, "label": c.get("internal_name", "")}
-        for i, c in enumerate(_civ_list)
-        if i > 0 and (i - 1) in _available_voice_values()
+        {"value": i - 1, "label": c.get("name", "")}
+        for i, c in enumerate(roster)
+        if i > 0 and (i - 1) in _available_voice_values() and c.get("name")
     ], key=lambda x: x["label"])
     # bonus_id → unit_ids, so the wizard can derive the "Unlock ..." bonuses
     # from the tech tree without keeping its own copy of the table.
-    from civ_appender import _UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, _ARCH_REP_CIVS
     unlock_bonuses = {
         str(bid): list(spec["units"]) for bid, spec in _UNLOCK_UNIT_BONUSES.items()
     }
     return jsonify({
-        "architectures": _ARCH_OPTIONS,
+        "architectures": arch_options,
         "civs": civ_options,
         "voices": voice_options,
         "starting_scouts": _SCOUT_OPTIONS,
-        "monk_skins": MONK_SKIN_OPTIONS,
+        "monk_skins": monk_options,
         "unlock_bonuses": unlock_bonuses,
         # Display names for the identity scene ("Hagia Sophia" rather than
         # "Byzantines").  Written by scripts/import_km_art.py; absent until that
@@ -1439,6 +1514,31 @@ def api_builder_bonuses_catalog():
     # Deprecated bonuses still build for civs that reference them; they are just
     # not offered for new picks. See bonus_names.DEPRECATED_BONUSES.
     hidden_ids = unsupported_ids | set(DEPRECATED_BONUSES)
+
+    # ...and, as for unique techs and unique units, a bonus the PLAYER's OWN DAT
+    # cannot implement.  A card is built by cloning its techs' effect commands,
+    # so the twelve Viking Sagas bonuses are inert for anyone still on the
+    # previous patch, where those tech slots are nameless and empty.  Only
+    # bonuses that HAVE techs are judged this way: plenty are implemented from
+    # `ec_list` instead and carry none, and hiding those would empty the picker.
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if dat_path:
+        try:
+            _d = _get_dat(dat_path)
+            from bonus_catalog import civ_bonus_techs, team_bonus_tech
+
+            def _live(tech_id: int) -> bool:
+                if tech_id >= len(_d.techs):
+                    return False
+                eid = _d.techs[tech_id].effect_id
+                return 0 <= eid < len(_d.effects) and bool(_d.effects[eid].effect_commands)
+
+            for k in names:
+                techs = civ_bonus_techs(int(k)) or []
+                if techs and not any(_live(int(x)) for x in techs):
+                    hidden_ids.add(int(k))
+        except Exception:                                        # noqa: BLE001
+            pass
     civ_bonuses = [
         {"id": int(k), "label": v}
         for k, v in sorted(names.items(), key=lambda x: int(x[0]))
@@ -1449,6 +1549,27 @@ def api_builder_bonuses_catalog():
     # team bonus with no catalog entry was pickable and then silently dropped at
     # build time.
     unsupported_team_ids = {b["id"] for b in unsupported_team_bonuses()}
+    # Same for team bonuses, which copy a vanilla effect wholesale: an effect
+    # this DAT ships empty leaves the card doing nothing, unless a team_ec_list
+    # entry stands in for it (which is exactly how the three bonuses Viking
+    # Sagas hollowed out keep working).
+    if dat_path:
+        try:
+            from bonus_catalog import team_bonus_ec_list
+            for k in team_names:
+                ei = team_bonus_tech(int(k))
+                if ei is None:
+                    continue                      # no mapping; ec_list decides
+                # Out of range counts as empty, not as "cannot tell": the three
+                # new civs' effects (1455-1457) simply do not exist in a DAT
+                # from before the DLC, which is precisely when the card must
+                # not be offered.
+                live = (0 <= ei < len(_d.effects)
+                        and bool(_d.effects[ei].effect_commands))
+                if not live and not team_bonus_ec_list(int(k)):
+                    unsupported_team_ids.add(int(k))
+        except Exception:                                        # noqa: BLE001
+            pass
     team_bonuses = [
         {"id": int(k), "label": v}
         for k, v in sorted(team_names.items(), key=lambda x: int(x[0]))
@@ -1790,7 +1911,7 @@ def api_builder_uu_catalog():
         48: "166_50730.png",   # Amazon Warrior
         49: "165_50730.png",   # Amazon Archer
         50: "297_50730.png",   # Iroquois Warrior
-        51: "357_50730.png",   # Varangian Guard
+        51: "357_50730.png",   # Hetaireia
         52: "260_50730.png",   # Gendarme
         54: "379_50730.png",   # Ritterbruder
         55: "256_50730.png",   # Kazak
@@ -1835,10 +1956,68 @@ def api_builder_uu_catalog():
             print(f"  WARNING: could not read unit stats from {dat_path!r}: {e}",
                   flush=True)
 
+    # A vanilla UU is built by cloning its make-avail and elite techs, so one
+    # whose techs are empty placeholders in THIS DAT cannot be built at all —
+    # the three Viking Sagas units are empty slots for anyone who has not
+    # updated.  Same rule the UT catalog uses.  KM-custom UUs are unaffected:
+    # they are built from a base unit, not from a DAT tech.
+    missing_in_dat: set[int] = set()
+    derived_icons: dict[int, str] = {}
+    if dat_path:
+        try:
+            _d = _get_dat(dat_path)
+
+            def _tech_live(tech_id: int) -> bool:
+                if tech_id >= len(_d.techs):
+                    return False
+                eid = _d.techs[tech_id].effect_id
+                return 0 <= eid < len(_d.effects) and bool(_d.effects[eid].effect_commands)
+
+            missing_in_dat = {i for i, pair in ca._KM_UU_TECHS.items()
+                              if not all(_tech_live(t) for t in pair)}
+
+            # A vanilla UU's icon file is always "<base unit's icon_id>_50730.png"
+            # — checked against all 50 hand-listed vanilla entries, and every
+            # one matches.  So derive it rather than hand-listing the next one:
+            # the six South American units and the three Viking Sagas units were
+            # all missing purely because nobody had added a map entry.  The
+            # 36 KM-custom entries stay hand-listed (their cloned base unit does
+            # not carry the right icon) and still win as an override.
+            def _base_unit(tech_id: int) -> int | None:
+                if not _tech_live(tech_id):
+                    return None
+                for c in _d.effects[_d.techs[tech_id].effect_id].effect_commands:
+                    if c.type in (2, 3):
+                        return int(c.a)
+                return None
+
+            for i, pair in ca._KM_UU_TECHS.items():
+                if i in _ICON_MAP or i in missing_in_dat:
+                    continue
+                uid = _base_unit(pair[0])
+                if uid is None:
+                    continue
+                u = next((cv.units[uid] for cv in _d.civs
+                          if cv.units and len(cv.units) > uid and cv.units[uid]), None)
+                icon_id = getattr(u, "icon_id", -1) if u else -1
+                if isinstance(icon_id, int) and icon_id >= 0:
+                    derived_icons[i] = f"{icon_id:03d}_50730.png"
+        except Exception:                                        # noqa: BLE001
+            missing_in_dat = set()
+            derived_icons = {}
+
+    # Only offer an icon whose file is actually there.  A map entry pointing at
+    # a missing PNG renders as a broken image; `None` renders as no image, which
+    # is what an un-illustrated unit should look like.  The upshot is that
+    # dropping a new file into uniticons/ is the whole job — no code change.
+    _icon_dir = Path(__file__).parent / "uniticons"
+
     for km_idx, name in ca._KM_UU_NAMES.items():
-        if km_idx in unsupported:
+        if km_idx in unsupported or km_idx in missing_in_dat:
             continue
-        icon_file = _ICON_MAP.get(km_idx)
+        icon_file = _ICON_MAP.get(km_idx) or derived_icons.get(km_idx)
+        if icon_file and not (_icon_dir / icon_file).exists():
+            icon_file = None
         is_vanilla = km_idx in vanilla_keys
         entry_stats = stats_map.get(km_idx)
 
@@ -1866,21 +2045,47 @@ def _split_ut_label(label: str) -> tuple[str, str]:
 def api_builder_ut_catalog():
     from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
 
-    castle = []
-    for i, label in enumerate(_UNIQUE_CASTLE_STRINGS):
-        if i not in _KM_CASTLE_UT_TECHS:
-            continue
-        name, desc = _split_ut_label(label)
-        castle.append({"id": i, "label": label, "name": name, "desc": desc})
+    # A preset is only offered if the PLAYER's OWN DAT implements its source
+    # tech, because the preset works by cloning that tech's effect commands.
+    # Ordonnance Companies (castle 64) is tech 1496, which is a nameless empty
+    # placeholder until Viking Sagas fills it in — offering it to someone who
+    # has not updated would ship a unique tech that researches and does
+    # nothing.  Exactly one preset is affected today, but keying on "does this
+    # tech have an effect here" rather than a version check means the next DLC
+    # preset is safe the day it is added.
+    #
+    # If no DAT can be read we offer everything, which is the old behaviour:
+    # the catalog is also used for browsing, and hiding the whole list because
+    # we could not find a DAT would be worse than listing one dud.
+    has_effect = None
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if dat_path and Path(dat_path).exists():
+        try:
+            dat = _get_dat(dat_path)
 
-    imperial = []
-    for i, label in enumerate(_UNIQUE_IMP_STRINGS):
-        if i not in _KM_IMP_UT_TECHS:
-            continue
-        name, desc = _split_ut_label(label)
-        imperial.append({"id": i, "label": label, "name": name, "desc": desc})
+            def has_effect(tech_id: int) -> bool:       # noqa: F811
+                if tech_id >= len(dat.techs):
+                    return False
+                eid = dat.techs[tech_id].effect_id
+                return (0 <= eid < len(dat.effects)
+                        and bool(dat.effects[eid].effect_commands))
+        except Exception:
+            has_effect = None
 
-    return jsonify({"castle": castle, "imperial": imperial})
+    def _entries(strings, table):
+        out = []
+        for i, label in enumerate(strings):
+            tech_id = table.get(i)
+            if tech_id is None:
+                continue
+            if has_effect is not None and not has_effect(tech_id):
+                continue
+            name, desc = _split_ut_label(label)
+            out.append({"id": i, "label": label, "name": name, "desc": desc})
+        return out
+
+    return jsonify({"castle":   _entries(_UNIQUE_CASTLE_STRINGS, _KM_CASTLE_UT_TECHS),
+                    "imperial": _entries(_UNIQUE_IMP_STRINGS, _KM_IMP_UT_TECHS)})
 
 
 @app.route("/api/builder/ut/costs")

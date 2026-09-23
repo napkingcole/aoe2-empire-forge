@@ -126,6 +126,40 @@ TEAM BONUSES — two traps, both of which have bitten (2026-09-18):
   so 40 and 80 are the same bonus; 80 has no card text and should stay
   unreachable rather than be named into a duplicate.)
 
+  A VANILLA EFFECT CAN GO EMPTY (2026-09-22, Viking Sagas).  Three team
+  bonuses had a perfectly good `team` mapping that the DLC hollowed out:
+  **1** Genitour (effect 38, 3 -> 0 commands), **14** Llama (effect 4, 2 -> 0)
+  and **16** Condottiero (effect 11, 2 -> 0).  Names unchanged, civs still
+  pointing at them, no error — the bonuses simply stopped doing anything.
+
+  The cause is a mechanism swap, and it is worth knowing because it is how DE
+  gates regional units generally.  Those three techs (601/599 Genitour, 730
+  Llama, 522 Condottiero) used to be held back by a **cost gate**: an auto-fire
+  tech (`research_locations = [(-1, 1)]`) carrying a 1-food cost, which can
+  never be paid because there is no building to pay it at.  The team bonus
+  released it with `type=101` (cost -> 0) + `type=103` (time -> 0).  The DLC
+  removed those costs and instead added all three to **tech 79 `Disable
+  Regionals`** (34 -> 45 commands), the global type=102 list that is the real
+  machinery behind CLAUDE.md quirk 5 — so the release is now a `type=8` unlock.
+  DE made that swap, emptied the three effects, and **never added the type=8**,
+  which is why the three are currently dead in vanilla too: every other tech
+  newly added to 79 (Longship 272, Mounted Crossbowman 1450, Varangian Guard
+  1453, ...) is type=8-unlocked by the civs that should have it, and these three
+  are unlocked by nobody.
+
+  Our entries emit **both** mechanisms, so one list is right on either side of
+  the patch: `101`/`103` do the work on a pre-DLC DAT and are no-ops once the
+  cost is already zero, while the `type=8` does the work on a DLC DAT and is a
+  no-op where nothing disabled the tech.  `b=12, c=-1, d=1.0` is the unlock
+  shape the game itself uses for every make-avail opt-in, the DLC's own new
+  units included; `b` does not track research location, and techs carrying more
+  than one variant show the engine tolerates the difference.
+
+  `_apply_bonuses` treats an empty mapped effect the same as a missing one and
+  falls through to `team_ec_list`, so the player's DAT still wins wherever it
+  has something to say — a balance patch to a live team bonus rides along for
+  free, and only a hollowed-out one reaches our copy.
+
   CONTENT SWEEP of the 20 survivors (2026-09-18, same day).  Re-keying put each
   list under the right card; the sweep checked what each one actually targets.
   **Twelve of the twenty were wrong.**  Read BUGFIXES.md for the full table; the

@@ -72,27 +72,68 @@ const _CAMP_NODE_DEFS = {
 };
 
 // ── Regional unit mutual-exclusivity ─────────────────────────────────────────
-// Each pair: select one group's units → the other group is evicted.
-// "Select All" keeps the standard side and excludes the regional side.
-const _REGIONAL_PAIRS = [
-    { a: [74, 75, 77, 473, 567],  b: [2550, 2588, 2552, 2554], bldg: 12,  nameA: "Militia line",       nameB: "Champi line"           },
-    { a: [38, 283, 569],           b: [1944, 1946],              bldg: 101, nameA: "Knight line",        nameB: "Hei Guang Cavalry"     },
-    { a: [280, 550, 588],          b: [1904, 1907],              bldg: 49,  nameA: "Mangonel line",      nameB: "Rocket Cart"           },
-    { a: [1258, 422, 548],         b: [1744, 1746],              bldg: 49,  nameA: "Battering Ram line", nameB: "Armored Elephant line" },
-    // Both lines train from Archery Range button 3, so only one can own the cell.
-    { a: [39, 474],                b: [873, 875],                bldg: 87,  nameA: "Cavalry Archer line", nameB: "Elephant Archer line" },
-    // Regional shock infantry.  Fire Lancers (1901/1903) and Eagles
-    // (751/753/752) both sit on Barracks button 4, so picking both left one of
-    // them unreachable in-game rather than giving the civ two units.  The Fire
-    // Lancer is the default side: five civs field one (Chinese, Jurchens,
-    // Khitans, Koreans, Vietnamese) against the Eagle's two (Aztecs, Mayans).
-    // The Varangian Guard joins this group when the Vikings DLC lands — it is
-    // shock infantry too, but today it exists only as a Castle unique unit with
-    // no tech-tree node, and eviction needs a node to evict.
-    { a: [1901, 1903],             b: [751, 753, 752],           bldg: 12,  nameA: "Fire Lancer line",   nameB: "Eagle Warrior line"   },
+// Each group is ONE building button contested by two or more unit lines.  The
+// engine hands that cell to exactly one line, so a tree holding two reads
+// in-game as "my civ is missing a unit it clearly has".  Selecting any line
+// evicts every other line in its group.
+//
+// This was a two-sided `a`/`b` pair table until Viking Sagas (2026-09-22) made
+// two of the groups three-way — the Mounted Crossbowman joined the Archery
+// Range's button 3 and the Varangian Guard the Barracks' button 4.  N lines is
+// the honest shape; a pair was only ever the case that had come up so far.
+//
+//   standard: the line a blank civ keeps.  Every other line is opt-in and is
+//             excluded from "Enable All".
+//   techs:    research nodes that exist ONLY for this line and must leave with
+//             it.  Cranequins upgrades the Mounted Crossbowman and nothing
+//             else, so it cannot outlive the unit that owns it.
+const _REGIONAL_GROUPS = [
+    { bldg: 12, lines: [
+        { name: "Militia line", ids: [74, 75, 77, 473, 567], standard: true },
+        { name: "Champi line",  ids: [2550, 2588, 2552, 2554] },
+    ] },
+    { bldg: 101, lines: [
+        { name: "Knight line",       ids: [38, 283, 569], standard: true },
+        { name: "Hei Guang Cavalry", ids: [1944, 1946] },
+    ] },
+    { bldg: 49, lines: [
+        { name: "Mangonel line", ids: [280, 550, 588], standard: true },
+        { name: "Rocket Cart",   ids: [1904, 1907] },
+    ] },
+    { bldg: 49, lines: [
+        { name: "Battering Ram line",    ids: [1258, 422, 548], standard: true },
+        { name: "Armored Elephant line", ids: [1744, 1746] },
+    ] },
+    // Archery Range button 3.  The Mounted Crossbowman replaces the Cavalry
+    // Archer for 15 mostly-European civs; no civ in the game has both.
+    { bldg: 87, lines: [
+        { name: "Cavalry Archer line",      ids: [39, 474], standard: true },
+        { name: "Elephant Archer line",     ids: [873, 875] },
+        { name: "Mounted Crossbowman line", ids: [2700, 2701], techs: [1452] },
+    ] },
+    // Barracks button 4 — regional shock infantry.  The Fire Lancer is the
+    // default side: five civs field one (Chinese, Jurchens, Khitans, Koreans,
+    // Vietnamese) against the Eagle's two (Aztecs, Mayans).  The Varangian
+    // Guard finally has a tech-tree node of its own to evict, which is what it
+    // was waiting on — Byzantines and the four Viking civs field it.
+    { bldg: 12, lines: [
+        { name: "Fire Lancer line",     ids: [1901, 1903], standard: true },
+        { name: "Eagle Warrior line",   ids: [751, 753, 752] },
+        { name: "Varangian Guard line", ids: [2703, 2704] },
+    ] },
 ];
-// Flat set of all regional-side unit IDs — excluded from "Select All"
-const _REGIONAL_UNIT_IDS = new Set([2550, 2588, 2552, 2554, 1944, 1946, 1904, 1907, 1744, 1746, 873, 875, 751, 753, 752]);
+
+// Derived rather than hand-listed: the two drifted apart once already, and a
+// line added above with no matching entry here would silently reappear in
+// "Enable All".
+const _REGIONAL_UNIT_IDS = new Set(
+    _REGIONAL_GROUPS.flatMap(g => g.lines.filter(l => !l.standard))
+                    .flatMap(l => l.ids));
+// Line-owned techs are opt-in for the same reason their unit is: handing a
+// blank civ Cranequins with no Mounted Crossbowman to put it on is worse than
+// not offering it.
+const _REGIONAL_LINE_TECH_IDS = new Set(
+    _REGIONAL_GROUPS.flatMap(g => g.lines).flatMap(l => l.techs || []));
 
 // ── Picker-controlled units ──────────────────────────────────────────────────
 // The siege ship is one Dock button with five candidates plus an elite toggle —
@@ -289,11 +330,30 @@ function loadJson(file, callback) {
     xobj.send(null);
 }
 
+// Node labels are centred on a card barely wider than the icon, so a long name
+// with nowhere to break runs over its neighbours.  The game's own strings carry
+// a <br> where they expect the break.
+const _NAME_WRAP_AT = 17;
+
 function formatName(name) {
     if (name === undefined || name === null) return '?';
     // Keep <br>\n as a plain \n so SVG.js creates two tspan lines for long names.
     // Strip the HTML tag but preserve the newline character.
-    return name.replace(/<br\s*\/?>\n?/gi, '\n').trim();
+    const out = name.replace(/<br\s*\/?>\n?/gi, '\n').trim();
+    if (out.includes('\n') || out.length < _NAME_WRAP_AT) return out;
+
+    // No break supplied and too long to fit.  Every name this hits today came
+    // with Viking Sagas — "Mounted Crossbowman" and "Clerical Recruitment";
+    // every pre-existing long name already carries its own <br>, so this is a
+    // fallback, not a second wrapping policy.  Break at the space closest to
+    // the middle so the two lines come out as even as possible.
+    let best = -1;
+    for (let i = out.indexOf(' '); i !== -1; i = out.indexOf(' ', i + 1)) {
+        if (best === -1 || Math.abs(i - out.length / 2) < Math.abs(best - out.length / 2)) {
+            best = i;
+        }
+    }
+    return best === -1 ? out : out.slice(0, best) + '\n' + out.slice(best + 1);
 }
 
 function resetHighlightPath() {
@@ -1031,27 +1091,60 @@ function _toggleNode(item, element_height) {
                 _removeNodeCross(ancestor.id);
             }
         }
-        // Regional mutual exclusivity: evict the opposing group if any of its units are present.
-        const pair = _REGIONAL_PAIRS.find(p =>
-            p.bldg === item.building_id &&
-            (p.a.includes(item.node_id) || p.b.includes(item.node_id))
+        // Regional mutual exclusivity: one building button, one line.  Turning
+        // a line on evicts every other line contesting the same cell, and takes
+        // their line-owned techs with them.
+        const group = _REGIONAL_GROUPS.find(g =>
+            g.bldg === item.building_id &&
+            g.lines.some(l => l.ids.includes(item.node_id)
+                              || (l.techs || []).includes(item.node_id))
         );
-        if (pair) {
-            const inA     = pair.a.includes(item.node_id);
-            const evictIds = inA ? pair.b : pair.a;
-            const evictName = inA ? pair.nameB : pair.nameA;
-            const myName    = inA ? pair.nameA : pair.nameB;
-            let evicted = false;
-            for (const uid of evictIds) {
-                const oItem = _nodeIndex[`${pair.bldg}_${uid}`];
-                if (oItem && _localtree.units.includes(uid)) {
-                    _disableSingle(oItem, element_height);
-                    evicted = true;
+        if (group) {
+            const mine = group.lines.find(l => l.ids.includes(item.node_id)
+                                               || (l.techs || []).includes(item.node_id));
+            // Ticking a line-owned tech means wanting the line.  Cranequins has
+            // no ancestry to the Mounted Crossbowman in the layout (the game
+            // links it to Thumb Ring), so the generic ancestor cascade above
+            // cannot pull the unit in — do it here, or the user ends up with a
+            // research node and nothing to research it on.
+            if ((mine.techs || []).includes(item.node_id)) {
+                for (const uid of mine.ids) {
+                    const uItem = _nodeIndex[`${group.bldg}_${uid}`];
+                    if (uItem && !_localtree.units.includes(uid)) {
+                        _localtree.units.push(uid);
+                        _removeNodeCross(uItem.id);
+                    }
                 }
             }
-            if (evicted && typeof window.showToast === 'function') {
+            const evictedNames = [];
+            for (const line of group.lines) {
+                if (line === mine) continue;
+                let hit = false;
+                for (const uid of line.ids) {
+                    const oItem = _nodeIndex[`${group.bldg}_${uid}`];
+                    if (oItem && _localtree.units.includes(uid)) {
+                        _disableSingle(oItem, element_height);
+                        hit = true;
+                    }
+                }
+                // A line's own techs go with it, or the tree keeps a research
+                // node whose only target has just been evicted.
+                for (const tid of (line.techs || [])) {
+                    const tItem = _nodeIndex[`${group.bldg}_${tid}`];
+                    if (tItem && _localtree.techs.includes(tid)) {
+                        _disableSingle(tItem, element_height);
+                        hit = true;
+                    }
+                }
+                if (hit) evictedNames.push(line.name);
+            }
+            if (evictedNames.length && typeof window.showToast === 'function') {
+                const list = evictedNames.length === 1
+                    ? evictedNames[0]
+                    : `${evictedNames.slice(0, -1).join(', ')} and ${evictedNames.slice(-1)}`;
                 window.showToast(
-                    `${evictName} removed — only one of ${myName} or ${evictName} may be selected at a time.`
+                    `${list} removed — ${group.lines.map(l => l.name).join(', ')} `
+                    + `share one building slot, so only one may be selected at a time.`
                 );
             }
         }
@@ -1664,6 +1757,9 @@ function _fillAll() {
         for (const item of treeData.units_techs) {
             const key = _useTypeKey(item.use_type);
             if (key === 'units' && _REGIONAL_UNIT_IDS.has(item.node_id)) continue;
+            // A line-owned tech is only meaningful with its line, which "Enable
+            // All" has just skipped.
+            if (key === 'techs' && _REGIONAL_LINE_TECH_IDS.has(item.node_id)) continue;
             // Never enable a siege ship the picker didn't ask for.
             if (_isExternallyControlled(item)) continue;
             // Second unique units are opt-in extras, and Bolas Rider / Xianbei

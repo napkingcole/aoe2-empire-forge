@@ -119,7 +119,7 @@ CONDOTTIERO_UNIT = 882
 #                "tiers": ("uu",) | ("elite",) | ("uu","elite")}
 #     "break_off_combat": (uu, elite)
 #     "armors_pop_back": bool   — KM pops the last default armor entry before
-#                                 customizing (Varangian Guard only)
+#                                 customizing (Hetaireia only)
 #     "name_internal": (uu_name, elite_name)  — cosmetic .name field only
 #
 # KM-custom UU indices intentionally NOT present here: 45 (Centurion — real
@@ -245,9 +245,13 @@ PRESETS: dict[int, dict] = {
         "displayed_melee_armor": (None, None), "displayed_pierce_armor": (None, None),
         "extra": {"name_internal": (None, "EIRWAR")},
     },
-    # 51 — Varangian Guard
+    # 51 — Hetaireia (renamed 2026-09-22: Viking Sagas shipped a real Varangian
+    # Guard as Barracks shock infantry, units 2703/2704, so KM's Castle UU had
+    # to stop answering to the same name.  The internal VARANG/EVARANG codenames
+    # are DAT-side only and deliberately unchanged — nothing user-facing reads
+    # them, and existing saved civs key on the index 51, not the name.)
     51: {
-        "name": "Varangian Guard", "base_unit_id": 1681,
+        "name": "Hetaireia", "base_unit_id": 1681,
         "elite_tech": {"cost": (900, 0, 0, 900), "time": 90},
         "unit_cost": {"mode": "full", "uu": (70, 0, 0, 45), "elite": (70, 0, 0, 45)},
         "post_cost": [],
@@ -915,7 +919,7 @@ def _apply_preset_stats(uu_unit, elite_unit, preset: dict) -> None:
     # units cloned here (e.g. Gendarme's HVYTAU, a campaign hero) inherit
     # hero_mode=1, which silently caps the player to training exactly one.
     # Presets that genuinely want hero mode (Crusader Knight=2, and
-    # Varangian Guard which explicitly resets to 0 already) override below.
+    # Hetaireia which explicitly resets to 0 already) override below.
     u_h, e_h = extra.get("hero_mode", (0, 0))
     if u_h is not None:
         uu_unit.creatable.hero_mode = u_h
