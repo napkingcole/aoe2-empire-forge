@@ -39,6 +39,8 @@ carries a `resource_id` in the 5501-9159 range, numbered sequentially per civ
 mod override uses — `resources/_common/drs/sounds/<name>.wem` — so the vanilla
 clips are a sibling of `wwise/`, under `resources/_common/drs/`, not inside it.
 
+"""
+
 from __future__ import annotations
 
 import argparse
