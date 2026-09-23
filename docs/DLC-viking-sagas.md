@@ -317,8 +317,31 @@ except the Chronicles Monk, which is deliberately blacklisted.
 
 **Voices need no code at all.** The dropdown is driven by which
 `voice_files/<value>/` folders exist, so dropping one in makes the civ appear —
-verified by creating `voice_files/59/` and watching Saxons show up. Thirteen
-civs have never had one:
+verified by creating `voice_files/59/` and watching Saxons show up.
+
+**Where the existing clips came from, since it was not written down anywhere:**
+`voice_files/` is a **byte-identical copy of KrakenMeister's
+`public/vanillaFiles/voiceFiles/`** (43 folders, 0-42; `bkm1.wem`, `mkm1.wem`
+and `invms1.wem` all `cmp` clean against his). Nothing was ever extracted for
+this project. That is the whole reason thirteen civs have no voice: KM's
+snapshot predates them, exactly as it predates the South American scene art.
+His repo has no extraction tooling either — `copyVoices.sh` only copies from
+the committed set.
+
+`scripts/voice_manifest.py` derives the needed filenames **from the DAT**, so it
+stays right across patches:
+
+```
+venv/bin/python scripts/voice_manifest.py           # the 13 gaps, with filenames
+venv/bin/python scripts/voice_manifest.py --check   # audit the 43 we have
+```
+
+`--check` turns up something worth knowing: **all 43 existing folders are 8
+files short** of what the current DAT names — the `vpfm*`/`vpfs*` priest lines
+DE added after KM's snapshot. Not breaking (the engine falls back to Wwise
+routing per missing file), but it means even the shipped voices are incomplete.
+
+The thirteen civs with no folder at all:
 
 | value | civ | | value | civ |
 |---|---|---|---|---|

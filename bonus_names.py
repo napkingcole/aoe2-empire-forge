@@ -21,7 +21,10 @@ SKIP_REASONS: dict[int, str] = {
 # civ build silently without the bonus. Hiding it only stops *new* civs from
 # picking it, which is the whole point — old civs keep working and keep their
 # label in build output.
-DEPRECATED_BONUSES: dict[int, int] = {
+# Retired bonus id -> the card that supersedes it, or None where the game
+# simply removed the mechanic.  Only the KEYS are consumed (the picker hides
+# them); the values are documentation for whoever asks why an id vanished.
+DEPRECATED_BONUSES: dict[int, int | None] = {
     # Both give Archery Range units +1 melee armor per age. 364 is the vanilla
     # tech copy and also covers Champi Warriors, so it strictly supersedes 245.
     245: 364,
@@ -51,6 +54,14 @@ DEPRECATED_BONUSES: dict[int, int] = {
     # Dragon Ships. 402 now maps to the same vanilla tech (1010) as 362, so it
     # still works for civs that carry it — it just isn't offered twice.
     402: 362,
+    # "Can garrison Docks with Fishing Ships", retired 2026-09-23 because the
+    # GAME removed it: Viking Sagas gutted tech 855 (civ 42, effect 870, five
+    # commands -> civ 0, effect_id -1), matching the patch note "Gurjaras: Docks
+    # +5 garrison capacity civilization bonus removed".  Nothing supersedes it —
+    # the mechanic is gone.  Found by the DAT-capability filter on the bonus
+    # catalog, which had already stopped offering it on an updated DAT; this
+    # retires it everywhere, including for players still on the old one.
+    297: None,
 }
 
 
