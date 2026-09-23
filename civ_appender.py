@@ -212,6 +212,12 @@ _KM_UU_TECHS: dict[int, tuple[int, int]] = {
     91: (1390, 1391), # Ibirapema Warrior (Tupi)
     92: (1363, 1364), # Guecha Warrior (Muisca)
     93: (1400, 1401), # Temple Guard (Muisca)
+    # Viking Sagas unique units.  Same shape as the Mesoamerican set: the
+    # make-avail tech is civ-gated (60/61/62) and auto-fires in the Castle Age,
+    # the elite upgrade researches at the Castle.
+    94: (1461, 1462), # Hearth Troop (Saxons)
+    95: (1471, 1472), # Jarl (Varangians)
+    96: (1481, 1482), # Jomsviking (Danes)
 }
 
 # Display names for KM UU indices. Vanilla indices (0-38, 78-87) are creatable
@@ -314,6 +320,10 @@ _KM_UU_NAMES: dict[int, str] = {
     91: "Ibirapema Warrior",
     92: "Guecha Warrior",
     93: "Temple Guard",
+    # Viking Sagas
+    94: "Hearth Troop",
+    95: "Jarl",
+    96: "Jomsviking",
 }
 
 # ── Display names for build-log messages ─────────────────────────────────────
@@ -4624,6 +4634,10 @@ _KM_CASTLE_UT_TECHS: dict[int, int] = {
     # EC_MULTIPLY attribute 105 (Gold Costs) x0.6 on units 2700 and 2701, so it
     # is inert unless the civ also took the Mounted Crossbowman line.
     64: 1496,
+    # Viking Sagas — the three new civs' CASTLE unique techs.
+    65: 1491,   # Clerical Recruitment (Saxons)
+    66: 1473,   # Vendel Legacy (Varangians)
+    67: 1484,   # Hamask (Danes) — resource 33, EffectFunction 30
 }
 
 _KM_IMP_UT_TECHS: dict[int, int] = {
@@ -4636,6 +4650,10 @@ _KM_IMP_UT_TECHS: dict[int, int] = {
     49: 924, 54: 1069, 55: 1081, 56: 1062, 57: 997, 58: 1007,
     # Mesoamerican DLC — Mapuche: Butalmapu, Tupi: Curare, Muisca: Huaracas
     59: 1380, 60: 1393, 61: 1366,
+    # Viking Sagas — the three new civs' IMPERIAL unique techs.
+    62: 1464,   # Shield Wall (Saxons) — resource 33, EffectFunction 31
+    63: 1474,   # Gothikon (Varangians) — targets the Varangian Guard only
+    64: 1483,   # Northmen's Fury (Danes)
 }
 
 

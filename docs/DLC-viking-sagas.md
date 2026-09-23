@@ -19,7 +19,7 @@ venv/bin/python scripts/dat_drift.py OLD.dat NEW.dat
 
 Structure: **civs 60 → 63**, effects 1409 → 1500 (+91), techs unchanged.
 
-## New content we do not support yet
+## New content — all supported as of 2026-09-22
 
 - ~~**Saxons, Varangians, Danes** need adding to `KM_TECHTREE_ORDER`~~ — **DONE
   2026-09-22, and not by adding them.** The roster is now read from the player's
@@ -41,9 +41,10 @@ these has a vanilla template our code can copy (see bonus 51 above).
 
 - ~~**Mounted Crossbowman + Cranequins**~~ and ~~**Varangian Guard**~~ —
   **DONE 2026-09-22**, see the section below.
-- **Ordonnance Companies** — new Frankish Castle UT (Mounted Crossbowmen -40%
-  gold). New UT preset. Tech/effect **1496**, `civ=2`, researched at the Castle
-  (82), `EC_MULTIPLY attr 105 × 0.6` on units 2700/2701. Not done.
+- ~~**Ordonnance Companies**~~ — **DONE**, castle preset 64. Tech/effect
+  **1496**, `civ=2`, researched at the Castle (82), `EC_MULTIPLY attr 105`
+  (Gold Costs) `× 0.6` on units 2700/2701, so it is inert unless the civ also
+  took the Mounted Crossbowman line.
 - **Longboat renamed to Longship**, tech **272**, now granted to all four Viking
   civs (Vikings, Saxons, Varangians, Danes).
 
@@ -146,14 +147,73 @@ name, so the discount cannot reach a custom civ's own UU. Added to
   *description* can go stale. Each was read against the notes; the five above are
   the ones whose text no longer matched.
 
-## Still open: Hun Atheism (imperial UT 13)
+## Hun Atheism — FIXED 2026-09-22 (text only; the commands were never stale)
 
-The one card from the original sweep not yet settled. Tech 21 went **3 → 9
-commands** and the notes list three separate behaviour changes: the victory-timer
-increase now applies only to enemy and neutral players, it stacks if researched
-more than once, and the relic-income reduction now also hits neutrals. Our text
-reads *"+100 years for Relic, Wonder victories; enemy relics -50% resources"*,
-which is not wrong so much as no longer the whole story. Needs a wording call.
+Tech 21 went **3 → 9 commands**. Worth being precise about what that did and did
+not require: a UT preset clones the source tech's effect commands out of **the
+player's own DAT**, so a build against a Viking Sagas DAT was already emitting
+all nine — verified by probe. Only the description was behind.
+
+Now *"Atheism (+100 years to enemy and neutral Relic/Wonder victories; their
+relic income -50%)"*, matching the three changes in the notes: the timer applies
+to enemy **and neutral** players, it stacks on repeat research, and the relic
+income cut now reaches neutrals too. The new command set is four scope-paired
+commands (types 21/31 and 26/36 — enemy and neutral variants of the old 1/26)
+plus `resource 33 = EffectFunction 56`, which handles the stacking. That XS half
+is generic behaviour rather than a named unique unit, so unlike Coiled Serpent
+Array it should carry over to a custom civ — **inferred from the shape, not
+verified in game**.
+
+## Frankish Bearded Axe — DECIDED 2026-09-22: keep as-is
+
+Vanilla removed the UT, but tech 83's name, `civ`, `effect_id` and its 6 commands
+are unchanged — only prerequisites moved, and castle preset 11 clones the
+commands rather than the tech, so it still works. Keeping it offered.
+
+## The three new civs' units and techs — DONE 2026-09-22
+
+Added as presets, the same shape the Mesoamerican DLC set uses (civ-gated
+make-avail tech auto-firing in the Castle Age, elite upgrade at the Castle):
+
+| | KM index | techs | notes |
+|---|---|---|---|
+| Hearth Troop (Saxons) | UU 94 | 1461 / 1462 | units 2705 / 2706 |
+| Jarl (Varangians) | UU 95 | 1471 / 1472 | units 2708 / 2709 |
+| Jomsviking (Danes) | UU 96 | 1481 / 1482 | units 2711 / 2712 |
+| Clerical Recruitment | castle 65 | 1491 | Monks +1 conversion range; train +33% faster |
+| Vendel Legacy | castle 66 | 1473 | Knight-line deals trample damage |
+| Hamask | castle 67 | 1484 | `EffectFunction 30`; infantry damage scales as they lose HP |
+| Shield Wall | imperial 62 | 1464 | `EffectFunction 31`; infantry armor when massed |
+| Gothikon | imperial 63 | 1474 | targets units 2703/2704 only — needs Varangian Guards |
+| Northmen's Fury | imperial 64 | 1483 | 67 commands, siege and warships |
+
+Descriptions are **DE's own**, read out of the game's `+21000` tooltip strings
+(CLAUDE.md quirk 8) — the patch notes cover only changes to existing civs, not
+the new ones. Cross-checked: the string for Ordonnance Companies matched the
+wording already written from the notes.
+
+Hamask and Shield Wall are `resource 33` script calls, but unlike Coiled Serpent
+Array they describe **generic infantry behaviour** rather than a unique unit by
+name, so no warning was added — inferred, not verified. Gothikon needs no warning
+either: its own text names the Varangian Guard, so it is self-documenting.
+
+**All twelve of these techs are empty placeholders before the DLC**, which
+exposed a gap: the UT catalog already refused to offer an unimplemented preset,
+but the UU catalog did not, so a player who had not updated was offered a Jarl
+that could not exist. It now applies the same rule. KM-custom UUs are untouched —
+they are built from a base unit, not from a DAT tech.
+
+Fixed a cache bug found by the test that would have shipped: `_build_all_uu_stats`
+caches to disk keyed on **DAT mtime alone**, so adding units left a valid cache
+with no entry for them — the catalog offered all three and every stat popup said
+"No stats available" with a perfectly good DAT sitting there. The cache now also
+fingerprints `_KM_UU_TECHS`, so the next DLC invalidates it by itself.
+
+**Still needed: three icons.** The UU picker uses `uniticons/<icon_id>_50730.png`
+at 256×256 (the tech-tree icons are 48×48 and would not upscale): `904` Hearth
+Troop, `906` Jarl, `908` Jomsviking. One per unit, base tier only — that is the
+existing convention (Tiger Cavalry ships `432` and not its elite `526`). The
+units work without them; the picker just shows no image.
 
 ## Team bonuses 1, 14 and 16 — FIXED 2026-09-22
 
@@ -224,36 +284,27 @@ found only 272 and 372 newly globally-disabled, and both are covered. So this
 class is closed, not merely patched — and it is a real demonstration of the
 "keep working as it falls into disrepair" goal doing its job unattended.
 
-## One that still needs a decision, not just new text
+## Effect changes read and cleared
 
-**Tech 83 `Frankish Bearded Axe`** — the notes say the UT was *removed*, and the
-audit flags its definition as changed. But its name, `civ`, `effect_id` and its
-6 commands are **identical**; only prerequisites moved. Since UT presets clone
-the tech for our civ, castle preset 11 probably still works. Verify rather than
-assume — and decide whether to keep offering a UT vanilla no longer has.
+The ~30 techs `dat_drift.py` flagged were each read against the notes. All but
+the ones fixed above were **balance tweaks our cards already describe
+correctly** — a preset or bonus clones the effect out of the player's own DAT,
+so the mechanics track by themselves and only the description can go stale.
 
-## Large effect changes worth a look, lower confidence
+Two were not just tweaks and are handled above: `1380 Butalmapu` (122 → 3
+commands, now script-driven — warning added) and `463 Viking Chieftains`
+(6 → 4, the gold half deleted outright — text fixed).
 
-`1380 Butalmapu` (122 → 3 commands — by far the biggest single change),
-`594 Gold productivity` (5 → 2), `1381 Forager productivity` (3 → 2),
-`349 Super Dock`, `409 TC and Dock work rate`, `506/517 Indians UT`,
-`578 Berber UT`, `690 Burmese UT`, `755 Flemish Revolution`, `756 First
-Crusade`, `805 Stone Miners`, `855 Docks garrison`, `1071 Lumberjacks food`,
-`152-155 Military cost`, `453 Foragers generate wood`, `654 Instant Farmers`,
-`806/807` (bonus 281's scaling techs).
+## What is left
 
-A balance tweak our card already describes correctly looks identical here to one
-that broke it, so each needs reading against the notes — the same method the
-2026-09 catalog sweep used.
-
-## Suggested order
-
-1. **Ship the DAT-independent work first.** The `bugfix/dat-path-feedback` merge
-   sitting unpushed on `main` is unrelated to the DLC and already verified.
-2. **Structural support** — the three new civs, `KM_TECHTREE_ORDER`,
-   `civilizations.json`, the updated `CivTechTrees/`. Without this the app is
-   broken for anyone who has updated the game, which by now is everyone.
-3. **Card text** for the seven confirmed-wrong bonuses above.
-4. **New content** — Mounted Crossbowman swap, Varangian Guard, Ordonnance
-   Companies.
-5. **The lower-confidence effect changes**, worked through against the notes.
+1. **In-game testing.** Nothing here has been tested in the game yet. One round
+   should cover: team bonuses 1/14/16, the Mounted Crossbowman and Varangian
+   Guard (including Cranequins following its unit), Ordonnance Companies, and
+   the three new unique units and six new unique techs.
+2. **Three UU picker icons** — `904` Hearth Troop, `906` Jarl, `908` Jomsviking,
+   256×256 at `uniticons/<id>_50730.png`. The units work without them.
+3. **The three new civs' 12 civ bonuses** (effects 1465, 1469, 1470, 1475, 1478,
+   1479, 1485, 1486, 1488, 1489, 1490, 1492, 1493, 1494) are not offered as
+   bonus cards. This is the last body of DLC content we do not expose.
+4. **Ship it** — `main` still carries the unpushed `bugfix/dat-path-feedback`
+   merge, to be released together with this branch.

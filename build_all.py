@@ -119,6 +119,11 @@ _UNIQUE_CASTLE_STRINGS = [
     # Viking Sagas — Franks (slot 64).  Only does anything for a civ that
     # fields Mounted Crossbowmen, the same way Malon needs Bolas Riders.
     "Ordonnance Companies (Mounted Crossbowmen cost -40% gold)",
+    # Viking Sagas — Saxons, Varangians, Danes (slots 65-67).  Descriptions are
+    # DE's own, read out of the game's +21000 tooltip strings.
+    "Clerical Recruitment (Monks +1 conversion range; train +33% faster)",
+    "Vendel Legacy (Knight-line deals trample damage)",
+    "Hamask (Infantry deal more damage as they lose HP)",
 ]
 
 _UNIQUE_IMP_STRINGS = [
@@ -135,7 +140,7 @@ _UNIQUE_IMP_STRINGS = [
     "Torsion Engines (increases blast radius of Siege Workshop units)",
     "Chivalry (Stables work 40% faster)",
     "Perfusion (Barracks work 100% faster)",
-    "Atheism (+100 years for Relic, Wonder victories; enemy relics -50% resources)",
+    "Atheism (+100 years to enemy and neutral Relic/Wonder victories; their relic income -50%)",
     "Fabric Shields (Shock Infantry, Slingers, Unique Unit +1/+2 armor)",
     "Shatagni (Hand Cannoneers +2 range)",
     "Pirotechnia (Hand Cannoneers deal +15% pass through damage and are more accurate)",
@@ -185,6 +190,10 @@ _UNIQUE_IMP_STRINGS = [
     "Butalmapu (Team: Castle Unique Units and Bolas Riders cost -15%)",
     "Curare (Foot Archers and Fortifications deal poison damage)",
     "Huaracas (Slingers +1 range; train +50% faster)",
+    # Viking Sagas — Saxons, Varangians, Danes (slots 62-64).
+    "Shield Wall (Infantry gain additional armor when massed)",
+    "Gothikon (Varangian Guards throw axes periodically)",
+    "Northmen's Fury (Mangonel-line and Catapult Galleons +1 range; Siege Weapons and Siege Warships +40% attack vs buildings)",
 ]
 
 _BONUS_NAMES: dict[str, str] = json.loads(

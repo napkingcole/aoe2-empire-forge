@@ -196,16 +196,44 @@ check(f"Ordonnance Companies offered == its tech is implemented here "
 # And the filter must be surgical: it is there to drop unimplemented presets,
 # not to thin the catalog.  Every other preset whose tech IS implemented must
 # survive it.
-from civ_appender import _KM_CASTLE_UT_TECHS      # noqa: E402
+from civ_appender import (_KM_CASTLE_UT_TECHS,    # noqa: E402
+                          _KM_UU_TECHS as _KM_UU_TECHS_FOR_TEST,
+                          _KM_UU_NAMES as _KM_UU_NAMES_FOR_TEST)
 expected = {i for i, t in _KM_CASTLE_UT_TECHS.items() if tech_has_effect(dat_path, t)}
 check("every preset whose tech is implemented is still offered", ids == expected,
       f"missing: {sorted(expected - ids)}  unexpected: {sorted(ids - expected)}")
 
 # Without a readable DAT the catalog must still answer, rather than hiding
-# everything because it could not check.
+# everything because it could not check.  (The resolver falls back to detection,
+# so this lands on the installed DAT rather than on nothing — either way the
+# route must not come back empty.)
 res = client.get("/api/builder/ut/catalog", query_string={"dat_path": "/nope/x.dat"})
 check("an unreadable dat_path still returns a catalog",
       res.status_code == 200 and len(res.get_json()["castle"]) > 40)
+
+print("\n=== the UU catalog applies the same rule ===")
+# A vanilla UU is built by cloning its make-avail and elite techs, so one whose
+# techs are empty placeholders in this DAT cannot be built.  The three Viking
+# Sagas units are empty slots for anyone who has not updated.
+uu = client.get("/api/builder/uu/catalog",
+                query_string={"dat_path": str(dat_path)}).get_json()
+offered = {u["km_idx"] for u in uu}
+check("the UU catalog is not empty", len(offered) > 60, f"{len(offered)} entries")
+
+buildable = {i for i, pair in _KM_UU_TECHS_FOR_TEST.items()
+             if all(tech_has_effect(dat_path, t) for t in pair)}
+unbuildable = set(_KM_UU_TECHS_FOR_TEST) - buildable
+check("no vanilla UU whose techs are empty here is offered",
+      not (offered & unbuildable),
+      f"offered anyway: {sorted((offered & unbuildable))}")
+check("every vanilla UU that IS buildable here is still offered",
+      not (buildable - offered - {47, 75}),      # 47/75 are the known unsupported pair
+      f"missing: {sorted(buildable - offered - {47, 75})}")
+# KM-custom units are built from a base unit, not a DAT tech, so the filter must
+# not touch them.
+custom = set(_KM_UU_NAMES_FOR_TEST) - set(_KM_UU_TECHS_FOR_TEST) - {47, 75}
+check("KM-custom UUs are untouched by the filter", custom <= offered,
+      f"wrongly hidden: {sorted(custom - offered)}")
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")

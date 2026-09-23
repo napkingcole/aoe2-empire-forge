@@ -87,6 +87,22 @@ def _uu_stats_cache_path(dat_path: str) -> Path:
     return _CACHE_DIR / f"uu_stats_{h}.json"
 
 
+def _uu_table_fingerprint() -> str:
+    """Fingerprint of the UU table the cached stats were computed from.
+
+    The cache keyed on DAT mtime alone, which is only half the story: the stats
+    are produced by walking `_KM_UU_TECHS`, so ADDING a unit leaves a valid
+    cache that simply has no entry for it.  That is exactly what happened when
+    Viking Sagas added the Hearth Troop, Jarl and Jomsviking — the catalog
+    offered them and every stat popup said "No stats available", with a DAT
+    that could answer perfectly well sitting right there.  Fingerprinting the
+    table means the next DLC invalidates the cache by itself.
+    """
+    import civ_appender as ca
+    raw = repr(sorted((k, tuple(v)) for k, v in ca._KM_UU_TECHS.items()))
+    return hashlib.md5(raw.encode()).hexdigest()[:12]
+
+
 def _load_uu_stats_disk(dat_path: str) -> dict | None:
     """Return cached stats dict from disk, or None if missing/stale."""
     try:
@@ -96,6 +112,8 @@ def _load_uu_stats_disk(dat_path: str) -> dict | None:
         with open(f) as fh:
             data = json.load(fh)
         if data.get("_v") != _UU_STATS_DISK_VERSION:
+            return None
+        if data.get("_tbl") != _uu_table_fingerprint():
             return None
         if int(data.get("_mtime", 0)) != int(Path(dat_path).stat().st_mtime):
             return None
@@ -110,6 +128,7 @@ def _save_uu_stats_disk(dat_path: str, stats: dict) -> None:
         _CACHE_DIR.mkdir(exist_ok=True)
         payload: dict = {
             "_v":     _UU_STATS_DISK_VERSION,
+            "_tbl":   _uu_table_fingerprint(),
             "_mtime": int(Path(dat_path).stat().st_mtime),
         }
         payload.update({str(k): v for k, v in stats.items()})
@@ -1838,8 +1857,29 @@ def api_builder_uu_catalog():
             print(f"  WARNING: could not read unit stats from {dat_path!r}: {e}",
                   flush=True)
 
+    # A vanilla UU is built by cloning its make-avail and elite techs, so one
+    # whose techs are empty placeholders in THIS DAT cannot be built at all —
+    # the three Viking Sagas units are empty slots for anyone who has not
+    # updated.  Same rule the UT catalog uses.  KM-custom UUs are unaffected:
+    # they are built from a base unit, not from a DAT tech.
+    missing_in_dat: set[int] = set()
+    if dat_path:
+        try:
+            _d = _get_dat(dat_path)
+
+            def _tech_live(tech_id: int) -> bool:
+                if tech_id >= len(_d.techs):
+                    return False
+                eid = _d.techs[tech_id].effect_id
+                return 0 <= eid < len(_d.effects) and bool(_d.effects[eid].effect_commands)
+
+            missing_in_dat = {i for i, pair in ca._KM_UU_TECHS.items()
+                              if not all(_tech_live(t) for t in pair)}
+        except Exception:                                        # noqa: BLE001
+            missing_in_dat = set()
+
     for km_idx, name in ca._KM_UU_NAMES.items():
-        if km_idx in unsupported:
+        if km_idx in unsupported or km_idx in missing_in_dat:
             continue
         icon_file = _ICON_MAP.get(km_idx)
         is_vanilla = km_idx in vanilla_keys
