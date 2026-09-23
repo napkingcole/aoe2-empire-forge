@@ -195,6 +195,19 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.2.0": [
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Viking Sagas support.</strong> Saxons, Varangians and Danes can be replaced like any other civ, with their wonders, castles, and the new Nordic architecture and Monk",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Mounted Crossbowman</strong> and <strong>Varangian Guard</strong> in the tech tree. Each shares a building slot with the units it replaces — Mounted Crossbowman with the Cavalry Archer and Elephant Archer, Varangian Guard with the Fire Lancer and Eagle line — so picking one removes the others, the same way the tree has always handled regional units. <strong>Cranequins</strong> comes and goes with the Mounted Crossbowman",
+        "<strong class=\"color-accent-2\">NEW:</strong> Three unique units — <strong>Hearth Troop</strong>, <strong>Jarl</strong> and <strong>Jomsviking</strong> — and seven unique techs: Ordonnance Companies, Clerical Recruitment, Vendel Legacy, Hamask, Shield Wall, Gothikon and Northmen's Fury",
+        "<strong class=\"color-accent-2\">NEW:</strong> 12 new civ bonus cards and 3 new team bonuses, taken from the three new civs",
+        "<strong class=\"color-accent-2\">NEW:</strong> The six South American unique units finally have portraits in the picker, along with the three new ones",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Three team bonuses stopped working when the DLC landed</strong> — Genitour, the free Llama, and the Condottiero. The game moved them onto a different mechanism and emptied the old one, so the cards quietly did nothing. Fixed, and they work whether or not you have updated the game",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Five card descriptions the DLC made wrong are corrected — the Vietnamese HP bonus, the Teuton armor bonus, Longboats (now Longships), Chieftains and Wagenburg Tactics. Atheism's description now covers what it actually does",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Bonus multipliers no longer break script-driven unique techs. Setting one to x2 could send the game looking for a completely different effect — Coiled Serpent Array was reachable this way",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Typing a DAT path by hand now tells you whether it actually worked, instead of leaving you guessing. <em>Thanks to Maruviel on Discord, whose game is on a D: drive</em>",
+        "<strong class=\"color-accent-2\">CHANGED:</strong> Empire Forge now only offers bonuses, techs and units your installed game actually has. If you have not updated yet, the new content simply is not listed — nothing in the picker is a card that cannot work",
+        "<strong class=\"color-accent-2\">CHANGED:</strong> \"Can garrison Docks with Fishing Ships\" has been retired — the game removed the Gurjaras bonus it was built from. The custom unique unit formerly called Varangian Guard is now <strong>Hetaireia</strong>, since the game now ships a real one",
+    ],
     "2.1.1": [
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>The Flemish Militia is back.</strong> It was only ever reachable as an accidental side effect of the \"Farm upgrades +125% food\" bonus. Cleaning that up in 2.1.0 removed the unit's only path — it now has its own <strong>Unlock the Flemish Militia</strong> card (Barracks, Feudal Age)",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Unique unit stats no longer disappear when you open a saved civ. Saved civs deliberately don't store your DAT path (it's specific to your PC), and the stats lookup had no fallback — so every unit's popup read \"No stats available\" while the civ still built fine",
