@@ -1863,6 +1863,7 @@ def api_builder_uu_catalog():
     # updated.  Same rule the UT catalog uses.  KM-custom UUs are unaffected:
     # they are built from a base unit, not from a DAT tech.
     missing_in_dat: set[int] = set()
+    derived_icons: dict[int, str] = {}
     if dat_path:
         try:
             _d = _get_dat(dat_path)
@@ -1875,13 +1876,49 @@ def api_builder_uu_catalog():
 
             missing_in_dat = {i for i, pair in ca._KM_UU_TECHS.items()
                               if not all(_tech_live(t) for t in pair)}
+
+            # A vanilla UU's icon file is always "<base unit's icon_id>_50730.png"
+            # — checked against all 50 hand-listed vanilla entries, and every
+            # one matches.  So derive it rather than hand-listing the next one:
+            # the six South American units and the three Viking Sagas units were
+            # all missing purely because nobody had added a map entry.  The
+            # 36 KM-custom entries stay hand-listed (their cloned base unit does
+            # not carry the right icon) and still win as an override.
+            def _base_unit(tech_id: int) -> int | None:
+                if not _tech_live(tech_id):
+                    return None
+                for c in _d.effects[_d.techs[tech_id].effect_id].effect_commands:
+                    if c.type in (2, 3):
+                        return int(c.a)
+                return None
+
+            for i, pair in ca._KM_UU_TECHS.items():
+                if i in _ICON_MAP or i in missing_in_dat:
+                    continue
+                uid = _base_unit(pair[0])
+                if uid is None:
+                    continue
+                u = next((cv.units[uid] for cv in _d.civs
+                          if cv.units and len(cv.units) > uid and cv.units[uid]), None)
+                icon_id = getattr(u, "icon_id", -1) if u else -1
+                if isinstance(icon_id, int) and icon_id >= 0:
+                    derived_icons[i] = f"{icon_id:03d}_50730.png"
         except Exception:                                        # noqa: BLE001
             missing_in_dat = set()
+            derived_icons = {}
+
+    # Only offer an icon whose file is actually there.  A map entry pointing at
+    # a missing PNG renders as a broken image; `None` renders as no image, which
+    # is what an un-illustrated unit should look like.  The upshot is that
+    # dropping a new file into uniticons/ is the whole job — no code change.
+    _icon_dir = Path(__file__).parent / "uniticons"
 
     for km_idx, name in ca._KM_UU_NAMES.items():
         if km_idx in unsupported or km_idx in missing_in_dat:
             continue
-        icon_file = _ICON_MAP.get(km_idx)
+        icon_file = _ICON_MAP.get(km_idx) or derived_icons.get(km_idx)
+        if icon_file and not (_icon_dir / icon_file).exists():
+            icon_file = None
         is_vanilla = km_idx in vanilla_keys
         entry_stats = stats_map.get(km_idx)
 

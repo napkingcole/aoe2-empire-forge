@@ -235,6 +235,47 @@ custom = set(_KM_UU_NAMES_FOR_TEST) - set(_KM_UU_TECHS_FOR_TEST) - {47, 75}
 check("KM-custom UUs are untouched by the filter", custom <= offered,
       f"wrongly hidden: {sorted(custom - offered)}")
 
+print("\n=== UU picker icons are derived, and never point at a missing file ===")
+# An icon entry naming a PNG that is not there renders as a broken image; None
+# renders as no image, which is what an un-illustrated unit should look like.
+_icon_dir = ROOT / "uniticons"
+broken = [(u["km_idx"], u["icon"]) for u in uu
+          if u["icon"] and not (_icon_dir / Path(u["icon"]).name).exists()]
+check("no offered UU points at a missing icon file", not broken,
+      f"broken: {broken[:6]}")
+check("...and the ones that do have art still show it",
+      sum(1 for u in uu if u["icon"]) > 60,
+      f"only {sum(1 for u in uu if u['icon'])} have icons")
+
+# The derivation replaces hand-listing only because it reproduces every
+# hand-listed vanilla entry exactly.  If a future unit breaks that rule this
+# fails here rather than silently showing the wrong portrait.
+import re                                                        # noqa: E402
+_blk = re.search(r'_ICON_MAP: dict\[int, str\] = \{(.*?)\n    \}',
+                 (ROOT / "app.py").read_text(), re.S).group(1)
+_hand = {int(a): b for a, b in re.findall(r'(\d+):\s*"([^"]+)"', _blk)}
+
+
+def _derived_icon(km_idx):
+    t1 = _KM_UU_TECHS_FOR_TEST[km_idx][0]
+    if not tech_has_effect(dat_path, t1):
+        return None
+    for c in _probe_dat.effects[_probe_dat.techs[t1].effect_id].effect_commands:
+        if c.type in (2, 3):
+            uid = int(c.a)
+            u = next((cv.units[uid] for cv in _probe_dat.civs
+                      if cv.units and len(cv.units) > uid and cv.units[uid]), None)
+            ic = getattr(u, "icon_id", -1) if u else -1
+            return f"{ic:03d}_50730.png" if isinstance(ic, int) and ic >= 0 else None
+    return None
+
+
+vanilla_hand = {k: v for k, v in _hand.items() if k in _KM_UU_TECHS_FOR_TEST}
+wrong = {k: (v, _derived_icon(k)) for k, v in vanilla_hand.items()
+         if _derived_icon(k) is not None and _derived_icon(k) != v}
+check(f"all {len(vanilla_hand)} hand-listed vanilla icons match the derivation",
+      not wrong, f"differ: {list(wrong.items())[:4]}")
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

@@ -209,11 +209,32 @@ with no entry for them — the catalog offered all three and every stat popup sa
 "No stats available" with a perfectly good DAT sitting there. The cache now also
 fingerprints `_KM_UU_TECHS`, so the next DLC invalidates it by itself.
 
-**Still needed: three icons.** The UU picker uses `uniticons/<icon_id>_50730.png`
-at 256×256 (the tech-tree icons are 48×48 and would not upscale): `904` Hearth
-Troop, `906` Jarl, `908` Jomsviking. One per unit, base tier only — that is the
-existing convention (Tiger Cavalry ships `432` and not its elite `526`). The
-units work without them; the picker just shows no image.
+**Still needed: picker icons.** The UU picker uses
+`uniticons/<icon_id>_50730.png` at 256×256 (the tech-tree icons are 48×48 and
+would not upscale), one per unit, base tier only — Tiger Cavalry ships `432` and
+not its elite `526`. **Nine are missing**, and the six South American ones have
+been missing since that DLC:
+
+| | km | unit | file |
+|---|---|---|---|
+| Guecha Warrior (Muisca) | 92 | 2562 | `543_50730.png` |
+| Kona (Mapuche) | 88 | 2566 | `545_50730.png` |
+| Bolas Rider (Mapuche) | 89 | 2569 | `547_50730.png` |
+| Blackwood Archer (Tupi) | 90 | 2579 | `549_50730.png` |
+| Ibirapema Warrior (Tupi) | 91 | 2582 | `551_50730.png` |
+| Temple Guard (Muisca) | 93 | 2586 | `553_50730.png` |
+| Hearth Troop (Saxons) | 94 | 2705 | `904_50730.png` |
+| Jarl (Varangians) | 95 | 2708 | `906_50730.png` |
+| Jomsviking (Danes) | 96 | 2711 | `908_50730.png` |
+
+**No code change is needed when they arrive.** `_ICON_MAP` was hand-listed, and
+that is the only reason these nine had no picture — nobody added a line. A
+vanilla UU's filename is always `<base unit's icon_id>_50730.png`, which was
+checked against all 50 hand-listed vanilla entries and matches every one, so the
+route now derives it and simply offers no icon while the file is absent.
+Dropping a PNG into `uniticons/` is the whole job. The 36 KM-custom entries stay
+hand-listed, because their cloned base unit does not carry the right icon, and
+they still win as an override.
 
 ## Team bonuses 1, 14 and 16 — FIXED 2026-09-22
 
@@ -301,8 +322,9 @@ commands, now script-driven — warning added) and `463 Viking Chieftains`
    should cover: team bonuses 1/14/16, the Mounted Crossbowman and Varangian
    Guard (including Cranequins following its unit), Ordonnance Companies, and
    the three new unique units and six new unique techs.
-2. **Three UU picker icons** — `904` Hearth Troop, `906` Jarl, `908` Jomsviking,
-   256×256 at `uniticons/<id>_50730.png`. The units work without them.
+2. **Nine UU picker icons** — the three Viking Sagas units and the six South
+   American ones, which have been missing since that DLC. Table above. They
+   need no code change now; the units work without them.
 3. **The three new civs' 12 civ bonuses** (effects 1465, 1469, 1470, 1475, 1478,
    1479, 1485, 1486, 1488, 1489, 1490, 1492, 1493, 1494) are not offered as
    bonus cards. This is the last body of DLC content we do not expose.
