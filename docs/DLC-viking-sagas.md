@@ -336,6 +336,17 @@ venv/bin/python scripts/voice_manifest.py           # the 13 gaps, with filename
 venv/bin/python scripts/voice_manifest.py --check   # audit the 43 we have
 ```
 
+**The Wwise packages are the wrong source** (checked 2026-09-23). The whole
+`resources/_common/wwise/` tree — 20 `.pck`, 2.2 GB — holds 7528 entries, only
+1519 non-localized, not enough for even the 43 old civs. Parsing them and
+matching by content finds nothing, partly because the game re-encoded since KM's
+snapshot (his clips are Wwise Vorbis @22 kHz and a few KB; the packages are now
+Opus @48 kHz, ~10× bigger), and no FNV-1/FNV-1a variant of the names hits a
+package id. Civ voices go through **DRS** instead: every civ-bound `SoundItem`
+carries a `resource_id` in **5501-9159**, sequential per civ. That is the same
+path the mod override uses, so the vanilla clips sit under
+`resources/_common/drs/` — a **sibling** of `wwise/`, not inside it.
+
 `--check` turns up something worth knowing: **all 43 existing folders are 8
 files short** of what the current DAT names — the `vpfm*`/`vpfs*` priest lines
 DE added after KM's snapshot. Not breaking (the engine falls back to Wwise

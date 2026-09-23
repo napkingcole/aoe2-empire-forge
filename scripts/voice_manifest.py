@@ -21,7 +21,24 @@ Sagas three) has no voice option: there was no source, not a missing feature.
 The names below are read from the DAT, so they are the names the engine will
 actually look for.  The DAT stores them as `.wav`; the file on disk is the same
 stem with `.wem`.
-"""
+
+WHERE THE VANILLA FILES LIVE (checked 2026-09-23, so nobody repeats the hunt).
+NOT in the Wwise packages.  The whole `resources/_common/wwise/` tree — 20 .pck
+files, 2.2 GB — holds 7528 entries, only 1519 of them non-localized, which is
+not enough for even the 43 old civs at ~58 clips each.  Parsing them (they are
+standard AKPK: header, language map, then bank/stream/external tables of
+`id, block, size, offset, lang`) and matching by content finds nothing, because
+the game has also re-encoded since KM's snapshot: his clips are Wwise Vorbis at
+22 kHz, a few KB each, while everything in the packages now is Opus at 48 kHz
+and ~10x larger.  No FNV-1/FNV-1a variant of the clip names hits a package id
+either.
+
+Civ voices go through the DRS system instead: every civ-bound `SoundItem`
+carries a `resource_id` in the 5501-9159 range, numbered sequentially per civ
+(Japanese `jvmb.wav` is 5501, `jvmfa.wav` 5502, ...).  That is the same path the
+mod override uses — `resources/_common/drs/sounds/<name>.wem` — so the vanilla
+clips are a sibling of `wwise/`, under `resources/_common/drs/`, not inside it.
+
 from __future__ import annotations
 
 import argparse
