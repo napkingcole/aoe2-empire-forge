@@ -84,6 +84,10 @@ _XS_UT_NOTES: dict[int, str] = {
          "redirected and will not fire."),
     10: ("Red Cliffs Tactics targets the Wu Fire Archer specifically. Unless "
          "your civ fields Fire Archers, only the Demolition Ship half applies."),
+    51: ("Butalmapu's Castle unique unit discount now runs from one of the "
+         "game's own scripts, which knows the vanilla unique units by name. "
+         "The Bolas Rider half still applies if your civ fields them; the "
+         "discount will not reach your own unique unit."),
 }
 
 # ── Building IDs ──────────────────────────────────────────────────────────────

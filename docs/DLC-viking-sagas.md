@@ -1,8 +1,8 @@
 # Viking Sagas (2026-09-22) — what the DLC changes for Empire Forge
 
 Generated from `scripts/dat_drift.py` against the shipped DAT plus the patch
-notes in `9-22-26 update/Update.md`. Read it as a worklist; nothing here is
-fixed yet.
+notes in `9-22-26 update/Update.md`. Read it as a worklist — sections marked
+**DONE**/**FIXED** are finished (none of it in-game tested yet); the rest is open.
 
 ```
 venv/bin/python scripts/dat_drift.py OLD.dat NEW.dat
@@ -34,6 +34,7 @@ Structure: **civs 60 → 63**, effects 1409 → 1500 (+91), techs unchanged.
   but the shipped file is **MAYANS.json**, and the per-civ tech-tree patch is
   guarded by `if per_civ_path.exists()` — so **replacing the Mayans quietly
   shipped an unpatched tech tree**. Slot-keyed lookup returns MAYANS.
+
 All the new content follows the standard opt-in shape — globally disabled by
 tech 79, released by a `type=8` in each owning civ's TT effect — so every one of
 these has a vanilla template our code can copy (see bonus 51 above).
@@ -109,25 +110,50 @@ Jomsviking (**1481**/**1482**) + `Northmen's Fury` (**1483**, 67 commands) and
 are effects **1455** (Saxons), **1456** (Varangians), **1457** (Danes) and their
 tech trees **1458**/**1459**/**1460**.
 
-## Cards whose text is now wrong
+## Cards whose text was wrong — FIXED 2026-09-22
 
-Confirmed against the patch notes, not just the command-count diff:
+Corrected to DE's own wording from `Update.md`, not invented:
 
-- **Bonus 90** — "Archery Range units and Fire Lancers +20% HP". Tech 632 went
-  **14 → 1 command**; the notes say the Vietnamese bonus is now *"Foot-Archers
-  and Skirmishers +20% HP"*.
-- **Bonus 14** — "Barracks and Stable units +1 armor in Castle/Imperial". Techs
-  334/335 went **32 → 5 commands**: the notes say Teutons changed to *"Infantry
-  and Mounted Units"*, i.e. 32 explicit unit ids replaced by 5 class commands.
-- **Bonus 51** — "Can recruit **Longboats** from docks". The unit is now the
-  **Longship**.
-- **Castle UT 36, Viking Chieftains** — 6 → 4 commands; notes say it no longer
-  generates gold from Villagers, Trade Units or Monks.
-- **Castle UT 38, Wagenburg Tactics** — notes say gunpowder speed 15% → 10%.
-- **Imperial UT 13, Hun Atheism** — 3 → 9 commands, three separate behaviour
-  changes in the notes.
-- **Imperial UT 6, Byzantine Logistica** — effect changed; now covers Varangian
-  Guards and drops the +6 vs Infantry.
+| card | was | now |
+|---|---|---|
+| civ bonus 90 | Archery Range units and Fire Lancers +20% HP | Foot-Archers and Skirmishers +20% HP |
+| civ bonus 14 | Barracks and Stable units +1 armor in Castle and Imperial Age (+2 total) | Infantry and Mounted Units +1/+2 melee armor in Castle/Imperial Age |
+| civ bonus 51 | Can recruit Long**boats** from docks | Can recruit Long**ships** from docks |
+| castle UT 36 | Chieftains (Infantry deal bonus damage to cavalry, **generate gold from kills**) | Chieftains (Infantry deal bonus damage to cavalry) |
+| castle UT 38 | Wagenburg Tactics (Gunpowder units move **15%** faster) | …move **10%** faster |
+
+Chieftains is worth a note: the gold-from-kills half was a **resource 33** command
+(`EffectFunction 5`) and the DLC deleted it outright along with its resource 274
+enabler, leaving only the anti-cavalry attack bonus. So the card was not merely
+rebalanced — half of it stopped existing.
+
+**Imperial UT 59, Butalmapu, went the other way and now needs a warning.** It
+collapsed from **122 commands to 3**: DE replaced the per-unit list with
+`resource 33 = EffectFunction 51` plus two explicit Bolas Rider commands. That is
+the Coiled Serpent Array shape — the script knows the vanilla unique units by
+name, so the discount cannot reach a custom civ's own UU. Added to
+`_XS_UT_NOTES[51]`, and confirmed the warning reaches the user at build time.
+
+### Checked and deliberately left alone
+
+- **Imperial UT 6, Byzantine Logistica.** The effect now names the Varangian
+  Guard (2703/2704) and drops the Cataphract +6 vs Infantry. But the preset path
+  substitutes source-civ UU ids (40/553) with *our* UU, so "Unique Unit causes
+  trample damage" is still accurate; the civ additionally gets trample on
+  Varangian Guards if it fields them. No text change.
+- **The ~20 other drifted techs.** A preset or bonus clones the effect out of
+  **the player's own DAT**, so a balance tweak tracks automatically and only the
+  *description* can go stale. Each was read against the notes; the five above are
+  the ones whose text no longer matched.
+
+## Still open: Hun Atheism (imperial UT 13)
+
+The one card from the original sweep not yet settled. Tech 21 went **3 → 9
+commands** and the notes list three separate behaviour changes: the victory-timer
+increase now applies only to enemy and neutral players, it stacks if researched
+more than once, and the relic-income reduction now also hits neutrals. Our text
+reads *"+100 years for Relic, Wonder victories; enemy relics -50% resources"*,
+which is not wrong so much as no longer the whole story. Needs a wording call.
 
 ## Team bonuses 1, 14 and 16 — FIXED 2026-09-22
 
