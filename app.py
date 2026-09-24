@@ -1313,9 +1313,16 @@ def api_builder_meta():
     # art under the new label.
     arch_options = _ARCH_OPTIONS
     monk_options = MONK_SKIN_OPTIONS
-    if dat_path:
+    # Use the DAT only if it is ALREADY parsed.  This route is awaited by the
+    # wizard's init() before anything renders, so it must never be the thing
+    # that triggers a parse: doing so made a cold start sit on "Loading..." for
+    # 34 seconds (measured 2026-09-24, shipped in 2.2.0 — my regression).
+    # `/api/builder/prewarm` exists to fill this cache on a background thread,
+    # which is the whole reason meta was fast before.  Cold, we fall back to the
+    # unfiltered lists, which is exactly the pre-2.2.0 behaviour.
+    if dat_path and dat_path in _DAT_OBJ_CACHE:
         try:
-            _pd = _get_dat(dat_path)
+            _pd = _DAT_OBJ_CACHE[dat_path]
             _sets = {c.icon_set for c in _pd.civs[1:]}
             arch_options = [a for a in _ARCH_OPTIONS if a["value"] in _sets]
 

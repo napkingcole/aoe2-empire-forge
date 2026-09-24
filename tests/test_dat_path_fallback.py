@@ -315,6 +315,31 @@ check("...and each offered Monk covers a distinct partition",
 check("...and no Monk option is offered that this DAT cannot supply",
       all(any(o in m for m in _monk_groups.values()) for o in _offered_monks))
 
+print("\n=== /api/builder/meta never parses a DAT ===")
+# init() in the wizard AWAITS this route before anything renders, so if it is
+# the thing that triggers the ~30 s DAT parse the app sits on "Loading..." and
+# looks hung.  That shipped in 2.2.0 and was reported from the Windows exe.
+# `/api/builder/prewarm` fills the cache on a background thread; meta must only
+# ever READ it.
+_saved_cache = dict(appmod._DAT_OBJ_CACHE)
+appmod._DAT_OBJ_CACHE.clear()
+try:
+    import time
+    _t0 = time.time()
+    _m = client.get("/api/builder/meta",
+                    query_string={"dat_path": str(dat_path)}).get_json()
+    _elapsed = time.time() - _t0
+    check("meta answers without parsing the DAT", not appmod._DAT_OBJ_CACHE,
+          f"it parsed and cached: {list(appmod._DAT_OBJ_CACHE)}")
+    check(f"...and returns quickly ({_elapsed:.2f}s)", _elapsed < 3.0,
+          f"took {_elapsed:.1f}s — a cold parse is ~30s and reads as a hang")
+    check("...still with a usable civ list", len(_m["civs"]) > 40,
+          f"{len(_m['civs'])} civs")
+    check("...falling back to the unfiltered architecture list",
+          len(_m["architectures"]) >= 12, f"{len(_m['architectures'])}")
+finally:
+    appmod._DAT_OBJ_CACHE.update(_saved_cache)
+
 print("\n=== the bonus catalog only offers what this DAT can implement ===")
 # Third place this rule lives, after unique techs and unique units.  A civ bonus
 # is built by cloning its techs' effect commands, so the twelve Viking Sagas
