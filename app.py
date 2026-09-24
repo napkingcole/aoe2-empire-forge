@@ -195,6 +195,10 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.2.1": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Fixed the builder hanging on \"Loading\" at startup.</strong> 2.2.0 made the wizard wait for your game files to be read before it would draw anything, which took around half a minute on a cold start and looked like a freeze. The file is now read in the background, as it was before",
+        "<em>If you downloaded 2.2.0, please update — that build cannot get past the first screen.</em>",
+    ],
     "2.2.0": [
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Viking Sagas support.</strong> Saxons, Varangians and Danes can be replaced like any other civ, with their wonders, castles, and the new Nordic architecture and Monk",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Mounted Crossbowman</strong> and <strong>Varangian Guard</strong> in the tech tree. Each shares a building slot with the units it replaces — Mounted Crossbowman with the Cavalry Archer and Elephant Archer, Varangian Guard with the Fire Lancer and Eagle line — so picking one removes the others, the same way the tree has always handled regional units. <strong>Cranequins</strong> comes and goes with the Mounted Crossbowman",
