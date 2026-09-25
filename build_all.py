@@ -372,10 +372,9 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
             # Voices need BOTH the DAT SoundItem remap (assign_all_languages)
             # and the physical .wem files here — the remap alone leaves the
             # engine falling back to Wwise routing, i.e. the replaced slot's
-            # original voice.  voice_files/ is gitignored and is NOT bundled
-            # into the PyInstaller build, so this silently copies nothing when
-            # running from a packaged exe.  Say so rather than shipping a mod
-            # whose civs quietly ignore the chosen voice.
+            # original voice (confirmed in-game 2026-09-25).  The spec bundles
+            # voice_files/, but a value with no folder still copies nothing —
+            # say so rather than shipping a civ that ignores the chosen voice.
             voice_root = Path(__file__).parent / "voice_files"
             wem_count = 0
             missing: list[int] = []

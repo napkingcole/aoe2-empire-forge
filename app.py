@@ -1408,10 +1408,9 @@ _VOICE_FALLBACK_VALUES = frozenset(range(43))
 def _available_voice_values() -> set[int]:
     """Voice values with a voice_files/<value>/ folder holding at least one .wem.
 
-    voice_files/ is gitignored (~24 MB of game audio) and is NOT bundled into
-    the PyInstaller build, so in a packaged exe the directory does not exist.
-    Falling back to the historical 0-42 range there keeps the Voice dropdown
-    populated — scanning alone would render it empty.
+    The spec bundles voice_files/, so the scan works in the packaged exe too.
+    The historical 0-42 fallback only covers a checkout without the (gitignored)
+    folder, where scanning alone would render the Voice dropdown empty.
     """
     out: set[int] = set()
     try:
