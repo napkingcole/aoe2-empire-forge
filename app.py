@@ -43,7 +43,7 @@ from build_civ import (
 )
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
                            _refresh_uu_tooltips)
-from civ_appender import (apply_civ, assign_all_languages,
+from civ_appender import (apply_civ, assign_all_languages, button_layout_preview,
                           _str_id, STRING_BASE, STRING_BLOCK_SIZE,
                           STR_CASTLE_UT, STR_IMPERIAL_UT,
                           DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET,
@@ -2145,6 +2145,95 @@ def api_builder_ut_costs():
             return jsonify({"castle": {}, "imperial": {}})
 
     return jsonify(_DAT_COSTS_CACHE[dat_path])
+
+
+# Parsed in the background on first use: the preview must never block on the
+# ~16s DAT load (2.2.0 hung on exactly that), so a cold call says "loading".
+_DAT_LOADING: set[str] = set()
+
+
+def _unit_icon(uids, dat=None) -> str:
+    """Best available portrait for a unit line, first id first.
+
+    The tech-tree art (static/aoe2techtree/img/Unit, from our aoe2techtree
+    fork) is keyed by PICTURE INDEX — the unit's icon_id — and is current
+    through the newest DLC.  img/Units/<unit id>.jpg is an older set kept as a
+    fallback, then the game icons in uniticons/.  Every member of the line is
+    tried, since a base can lack art of its own.
+    """
+    uids = [uids] if isinstance(uids, int) else list(uids)
+    static = Path(app.static_folder)
+    units = dat.civs[1].units if dat is not None else []
+    for uid in uids:
+        unit = units[uid] if uid < len(units) else None
+        if unit is not None and unit.icon_id >= 0:
+            rel = f"aoe2techtree/img/Unit/{unit.icon_id}.png"
+            if (static / rel).exists():
+                return url_for("static", filename=rel)
+    for uid in uids:
+        rel = f"aoe2techtree/img/Units/{uid}.jpg"
+        if (static / rel).exists():
+            return url_for("static", filename=rel)
+    icons_dir = Path(__file__).parent / "uniticons"
+    for uid in uids:
+        unit = units[uid] if uid < len(units) else None
+        if unit is not None and unit.icon_id >= 0:
+            name = f"{unit.icon_id:03d}_50730.png"
+            if (icons_dir / name).exists():
+                return f"/resources/uniticons/{name}"
+    return url_for("static", filename="aoe2techtree/img/missing.png")
+
+
+def _tech_icon(tid: int, upgrades_to: int | None, dat=None) -> str:
+    """An upgrade shows the unit it produces; anything else its own tech icon."""
+    if upgrades_to is not None:
+        return _unit_icon(upgrades_to, dat)
+    if dat is not None and 0 <= tid < len(dat.techs) and dat.techs[tid].icon_id >= 0:
+        rel = f"aoe2techtree/img/Tech/{dat.techs[tid].icon_id}.png"
+        if (Path(app.static_folder) / rel).exists():
+            return url_for("static", filename=rel)
+    return url_for("static", filename="aoe2techtree/img/missing.png")
+
+
+@app.route("/api/builder/button-layout", methods=["POST"])
+def api_builder_button_layout():
+    """Where each clashing unit line lands, for the wizard's final screen.
+
+    Runs the same planner the build uses (civ_appender.button_layout_preview),
+    so the grid the player sees is the one that gets built.  Returns
+    {"status": "loading"} until the DAT is parsed; the page retries.
+    """
+    draft = request.get_json(silent=True) or {}
+    dat_path = _resolve_dat_path(draft.get("dat_path"))
+    if not dat_path:
+        return jsonify({"status": "no_dat", "buildings": []})
+    if dat_path not in _DAT_OBJ_CACHE:
+        if dat_path not in _DAT_LOADING:
+            _DAT_LOADING.add(dat_path)
+
+            def _warm():
+                try:
+                    _get_dat(dat_path)
+                finally:
+                    _DAT_LOADING.discard(dat_path)
+            threading.Thread(target=_warm, daemon=True).start()
+        return jsonify({"status": "loading", "buildings": []})
+
+    from wizard_build import _draft_to_civ_def
+    from build_civ import _tree_sets
+    civ_def = _draft_to_civ_def(draft)
+    dat = _get_dat(dat_path)
+    buildings = button_layout_preview(dat, civ_def, _tree_sets(civ_def)[2])
+    for b in buildings:
+        for line in (l for c in b["conflicts"] for l in c["lines"]):
+            line["icon"] = _unit_icon([line["base"], *line["units"]], dat)
+        for page in b["pages"]:
+            for cell in page:
+                for item in cell.get("items", []):
+                    item["icon"] = (_unit_icon([item["id"], *item.get("units", [])], dat)
+                                    if item["kind"] == "unit"
+                                    else _tech_icon(item["id"], item.get("upgrades_to"), dat))
+    return jsonify({"status": "ok", "buildings": buildings})
 
 
 @app.route("/builder/build", methods=["POST"])

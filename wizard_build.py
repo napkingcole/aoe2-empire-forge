@@ -96,6 +96,9 @@ def _draft_to_civ_def(draft: dict) -> dict:
         "long_range_ship_elite": draft.get("long_range_ship_elite", True),
         "starting_scout":        draft.get("starting_scout"),
         "monk_skin":             draft.get("monk_skin"),
+        # Which line keeps page 1 where two share a training button — read by
+        # civ_appender._resolve_button_collisions; absent means the default table.
+        "button_moves":          draft.get("button_moves") or [],
     }
 
     # UU name/description override — passed under unique_unit so km_custom_uu can
