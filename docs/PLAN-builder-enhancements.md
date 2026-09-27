@@ -371,6 +371,20 @@ renders at a full Archery Range, and see whether a 16th entry appears, scrolls,
 or silently vanishes. Until then, treat button remapping as *rearranging within
 15 slots* — still useful, since that is what frees space up.
 
+*2026-09-25 update.* The user ran the "all techs" test: in vanilla, overflowing
+units are **moved around or placed on a second page** rather than colliding, so
+the engine CAN render overflow. Nothing documents how, and it is not a DAT
+field: `TrainLocation` is only `(unit_id, button_id, hot_key_id, train_time)`;
+the UGC guide gives Train Button (attr 43) as 0-15; the villager's
+Economic/Military pages are a hardcoded split on the *building's*
+`interface_kind` (2 vs 10, both using buttons 1-13), not general paging; and the
+"Use Advanced Buttons" trigger effect only reveals stance/formation buttons.
+Two cheap experiments before anything is built: (1) put one unit at Archery
+Range `button_id` 21 (or 24, which vanilla uses for the Dock's hero ships) and
+see whether a page-2 arrow appears; (2) in an "all techs" game *with our mod*,
+check whether our collisions reflow too — if they do, the reflow is a mode-only
+layout pass and ordinary games will never get it.
+
 **Second UU.** `second_uu` is a schema pass-through (`civ_schema.py:154`) with
 no handler. Blocked on the same button-space question.
 

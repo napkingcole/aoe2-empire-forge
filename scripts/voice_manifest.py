@@ -40,7 +40,8 @@ That looks like a DRS id, but the shipped `resources/_common/drs/` has no
 small-trees.  `drs/sounds/` is a path the engine checks for OVERRIDES, which is
 why our mods work; vanilla playback does not come from there.
 
-THE AUDIO IS IN THE BANKS, AND IT IS NOT USABLE.  The clips are embedded inside
+THE AUDIO IS IN THE BANKS (the 2026-09-23 view; see SUPERSEDED below).
+The clips are embedded inside
 the Wwise banks rather than the stream tables: `Base.pck` bank 232745270 is
 149 MB holding 6150 embedded media at ~10 KB median, exactly the profile of
 one-second unit barks, and 9776 across all banks.  They extract fine — the DIDX
@@ -75,11 +76,11 @@ the thirteen civs.  Three independent routes were tried and all are dead:
     uppercase, and a 30-bit mask.  **Zero hits.**  The ids come from the Wwise
     project, not the filename.
 
-3587 unclaimed voice-length clips remain in the bank, so the thirteen civs'
-voices are almost certainly among them — mixed in with campaign and hero speech,
-and separable only by listening.  Unless a community id table turns up, the
-realistic answer is that these civs have no voice, which costs little: a custom
-civ can borrow any of the 43 that do.
+SUPERSEDED 2026-09-25 — the names ARE recoverable, just not from a hash.
+The same bank carries a HIRC event graph (the "no HIRC" above was wrong), and
+every voice line is a switch container on a 64-state civ switch whose state ids
+are FNV-1 hashes of the civ names.  `scripts/voice_wwise.py` walks it and
+extracts all 13 missing civs; the history above is kept for the dead ends.
 
 """
 

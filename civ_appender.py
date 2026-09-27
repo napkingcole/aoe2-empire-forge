@@ -3910,6 +3910,25 @@ def _apply_km_uu(dat: DatFile, civ_index: int, km_uu_index: int) -> tuple[int, i
     return new_ma, new_el
 
 
+_VOICE_MAP_PATH = Path(__file__).parent / "voice_wwise_map.json"
+
+
+def _voice_line_rebuilds() -> dict[int, dict[int, list[str]]]:
+    """voice value -> {sound id: [file stems]} for voices whose DAT names are broken.
+
+    Written by scripts/voice_wwise.py, which flags a civ when its DAT points
+    several lines at one file or borrows another civ's files (the South
+    American and Viking Sagas civs, and Khitans).  Missing file = no rebuilds,
+    so a checkout without the map behaves exactly as before.
+    """
+    try:
+        civs = json.loads(_VOICE_MAP_PATH.read_text(encoding="utf-8"))["civs"]
+    except (OSError, ValueError, KeyError):
+        return {}
+    return {e["value"]: {int(sid): stems for sid, stems in e["lines"].items()}
+            for e in civs.values() if e.get("lines")}
+
+
 def assign_all_languages(dat: DatFile, assignments: list[tuple[int, int]]) -> None:
     """Remap DAT sound items for all custom civs using KM's 3-phase algorithm.
 
@@ -3925,11 +3944,13 @@ def assign_all_languages(dat: DatFile, assignments: list[tuple[int, int]]) -> No
     civ can occupy any user-chosen slot instead of always starting at slot 1.
     """
     CIV_OFFSET = 100
+    rebuilt = _voice_line_rebuilds()
 
     # Phase 1: copy source sounds to temporary high-range slots
     for civ_index, language_value in assignments:
         src_civ = language_value + 1
         temp_civ = civ_index + CIV_OFFSET
+        lines = rebuilt.get(language_value, {})
         for sound in dat.sounds:
             size = len(sound.items)
             new_items = []
@@ -3938,6 +3959,20 @@ def assign_all_languages(dat: DatFile, assignments: list[tuple[int, int]]) -> No
                     copy = deepcopy(sound.items[k])
                     copy.civilization = temp_civ
                     new_items.append(copy)
+            stems = lines.get(sound.id)
+            if stems and sound.items:
+                # This voice's DAT filenames are FE placeholders (one name for
+                # six lines, other civs' files) that the unmodded game never
+                # reads, so write the line from voice_wwise_map.json instead.
+                template = new_items[0] if new_items else sound.items[0]
+                share, extra = divmod(100, len(stems))
+                new_items = []
+                for i, stem in enumerate(stems):
+                    item = deepcopy(template)
+                    item.civilization = temp_civ
+                    item.filename = f"{stem}.wav"
+                    item.probability = share + (extra if i == len(stems) - 1 else 0)
+                    new_items.append(item)
             sound.items.extend(new_items)
 
     # Phase 2: delete all original vanilla civ sound items (0 < civ < CIV_OFFSET)
