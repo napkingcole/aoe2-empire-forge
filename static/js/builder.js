@@ -112,6 +112,7 @@ function showStep(n) {
   if (n === TOTAL_STEPS) {
     btnNext.style.display = 'none';
     populateReview();
+    renderButtonLayout();
   } else {
     btnNext.style.display = '';
     btnNext.innerHTML = 'Next <i class="fa-solid fa-arrow-right ms-1"></i>';
@@ -858,7 +859,7 @@ function populateReview() {
       </div>
       <div class="col-md-3">
         <div class="card h-100">
-          <div class="card-header small fw-semibold"><i class="fa-solid fa-person-rifle me-1" style="color:var(--accent-2)"></i>Unique Unit</div>
+          <div class="card-header small fw-semibold"><i class="fa-solid fa-hand-fist me-1" style="color:var(--accent-2)"></i>Unique Unit</div>
           <div class="card-body p-2">${uuHtml}</div>
         </div>
       </div>
@@ -2632,6 +2633,142 @@ function _esc(s) {
   return (s || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
+// ── Button layout (step 9) ────────────────────────────────────────────────────
+// Where two of the civ's units share a training button, one keeps page 1 and
+// the rest move to the building's second page (civ_appender's planner).  The
+// player's pick lives in draft.button_moves as {building, button, page_one};
+// only non-default picks are stored, and picks for clashes that no longer
+// exist are dropped, so the saved civ carries nothing stale.
+
+let _layoutReq = 0;
+
+async function renderButtonLayout(retries = 30) {
+  const card = document.getElementById("button-layout-card");
+  const body = document.getElementById("button-layout-body");
+  if (!card || !body) return;
+  const req = ++_layoutReq;
+  let data;
+  try {
+    const r = await fetch("/api/builder/button-layout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    });
+    data = await r.json();
+  } catch (e) {
+    console.error("[button-layout]", e);
+    return;
+  }
+  if (req !== _layoutReq) return;          // a newer request has taken over
+  if (data.status === "loading") {
+    card.classList.remove("d-none");
+    body.innerHTML = `<div class="text-muted small">
+      <span class="spinner-border spinner-border-sm me-2"></span>Reading the game data…</div>`;
+    if (retries > 0) {
+      setTimeout(() => { if (req === _layoutReq) renderButtonLayout(retries - 1); }, 2000);
+    }
+    return;
+  }
+  const buildings = data.buildings || [];
+  _pruneButtonMoves(buildings);
+  if (!buildings.length) {
+    card.classList.add("d-none");
+    body.innerHTML = "";
+    return;
+  }
+  card.classList.remove("d-none");
+  body.innerHTML = buildings.map(_layoutBuildingHtml).join("");
+}
+
+function _pruneButtonMoves(buildings) {
+  const live = new Map();                  // "building:button" -> unit ids in its lines
+  for (const b of buildings) {
+    for (const c of b.conflicts) {
+      live.set(`${b.building}:${c.button}`, new Set(c.lines.flatMap(l => l.units)));
+    }
+  }
+  const before = (draft.button_moves || []).length;
+  draft.button_moves = (draft.button_moves || []).filter(m =>
+    live.get(`${m.building}:${m.button}`)?.has(m.page_one));
+  if (draft.button_moves.length !== before) saveDraft();
+}
+
+function _setPageOne(building, button, unit, isDefault) {
+  const moves = (draft.button_moves || []).filter(m =>
+    !(m.building === building && m.button === button));
+  if (!isDefault) moves.push({ building, button, page_one: unit });
+  draft.button_moves = moves;
+  saveDraft();
+  renderButtonLayout();
+}
+
+function _layoutCellHtml(cell) {
+  const key = cell.key ? `<span class="bl-key">${cell.key}</span>` : "";
+  // The game's own art, one arrow for both pages (it never changes direction).
+  if (cell.kind === "gather") {
+    return `<div class="bl-cell bl-fixed" title="Gather point">
+      <img class="ui-gather-point" src="/static/icons/ui-gather-point.png" alt=""></div>`;
+  }
+  if (cell.kind === "arrow") {
+    return `<div class="bl-cell bl-fixed" title="Next page">
+      <img class="ui-arrow" src="/static/icons/ui-arrow.png" alt=""></div>`;
+  }
+  if (cell.kind === "reserved") return `<div class="bl-cell bl-fixed"></div>`;
+  if (!cell.items || !cell.items.length) return `<div class="bl-cell bl-empty">${key}</div>`;
+  const top = cell.items[0];
+  const title = [...new Set(cell.items.map(i => i.name))].join(" → ");
+  const cls = ["bl-cell", `bl-${top.kind}`, top.moved ? "bl-moved" : ""].join(" ");
+  const badge = top.kind === "tech" && top.upgrades_to != null
+    ? `<span class="bl-up"><i class="fa-solid fa-arrow-up"></i></span>` : "";
+  return `<div class="${cls}" title="${_esc(title)}">
+    <img src="${top.icon}" alt="" loading="lazy">${badge}${key}</div>`;
+}
+
+function _layoutBuildingHtml(b) {
+  const conflicts = b.conflicts.map(c => {
+    const name = `bl-${b.building}-${c.button}`;
+    const opts = c.lines.map(l => {
+      const checked = l.base === c.winner ? "checked" : "";
+      const isDefault = l.base === c.default;
+      return `<label class="bl-option">
+        <input type="radio" name="${name}" value="${l.base}" ${checked}
+               data-building="${b.building}" data-button="${c.button}"
+               data-default="${isDefault ? 1 : 0}">
+        <img src="${l.icon}" alt="" loading="lazy">
+        <span>${_esc(l.name)}</span>
+        ${isDefault ? '<span class="bl-default">default</span>' : ""}
+      </label>`;
+    }).join("");
+    return `<div class="bl-conflict">
+      <div class="bl-conflict-label">Button ${c.button} — keeps page 1:</div>
+      <div class="bl-options">${opts}</div>
+    </div>`;
+  }).join("");
+  const pages = b.pages.map((cells, i) => `
+    <div class="bl-page">
+      <div class="bl-page-label">Page ${i + 1}</div>
+      <div class="bl-grid">${cells.map(c => _layoutCellHtml(c)).join("")}</div>
+    </div>`).join("");
+  const overflow = b.overflow.length
+    ? `<div class="alert alert-warning small py-2 mt-2 mb-0">
+         Both pages are full — ${b.overflow.map(_esc).join(", ")} can't be trained here.
+         Drop another unit from the ${_esc(b.name)} to make room.</div>`
+    : "";
+  return `<div class="bl-building">
+    <div class="bl-title">${_esc(b.name)}</div>
+    ${conflicts}
+    <div class="bl-pages">${pages}</div>
+    ${overflow}
+  </div>`;
+}
+
+document.addEventListener("change", e => {
+  const input = e.target.closest?.("#button-layout-body input[type=radio]");
+  if (!input) return;
+  _setPageOne(Number(input.dataset.building), Number(input.dataset.button),
+              Number(input.value), input.dataset.default === "1");
+});
+
 function selectVanillaTech(step, id) {
   const { key, prefix } = UT_STEPS[step];
   const catalog = step === 6 ? _castleUtCatalog : _imperialUtCatalog;
@@ -3680,8 +3817,9 @@ document.getElementById("btn-open-tree").addEventListener("click", async () => {
       const data = await res.json();
       // The "full" template is the union of every civ, so it contains BOTH sides
       // of every regional swap (Militia line *and* Champi line, camps *and*
-      // Settlement).  Those are mutually exclusive, so the wide-open tree starts
-      // on the standard side and the regional options are opt-in.
+      // Settlement).  The wide-open tree starts on the standard side and the
+      // regional options are opt-in — a camp and its Settlement exclude each
+      // other; unit lines no longer do, the extras just go to page 2.
       //
       // A real civ template must be taken at face value: the Mapuche genuinely
       // have the Champi line and no Militia line, the Wei genuinely have Hei

@@ -1,14 +1,11 @@
-// Regional unit mutual-exclusivity checks.
+// Regional unit line checks.
 //
-// Each _REGIONAL_GROUPS entry names the unit lines that contest ONE building
-// button.  The engine hands that cell to exactly one line, so a tree holding
-// two reads in-game as "my civ is missing a unit it clearly has".  _toggleNode
-// evicts every other line in the group.
-//
-// This was a two-sided a/b pair table until Viking Sagas made two groups
-// three-way (Mounted Crossbowman on Archery Range button 3, Varangian Guard on
-// Barracks button 4).  The sweeps below are written against N lines, so a
-// fourth contender needs no new test — but a line added without wiring fails.
+// Each _REGIONAL_GROUPS entry names the unit lines that share ONE building
+// button.  They used to be mutually exclusive — _toggleNode evicted every other
+// line in the group — because the engine drew one line per cell.  Since
+// 2026-09-26 the build moves every line after the first to the building's
+// second page, so lines coexist; what the table still decides is which line a
+// blank civ starts with, and which techs belong to a line (Cranequins).
 //
 //   node tests/test_unit_exclusivity.js
 const fs = require('fs');
@@ -68,13 +65,12 @@ const allUnits  = (g) => g.lines.flatMap(l => l.ids);
 const allTechs  = (g) => g.lines.flatMap(l => l.techs || []);
 const groupName = (g) => g.lines.map(l => l.name).join(' / ');
 
-console.log('=== Selecting any line evicts every other line in its group ===');
+console.log('=== Lines that share a button no longer evict each other ===');
 for (const group of T.GROUPS) {
   for (const line of group.lines) {
-    // Start with EVERY RIVAL selected — and only the rivals, since _toggleNode
-    // toggles, so a line that is already on would be switched off.  Starting
-    // with every rival present is what makes the three-way case meaningful: a
-    // pair table evicts one and leaves the other sitting on the button.
+    // Start with every OTHER line selected, then tick this one: all of them
+    // must survive.  (Only the others — _toggleNode toggles, so a line already
+    // on would be switched off.)
     const rivals = group.lines.filter(l => l !== line);
     T.setNodeIndex(indexFor(group));
     T.setLocaltree({
@@ -84,19 +80,14 @@ for (const group of T.GROUPS) {
     });
     T.toggle(unitNode(group.bldg, line.ids[0]), 60);
 
-    const left = T.getLocaltree().units;
-    const survivors = rivals.flatMap(l => l.ids).filter(u => left.includes(u));
-    check(`[${groupName(group)}] ${line.name} evicts all ${rivals.length} rival line(s)`,
-          survivors.length === 0, `still present: ${survivors.join(', ')}`);
-    check(`[${groupName(group)}] ${line.name} itself stays selected`,
-          left.includes(line.ids[0]));
-
-    // A rival's line-owned techs must go too, or the tree keeps a research node
-    // whose only target has just been evicted.
-    const techsLeft = T.getLocaltree().techs;
-    const orphaned = rivals.flatMap(l => l.techs || []).filter(t => techsLeft.includes(t));
-    check(`[${groupName(group)}] ${line.name} takes rival line-techs with them`,
-          orphaned.length === 0, `orphaned techs: ${orphaned.join(', ')}`);
+    const t = T.getLocaltree();
+    const lost = rivals.flatMap(l => l.ids).filter(u => !t.units.includes(u));
+    check(`[${groupName(group)}] ${line.name} leaves the other lines selected`,
+          lost.length === 0, `removed: ${lost.join(', ')}`);
+    const lostTechs = rivals.flatMap(l => l.techs || []).filter(x => !t.techs.includes(x));
+    check(`[${groupName(group)}] ${line.name} leaves their line-techs alone`,
+          lostTechs.length === 0, `removed: ${lostTechs.join(', ')}`);
+    check(`[${groupName(group)}] ${line.name} itself is selected`, t.units.includes(line.ids[0]));
   }
 }
 
@@ -115,7 +106,7 @@ for (const group of T.GROUPS) {
 console.log('\n=== One building button is contested by one group only ===');
 // Two groups may share a building (Barracks holds both the Militia/Champi and
 // the shock-infantry buttons), but a unit must never appear in two groups, or
-// eviction order decides the outcome.
+// its line's techs would belong to two owners.
 {
   const seen = new Map();
   let dupes = [];
@@ -184,27 +175,64 @@ console.log('\n=== Mounted Crossbowman: Archery Range button 3 ===');
     check('no other line claims Cranequins',
           g.lines.filter(l => (l.techs || []).includes(1452)).length === 1);
 
-    // Selecting a rival must strip Cranequins along with the unit it upgrades.
-    T.setNodeIndex(indexFor(g));
-    T.setLocaltree({ units: [2700, 2701], buildings: [87], techs: [1452] });
-    T.toggle(unitNode(87, 39), 60);
-    check('choosing Cavalry Archers removes Cranequins',
-          !T.getLocaltree().techs.includes(1452),
-          `techs left: ${T.getLocaltree().techs.join(', ')}`);
-    check('...and removes the Mounted Crossbowman itself',
-          !T.getLocaltree().units.some(u => [2700, 2701].includes(u)));
-
-    // Ticking the tech means wanting the line: the layout links Cranequins to
-    // Thumb Ring, not to 2700, so the generic ancestor cascade cannot do this.
+    // Cranequins needs the Mounted Crossbowman and nothing else (the user,
+    // 2026-09-27): not the Heavy upgrade, and not Parthian Tactics, which the
+    // game's layout links it to for drawing only.
     T.setNodeIndex(indexFor(g));
     T.setLocaltree({ units: [39, 474], buildings: [87], techs: [] });
     T.toggle(techNode(87, 1452), 60);
-    check('ticking Cranequins pulls in the Mounted Crossbowman',
-          T.getLocaltree().units.includes(2700),
-          `units: ${T.getLocaltree().units.join(', ')}`);
-    check('...and evicts the Cavalry Archer it replaces',
-          ![39, 474].some(u => T.getLocaltree().units.includes(u)),
-          `units: ${T.getLocaltree().units.join(', ')}`);
+    let t = T.getLocaltree();
+    check('ticking Cranequins pulls in the Mounted Crossbowman', t.units.includes(2700),
+          `units: ${t.units.join(', ')}`);
+    check('...but not the Heavy Mounted Crossbowman', !t.units.includes(2701));
+    check('...and keeps the Cavalry Archers', [39, 474].every(u => t.units.includes(u)));
+
+    T.setLocaltree({ units: [2700, 2701], buildings: [87], techs: [1452] });
+    T.toggle(unitNode(87, 2701), 60);
+    check('unticking the Heavy Mounted Crossbowman keeps Cranequins',
+          T.getLocaltree().techs.includes(1452));
+    T.toggle(unitNode(87, 2701), 60);
+    check('...and ticking it again leaves Cranequins as it was',
+          T.getLocaltree().techs.includes(1452) && T.getLocaltree().units.includes(2701));
+    T.setLocaltree({ units: [2700, 2701], buildings: [87], techs: [] });
+    T.toggle(unitNode(87, 2701), 60);
+    T.toggle(unitNode(87, 2701), 60);
+    check('ticking the Heavy Mounted Crossbowman never adds Cranequins',
+          !T.getLocaltree().techs.includes(1452));
+
+    T.setLocaltree({ units: [2700], buildings: [87], techs: [1452] });
+    T.toggle(unitNode(87, 2700), 60);
+    check('removing the last Mounted Crossbowman takes Cranequins with it',
+          !T.getLocaltree().techs.includes(1452),
+          `techs left: ${T.getLocaltree().techs.join(', ')}`);
+  }
+}
+
+console.log('\n=== Cranequins against the real layout (FULL.json) ===');
+{
+  // The layout gives Cranequins link_id 436 (Parthian Tactics); marked
+  // "independent", that link is drawing-only and must not cascade either way.
+  const full = JSON.parse(fs.readFileSync(
+    path.join(ROOT, 'static/aoe2techtree/data/trees/FULL.json'), 'utf8'));
+  const idx = {};
+  (function walk(o) {
+    if (Array.isArray(o)) return o.forEach(walk);
+    if (!o || typeof o !== 'object') return;
+    if (o.node_id !== undefined && o.use_type && o.building_id !== undefined)
+      idx[`${o.building_id}_${o.node_id}`] = o;
+    Object.values(o).forEach(walk);
+  })(full);
+  const cq = idx['87_1452'];
+  check('FULL.json has Cranequins, marked independent', !!cq && cq.independent === true);
+  if (cq) {
+    T.setNodeIndex(idx);
+    T.setLocaltree({ units: [2700], buildings: [87], techs: [] });
+    T.toggle(cq, 60);
+    check('ticking Cranequins does not add Parthian Tactics',
+          !T.getLocaltree().techs.includes(436), `techs: ${T.getLocaltree().techs.join(', ')}`);
+    T.setLocaltree({ units: [2700], buildings: [87], techs: [436, 1452] });
+    T.toggle(idx['87_436'], 60);
+    check('unticking Parthian Tactics keeps Cranequins', T.getLocaltree().techs.includes(1452));
   }
 }
 

@@ -399,7 +399,7 @@
 
       {# Prompt when no unit selected #}
       <div id="uu-no-selection" class="text-center py-3">
-        <i class="fa-solid fa-person-rifle fa-2x mb-2" style="color: var(--accent-2); opacity:.5;"></i>
+        <i class="fa-solid fa-hand-fist fa-2x mb-2" style="color: var(--accent-2); opacity:.5;"></i>
         <div class="text-muted small">Select a unit above to continue.</div>
       </div>
 
@@ -903,6 +903,23 @@
   {# Summary sections (populated by JS) #}
   <div id="review-content" class="mb-3">
     <div class="text-muted small">Loading summary…</div>
+  </div>
+
+  {# Button layout — only shown when two of the civ's units share a training
+     button.  Filled by renderButtonLayout() from /api/builder/button-layout,
+     which runs the same planner the build uses. #}
+  <div class="card mb-3 d-none" id="button-layout-card">
+    <div class="card-header">
+      <i class="fa-solid fa-table-cells me-2"></i>Button Layout
+    </div>
+    <div class="card-body">
+      <p class="small mb-3">
+        Some of your units share a training button. One keeps its place on the
+        building's first page; the others move to a second page, with their
+        upgrades beneath them. Choose which unit stays on page 1.
+      </p>
+      <div id="button-layout-body"></div>
+    </div>
   </div>
 
   {# Save #}

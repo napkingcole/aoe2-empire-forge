@@ -1807,3 +1807,55 @@ img.card-main-image {
   opacity: 0.4;
 }
 .lrs-chip--selected .lrs-chip-none-icon { opacity: 0.7; }
+
+/* ── Button layout (wizard step 9) ────────────────────────────────────────── */
+/* A mini command panel per building: two 5x3 pages, the fifth column fixed   */
+/* (gather point, unused, page arrow) exactly as the game draws it.          */
+.bl-building { padding: 0.75rem 0; border-top: 1px solid var(--parch-deep); }
+.bl-building:first-child { border-top: 0; padding-top: 0; }
+.bl-title { font-weight: 700; color: var(--ink); margin-bottom: 0.5rem; }
+.bl-conflict { margin-bottom: 0.6rem; }
+.bl-conflict-label { font-size: 0.8rem; color: var(--ink-mid); margin-bottom: 0.3rem; }
+.bl-options { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.bl-option {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.2rem 0.6rem 0.2rem 0.3rem; border: 1px solid var(--parch-deep);
+  border-radius: 999px; background: var(--parch-light); cursor: pointer; font-size: 0.85rem;
+}
+.bl-option img { width: 24px; height: 24px; border-radius: 3px; }
+.bl-option input { margin: 0; accent-color: var(--crimson); }
+.bl-option:has(input:checked) { border-color: var(--crimson); box-shadow: 0 0 0 1px var(--crimson); }
+.bl-default {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--ink-mid); opacity: 0.75;
+}
+.bl-pages { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 0.5rem; }
+.bl-page-label { font-size: 0.75rem; color: var(--ink-mid); margin-bottom: 0.25rem; }
+.bl-grid {
+  display: grid; grid-template-columns: repeat(5, 50px); gap: 7px;
+  padding: 5px; background: var(--walnut); border: 1px solid var(--walnut-border); border-radius: 4px;
+}
+.bl-cell {
+  position: relative; width: 50px; height: 50px;
+  background: var(--walnut-mid); display: flex; align-items: center; justify-content: center;
+  color: var(--gold-pale); overflow: hidden;
+  border: 1px solid #484743;
+}
+.bl-cell img { width: 100%; height: 100%; object-fit: cover; }
+.bl-tech img { filter: saturate(0.6) brightness(0.85); }
+.bl-empty { background: rgba(255, 255, 255, 0.03); }
+.bl-fixed { background: transparent; font-size: 0.8rem; }
+.bl-moved { box-shadow: inset 0 0 0 2px var(--gold-light); }
+.bl-key {
+  position: absolute; left: 2px; bottom: 1px; font-size: 0.6rem; font-weight: 700;
+  line-height: 1; color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000;
+}
+.bl-up {
+  position: absolute; right: 2px; top: 1px; font-size: 0.55rem; color: var(--gold-light);
+  text-shadow: 0 0 2px #000;
+}
+.ui-arrow,
+.ui-gather-point {
+  width: 36px !important;
+  height: auto !important;
+}

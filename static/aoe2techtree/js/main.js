@@ -71,11 +71,12 @@ const _CAMP_NODE_DEFS = {
     },
 };
 
-// ── Regional unit mutual-exclusivity ─────────────────────────────────────────
-// Each group is ONE building button contested by two or more unit lines.  The
-// engine hands that cell to exactly one line, so a tree holding two reads
-// in-game as "my civ is missing a unit it clearly has".  Selecting any line
-// evicts every other line in its group.
+// ── Regional unit lines ──────────────────────────────────────────────────────
+// Each group is ONE building button shared by two or more unit lines.  These
+// used to be mutually exclusive — the engine drew one line per cell — until
+// the build learned to move the rest to the building's second page
+// (2026-09-26).  What remains is which line a blank civ starts with, and which
+// techs belong to a line.
 //
 // This was a two-sided `a`/`b` pair table until Viking Sagas (2026-09-22) made
 // two of the groups three-way — the Mounted Crossbowman joined the Archery
@@ -114,8 +115,8 @@ const _REGIONAL_GROUPS = [
     // Barracks button 4 — regional shock infantry.  The Fire Lancer is the
     // default side: five civs field one (Chinese, Jurchens, Khitans, Koreans,
     // Vietnamese) against the Eagle's two (Aztecs, Mayans).  The Varangian
-    // Guard finally has a tech-tree node of its own to evict, which is what it
-    // was waiting on — Byzantines and the four Viking civs field it.
+    // Guard joined with Viking Sagas — Byzantines and the four Viking civs
+    // field it.
     { bldg: 12, lines: [
         { name: "Fire Lancer line",     ids: [1901, 1903], standard: true },
         { name: "Eagle Warrior line",   ids: [751, 753, 752] },
@@ -1091,61 +1092,21 @@ function _toggleNode(item, element_height) {
                 _removeNodeCross(ancestor.id);
             }
         }
-        // Regional mutual exclusivity: one building button, one line.  Turning
-        // a line on evicts every other line contesting the same cell, and takes
-        // their line-owned techs with them.
-        const group = _REGIONAL_GROUPS.find(g =>
-            g.bldg === item.building_id &&
-            g.lines.some(l => l.ids.includes(item.node_id)
-                              || (l.techs || []).includes(item.node_id))
-        );
-        if (group) {
-            const mine = group.lines.find(l => l.ids.includes(item.node_id)
-                                               || (l.techs || []).includes(item.node_id));
-            // Ticking a line-owned tech means wanting the line.  Cranequins has
-            // no ancestry to the Mounted Crossbowman in the layout (the game
-            // links it to Thumb Ring), so the generic ancestor cascade above
-            // cannot pull the unit in — do it here, or the user ends up with a
-            // research node and nothing to research it on.
-            if ((mine.techs || []).includes(item.node_id)) {
-                for (const uid of mine.ids) {
-                    const uItem = _nodeIndex[`${group.bldg}_${uid}`];
-                    if (uItem && !_localtree.units.includes(uid)) {
-                        _localtree.units.push(uid);
-                        _removeNodeCross(uItem.id);
-                    }
-                }
-            }
-            const evictedNames = [];
-            for (const line of group.lines) {
-                if (line === mine) continue;
-                let hit = false;
-                for (const uid of line.ids) {
-                    const oItem = _nodeIndex[`${group.bldg}_${uid}`];
-                    if (oItem && _localtree.units.includes(uid)) {
-                        _disableSingle(oItem, element_height);
-                        hit = true;
-                    }
-                }
-                // A line's own techs go with it, or the tree keeps a research
-                // node whose only target has just been evicted.
-                for (const tid of (line.techs || [])) {
-                    const tItem = _nodeIndex[`${group.bldg}_${tid}`];
-                    if (tItem && _localtree.techs.includes(tid)) {
-                        _disableSingle(tItem, element_height);
-                        hit = true;
-                    }
-                }
-                if (hit) evictedNames.push(line.name);
-            }
-            if (evictedNames.length && typeof window.showToast === 'function') {
-                const list = evictedNames.length === 1
-                    ? evictedNames[0]
-                    : `${evictedNames.slice(0, -1).join(', ')} and ${evictedNames.slice(-1)}`;
-                window.showToast(
-                    `${list} removed — ${group.lines.map(l => l.name).join(', ')} `
-                    + `share one building slot, so only one may be selected at a time.`
-                );
+        // Lines that share a building button no longer evict each other: the
+        // build moves every line after the first to the building's second page
+        // (civ_appender._resolve_button_collisions, confirmed in-game
+        // 2026-09-26), so a civ may have as many as it likes.
+        //
+        // Ticking a line-owned tech still means wanting its line, so add the
+        // line's first unit — only that.  Cranequins works on the plain Mounted
+        // Crossbowman, so it must not drag the Heavy upgrade in too.
+        const owner = _lineOwningTech(item);
+        if (owner) {
+            const uid = owner.line.ids[0];
+            const uItem = _nodeIndex[`${owner.bldg}_${uid}`];
+            if (uItem && !_localtree.units.includes(uid)) {
+                _localtree.units.push(uid);
+                _removeNodeCross(uItem.id);
             }
         }
     } else {
@@ -1156,7 +1117,31 @@ function _toggleNode(item, element_height) {
             _disableSingle(desc, element_height);
             if (desc.use_type === 'Building') _disableBuildingItems(desc, element_height);
         }
+        // A line's own techs leave with its last unit, or the tree keeps a
+        // research node with nothing to research it on.
+        for (const group of _REGIONAL_GROUPS) {
+            for (const line of group.lines) {
+                if (!(line.techs || []).length || !line.ids.includes(item.node_id)) continue;
+                if (line.ids.some(uid => _localtree.units.includes(uid))) continue;
+                for (const tid of line.techs) {
+                    const tItem = _nodeIndex[`${group.bldg}_${tid}`];
+                    if (tItem && _localtree.techs.includes(tid)) _disableSingle(tItem, element_height);
+                }
+            }
+        }
     }
+}
+
+// The regional line that owns a research node (Cranequins -> Mounted
+// Crossbowman), or null.
+function _lineOwningTech(item) {
+    if (item.use_type !== 'Tech') return null;
+    for (const group of _REGIONAL_GROUPS) {
+        if (group.bldg !== item.building_id) continue;
+        const line = group.lines.find(l => (l.techs || []).includes(item.node_id));
+        if (line) return { bldg: group.bldg, line };
+    }
+    return null;
 }
 
 // ── Edit-mode hover tooltip ───────────────────────────────────────────────────

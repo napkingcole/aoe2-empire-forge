@@ -1839,7 +1839,8 @@
       "node_type": "RegionalTech",
       "picture_index": 56,
       "row": 7,
-      "use_type": "Tech"
+      "use_type": "Tech",
+      "independent": true
     },
     {
       "age_id": 1,

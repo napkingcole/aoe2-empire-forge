@@ -4,6 +4,7 @@ civ_appender.py — Append or overwrite a civilization in an AoE2 DE DatFile.
 
 import json
 import re
+from collections import Counter, defaultdict
 from copy import deepcopy
 from pathlib import Path
 
@@ -1378,31 +1379,657 @@ def _train_button(dat: DatFile, civ_index: int, unit_id: int) -> tuple[int, int]
     return None if loc.unit_id < 0 else (loc.unit_id, loc.button_id)
 
 
-def _warn_train_button_conflicts(dat: DatFile, civ_index: int, civ_def: dict | None,
-                                 spec: dict) -> None:
-    """Warn when an unlocked unit shares a training button with a tree unit.
+# ── Button pages ─────────────────────────────────────────────────────────────
+# A building's command panel is a 5x3 grid, and the engine adds a second page on
+# its own: buttons 21-35 are page 2, and the page arrows appear as soon as any
+# button there is used (confirmed in-game 2026-09-25).  There is no page 3.  The
+# fifth column of each page is reserved — gather point (5/25), the page arrow
+# (15/35) and nothing vanilla ever uses (10/30) — leaving four slots per row.
+#
+# Before this, two lines on one (building, button) meant only one was
+# reachable.  _resolve_button_collisions keeps one line on page 1 and moves the
+# rest, whole upgrade line and all, to the next free page-2 slot.
+_PAGE2_SLOTS = (21, 22, 23, 24, 26, 27, 28, 29, 31, 32, 33, 34)
+_PAGE2_USABLE = frozenset(_PAGE2_SLOTS)
+_PAGE_ARROW_BUTTON = 15      # a real slot until page 2 exists (Thirisadai, doctrines)
 
-    Two units on the same (building, button) means only one of them is reachable
-    in-game.  We do NOT silently hide the tree unit: the tech tree is where the
-    standard line's on/off decision lives, so overriding it from a bonus card
-    would move that choice somewhere the user can't see it.  Warn instead and
-    let them drop one side.
+# Which line keeps page 1 when several share a slot, keyed by (building,
+# button); the first line present wins and the rest go to page 2 in this order.
+# Any member of a line names it.  Lines not listed follow, by lowest unit id.
+# The player can override the winner per slot (civ_def["button_moves"]).
+_PAGE_ONE_PRIORITY: dict[tuple[int, int], tuple[int, ...]] = {
+    (12, 1):   (74, 2550),                              # Militia line, Champi
+    (12, 4):   (751, 1901, 1699, 1974, 2582, 2586, 2703, 41),  # Eagle, Fire Lancer, Flemish, Jian, Ibirapema, Temple Guard, Varangian Guard, Huskarl (Anarchy)
+    (49, 1):   (1258, 1744),                            # Ram line, Armored Elephant
+    (49, 2):   (280, 1904),                             # Mangonel line, Rocket Cart
+    (49, 3):   (279, 1962),                             # Scorpion line, War Chariot
+    (49, 4):   (36, 1942, 1923),                        # Bombard Cannon, Traction / Mounted Trebuchet
+    (87, 3):   (39, 873, 2569, 1952, 2700),             # Cavalry Archer, Elephant Archer, Bolas, Xianbei, Mounted Crossbowman
+    (87, 4):   (5, 185, 1911),                          # Hand Cannoneer, Slinger, Grenadier
+    (101, 2):  (38, 1751, 1944),                        # Knight line, Shrivamsha, Hei Guang
+    (101, 4):  (1370, 1132, 755),                       # Steppe Lancer, Battle Elephant, Tarkan (Marauders)
+    (104, 14): (1811, 2586),                            # Warrior Priest, Temple Guard
+}
+
+
+def _upgrade_neighbours(dat: DatFile) -> dict[int, set[int]]:
+    """unit id -> units an EC_UPGRADE anywhere connects it to (either way)."""
+    out: dict[int, set[int]] = {}
+    for tech in dat.techs:
+        if 0 <= tech.effect_id < len(dat.effects):
+            for ec in dat.effects[tech.effect_id].effect_commands:
+                if ec.type == EC_UPGRADE and ec.a >= 0 and ec.b >= 0:
+                    out.setdefault(int(ec.a), set()).add(int(ec.b))
+                    out.setdefault(int(ec.b), set()).add(int(ec.a))
+    return out
+
+
+def _grid_hotkeys(dat: DatFile) -> tuple[dict, dict]:
+    """Hotkey ids by page-1 grid position: ({(building, pos): id}, {pos: id}).
+
+    `hot_key_id` names a rebindable ACTION, not a key; its default key follows
+    the grid (Q W E R / A S D F / Z X C V).  Reusing the id of whatever sits at
+    the same page-1 position gives a page-2 button the same key — an id from a
+    different building works too (tested 2026-09-25), hence the fallback.
+    Majority vote, so a page-1 slot we have already moved doesn't skew it.
     """
-    if not civ_def:
-        return
-    tree_units = _tree_unit_ids(civ_def)
-    if not tree_units:
-        return
+    by_bldg: dict = defaultdict(Counter)
+    by_pos: dict = defaultdict(Counter)
 
-    slots = {b for uid in spec["units"] if (b := _train_button(dat, civ_index, uid))}
-    clashes = sorted(
-        uid for uid in tree_units
-        if uid not in spec["units"] and _train_button(dat, civ_index, uid) in slots
-    )
-    if clashes:
-        print(f"       WARNING: {spec['name']} shares a training button with "
-              f"tree unit(s) {unit_labels(dat, civ_index, clashes)} — only one "
-              f"will be reachable in-game")
+    def note(bldg, pos, hk):
+        if bldg >= 0 and 1 <= pos <= 14 and hk > 0:
+            by_bldg[(bldg, pos)][hk] += 1
+            by_pos[pos][hk] += 1
+
+    for civ in dat.civs:
+        for u in civ.units:
+            if u is not None and u.creatable is not None:
+                for tl in u.creatable.train_locations:
+                    note(tl.unit_id, tl.button_id, tl.hot_key_id)
+    for tech in dat.techs:
+        for rl in tech.research_locations:
+            note(rl.location_id, rl.button_id, rl.hot_key_id)
+    return ({k: c.most_common(1)[0][0] for k, c in by_bldg.items()},
+            {k: c.most_common(1)[0][0] for k, c in by_pos.items()})
+
+
+def _runtime_train_locations(dat: DatFile, civ_index: int) -> dict[tuple[int, int], int]:
+    """(unit, train-location index) -> building, as this civ's own techs set it in-game.
+
+    Marauders and Anarchy don't list the Stable/Barracks as a train location:
+    the unit carries a dormant (-1, button 4) entry, and the tech points it at
+    the building with EC_SET attr 158 (which entry) then attr 42 (where).  So a
+    civ with Marauders and Battle Elephants clashes on Stable 4 only in-game —
+    this makes those slots visible to the resolver.  Only techs the civ owns
+    (its UT and bonus copies) count.
+    """
+    out: dict[tuple[int, int], int] = {}
+    for tech in dat.techs:
+        if tech.civ != civ_index or not (0 <= tech.effect_id < len(dat.effects)):
+            continue
+        entry: dict[int, int] = {}
+        for ec in dat.effects[tech.effect_id].effect_commands:
+            if ec.type != EC_SET or ec.a < 0:
+                continue
+            if int(ec.c) == 158:
+                entry[int(ec.a)] = int(ec.d)
+            elif int(ec.c) == 42 and ec.d >= 0:
+                out[(int(ec.a), entry.get(int(ec.a), 0))] = int(ec.d)
+    return out
+
+
+def _ftt_movers(dat: DatFile) -> dict[int, set[int]]:
+    """Conditional "[FTT] Move ..." techs -> the units they re-position.
+
+    DE untangles "all techs" games with these: global auto-fire techs that
+    rewrite a unit's train button once a civ owns a clashing pair (Shrivamsha +
+    Knight -> Shrivamsha to button 22; add Elite Battle Elephant -> button 9).
+    A custom civ can own the same pair in a normal game, and then the tech
+    overrides the resolver's layout (seen in-game 2026-09-26).  The
+    unconditional ones ([FTT] Adjust Regionals Positions) only run in an
+    all-techs lobby and are left alone.
+    """
+    out: dict[int, set[int]] = {}
+    for tid, tech in enumerate(dat.techs):
+        if not tech.name.startswith("[FTT]") or tech.required_tech_count <= 0:
+            continue
+        if not (0 <= tech.effect_id < len(dat.effects)):
+            continue
+        moved = {int(ec.a) for ec in dat.effects[tech.effect_id].effect_commands
+                 if ec.type == EC_SET and int(ec.c) in (42, 43) and ec.a >= 0}
+        if moved:
+            out[tid] = moved
+    return out
+
+
+def _button_picks(civ_def: dict) -> dict[tuple[int, int], int]:
+    """civ_def["button_moves"] -> {(building, button): unit that keeps page 1}."""
+    picks = {}
+    for entry in civ_def.get("button_moves") or []:
+        if isinstance(entry, dict) and "page_one" in entry:
+            try:
+                picks[(int(entry["building"]), int(entry["button"]))] = int(entry["page_one"])
+            except (KeyError, TypeError, ValueError):
+                continue
+    return picks
+
+
+def _plan_button_layout(dat: DatFile, units, present: set[int],
+                        runtime: dict[tuple[int, int], int], tech_ok,
+                        picks: dict[tuple[int, int], int]) -> dict:
+    """Decide which lines keep page 1 and where the rest go.  Reads, never writes.
+
+    Shared by the build (_resolve_button_collisions) and the wizard's preview
+    (button_layout_preview), so what the player is shown is what gets built.
+
+      units    the civ's unit list (the built civ, or the Britons template it clones)
+      present  unit ids the civ can have
+      runtime  (unit, train-location index) -> building set by the civ's own techs
+      tech_ok  tech id -> can this civ research it
+      picks    (building, button) -> unit whose line keeps page 1
+
+    Returns {"conflicts": [...], "moves": [...]}: a conflict lists a slot's lines
+    in page order (winner first) with the default winner; a move is one line
+    leaving (building, button) for page-2 slot "to" (None when the building is
+    full), with its techs as (tech id, research-location index, new button).
+    """
+    def building_of(uid, idx, tl):
+        return runtime.get((uid, idx), tl.unit_id)
+
+    slot_units: dict[tuple[int, int], set[int]] = defaultdict(set)
+    for uid, u in enumerate(units):
+        if u is not None and u.creatable is not None:
+            for idx, tl in enumerate(u.creatable.train_locations):
+                bldg = building_of(uid, idx, tl)
+                if bldg >= 0 and tl.button_id > 0:
+                    slot_units[(bldg, tl.button_id)].add(uid)
+
+    neighbours = _upgrade_neighbours(dat)
+
+    def lines_at(slot) -> list[set[int]]:
+        """Upgrade lines sharing `slot` that the civ has, joined only within it."""
+        members = slot_units.get(slot, set())
+        seen: set[int] = set()
+        found = []
+        for uid in sorted(members):
+            if uid in seen:
+                continue
+            line, stack = {uid}, [uid]
+            while stack:
+                for nxt in neighbours.get(stack.pop(), ()):
+                    if nxt in members and nxt not in line:
+                        line.add(nxt)
+                        stack.append(nxt)
+            seen |= line
+            if line & present:
+                found.append(line)
+        return found
+
+    def default_order(slot, lines):
+        prio = _PAGE_ONE_PRIORITY.get(slot, ())
+
+        def rank(line):
+            hits = [prio.index(u) for u in line if u in prio]
+            return (min(hits) if hits else len(prio), min(line))
+        return sorted(lines, key=rank)
+
+    conflicts: list[dict] = []
+    movers: dict[int, list[tuple[int, set[int]]]] = defaultdict(list)
+    for slot in sorted(slot_units):
+        if slot[1] >= 21:
+            continue
+        found = lines_at(slot)
+        if len(found) <= 1:
+            continue
+        by_default = default_order(slot, found)
+        lines = by_default
+        pick = picks.get(slot)
+        if pick is not None and any(pick in l for l in lines):
+            lines = [l for l in lines if pick in l] + [l for l in lines if pick not in l]
+        conflicts.append({"building": slot[0], "button": slot[1],
+                          "lines": [sorted(l) for l in lines], "default": sorted(by_default[0]),
+                          # stable order for a picker, whatever was picked
+                          "default_order": [sorted(l) for l in by_default]})
+        for line in lines[1:]:
+            movers[slot[0]].append((slot[1], line))
+    # A page 2 turns button 15 into the page arrow, so whatever sat there moves too.
+    for bldg in list(movers):
+        for line in lines_at((bldg, _PAGE_ARROW_BUTTON)):
+            movers[bldg].append((_PAGE_ARROW_BUTTON, line))
+
+    effects = dat.effects
+
+    def line_techs(bldg, line):
+        """Techs this civ can research at `bldg` that belong to `line`.
+
+        Its upgrades (EC_UPGRADE into the line), and techs that require the
+        line's make-avail tech — Cranequins, which improves the Mounted
+        Crossbowman, shares Archery Range button 13 with Parthian Tactics and
+        so has to move with its line (in-game 2026-09-26).  Across the DAT that
+        second rule matches only Cranequins, so it catches no bystanders.
+        """
+        make_avail = {tid for tid, t in enumerate(dat.techs)
+                      if 0 <= t.effect_id < len(effects)
+                      and any(ec.type == EC_ENABLE and int(ec.b) == 1 and int(ec.a) in line
+                              for ec in effects[t.effect_id].effect_commands)}
+        out = []
+        for tid, tech in enumerate(dat.techs):
+            if not tech_ok(tid) or not (0 <= tech.effect_id < len(effects)):
+                continue
+            upgrades = any(ec.type == EC_UPGRADE and int(ec.b) in line
+                           for ec in effects[tech.effect_id].effect_commands)
+            if not upgrades and not (set(tech.required_techs) & make_avail):
+                continue
+            for i, rl in enumerate(tech.research_locations):
+                if rl.location_id == bldg and 0 < rl.button_id < 21:
+                    out.append((tid, i))
+        return out
+
+    moves: list[dict] = []
+    for bldg, moving in movers.items():
+        taken = {btn for (b, btn), uids in slot_units.items()
+                 if b == bldg and btn >= 21 and uids & present}
+        taken |= {rl.button_id for tid, t in enumerate(dat.techs) if tech_ok(tid)
+                  for rl in t.research_locations if rl.location_id == bldg and rl.button_id >= 21}
+        plans = [(old, line, line_techs(bldg, line)) for old, line in moving]
+        # Lines with upgrades need the slot below them too, so they go first.
+        plans.sort(key=lambda p: not p[2])
+        for old, line, techs in plans:
+            offsets = {dat.techs[t].research_locations[i].button_id - old for t, i in techs}
+            slot = next((s for s in _PAGE2_SLOTS if s not in taken
+                         and all(s + d in _PAGE2_USABLE and s + d not in taken for d in offsets)),
+                        None)
+            if slot is None:
+                slot = next((s for s in _PAGE2_SLOTS if s not in taken), None)
+            if slot is None:
+                moves.append({"building": bldg, "button": old, "units": sorted(line),
+                              "to": None, "techs": []})
+                continue
+            taken.add(slot)
+            placed = []
+            own_slots: set[int] = set()     # a line's upgrades stack in one slot, as on page 1
+            for tid, i in techs:
+                want = slot + dat.techs[tid].research_locations[i].button_id - old
+                if want not in _PAGE2_USABLE or (want in taken and want not in own_slots):
+                    want = next((s for s in _PAGE2_SLOTS if s not in taken), None)
+                    if want is None:
+                        continue
+                taken.add(want)
+                own_slots.add(want)
+                placed.append((tid, i, want))
+            moves.append({"building": bldg, "button": old, "units": sorted(line),
+                          "to": slot, "techs": placed})
+    return {"conflicts": conflicts, "moves": moves}
+
+
+def _units_enabled_by(dat: DatFile, tech_id: int) -> set[int]:
+    """Units a tech makes available (its EC_ENABLE show commands)."""
+    if not (0 <= tech_id < len(dat.techs)):
+        return set()
+    eid = dat.techs[tech_id].effect_id
+    if not (0 <= eid < len(dat.effects)):
+        return set()
+    return {int(ec.a) for ec in dat.effects[eid].effect_commands
+            if ec.type == EC_ENABLE and int(ec.b) == 1 and ec.a >= 0}
+
+
+def _team_bonus_units(dat: DatFile, civ_def: dict) -> set[int]:
+    """Units the civ's team bonuses make trainable — the Genitour, from team bonus 1.
+
+    Read from the same commands _apply_bonuses writes: the vanilla effect while
+    it still has any, else the catalog fallback (Viking Sagas emptied the
+    Genitour, Llama and Condottiero effects).  The unit arrives as an EC_ENABLE,
+    a tech unlock (type 8), or — before Viking Sagas — a cost-gate release
+    (type 101/103 zeroing the make-avail tech's cost and time).
+    """
+    out: set[int] = set()
+    for entry in get_team_bonuses(civ_def):
+        if not isinstance(entry, (list, tuple)) or not entry:
+            continue
+        tb_id = int(entry[0])
+        eff_idx = team_bonus_tech(tb_id)
+        cmds = []
+        if eff_idx is not None and 0 <= eff_idx < len(dat.effects):
+            cmds = [(ec.type, int(ec.a), int(ec.b))
+                    for ec in dat.effects[eff_idx].effect_commands]
+        if not cmds:
+            cmds = [(c["type"], int(c["A"]), int(c["B"])) for c in team_bonus_ec_list(tb_id)]
+        for kind, a, b in cmds:
+            if kind == EC_ENABLE and b == 1:
+                out.add(a)
+            elif kind in (8, EC_TECH_COST, EC_TECH_TIME):
+                # type 8 unlocks the make-avail tech (Viking Sagas onward);
+                # before that the bonus released DE's cost gate by zeroing the
+                # tech's cost (101) and time (103).  Either way, it's a grant.
+                out |= _units_enabled_by(dat, a)
+    return out
+
+
+def _civ_present_units(civ_def: dict, dat: DatFile | None = None) -> set[int]:
+    """Units the civ can have: its tree, what its "Unlock ..." cards bring along
+    (a KM-format civ can carry the card without the unit in tree[0]), and — given
+    the DAT — what its team bonuses grant.
+    """
+    present = set(_tree_unit_ids(civ_def))
+    for entry in get_civ_bonuses(civ_def):
+        if isinstance(entry, (list, tuple)) and entry:
+            spec = _UNLOCK_UNIT_BONUSES.get(int(entry[0]))
+            if spec:
+                present |= set(spec["units"])
+    if dat is not None:
+        present |= _team_bonus_units(dat, civ_def)
+    return present
+
+
+# Tech 104 "Dark Age" fires for every civ at the start and switches a handful of
+# techs off for good — Supplies among them, since DE removed it.  The preview
+# honours that list; the build never needs to, since the game does it anyway.
+_DARK_AGE_TECH = 104
+
+# Display names where the game's string reads oddly out of context.
+_DISPLAY_NAMES = {1962: "War Chariot"}      # "War Chariot (Focus Fire)"
+
+
+_GRID_KEYS = "QWERASDFZXCV"
+
+
+def _grid_key(button: int) -> str:
+    """Default key for a grid position (Q W E R / A S D F / Z X C V), '' for column 5."""
+    pos = (button - 1) % 20 + 1
+    row, col = divmod(pos - 1, 5)
+    return _GRID_KEYS[row * 4 + col] if col < 4 and row < 3 else ""
+
+
+def button_layout_preview(dat: DatFile, civ_def: dict, tree_techs: set[int]) -> list[dict]:
+    """The wizard's view of what _resolve_button_collisions will build.
+
+    Same planner, fed from the draft instead of a built civ: the Britons
+    template the build clones (civ 1), the draft's units, and a tech counts when
+    it is global and not an unticked tree node, or belongs to an unlock card.
+    Reads the (shared, cached) DAT and never writes it.
+
+    One known gap: units the civ's own techs place in a building in-game
+    (Anarchy's UU in the Barracks) only exist once the civ is built, so they are
+    not in the preview; the build still resolves them, with the default order.
+
+    Returns one entry per building with a clash: its conflicts (each slot's
+    lines, current winner first) and both pages as 15 cells each.
+    """
+    units = dat.civs[1].units
+    present = _civ_present_units(civ_def, dat)
+    if not present:
+        return []
+    unticked = _editor_nodes()["techs"] - set(tree_techs)
+    card_techs = {t for entry in get_civ_bonuses(civ_def)
+                  if isinstance(entry, (list, tuple)) and entry
+                  and (spec := _UNLOCK_UNIT_BONUSES.get(int(entry[0])))
+                  for t in spec["techs"]}
+
+    dark_age = dat.techs[_DARK_AGE_TECH] if _DARK_AGE_TECH < len(dat.techs) else None
+    never = ({int(ec.d) for ec in dat.effects[dark_age.effect_id].effect_commands if ec.type == 102}
+             if dark_age is not None and 0 <= dark_age.effect_id < len(dat.effects) else set())
+
+    def tech_ok(tid):
+        tech = dat.techs[tid]
+        if tid in never:
+            return False
+        if tid in card_techs:
+            return True
+        return tech.civ == -1 and tid not in unticked
+
+    picks = _button_picks(civ_def)
+    plan = _plan_button_layout(dat, units, present, {}, tech_ok, picks)
+    if not plan["conflicts"]:
+        return []
+
+    neighbours = _upgrade_neighbours(dat)
+    upgrades_from: dict[int, int] = {}          # unit -> the unit an EC_UPGRADE turns it into
+    upgrade_target: dict[int, int] = {}         # tech -> unit it upgrades to
+    upgrade_sources: dict[int, set[int]] = defaultdict(set)   # tech -> units it upgrades from
+    for tid, tech in enumerate(dat.techs):
+        if 0 <= tech.effect_id < len(dat.effects):
+            for ec in dat.effects[tech.effect_id].effect_commands:
+                if ec.type == EC_UPGRADE and ec.a >= 0 and ec.b >= 0:
+                    upgrades_from.setdefault(int(ec.a), int(ec.b))
+                    upgrade_target.setdefault(tid, int(ec.b))
+                    upgrade_sources[tid].add(int(ec.a))
+
+    def unit_name(uid):
+        u = units[uid]
+        return _DISPLAY_NAMES.get(uid) or _string_table().get(u.language_dll_name) or u.name
+
+    # Which page-1 techs could this civ actually research?  The game only shows
+    # a tech once its prerequisites are met, so the preview must not list the
+    # Eagle Warrior upgrade for a civ without Eagles (seen 2026-09-27: it sat
+    # under the Fire Lancer), nor Champi upgrades under Man-at-Arms.
+    make_avail = {tid: u for tid in range(len(dat.techs)) if (u := _units_enabled_by(dat, tid))}
+    reachable = set(present)
+    frontier = list(present)
+    while frontier:                       # everything the civ's units upgrade into
+        nxt = upgrades_from.get(frontier.pop())
+        if nxt is not None and nxt not in reachable:
+            reachable.add(nxt)
+            frontier.append(nxt)
+
+    def attainable(tid):
+        if not (0 <= tid < len(dat.techs)) or tid in never:
+            return False
+        tech = dat.techs[tid]
+        # A cost gate: auto-fire (nowhere to research it) yet it costs something,
+        # so it can never be paid — "Paphos Shadow Tech" (1138), which is why the
+        # Chronicles copies of Two-Handed Swordsman / Champion never appear.
+        if (tech.research_locations
+                and all(r.location_id == -1 for r in tech.research_locations)
+                and any(c.type >= 0 and c.amount > 0 and c.flag for c in tech.resource_costs)):
+            return False
+        if tid in make_avail:
+            return bool(make_avail[tid] & present)
+        return tech.civ == -1 or tid in card_techs
+
+    def relevant(tid):
+        tech = dat.techs[tid]
+        if tid in make_avail and not (make_avail[tid] & present):
+            return False
+        ups = upgrade_sources.get(tid)
+        if ups and not (ups & reachable):
+            return False
+        reqs = [r for r in tech.required_techs if r >= 0]
+        return sum(1 for r in reqs if attainable(r)) >= min(tech.required_tech_count, len(reqs))
+
+    def tech_name(tid):
+        t = dat.techs[tid]
+        return _string_table().get(t.language_dll_name) or t.name
+
+    def base_of(line):
+        """The line's first tier: the member nothing in the line upgrades into."""
+        targets = {upgrades_from[u] for u in line if u in upgrades_from}
+        return min((u for u in line if u not in targets), default=min(line))
+
+    moves_by_bldg: dict[int, list[dict]] = defaultdict(list)
+    for m in plan["moves"]:
+        moves_by_bldg[m["building"]].append(m)
+    conflicts_by_bldg: dict[int, list[dict]] = defaultdict(list)
+    for c in plan["conflicts"]:
+        conflicts_by_bldg[c["building"]].append(c)
+
+    out = []
+    for bldg, conflicts in sorted(conflicts_by_bldg.items()):
+        moves = moves_by_bldg.get(bldg, [])
+        moved_units = {u for m in moves for u in m["units"]}
+        moved_techs = {(t, i) for m in moves for t, i, _ in m["techs"]}
+        cells: dict[int, list[dict]] = defaultdict(list)
+
+        # Units that stay: every present line on page 1 minus the movers, one cell per line.
+        at_slot: dict[int, set[int]] = defaultdict(set)
+        for uid in present - moved_units:
+            u = units[uid] if uid < len(units) else None
+            if u is not None and u.creatable is not None:
+                for tl in u.creatable.train_locations:
+                    if tl.unit_id == bldg and 0 < tl.button_id <= 15:
+                        at_slot[tl.button_id].add(uid)
+        for btn, uids in at_slot.items():
+            left = set(uids)
+            while left:
+                line, stack = set(), [min(left)]
+                while stack:
+                    v = stack.pop()
+                    if v in left:
+                        left.discard(v)
+                        line.add(v)
+                        stack.extend(neighbours.get(v, ()))
+                base = base_of(line)
+                cells[btn].append({"kind": "unit", "id": base, "name": unit_name(base),
+                                   "units": sorted(line)})
+        # Techs that stay on page 1.
+        for tid, tech in enumerate(dat.techs):
+            if not tech_ok(tid) or not relevant(tid):
+                continue
+            for i, rl in enumerate(tech.research_locations):
+                if rl.location_id == bldg and 0 < rl.button_id <= 15 and (tid, i) not in moved_techs:
+                    cells[rl.button_id].append({"kind": "tech", "id": tid, "name": tech_name(tid),
+                                                "upgrades_to": upgrade_target.get(tid)})
+        # Page 2: the movers and their techs.
+        overflow = []
+        for m in moves:
+            base = base_of(set(m["units"]))
+            if m["to"] is None:
+                overflow.append(unit_name(base))
+                continue
+            cells[m["to"]].append({"kind": "unit", "id": base, "name": unit_name(base),
+                                   "units": m["units"], "moved": True})
+            for tid, i, want in m["techs"]:
+                cells[want].append({"kind": "tech", "id": tid, "name": tech_name(tid),
+                                    "upgrades_to": upgrade_target.get(tid), "moved": True})
+
+        def page(first):
+            grid = []
+            for b in range(first, first + 15):
+                col = (b - first) % 5
+                if b - first == 4:
+                    grid.append({"button": b, "kind": "gather"})
+                elif b - first == 14:
+                    grid.append({"button": b, "kind": "arrow"})
+                elif col == 4:
+                    grid.append({"button": b, "kind": "reserved"})
+                else:
+                    stack = cells.get(b, [])
+                    # Units first, then techs in research order: a tech the
+                    # others in the slot require comes before them (Man-at-Arms,
+                    # then Long Swordsman, ...), as the game shows them.
+                    ids = {c["id"] for c in stack if c["kind"] == "tech"}
+                    stack = sorted(stack, key=lambda c: (
+                        c["kind"] != "unit",
+                        len(set(dat.techs[c["id"]].required_techs) & ids) if c["kind"] == "tech" else 0,
+                        c["id"]))
+                    grid.append({"button": b, "key": _grid_key(b),
+                                 "kind": stack[0]["kind"] if stack else "empty",
+                                 "items": stack})
+            return grid
+
+        out.append({
+            "building": bldg,
+            "name": unit_name(bldg),
+            "conflicts": [{
+                "button": c["button"],
+                "lines": [{"base": base_of(set(l)), "name": unit_name(base_of(set(l))),
+                           "units": l} for l in c["default_order"]],
+                "winner": base_of(set(c["lines"][0])),
+                "default": base_of(set(c["default"])),
+            } for c in conflicts],
+            "pages": [page(1), page(21)],
+            "overflow": overflow,
+        })
+    return out
+
+
+def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict) -> list[dict]:
+    """Move colliding unit lines to the building's second page.  Returns a log.
+
+    Runs after the tree and bonuses have enabled everything.  Only lines the civ
+    actually has count, so a civ without clashes is left untouched.  A moving
+    line takes its whole upgrade chain along — both units must share a slot or
+    EC_UPGRADE stops redirecting the train button (quirk 3) — and its techs
+    follow one row below the unit, as on page 1.  _plan_button_layout decides;
+    this applies.
+
+    Units are per-civ in the DAT, so they are edited in place.  Techs are
+    shared by every civ, so a tech that has to move gets a private copy for
+    this civ and the original is disabled for it (the _allocate_tech pattern).
+    """
+    present = _civ_present_units(civ_def, dat)
+    # ...and units its own techs place in a building in-game (Anarchy).
+    runtime = _runtime_train_locations(dat, civ_index)
+    present |= {uid for uid, _ in runtime}
+    if not present:
+        return []
+    units = dat.civs[civ_index].units
+    tt_eff = dat.effects[dat.civs[civ_index].tech_tree_id]
+    disabled = {int(ec.d) for ec in tt_eff.effect_commands if ec.type == 102}
+
+    # This layout is authoritative, so DE's all-techs movers must not rewrite it.
+    for tid, moved in sorted(_ftt_movers(dat).items()):
+        if moved & present and tid not in disabled:
+            tt_eff.effect_commands.append(
+                EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(tid)))
+            disabled.add(tid)
+
+    def tech_ok(tid):
+        return dat.techs[tid].civ in (-1, civ_index) and tid not in disabled
+
+    plan = _plan_button_layout(dat, units, present, runtime, tech_ok, _button_picks(civ_def))
+    if not plan["moves"]:
+        return []
+
+    hk_by_bldg, hk_by_pos = _grid_hotkeys(dat)
+
+    def hotkey(bldg, button, fallback):
+        pos = button - 20
+        return hk_by_bldg.get((bldg, pos), hk_by_pos.get(pos, fallback))
+
+    log: list[dict] = []
+    copies: dict[int, int] = {}                      # original tech -> private copy
+    for move in plan["moves"]:
+        bldg, old, slot = move["building"], move["button"], move["to"]
+        if slot is None:
+            log.append(dict(move))
+            continue
+        for uid in move["units"]:
+            for idx, tl in enumerate(units[uid].creatable.train_locations):
+                if runtime.get((uid, idx), tl.unit_id) == bldg and tl.button_id == old:
+                    tl.button_id = slot
+                    tl.hot_key_id = hotkey(bldg, slot, tl.hot_key_id)
+        moved_techs = []
+        for tid, i, want in move["techs"]:
+            own = tid
+            if dat.techs[tid].civ != civ_index:
+                if tid not in copies:
+                    copy = deepcopy(dat.techs[tid])
+                    copy.civ = civ_index
+                    copies[tid] = _append_tech(dat, copy)
+                    # Drop the tree's unlock of the original as well as
+                    # disabling it: with both a type=8 and a later type=102,
+                    # the original STILL showed on page 1 (Elite Battle
+                    # Elephant over Elite Steppe Lancer, in-game 2026-09-26).
+                    tt_eff.effect_commands = [
+                        ec for ec in tt_eff.effect_commands
+                        if not (ec.type == 8 and int(ec.a) == tid)]
+                    tt_eff.effect_commands.append(
+                        EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(tid)))
+                own = copies[tid]
+            rl = dat.techs[own].research_locations[i]
+            rl.button_id = want
+            rl.hot_key_id = hotkey(bldg, want, rl.hot_key_id)
+            moved_techs.append(own)
+        log.append({"building": bldg, "button": old, "units": move["units"],
+                    "to": slot, "techs": moved_techs})
+        print(f"       Page 2: {unit_labels(dat, civ_index, move['units'])} at "
+              f"{unit_label(dat, civ_index, bldg)} button {old} -> {slot}"
+              + (f" (+{len(moved_techs)} tech(s))" if moved_techs else ""))
+    # A copied upgrade must still satisfy whatever named the original (the next
+    # upgrade in the chain, most often) — the other half of quirk 9.
+    for original, copy_tid in copies.items():
+        _add_alt_prereq(dat, original, copy_tid)
+    return log
 
 
 def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
@@ -1677,7 +2304,7 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
     # Only 773 needs claiming: 774 ("Flemish Militia Age3", +15 HP and attack)
     # is civ=-1, so it fires on its own once the unit exists.
     # Shares Barracks button 4 with the Eagle Warrior and Fire Lancer —
-    # _warn_button_collision already covers that at build time.
+    # _resolve_button_collisions moves whichever loses to page 2.
     428: {"name": "Flemish Militia",  "techs": (773,),       "units": (1699,)},
 }
 
@@ -2240,7 +2867,6 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             return True
         print(f"       {spec['name']} unlocked: {len(allocated)} techs allocated "
               f"{spec['techs']}→{tuple(allocated)}")
-        _warn_train_button_conflicts(dat, civ_index, civ_def, spec)
         return True
 
     if bonus_id == 155:          # {ELITE_BATTLE_ELEPHANT, Royal Battle Elephant} free
@@ -4591,6 +5217,19 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     if _n_locked:
         print(f"       Opt-in lockdown: {_n_locked} unclaimed regional techs disabled")
 
+    # 7c. Two lines on one training button: keep one, move the rest to page 2.
+    #     Last, so every unit the tree and bonuses enabled is already in place.
+    button_layout = _resolve_button_collisions(dat, civ_index, civ_def)
+    for _entry in button_layout:
+        if _entry["to"] is None:
+            # A player-visible warning, not just a log line: the unit silently
+            # vanishing from the building is exactly what pages exist to prevent.
+            _msg = (f"{unit_labels(dat, civ_index, _entry['units'])} can't be trained: "
+                    f"both pages of the {unit_label(dat, civ_index, _entry['building'])} "
+                    f"are full. Drop another unit trained there to make room.")
+            print(f"  WARNING: {_msg}")
+            warnings.append(_msg)
+
     # Guard: ANY effect exceeding ~189 commands crashes the game at startup.
     # Two of ours accumulate without bound — the tech tree effect (a command per
     # unticked node) and the team bonus effect (every picked team bonus merged
@@ -4654,6 +5293,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         "bonus_tech_map":           bonus_results.get("bonus_tech_map", {}),
         "uu_id":                    uu_id,
         "elite_uu_id":              elite_uu_id,
+        "button_layout":            button_layout,
     }
 
 
