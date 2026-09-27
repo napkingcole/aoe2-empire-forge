@@ -195,6 +195,17 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.3.0": [
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Every civ's voice.</strong> Thirteen civs had no voice to choose — Armenians, Georgians, Shu, Wu, Wei, Jurchens, Khitans, Muisca, Mapuche, Tupi, Saxons, Varangians and Danes. All of them are now in the Voice picker, taken straight from the game's own audio",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Units no longer fight over a training button.</strong> Pick Eagle Warriors <em>and</em> Fire Lancers <em>and</em> Varangian Guard — the building gets a second page, just like the game's \"all techs\" mode. Every unit that moves takes its upgrades along, one row below it, with hotkeys that match the first page",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Button Layout</strong> on the Save step. When units share a button, choose which one stays on the first page, and see both pages of each building laid out before you build",
+        "<strong class=\"color-accent-2\">CHANGED:</strong> The tech tree no longer makes you choose between units that share a building slot. Take as many as you like; the extras go to page two",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Voices in the Windows app.</strong> Mods built with the downloadable app left out the voice files, so a custom civ spoke with the voice of the civ it replaced. They are now included",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Saxon, Varangian, Dane, Muisca, Mapuche, Tupi and Khitan villagers said the same line whether building, chopping, mining or hunting. Each task now has its own line",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> A handful of voice lines played the replaced civ's voice instead of yours — most noticeably every Inca soldier line, plus some Mayan, Tatar, Slav, Persian and Aztec lines. Fixed",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> The Byzantine voice now uses the game's current, re-recorded lines",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Ticking <strong>Cranequins</strong> in the tech tree no longer drags in Parthian Tactics and the Heavy Mounted Crossbowman. It needs only the Mounted Crossbowman",
+    ],
     "2.2.1": [
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Fixed the builder hanging on \"Loading\" at startup.</strong> 2.2.0 made the wizard wait for your game files to be read before it would draw anything, which took around half a minute on a cold start and looked like a freeze. The file is now read in the background, as it was before",
         "<em>If you downloaded 2.2.0, please update — that build cannot get past the first screen.</em>",
