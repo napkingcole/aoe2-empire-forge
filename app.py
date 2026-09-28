@@ -195,6 +195,10 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.3.1": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Fixed the \"both pages of the Castle are full\" warnings.</strong> Building a civ from a full tech tree warned that nearly every unique unit in the game couldn't be trained at the Castle. Those units were never yours — only your own unique unit is trained there — and the warnings are gone",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Units your civ doesn't have no longer get moved to a second page, and the <strong>Button Layout</strong> card no longer shows clashes with them",
+    ],
     "2.3.0": [
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Every civ's voice.</strong> Thirteen civs had no voice to choose — Armenians, Georgians, Shu, Wu, Wei, Jurchens, Khitans, Muisca, Mapuche, Tupi, Saxons, Varangians and Danes. All of them are now in the Voice picker, taken straight from the game's own audio",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Units no longer fight over a training button.</strong> Pick Eagle Warriors <em>and</em> Fire Lancers <em>and</em> Varangian Guard — the building gets a second page, just like the game's \"all techs\" mode. Every unit that moves takes its upgrades along, one row below it, with hotkeys that match the first page",
