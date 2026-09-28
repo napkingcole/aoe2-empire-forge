@@ -20,6 +20,10 @@ It runs entirely on your own computer: launching it starts a small local server 
 
 <img src="docs/screenshots/tech-tree.png" width="800" alt="Tech tree editor">
 
+**Use as many units as you'd like!** - Select all the units you want. If there are collisions in the UI, instead of overlapping, choose which units you want to send to page 2.
+
+https://github.com/user-attachments/assets/c9f556fe-f30e-4c99-94f3-272ad41fb272
+
 **Civilization Bonuses** — browse and filter the full bonus catalog by category, click a card to select it.
 
 <img src="docs/screenshots/bonuses.png" width="800" alt="Civilization bonus catalog">
