@@ -299,6 +299,30 @@ check("the team-bonus Genitour is on Archery Range button 9",
       cell_names(RANGE, 9) == ["Genitour"], cell_names(RANGE, 9))
 check("no Elite Elephant Archer on button 8 for a civ without Elephant Archers",
       "Elite Elephant Archer" not in (cell_names(RANGE, 8) or []), cell_names(RANGE, 8))
+
+# ── Another civ's unique units in the tree don't count ───────────────────────
+# A full wizard tree lists every vanilla UU (the editor has a node for each),
+# but their techs are civ-gated, so the civ can't train them.  Counting them put
+# ~50 lines on Castle button 1 and warned that the Castle was full for every
+# one (reported 2026-09-28, a real civ with one KM UU).
+print("\n=== other civs' UUs in the tree are not the civ's ===")
+CASTLE = 82
+castle_units = sorted(uid for uid, u in enumerate(dat.civs[1].units)
+                      if u is not None and u.creatable is not None
+                      and any(tl.unit_id == CASTLE for tl in u.creatable.train_locations))
+full_tree = {"alias": "Full Tree", "description": "", "architecture": 2, "language": 0,
+             "wonder": -1, "castle": -1,
+             "bonuses": [[], [3], [], [], []],                    # one KM UU
+             "tree": [[4, 74, 75, 7, 38, *castle_units], [BARRACKS, RANGE, STABLE, 109, CASTLE], []]}
+with contextlib.redirect_stdout(io.StringIO()):
+    full_result = apply_civ(dat, full_tree, target_slot=8)
+full_warnings = [w for w in full_result.get("warnings", []) if "can't be trained" in w]
+check("no 'both pages are full' warnings", not full_warnings, full_warnings[:3])
+castle_moves = [m for m in full_result["button_layout"] if m["building"] == CASTLE]
+check("nothing moves off Castle button 1", not castle_moves, castle_moves[:3])
+check("the preview shows no Castle clash",
+      not [b for b in button_layout_preview(dat, full_tree, set()) if b["building"] == CASTLE])
+
 chariot = [l["name"] for b in button_layout_preview(dat, preview_def, PREVIEW_TECHS)
            for c in b["conflicts"] for l in c["lines"] if 1962 in l["units"]]
 check("the War Chariot is called that, without '(Focus Fire)'", chariot == ["War Chariot"], chariot)

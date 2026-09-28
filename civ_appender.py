@@ -1705,18 +1705,74 @@ def _team_bonus_units(dat: DatFile, civ_def: dict) -> set[int]:
     return out
 
 
-def _civ_present_units(civ_def: dict, dat: DatFile | None = None) -> set[int]:
+def _trainable_tree_units(dat: DatFile, units, tree: set[int], own) -> set[int]:
+    """The tree units the civ can actually get.
+
+    A full wizard tree lists every vanilla unique unit (the editor has a node for
+    each), and that is harmless everywhere but here: a UU's make-avail and elite
+    techs are civ-gated (quirk 9), so they never fire for our civ.  Counting them
+    put ~50 lines on Castle button 1 and warned that the Castle was full
+    (reported 2026-09-28).
+
+    A unit is reachable when a tech enabling it is global or `own(tid)` — or,
+    with no enabling tech anywhere, when it ships enabled in the civ's own unit
+    list (Tarkan, the Three Kingdoms heroes) — and so is whatever such a tech
+    upgrades a reachable unit into.  The upgrade must start from a reachable
+    unit: the Elite Qizilbash Warrior's upgrade is global, but nothing ever
+    enables the campaign-only Qizilbash Warrior it upgrades.
+    """
+    def allowed(tid):
+        return dat.techs[tid].civ == -1 or own(tid)
+
+    enablers: dict[int, set[int]] = defaultdict(set)
+    upgrades: list[tuple[int, int]] = []
+    for tid, tech in enumerate(dat.techs):
+        if 0 <= tech.effect_id < len(dat.effects):
+            for ec in dat.effects[tech.effect_id].effect_commands:
+                if ec.type == EC_ENABLE and int(ec.b) == 1 and ec.a >= 0:
+                    enablers[int(ec.a)].add(tid)
+                elif ec.type == EC_UPGRADE and ec.a >= 0 and ec.b >= 0 and allowed(tid):
+                    upgrades.append((int(ec.a), int(ec.b)))
+    reachable = {uid for uid, u in enumerate(units)
+                 if u is not None and (any(allowed(t) for t in enablers[uid])
+                                       if uid in enablers else u.enabled)}
+    grew = True
+    while grew:
+        new = {b for a, b in upgrades if a in reachable} - reachable
+        reachable |= new
+        grew = bool(new)
+    return tree & reachable
+
+
+def _civ_present_units(civ_def: dict, dat: DatFile | None = None,
+                       civ_index: int | None = None) -> set[int]:
     """Units the civ can have: its tree, what its "Unlock ..." cards bring along
     (a KM-format civ can carry the card without the unit in tree[0]), and — given
     the DAT — what its team bonuses grant.
+
+    Given the DAT, tree units the civ can't train are dropped (see
+    _trainable_tree_units).  With `civ_index` the civ is built, and its own tech
+    copies decide; without it (the wizard preview) the Britons template stands
+    in, and only the techs its cards and KM UU will copy count as its own.
     """
     present = set(_tree_unit_ids(civ_def))
+    card_techs: set[int] = set()
     for entry in get_civ_bonuses(civ_def):
         if isinstance(entry, (list, tuple)) and entry:
             spec = _UNLOCK_UNIT_BONUSES.get(int(entry[0]))
             if spec:
                 present |= set(spec["units"])
+                card_techs |= set(spec["techs"])
     if dat is not None:
+        if civ_index is not None:
+            units = dat.civs[civ_index].units
+            own = lambda tid: dat.techs[tid].civ == civ_index    # noqa: E731
+        else:
+            units = dat.civs[1].units
+            card_techs |= set(_KM_UU_TECHS.get(get_km_uu_index(civ_def), ()))
+            own = card_techs.__contains__
+        tree = set(_tree_unit_ids(civ_def))
+        present -= tree - _trainable_tree_units(dat, units, tree, own)
         present |= _team_bonus_units(dat, civ_def)
     return present
 
@@ -1956,7 +2012,7 @@ def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict) -> l
     shared by every civ, so a tech that has to move gets a private copy for
     this civ and the original is disabled for it (the _allocate_tech pattern).
     """
-    present = _civ_present_units(civ_def, dat)
+    present = _civ_present_units(civ_def, dat, civ_index)
     # ...and units its own techs place in a building in-game (Anarchy).
     runtime = _runtime_train_locations(dat, civ_index)
     present |= {uid for uid, _ in runtime}
