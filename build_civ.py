@@ -110,25 +110,31 @@ def _civ_file_name(civ_name: str) -> str:
     return civ_name.lower().replace(" ", "_")
 
 
-_CIV_NAME_ALIASES: dict[str, str] = {
-    # KM display name → DAT internal name
-    "britons":      "british",
-    "franks":       "french",
-    "inca":         "incas",
-    "maya":         "mayans",
-    "magyars":      "magyar",
-    "hindustanis":  "indians",   # pre-rename game versions
-    "indians":      "hindustanis",  # post-rename game versions
+# Display name → every spelling the DAT has used for that civ.  The DAT's own
+# names are singular in places ('Byzantine', 'Mayan') and have changed across
+# patches ('Magyar' → 'Magyars', 'Indians' → 'Hindustanis'), so an alias lists
+# all of them rather than guessing one.  tests/test_civ_roster.py resolves every
+# civilizations.json name against the DAT.
+_CIV_NAME_ALIASES: dict[str, tuple[str, ...]] = {
+    "britons":      ("british",),
+    "franks":       ("french",),
+    "byzantines":   ("byzantine",),
+    "inca":         ("incas",),
+    "maya":         ("mayan", "mayans"),
+    "mayans":       ("mayan",),
+    "magyar":       ("magyars",),
+    "magyars":      ("magyar",),
+    "hindustanis":  ("indians",),
+    "indians":      ("hindustanis",),
 }
 
 
 def _find_civ_slot(dat, name: str) -> int | None:
     """Return the index of the civ whose name matches (case-insensitive), or None."""
     name_lower = name.lower()
-    candidate  = _CIV_NAME_ALIASES.get(name_lower, name_lower)
+    candidates = {name_lower, *_CIV_NAME_ALIASES.get(name_lower, ())}
     for i, civ in enumerate(dat.civs):
-        dat_name = civ.name.lower()
-        if dat_name == name_lower or dat_name == candidate:
+        if civ.name.lower() in candidates:
             return i
     return None
 

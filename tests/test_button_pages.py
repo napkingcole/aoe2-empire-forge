@@ -323,6 +323,35 @@ check("nothing moves off Castle button 1", not castle_moves, castle_moves[:3])
 check("the preview shows no Castle clash",
       not [b for b in button_layout_preview(dat, full_tree, set()) if b["building"] == CASTLE])
 
+# ── Units a civ bonus grants count too ───────────────────────────────────────
+# "Can train Missionaries" and friends copy a make-avail tech for the civ, and a
+# KM tree has no node for the unit, so the planner never saw it: Unhinged
+# Empires shipped the Mounted Trebuchet on the Bombard Cannon's button, the
+# Missionary on the Warrior Priest's and the War Chariot on the Scorpion's
+# (2026-09-28).
+print("\n=== bonus-granted units are placed too ===")
+SIEGE, MONASTERY = 49, 104
+bonus_civ = {"alias": "Bonus Units", "description": "", "architecture": 2, "language": 0,
+             "wonder": -1, "castle": -1,
+             "bonuses": [[[43, 1], [193, 1], [337, 1], [361, 1]], [], [], [], []],
+             "tree": [[83, 4, 125, 36, 279, 542], [12, 87, 49, 104, 109], [47, 101, 102, 103]]}
+with contextlib.redirect_stdout(io.StringIO()):
+    apply_civ(dat, bonus_civ, target_slot=9)
+civ_units = dat.civs[9].units
+
+
+def buttons(uid, bldg):
+    return {tl.button_id for tl in civ_units[uid].creatable.train_locations
+            if tl.unit_id == bldg}
+
+
+for (a, b), bldg, what in [((36, 1923), SIEGE, "Bombard Cannon / Mounted Trebuchet"),
+                            ((279, 1962), SIEGE, "Scorpion / War Chariot"),
+                            ((1811, 775), MONASTERY, "Warrior Priest / Missionary")]:
+    check(f"{what} are on different buttons",
+          not (buttons(a, bldg) & buttons(b, bldg)),
+          f"{buttons(a, bldg)} vs {buttons(b, bldg)}")
+
 chariot = [l["name"] for b in button_layout_preview(dat, preview_def, PREVIEW_TECHS)
            for c in b["conflicts"] for l in c["lines"] if 1962 in l["units"]]
 check("the War Chariot is called that, without '(Focus Fire)'", chariot == ["War Chariot"], chariot)

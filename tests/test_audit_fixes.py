@@ -118,7 +118,19 @@ copies = [i for i, t in civ_techs
           if any(c.type == 101 and c.a == 218 for c in cmds_of(t))]
 check("bonus 360 allocated a civ-owned copy of the Khitan trigger", bool(copies),
       f"required_techs = {hca.required_techs}")
-repointed = [r for r in hca.required_techs if r in copies]
+
+# The copy sits behind an OR-gate, so every civ in a mod shares one of 218's
+# slots (see _alt_prereq_gate); follow gates down to the copies they hold.
+def _via_gates(tid, depth=0):
+    t = dat.techs[tid]
+    if depth > 8 or not t.name.startswith("EF alt-prereq gate"):
+        return {tid}
+    return set().union(*(_via_gates(r, depth + 1)
+                         for r in t.required_techs if r != -1))
+
+
+repointed = [r for r in hca.required_techs
+             if r != -1 and _via_gates(r) & set(copies)]
 check("bonus 360 re-pointed tech 218 at that copy", bool(repointed),
       f"required_techs = {hca.required_techs}, copies = {copies}")
 check("bonus 360 left required_tech_count alone (2 of N)",
