@@ -2281,8 +2281,7 @@
     "stat": "First Monastery gets a free relic",
     "entity": "monastery",
     "entity2": "relic",
-    "description": "Monastery",
-    "multiplier": false
+    "description": "Monastery"
   },
   "314": {
     "type": "hidden",
@@ -2373,7 +2372,8 @@
     ]
   },
   "324": {
-    "type": "value",
+    "type": "hidden",
+    "_note": "Withdrawn 2026-09-29 (issue #41). KM's recipe only sets attribute 63 = 96 (aura flags), but villagers have no task-155 aura for it to switch on, and no vanilla aura modifies work rate to copy one from - inert in KM too. Hidden rather than approximated.",
     "entity": "villager",
     "heading": "+Work Rate",
     "stat": "Villagers work faster when near other villagers",

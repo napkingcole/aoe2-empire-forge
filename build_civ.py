@@ -81,6 +81,10 @@ def _tree_sets(civ_def: dict) -> tuple[set, set, set]:
     # (issue #31).  Filtered here rather than at each call site so every consumer
     # of the tree sees the same thing.
     b -= UNSUPPORTED_UNIQUE_BUILDINGS
+    # The Huns bonus hides the House in the DAT whatever the tree says, so the
+    # viewer should not draw one either (issue #40).
+    if any(e[0] == 131 for e in get_civ_bonuses(civ_def)):
+        b.discard(70)
     return u, b, t
 
 
@@ -140,12 +144,10 @@ def _decode_flag(civ_def: dict) -> bytes | None:
     raw = civ_def.get("customFlagData") or civ_def.get("emblem") or ""
     if not raw:
         return None
-    # Strip data-URI prefix for any image format.
-    for prefix in ("data:image/png;base64,", "data:image/jpeg;base64,",
-                   "data:image/jpg;base64,"):
-        if raw.startswith(prefix):
-            raw = raw[len(prefix):]
-            break
+    # Strip the data-URI header for any image format — the picker also offers
+    # WebP, which a fixed png/jpeg prefix list left undecodable.
+    if raw.startswith("data:") and ";base64," in raw:
+        raw = raw.split(";base64,", 1)[1]
     try:
         img_bytes = base64.b64decode(raw)
     except Exception as e:

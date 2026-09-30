@@ -1,2 +1,5 @@
 genieutils-py==0.1.2
 flask
+# Flag upload: resizes to 104x104 and converts JPEG/WebP to PNG (issue #44).
+# Without it only PNG flags survive, unresized.
+pillow

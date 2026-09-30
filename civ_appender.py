@@ -880,6 +880,15 @@ _PROTECTED_TECHS     = {101, 102, 103}   # Feudal / Castle / Imperial advance
 _PROTECTED_BUILDINGS = {109}             # Town Center
 _PROTECTED_UNITS     = {83}              # Villager
 
+# Buildings that exist only as an EC_UPGRADE of another one, keyed on the
+# building the user picks.  The Folwark ships enabled=0 and reaches the Villager
+# by converting the Mill's button, so the Mill has to stay enabled even though
+# the editor drops its node — forcing it off took the Folwark down with it
+# (issues #40/#41).  Legacy bonus ids are honoured like Step 5b's table.
+_UPGRADE_ONLY_BUILDINGS = {
+    1734: {"from": (68,), "bonus_ids": {280}},   # Folwark ← Mill
+}
+
 # Civ-unique buildings we do NOT know how to grant.  Each belongs to one vanilla
 # civ and is gated on a civ-specific make-avail tech that apply_civ nullifies
 # when it takes the slot over, so the DAT correctly refuses them — but
@@ -1223,6 +1232,9 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     _editor_entities = ((nodes["units"] - _PROTECTED_UNITS)
                         | (nodes["buildings"] - _PROTECTED_BUILDINGS))
     _unticked = _editor_entities - _tree_all
+    for _bid, _spec in _UPGRADE_ONLY_BUILDINGS.items():
+        if _bid in tree_buildings or _spec["bonus_ids"] & _civ_bonus_ids_early:
+            _unticked -= set(_spec["from"])
 
     # Which units each tech enables, across ALL techs — not just the disableable
     # pool, since the whole point is to reach make-avail techs vanilla never
@@ -2132,6 +2144,15 @@ def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
     new_tid = len(dat.techs) - 1
     _seen[tech_id] = new_tid
 
+    # Some chains continue through a helper unit whose creation researches the
+    # next tech (building.tech_id): the free relic spawns "Relic building" 1118,
+    # which researches 957.  Pointing our civ's copy of that unit at our copy of
+    # the tech is the downstream half of the fix — the original stays gated on
+    # its vanilla civ and the chain stopped one step short (issue #41).
+    for _u in dat.civs[civ_index].units:
+        if _u is not None and _u.building is not None and _u.building.tech_id == tech_id:
+            _u.building.tech_id = new_tid
+
     # Fix required_techs: any pointer to a civ-specific tech that isn't ours
     # must be redirected to our own allocated copy of that tech.
     reqs = list(new_tech.required_techs)
@@ -2159,6 +2180,34 @@ def _allocate_tech(dat: DatFile, tech_id: int, civ_index: int,
         new_tech.required_techs = reqs
 
     return new_tid
+
+
+def _remap_sibling_tech_refs(dat: DatFile, seen: dict[int, int]) -> int:
+    """Point tech ids named INSIDE the copied effects at our copies.
+
+    _allocate_tech fixes required_techs, but an effect can name a tech too:
+    type=102 disables one (d), 101/103 change its cost/time (a).  Vanilla 242
+    "Disable Horse2" disables 238 "Start w/ Horse" by id, and against the
+    original that is a no-op for a custom civ — its copy of 238 is what fires.
+    Only techs copied in the same batch are rewritten; global ones map to
+    themselves and are left alone.  Returns the number of commands changed.
+    """
+    remap = {old: new for old, new in seen.items() if old != new}
+    if not remap:
+        return 0
+    changed = 0
+    for new_tid in set(remap.values()):
+        eid = dat.techs[new_tid].effect_id
+        if not 0 <= eid < len(dat.effects):
+            continue
+        for c in dat.effects[eid].effect_commands:
+            if c.type == 102 and int(c.d) in remap:
+                c.d = float(remap[int(c.d)])
+                changed += 1
+            elif c.type in (EC_TECH_COST, EC_TECH_TIME) and int(c.a) in remap:
+                c.a = remap[int(c.a)]
+                changed += 1
+    return changed
 
 
 def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectCommand:
@@ -2234,6 +2283,24 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
     return result
 
 
+def _is_trigger_helper(dat: DatFile, unit_id: int) -> bool:
+    """True for an invisible helper unit that exists only to research the next
+    tech in a chain (its building.tech_id names a civ-gated tech): 1118 for the
+    free relic, 1640 for the free horse, 1700 for the TC sheep.
+
+    Spawning one is a trigger, not the payload, so a card multiplier must leave
+    its count alone — the payload spawn further down the chain is what scales.
+    Scaling both would multiply twice: the relic tech is repeatable, so x3
+    helpers each firing a x3 relic spawn is nine relics, not three."""
+    try:
+        b = dat.civs[0].units[unit_id].building
+    except (IndexError, AttributeError):
+        return False
+    if b is None or not 0 <= b.tech_id < len(dat.techs):
+        return False
+    return dat.techs[b.tech_id].civ != -1
+
+
 def _multiply_effect(dat: DatFile, effect_id: int, multiplier: int) -> None:
     """Scale each EffectCommand in the effect so that applying it once is
     equivalent to applying the original effect multiplier times.
@@ -2253,6 +2320,8 @@ def _multiply_effect(dat: DatFile, effect_id: int, multiplier: int) -> None:
     if multiplier <= 1 or effect_id < 0 or effect_id >= len(dat.effects):
         return
     for ec in dat.effects[effect_id].effect_commands:
+        if ec.type == EC_SPAWN and _is_trigger_helper(dat, int(ec.a)):
+            continue
         scaled = _scale_ec_for_multiplier(ec, multiplier)
         ec.c, ec.d = scaled.c, scaled.d
 
@@ -3089,10 +3158,14 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         # The vanilla Huns TT effect hardcodes EC_RESOURCE a=4 b=1 d=2000
         # (population headroom) which is what actually removes the house cap.
         # Techs 225/289 do not contain this command, so we add it to the TT effect.
+        # The same effect's type=2 on the House is what hides the build button;
+        # 289 only rewrites house stats, so without it the pop cap went but the
+        # House stayed buildable (issue #40).
         tt_eff_id = dat.civs[civ_index].tech_tree_id
-        dat.effects[tt_eff_id].effect_commands.append(
-            EffectCommand(type=1, a=4, b=1, c=-1, d=2000.0)
-        )
+        dat.effects[tt_eff_id].effect_commands += [
+            EffectCommand(type=1, a=4, b=1, c=-1, d=2000.0),
+            EffectCommand(type=EC_ENABLE, a=70, b=0, c=-1, d=0.0),
+        ]
         return True
 
     # ── Cavalier in Castle Age ────────────────────────────────────────────────
@@ -4157,6 +4230,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                     _multiply_effect(dat, eff_id, multiplier)
                 applied += 1
             bonus_tech_map.update(seen_bonus)
+            _remap_sibling_tech_refs(dat, seen_bonus)
             # The copied trigger tech has to be threaded back into its dependent's
             # prerequisites, or the dependent never fires.  See _ALT_PREREQ_BONUSES.
             if bonus_id in _ALT_PREREQ_BONUSES:

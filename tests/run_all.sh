@@ -59,6 +59,7 @@ else
     run "civ with no UU (python)" "$PY" tests/test_no_uu_civ.py
     run "unlock unit bonuses"     "$PY" tests/test_unlock_unit_bonuses.py
     run "dat_path fallback"       "$PY" tests/test_dat_path_fallback.py
+    run "issues 38-44 batch"      "$PY" tests/test_issues_40_44.py
 fi
 
 # Route round-trip builds all 19 saved civs down BOTH routes and compares them —

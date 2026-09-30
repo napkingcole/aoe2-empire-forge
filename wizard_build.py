@@ -49,6 +49,20 @@ from dat_reader import load_dat
 
 # ── Draft → civ_def ──────────────────────────────────────────────────────────
 
+def _kv_text(text: str) -> str:
+    """Make user text safe inside a key-value strings line: `ID "text"`.
+
+    A real newline ends the line — the UT description textarea accepts Enter,
+    and one line break split the civ-selection string in two, so the game got an
+    unterminated string and the description never showed (issue #38).  The game
+    renders a literal \\n as a line break, which is what the user meant.  A bare
+    double quote closes the string early; vanilla files escape it as \\".
+    Backslashes are left alone so a hand-typed \\n keeps working.
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+    return re.sub(r'(?<!\\)"', r'\\"', text)
+
+
 def _draft_to_civ_def(draft: dict) -> dict:
     """Convert wizard draft JSON to the civ_def format expected by apply_civ."""
     civ_bonuses = [
@@ -188,15 +202,19 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         ((draft.get("imperial_ut") or {}).get("name") or "").strip()
         or _ut_name(None, castle=False)
     )
-    castle_ut_desc_text = ((draft.get("castle_ut") or {}).get("description") or "").strip()
-    imp_ut_desc_text    = ((draft.get("imperial_ut") or {}).get("description") or "").strip()
+    # The raw names go to the CivTechTrees JSON (json.dumps escapes for itself);
+    # everything below is written into strings lines, so it goes through _kv_text.
+    castle_ut_name_raw, imp_ut_name_raw = castle_ut_name, imp_ut_name
+    castle_ut_name, imp_ut_name = _kv_text(castle_ut_name), _kv_text(imp_ut_name)
+    castle_ut_desc_text = _kv_text(((draft.get("castle_ut") or {}).get("description") or "").strip())
+    imp_ut_desc_text    = _kv_text(((draft.get("imperial_ut") or {}).get("description") or "").strip())
 
     # UU info for icon + string IDs (resolved earlier, before _apply_uu_overrides)
     # `or ""` rather than a .get default: the wizard stores an untouched field as
     # null, not as a missing key, so the default never fires and .strip() blew up
     # on None for any civ whose UU name/description was left blank.
-    uu_override_name = ((draft.get("unique_unit") or {}).get("name") or "").strip()
-    uu_override_desc = ((draft.get("unique_unit") or {}).get("description") or "").strip()
+    uu_override_name = _kv_text(((draft.get("unique_unit") or {}).get("name") or "").strip())
+    uu_override_desc = _kv_text(((draft.get("unique_unit") or {}).get("description") or "").strip())
 
     # Extract training cost from the UU units after apply_civ AND after
     # _apply_uu_overrides, so the tooltip quotes the cost the player will
@@ -223,11 +241,12 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     }
 
     # Build civ-picker description string
-    tagline      = civ_def.get("description", "")
+    tagline      = _kv_text(civ_def.get("description", "") or "")
+    alias_kv     = _kv_text(alias)
     civ_bonuses  = get_civ_bonuses(civ_def)
     team_entries = get_team_bonuses(civ_def)
 
-    desc_parts = [f"{tagline} civilization" if tagline else f"{alias} civilization"]
+    desc_parts = [f"{tagline} civilization" if tagline else f"{alias_kv} civilization"]
     desc_parts.append("\\n\\n")
     bullets = []
     for entry in civ_bonuses:
@@ -290,8 +309,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     # Hero unit string IDs — resolved once, written inside the language loop below.
     _hero_raw  = draft.get("hero_unit") or {}
     _hero_bid  = _hero_raw.get("base_unit_id")
-    _hero_name = (_hero_raw.get("name") or "").strip()
-    _hero_desc = (_hero_raw.get("description") or "").strip()
+    _hero_name = _kv_text((_hero_raw.get("name") or "").strip())
+    _hero_desc = _kv_text((_hero_raw.get("description") or "").strip())
     _hero_dll  = -1
     _hero_cost_str = ""
     if _hero_bid is not None and _hero_name:
@@ -308,8 +327,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
 
     for lang in LANGUAGES:
         # Civ name + click-to-play + description
-        string_lines[lang].append(f'{name_sid} "{alias}"')
-        string_lines[lang].append(f'{name_sid + 80000} "Click to play as {alias}."')
+        string_lines[lang].append(f'{name_sid} "{alias_kv}"')
+        string_lines[lang].append(f'{name_sid + 80000} "Click to play as {alias_kv}."')
         string_lines[lang].append(f'{name_sid + 109879} "{full_desc}"')
 
         # Hero unit name + Castle train-button tooltip.
@@ -511,8 +530,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         vanilla_tt_name = _canonical_techtree_id(ui_civ_name, dat_path, slot=slot)
         per_civ_path    = ct_folder / f"{vanilla_tt_name}.json"
         if per_civ_path.exists():
-            civ_result["castle_ut_name"] = castle_ut_name
-            civ_result["imp_ut_name"]    = imp_ut_name
+            civ_result["castle_ut_name"] = castle_ut_name_raw
+            civ_result["imp_ut_name"]    = imp_ut_name_raw
             patched = _patch_per_civ_techtree(
                 per_civ_path, civ_def, dat=dat, slot=slot, civ_result=civ_result
             )
