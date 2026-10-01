@@ -1540,6 +1540,165 @@ def api_builder_techtree_civs():
     return jsonify(sorted(td.get("civs", {}).keys()))
 
 
+@app.route("/api/builder/custom-bonus/catalog")
+def api_builder_custom_bonus_catalog():
+    """Groups, jobs, attributes and pickable units/buildings for the composer.
+
+    Names come from the tech-tree data (no DAT needed), deduplicated by name —
+    the tree lists e.g. three Town Centers, and a card on any one of them
+    reaches the others through the upgrade line at build time.  Art and each
+    unit's training building come from the per-civ tree layouts, which carry
+    the current picture index for every node.
+    """
+    import custom_bonus
+    from civ_appender import _string_table
+    td = _load_techtree_data()
+    strings = _string_table()
+    static = Path(app.static_folder)
+    nodes = _techtree_nodes()
+
+    def _icon(kind: str, sid: int) -> str:
+        pic = nodes.get((kind, sid), {}).get("picture")
+        candidates = []
+        if pic is not None:
+            candidates.append(f"aoe2techtree/img/{'Unit' if kind == 'unit' else 'Building'}/{pic}.png")
+        candidates.append(f"aoe2techtree/img/{'Units' if kind == 'unit' else 'Buildings'}/{sid}.jpg")
+        for rel in candidates:
+            if (static / rel).exists():
+                return url_for("static", filename=rel)
+        return ""
+
+    def _entries(section: str, kind: str) -> list[dict]:
+        out, seen = [], set()
+        for sid, info in sorted(td["data"].get(section, {}).items(), key=lambda kv: int(kv[0])):
+            # Display names only — internal names are codenames (ACOAR, WCTW2).
+            name = strings.get(int(info.get("LanguageNameId") or -1), "")
+            if kind == "building" and int(sid) in custom_bonus.PICKER_HIDDEN_BUILDINGS:
+                continue
+            if kind == "unit":
+                if int(sid) in custom_bonus.PICKER_HIDDEN:
+                    continue            # before the name dedupe, or a hidden
+                                        # form can claim its partner's name
+                name = custom_bonus.PICKER_NAMES.get(int(sid), name)
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            entry = {"id": int(sid), "name": name, "kind": kind, "icon": _icon(kind, int(sid))}
+            if kind == "unit":
+                entry["category"] = nodes.get((kind, int(sid)), {}).get("category", "other")
+            out.append(entry)
+        return sorted(out, key=lambda e: e["name"])
+
+    def _art(icon: str) -> str:
+        # Font Awesome classes pass through; files resolve to a URL.
+        return icon if icon.startswith("fa-") else url_for("static", filename=f"icons/units/{icon}")
+
+    cat = custom_bonus.catalog()
+    for item in cat["groups"] + cat["jobs"]:
+        item["icon"] = _art(item["icon"])
+    cat["units"]     = _entries("Unit", "unit")
+    cat["buildings"] = _entries("Building", "building")
+    cat["unit_categories"] = [{"id": k, "label": v} for k, v in _UNIT_CATEGORIES.items()]
+    return jsonify(cat)
+
+
+# Training building -> picker chip.  Order matters: a unit trained in two places
+# (Spearman at the Barracks and a Bohemian building) files under the first.
+_UNIT_CATEGORIES = {
+    "barracks": "Barracks", "archery": "Archery Range", "stable": "Stable",
+    "siege": "Siege Workshop", "dock": "Dock", "castle": "Castle", "other": "Other",
+}
+_CATEGORY_OF_BUILDING = {12: "barracks", 87: "archery", 101: "stable",
+                         49: "siege", 45: "dock", 82: "castle"}
+_techtree_node_cache: dict | None = None
+
+
+def _techtree_nodes() -> dict:
+    """(kind, id) -> {"picture", "category"} from every civ's tree layout."""
+    global _techtree_node_cache
+    if _techtree_node_cache is None:
+        order = list(_CATEGORY_OF_BUILDING)
+        nodes: dict = {}
+        for path in sorted((_TECHTREE_DATA_PATH.parent / "trees").glob("*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            for n in data.get("units_techs", []) + data.get("buildings", []):
+                use = n.get("use_type")
+                if use not in ("Unit", "Building"):
+                    continue
+                key = (use.lower(), n.get("node_id"))
+                entry = nodes.setdefault(key, {"picture": n.get("picture_index"), "buildings": set()})
+                if n.get("building_id") is not None:
+                    entry["buildings"].add(n["building_id"])
+        for entry in nodes.values():
+            known = [b for b in order if b in entry["buildings"]]
+            entry["category"] = _CATEGORY_OF_BUILDING[known[0]] if known else "other"
+            del entry["buildings"]
+        _techtree_node_cache = nodes
+    return _techtree_node_cache
+
+
+# ── Custom bonus library ─────────────────────────────────────────────────────
+# The player's cards, independent of any civ — see custom_bonus.py "Library".
+
+@app.route("/builder/custom-bonuses")
+def builder_custom_bonuses():
+    return render_template("custom_bonuses.html")
+
+
+@app.route("/api/custom-bonuses", methods=["GET"])
+def api_custom_bonuses_list():
+    import custom_bonus
+    return jsonify({"bonuses": custom_bonus.load_library(),
+                    "path": str(custom_bonus.library_path())})
+
+
+@app.route("/api/custom-bonuses", methods=["POST"])
+def api_custom_bonuses_save():
+    import custom_bonus
+    card = custom_bonus.upsert(request.get_json(silent=True) or {})
+    if card is None:
+        return jsonify({"error": "That bonus has no target or no valid effects."}), 400
+    return jsonify(card)
+
+
+@app.route("/api/custom-bonuses/<card_id>", methods=["DELETE"])
+def api_custom_bonuses_delete(card_id):
+    import custom_bonus
+    if not custom_bonus.delete(card_id):
+        return jsonify({"error": "No such bonus."}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/custom-bonuses/import", methods=["POST"])
+def api_custom_bonuses_import():
+    import custom_bonus
+    f = request.files.get("file")
+    try:
+        data = json.loads(f.read().decode("utf-8")) if f else request.get_json(force=True)
+    except (ValueError, UnicodeDecodeError):
+        return jsonify({"error": "That file isn't valid JSON."}), 400
+    if not custom_bonus.unpack(data):
+        return jsonify({"error": "No custom bonuses found in that file."}), 400
+    return jsonify(custom_bonus.import_cards(data))
+
+
+@app.route("/api/custom-bonuses/export")
+def api_custom_bonuses_export():
+    """Download the library, or just ?ids=a,b — as a shareable pack file."""
+    import custom_bonus
+    cards = custom_bonus.load_library()
+    ids = {i for i in (request.args.get("ids") or "").split(",") if i}
+    if ids:
+        cards = [c for c in cards if c["id"] in ids]
+    body = json.dumps(custom_bonus.pack(cards), indent=2)
+    name = "custom_bonus.json" if len(cards) == 1 else "custom_bonuses.json"
+    return app.response_class(body, mimetype="application/json", headers={
+        "Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @app.route("/api/builder/bonuses/catalog")
 def api_builder_bonuses_catalog():
     from bonus_names import (unsupported_bonuses, unsupported_team_bonuses,

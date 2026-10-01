@@ -45,6 +45,7 @@ from civ_appender import (
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
                            _refresh_uu_tooltips)
 from dat_reader import load_dat
+import custom_bonus
 
 
 # ── Draft → civ_def ──────────────────────────────────────────────────────────
@@ -113,6 +114,8 @@ def _draft_to_civ_def(draft: dict) -> dict:
         # Which line keeps page 1 where two share a training button — read by
         # civ_appender._resolve_button_collisions; absent means the default table.
         "button_moves":          draft.get("button_moves") or [],
+        # Player-composed cards — civ_appender._apply_custom_bonuses.
+        "custom_bonuses":        draft.get("custom_bonuses") or [],
     }
 
     # UU name/description override — passed under unique_unit so km_custom_uu can
@@ -256,6 +259,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         mult = entry[1] if len(entry) > 1 else 1
         if txt:
             bullets.append(f"• {txt}" + (f" [x{mult}]" if mult > 1 else ""))
+    for card in custom_bonus.normalize(civ_def.get("custom_bonuses")):
+        bullets.append(f"• {_kv_text(custom_bonus.card_text(card))}")
     desc_parts.append("\\n".join(bullets))
     desc_parts.append(f"\\n\\n<b>Unique Unit:<b> \\n{uu_display}")
     # Name AND description.  This used to interpolate the two names alone, so the

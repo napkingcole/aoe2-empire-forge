@@ -20,6 +20,8 @@ before passing the file through the wizard_build pipeline.
 
 from __future__ import annotations
 
+import custom_bonus
+
 FORMAT_KEY   = "empireforge_v2"
 SCHEMA_VER   = 2
 _DRAFT_VER   = 4   # current wizard draft version
@@ -158,6 +160,7 @@ def to_draft(schema: dict) -> dict:
         "hero_unit":    hero,
         "unique_unit":  uu,
         "bonuses":      _bonus_list(s.get("bonuses")),
+        "custom_bonuses": custom_bonus.normalize(s.get("custom_bonuses")),
         "team_bonuses": _bonus_list(s.get("team_bonuses")),
         "castle_ut":    _ut(s.get("castle_ut")),
         "imperial_ut":  _ut(s.get("imperial_ut")),
@@ -265,6 +268,7 @@ def from_draft(draft: dict) -> dict:
         "second_uu":    draft.get("second_uu"),
 
         "bonuses":      _bonus_out(draft.get("bonuses")),
+        "custom_bonuses": custom_bonus.normalize(draft.get("custom_bonuses")),
         "team_bonuses": _bonus_out(draft.get("team_bonuses")),
 
         "castle_ut":    _ut_out(draft.get("castle_ut")),

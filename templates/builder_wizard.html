@@ -265,6 +265,20 @@
 {# Step 3 — Bonuses #}
 <div class="wizard-panel d-none" id="panel-3">
 
+  {# Custom bonuses — picked from the player's library (custom_bonuses.js) #}
+  <div class="card mb-3" id="custom-bonus-card">
+    <div class="card-header d-flex align-items-center gap-2">
+      <span class="step-badge">3</span> Custom Bonuses
+      <a href="{{ url_for('builder_custom_bonuses') }}" target="_blank" rel="noopener" class="ms-auto small">
+        <i class="fa-solid fa-wand-magic-sparkles me-1"></i>Manage your library
+      </a>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">Bonuses you made yourself. Tick the ones this civ should have — the library opens in a new tab, and changes show up here when you come back.</p>
+      <div id="cb-pick-list" class="cb-list"></div>
+    </div>
+  </div>
+
   {# Civ bonuses #}
   <div class="card mb-3">
     <div class="card-header d-flex align-items-center gap-2">
@@ -1010,5 +1024,6 @@
 <script src="{{ url_for('static', filename='aoe2techtree/js/svg.min.js') }}"></script>
 <script src="{{ url_for('static', filename='aoe2techtree/js/techtree.js') }}"></script>
 <script src="{{ url_for('static', filename='aoe2techtree/js/main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/custom_bonuses.js') }}"></script>
 <script src="{{ url_for('static', filename='js/builder.js') }}"></script>
 {% endblock %}

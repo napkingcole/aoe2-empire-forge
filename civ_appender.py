@@ -2785,6 +2785,113 @@ def _add_auto_fire_tech(dat: DatFile, civ_index: int, cmds: list[EffectCommand],
     dat.techs.append(tech)
 
 
+def _upgrade_line(neighbours: dict[int, set[int]], unit_id: int) -> set[int]:
+    """unit_id plus everything an EC_UPGRADE chain connects it to.
+
+    Deliberately includes alternate upgrades (Knight line reaches Savar, Militia
+    line reaches Legionary) — a civ that has one wants the bonus on it too, and
+    one that doesn't never trains it.
+    """
+    seen, stack = {unit_id}, [unit_id]
+    while stack:
+        for nxt in neighbours.get(stack.pop(), ()):
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return seen
+
+
+def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
+                          warnings: list[str], uu_ids: tuple[int, ...] = ()) -> int:
+    """Build each custom bonus card as its own civ-owned auto-fire tech.
+
+    Each card is its own tech (or several, if it outgrows one Effect), so the
+    ~189-command ceiling never reaches the player.  `uu_ids` is this civ's
+    unique unit, base and elite, for the "Unique unit" group.
+    """
+    import custom_bonus
+    cards = custom_bonus.normalize(civ_def.get("custom_bonuses"))
+    if not cards:
+        return 0
+    neighbours = _upgrade_neighbours(dat)
+    units = dat.civs[civ_index].units
+    n_units = len(units)
+
+    # A building exists as many same-named copies that no upgrade links: the
+    # game's own "TC Wood cost" names 20 Town Center ids, "Super Dock" 8 Docks.
+    # The upgrade walk alone found 7 of those Town Centers.  Same name AND same
+    # class, so the packed Town Center (class 51) and rubble (14) stay out.
+    copies: dict[tuple[int, int], set[int]] = {}
+    for i, u in enumerate(units):
+        if u is not None and u.type == 80 and u.language_dll_name > 0:
+            copies.setdefault((u.language_dll_name, u.class_), set()).add(i)
+
+    def same_building(uid: int) -> set[int]:
+        u = units[uid] if uid < n_units else None
+        if u is None or u.type != 80:
+            return {uid}
+        return copies.get((u.language_dll_name, u.class_), {uid})
+
+    def line_of(uid: int) -> set[int]:
+        # Upgrades, alternate forms (packed Trebuchet, dismounted Konnik) and
+        # building copies each reach ids the others miss, so expand until
+        # none of them adds one.
+        ids: set[int] = {uid}
+        while True:
+            grown = custom_bonus.with_forms(
+                set().union(*(_upgrade_line(neighbours, u) for u in ids)))
+            grown = set().union(*(same_building(u) for u in grown))
+            if grown == ids:
+                break
+            ids = grown
+        return {u for u in ids if u < n_units and units[u] is not None}
+
+    # Build-time answers the library can't know: what this civ trains at a
+    # building, and which unit is its UU.  Both keep alternate forms.
+    present = _civ_present_units(civ_def, dat, civ_index) | {u for u in uu_ids if u >= 0}
+
+    def resolve(kind: str, arg) -> set[int]:
+        if kind == "units":
+            return {u for u in custom_bonus.with_forms(set(arg))
+                    if u < n_units and units[u] is not None}
+        if kind == "uu":
+            return custom_bonus.with_forms({u for u in uu_ids if u >= 0})
+        if kind == "trained_at":
+            sites = line_of(arg)                       # every copy of the building
+            here = {i for i, u in enumerate(units)
+                    if u is not None and u.creatable is not None
+                    and any(tl.unit_id in sites for tl in u.creatable.train_locations)}
+            # Only what this civ has — every civ's units sit in the array.  A
+            # tree that names nothing (a bare test civ) falls back to all.
+            mine = here & present if present else here
+            return custom_bonus.with_forms(mine)
+        return set()
+
+    # The engine crashes on an Effect over ~189 commands.  A card is ours to
+    # split, so a big one becomes several techs, chunked in card order so an
+    # add-then-multiply on one stat still applies in that order.
+    CHUNK = 180
+    applied = 0
+    for card in cards:
+        text = custom_bonus.card_text(card)
+        cmds = custom_bonus.card_commands(card, line_of, resolve)
+        if not cmds:
+            if card["target"].get("id") == "unique_unit":
+                _msg = f"Custom bonus \"{text}\" targets the unique unit, but this civ has none — skipped."
+            else:
+                _msg = f"Custom bonus \"{text}\" targets nothing this civ or game version has — skipped."
+            print(f"  WARNING: {_msg}")
+            warnings.append(_msg)
+            continue
+        for start in range(0, len(cmds), CHUNK):
+            _add_auto_fire_tech(dat, civ_index, cmds[start:start + CHUNK], name="C-Bonus, Custom")
+        parts = -(-len(cmds) // CHUNK)
+        print(f"       Custom bonus: {text} ({len(cmds)} cmds"
+              + (f", split across {parts} techs)" if parts > 1 else ")"))
+        applied += 1
+    return applied
+
+
 def _blacksmith_tech_ids(dat: DatFile) -> list[int]:
     """Return IDs of all techs whose primary research location is the Blacksmith."""
     out = []
@@ -5337,6 +5444,10 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             _restore_elite_upgrade_location(dat, _clone_tid, civ_index)
     bonus_results["extra_unit_strings"].extend(km_uu_custom_unit_strings)
 
+    # 7a. Player-composed bonus cards — one auto-fire tech each.
+    bonus_results["custom_applied"] = _apply_custom_bonuses(
+        dat, civ_index, civ_def, warnings, (uu_id, elite_uu_id))
+
     # 8. Language audio is handled in a single batch call to assign_all_languages()
     #    after all civs are processed — see app.py / build_all.py.
     lang_val = civ_def.get("language", 0)
@@ -5392,6 +5503,25 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 f"Biggest contributors: {_worst_txt}.")
         print(f"  WARNING: {_msg}")
         warnings.append(_msg)
+
+    # Same guard for every OTHER effect this civ owns.  The two above have their
+    # own messages; this catches the rest — chiefly a Castle/Imperial UT built in
+    # "Build Custom" mode, which merges several catalog effects into one and was
+    # never measured.  Custom bonus cards split themselves and never trip it.
+    _checked = {tt_eff_id, tb_eff_id}
+    for _tech in dat.techs:
+        _eid = _tech.effect_id
+        if _tech.civ != civ_index or _eid in _checked or not (0 <= _eid < len(dat.effects)):
+            continue
+        _checked.add(_eid)
+        _n = len(dat.effects[_eid].effect_commands)
+        if _n > _EFFECT_COMMAND_SOFT_LIMIT:
+            _msg = (f"Tech '{_tech.name}' has {_n} effect commands "
+                    f"(soft limit {_EFFECT_COMMAND_SOFT_LIMIT}, engine limit ~189). "
+                    f"The game will likely crash at startup — trim what feeds it "
+                    f"(for a unique tech, drop one of its effects).")
+            print(f"  WARNING: {_msg}")
+            warnings.append(_msg)
 
     if bonus_results.get("team_skipped"):
         _ids = ", ".join(team_bonus_label(i) for i in bonus_results["team_skipped"])

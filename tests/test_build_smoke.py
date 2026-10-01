@@ -84,6 +84,16 @@ CIV = {
     },
     "bonuses": [{"id": i, "multiplier": 1} for i in (139, 404, 105, 282)],
     "team_bonuses": [{"id": 30, "multiplier": 1}],
+    # Custom bonus cards: one with generated text, one whose own text carries a
+    # quote — the strings file is a quoted key-value format.
+    "custom_bonuses": [
+        {"id": "smoke1", "target": {"type": "group", "id": "cavalry"},
+         "effects": [{"attr": "hp", "op": "mul", "value": 20},
+                     {"attr": "pierce_armor", "op": "add", "value": 2}]},
+        {"id": "smoke2", "target": {"type": "unit", "id": 93, "name": "Spearman"},
+         "effects": [{"attr": "melee_attack", "op": "add", "value": 1}],
+         "text": 'Spearmen "hit harder"'},
+    ],
     "castle_ut": {
         "mode": "custom", "vanilla_id": None, "name": "Smoke Anarchy",
         "description": "Unique unit can be created at the Barracks.",
@@ -217,8 +227,17 @@ check("unique unit tooltip quotes the overridden cost",
       any("65W" in t and "30G" in t for t in cost_lines),
       f"cost lines: {cost_lines[:3]}")
 
+# Custom bonus cards reach the civ-selection description, quotes escaped.
+desc_rows = [t for _, t in rows if "Cavalry: +20% HP, +2 pierce armor" in t]
+check("custom bonus card text is in the civ description", bool(desc_rows))
+check("a quote in custom card text is escaped, not ending the string",
+      any('Spearmen \\"hit harder\\"' in t for t in desc_rows),
+      desc_rows[0][:300] if desc_rows else "no description row")
+
 # ── The build log says the structural work happened ──────────────────────────
 out = log.getvalue()
+check("both custom bonus cards were built",
+      out.count("Custom bonus: ") == 2, [ln for ln in out.splitlines() if "Custom bonus" in ln])
 drop_line = next((ln for ln in out.splitlines() if "cannot grant" in ln), "")
 check("Feitoria (1021) is dropped, not honoured", "1021" in drop_line,
       f"drop line was: {drop_line.strip()!r}")

@@ -29,6 +29,7 @@ import zipfile
 from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
+import custom_bonus
 from version import __version__ as _APP_VERSION
 from civ_schema import is_civbuilder_v1, is_empireforge, to_draft as _schema_to_draft
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
@@ -612,6 +613,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 continue
             suffix = f" [x{mult}]" if mult > 1 else ""
             bullet_lines.append(f"• {txt}{suffix}")
+        for card in custom_bonus.normalize(civ_def.get("custom_bonuses")):
+            bullet_lines.append("• " + custom_bonus.card_text(card).replace('"', "'"))
         desc_parts.append("\\n".join(bullet_lines))
         # Section break + UU
         desc_parts.append(f"\\n\\n<b>Unique Unit:<b> \\n{uu_display}")

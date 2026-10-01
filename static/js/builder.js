@@ -766,10 +766,14 @@ function populateReview() {
     : "<em class='text-muted'>Not configured (full tree will be used)</em>";
 
   // ── Bonuses ─────────────────────────────────────────────────────────────
-  const bonusItems = (draft.bonuses || []).map(b => {
-    const label = (_bonusCatalog.find(c => c.id === b.id) || {}).label || `Bonus #${b.id}`;
-    return `<li class="small">${label}${b.multiplier > 1 ? ` <span class='text-muted'>×${b.multiplier}</span>` : ""}</li>`;
-  }).join("") || "<li class='text-muted small fst-italic'>None</li>";
+  const bonusItems = [
+    ...(draft.bonuses || []).map(b => {
+      const label = (_bonusCatalog.find(c => c.id === b.id) || {}).label || `Bonus #${b.id}`;
+      return `<li class="small">${label}${b.multiplier > 1 ? ` <span class='text-muted'>×${b.multiplier}</span>` : ""}</li>`;
+    }),
+    ...(draft.custom_bonuses || []).map(c =>
+      `<li class="small">${cbEsc(cbCardText(c))} <span class='text-muted'>(custom)</span></li>`),
+  ].join("") || "<li class='text-muted small fst-italic'>None</li>";
 
   const tbs = draft.team_bonuses || [];
   const tbLabel = tbs.length
@@ -2210,6 +2214,82 @@ function _updateBonusCountBadge() {
     ? 'oklch(from var(--accent-2) l c h / 0.18)'
     : 'oklch(from var(--body-bg) calc(l + 0.2) c h)';
   badge.style.color = n > 0 ? 'var(--accent-2)' : 'var(--body-text)';
+}
+
+// ── Custom bonuses (picked from the library) ─────────────────────────────────
+// Cards are made on /builder/custom-bonuses; here the civ picks them.  The civ
+// stores a COPY of each card (same id), so a shared civ file builds anywhere.
+// That leaves two states worth surfacing: the library card changed after the
+// civ copied it, and the civ carries a card this library has never seen (it
+// came in with someone else's civ).
+let _cbLibrary = [];
+
+async function renderCustomBonusPicker() {
+  const list = document.getElementById("cb-pick-list");
+  if (!list) return;
+  await cbLoadCatalog();
+  _cbLibrary = await cbLoadLibrary();
+  const picked = draft.custom_bonuses || [];
+  const libIds = new Set(_cbLibrary.map(c => c.id));
+
+  const row = (card, state) => {
+    const sel = state !== "available";
+    const extra = {
+      stale:   `<button type="button" class="btn btn-sm btn-link cb-refresh" title="Use the library's current version">Library version changed · update</button>`,
+      foreign: `<button type="button" class="btn btn-sm btn-link cb-adopt" title="Add it to your library">Save to library</button>`,
+    }[state] || "";
+    return `<div class="cb-row cb-pick${sel ? " selected" : ""}" data-id="${cbEsc(card.id || "")}" role="button" tabindex="0" aria-pressed="${sel}">
+      <i class="fa-${sel ? "solid fa-square-check" : "regular fa-square"} cb-row-icon"></i>
+      <span class="cb-row-text">${cbEsc(cbCardText(card))}</span>
+      ${extra}
+    </div>`;
+  };
+
+  const html = [];
+  for (const card of _cbLibrary) {
+    const mine = picked.find(p => p.id === card.id);
+    html.push(row(mine || card, !mine ? "available" : cbSameCard(mine, card) ? "selected" : "stale"));
+  }
+  for (const card of picked) {
+    if (!card.id || !libIds.has(card.id)) html.push(row(card, "foreign"));
+  }
+  list.innerHTML = html.join("") ||
+    `<div class="text-muted small fst-italic">Your library is empty — create a bonus to use it here.</div>`;
+
+  list.querySelectorAll(".cb-pick").forEach(el => {
+    const id = el.dataset.id;
+    const toggle = () => {
+      if (!draft.custom_bonuses) draft.custom_bonuses = [];
+      const at = draft.custom_bonuses.findIndex(p => (p.id || "") === id);
+      if (at >= 0) draft.custom_bonuses.splice(at, 1);
+      else draft.custom_bonuses.push(JSON.parse(JSON.stringify(_cbLibrary.find(c => c.id === id))));
+      saveDraft();
+      renderCustomBonusPicker();
+    };
+    el.addEventListener("click", e => { if (!e.target.closest("button")) toggle(); });
+    el.addEventListener("keydown", e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggle(); } });
+    el.querySelector(".cb-refresh")?.addEventListener("click", () => {
+      const at = draft.custom_bonuses.findIndex(p => p.id === id);
+      draft.custom_bonuses[at] = JSON.parse(JSON.stringify(_cbLibrary.find(c => c.id === id)));
+      saveDraft();
+      renderCustomBonusPicker();
+    });
+    el.querySelector(".cb-adopt")?.addEventListener("click", async () => {
+      const at = draft.custom_bonuses.findIndex(p => (p.id || "") === id);
+      const saved = await cbSaveToLibrary(draft.custom_bonuses[at]);
+      draft.custom_bonuses[at] = saved;       // may have gained an id
+      saveDraft();
+      renderCustomBonusPicker();
+    });
+  });
+}
+
+function wireCustomBonusPicker() {
+  renderCustomBonusPicker();
+  // The library is edited in another tab; pick up changes on return.
+  window.addEventListener("focus", () => {
+    if (!document.getElementById("panel-3")?.classList.contains("d-none")) renderCustomBonusPicker();
+  });
 }
 
 // ── "Unlock ..." bonuses ─────────────────────────────────────────────────────
@@ -4054,11 +4134,13 @@ async function init() {
     renderBonusGrid();
     renderTeamBonusGrid();
   });
+  wireCustomBonusPicker();
 
   // If loading a filled draft, unlock all step dots immediately so the user
   // can jump directly to any step without clicking through the whole wizard
   if (draft.alias && (
     draft.bonuses?.length ||
+    draft.custom_bonuses?.length ||
     draft.team_bonuses?.length ||
     draft.unique_unit?.km_idx != null ||
     draft.castle_ut?.vanilla_km_idx != null ||
