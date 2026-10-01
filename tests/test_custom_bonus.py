@@ -137,6 +137,39 @@ check("a Konnik card reaches the dismounted Konnik", 1252 in cb.with_forms({1225
 check("an unrelated unit gains no forms", cb.with_forms({38}) == {38})
 
 
+# ── Techs (pure) ─────────────────────────────────────────────────────────────
+T = lambda gid, *effs: cb.normalize([{"target": {"type": "group", "id": gid}, "effects": list(effs)}])  # noqa: E731
+gold = T("set_gold", {"attr": "free", "op": "set"})[0]
+import civ_appender as _ca                                # noqa: E402
+check("'free' on a tech writes exactly what _free_tech_cmds writes (free AND instant)",
+      [(c.type, c.a, c.b, c.c, c.d) for c in cb.card_commands(gold, None)]
+      == [(c.type, c.a, c.b, c.c, c.d) for c in _ca._free_tech_cmds([55, 182])])
+pct = cb.card_commands(T("age_all", {"attr": "tech_cost", "op": "mul", "value": -15})[0], None)
+check("-15% cost on all resources is one b=-1 multiply per tech (the Italians' age discount)",
+      [(c.type, c.a, c.b, c.c, round(c.d, 4)) for c in pct]
+      == [(cb.EC_TECH_COST, t, -1, cb.TECH_MUL, 0.85) for t in (101, 102, 103)])
+fast = cb.card_commands(T("age_all", {"attr": "research_speed", "op": "mul", "value": 66})[0], None)
+check("'research 66% faster' is EC_TECH_TIME x0.6024 (Malay 'Age up faster')",
+      {round(c.d, 4) for c in fast} == {0.6024} and {c.type for c in fast} == {cb.EC_TECH_TIME})
+flat = T("age_feudal", {"attr": "tech_cost", "op": "add", "value": -100})[0]
+costs = lambda tid: {0: 500}                               # noqa: E731  Feudal: 500 food only
+check("flat '-100 cost' touches only the resource the tech charges",
+      [(c.b, c.c, c.d) for c in cb.card_commands(flat, None, lambda k, a: {101} if k == "techs" else costs(a))]
+      == [(0, cb.TECH_ADD, -100.0)])
+gone = T("age_feudal", {"attr": "tech_cost", "op": "add", "value": -900, "resource": "food"})[0]
+check("a flat cut past zero sets the cost to 0 rather than paying the player",
+      [(c.b, c.c, c.d) for c in cb.card_commands(gone, None, lambda k, a: {101} if k == "techs" else costs(a))]
+      == [(0, cb.TECH_SET, 0.0)])
+nogold = T("age_feudal", {"attr": "tech_cost", "op": "add", "value": 50, "resource": "gold"})[0]
+check("a flat change to a resource the tech doesn't charge writes nothing (no 4th cost slot)",
+      cb.card_commands(nogold, None, lambda k, a: {101} if k == "techs" else costs(a)) == [])
+check("unit attributes are refused on a tech target",
+      T("set_gold", {"attr": "hp", "op": "add", "value": 5}) == [])
+check("tech card text", cb.card_text(T("techs_blacksmith", {"attr": "tech_cost", "op": "mul", "value": -50},
+                                       {"attr": "research_speed", "op": "mul", "value": 100})[0])
+      == "Blacksmith techs: -50% cost, research 100% faster")
+
+
 # ── Library: storage, import, export ──────────────────────────────────────────
 import os                                                 # noqa: E402
 import tempfile                                           # noqa: E402
@@ -435,6 +468,66 @@ with contextlib.redirect_stdout(io.StringIO()):
     res = ca.apply_civ(dat, civ_def(cards), target_slot=13)
 check("a normal civ raises no effect-size warning",
       not any("effect commands" in w for w in res.get("warnings", [])), res.get("warnings"))
+
+# ── Techs (DAT) ──────────────────────────────────────────────────────────────
+S = ca._string_table()
+tname = lambda i: S.get(dat.techs[i].language_dll_name) or dat.techs[i].name   # noqa: E731
+SET_NAMES = {
+    "set_lumber": {"Double-Bit Axe", "Bow Saw", "Two-Man Saw"},
+    "set_gold": {"Gold Mining", "Gold Shaft Mining"},
+    "set_stone": {"Stone Mining", "Stone Shaft Mining"},
+    "set_carts": {"Wheelbarrow", "Hand Cart"},
+    "set_melee_attack": {"Forging", "Iron Casting", "Blast Furnace"},
+    "set_archer_attack": {"Fletching", "Bodkin Arrow", "Bracer"},
+    "set_inf_armor": {"Scale Mail Armor", "Chain Mail Armor", "Plate Mail Armor"},
+    "set_archer_armor": {"Padded Archer Armor", "Leather Archer Armor", "Ring Archer Armor"},
+    "set_cav_armor": {"Scale Barding Armor", "Chain Barding Armor", "Plate Barding Armor"},
+    "set_building_armor": {"Masonry", "Architecture"},
+    "set_ships": {"Careening", "Dry Dock", "Shipwright"},
+    "age_all": {"Feudal Age", "Castle Age", "Imperial Age"},
+}
+for gid, names in SET_NAMES.items():
+    got = {tname(t) for t in cb.GROUPS[gid]["techs"]}
+    check(f"tech set {gid!r} is {sorted(names)}", got == names, sorted(got))
+check("Farm upgrades are the Mill trio plus the Pasture trio",
+      {tname(t) for t in cb.GROUPS["set_farm"]["techs"]}
+      == {"Horse Collar", "Heavy Plow", "Crop Rotation", "Domestication", "Pastoralism", "Transhumance"})
+it = next((e for e in dat.effects if e.name == "Italians Tech Tree"), None)
+check("vanilla writes 'all resources' as EC_TECH_COST b=-1 (Italians)", it is not None and any(
+    c.type == cb.EC_TECH_COST and c.b == -1 and c.c == cb.TECH_MUL for c in it.effect_commands))
+
+
+def tech_card_ids(cards, slot, extra=None):
+    cd = civ_def(cards)
+    cd.update(extra or {})
+    with contextlib.redirect_stdout(io.StringIO()):
+        res = ca.apply_civ(dat, cd, target_slot=slot)
+    out = [{int(c.a) for c in dat.effects[t.effect_id].effect_commands}
+           for t in dat.techs if t.civ == res["civ_index"] and t.name == "C-Bonus, Custom"]
+    return out, res
+
+
+TC = lambda gid: {"target": {"type": "group", "id": gid},             # noqa: E731
+                  "effects": [{"attr": "tech_cost", "op": "mul", "value": -50}]}
+(bs,), _ = tech_card_ids([TC("techs_blacksmith")], 14)
+check("Blacksmith techs are exactly the 15 Blacksmith upgrades",
+      {tname(t) for t in bs} == SET_NAMES["set_melee_attack"] | SET_NAMES["set_archer_attack"]
+      | SET_NAMES["set_inf_armor"] | SET_NAMES["set_archer_armor"] | SET_NAMES["set_cav_armor"],
+      sorted(tname(t) for t in bs))
+(tc,), _ = tech_card_ids([TC("techs_tc")], 14)
+check("Town Center techs leave the age advances to their own tiles", not tc & set(cb.TECH_AGES), sorted(tc))
+
+# A Pasture civ researches COPIES of the Khitan Mill techs; the card must reach them.
+(farm,), res = tech_card_ids([TC("set_farm")], 15, {"bonuses": [[[356, 1]], [], [], [], []]})
+ci = res["civ_index"]
+copies = {t for t in farm if dat.techs[t].civ == ci}
+check("on a Pasture civ, Farm upgrades reach the civ's own copies of the Pasture techs",
+      {tname(t) for t in copies} == {"Domestication", "Pastoralism", "Transhumance"},
+      sorted((t, tname(t), dat.techs[t].civ) for t in farm))
+
+(ut,), res = tech_card_ids([TC("unique_techs")], 16, {"bonuses": [[], [0], [[1, 1]], [[1, 1]], []]})
+check("Unique techs resolve to this civ's Castle and Imperial UTs",
+      ut == {res["castle_ut_tech_id"], res["imp_ut_tech_id"]}, (sorted(ut), res["castle_ut_tech_id"], res["imp_ut_tech_id"]))
 
 print()
 if failures:

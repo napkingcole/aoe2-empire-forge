@@ -2802,12 +2802,14 @@ def _upgrade_line(neighbours: dict[int, set[int]], unit_id: int) -> set[int]:
 
 
 def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
-                          warnings: list[str], uu_ids: tuple[int, ...] = ()) -> int:
+                          warnings: list[str], uu_ids: tuple[int, ...] = (),
+                          ut_ids: tuple = ()) -> int:
     """Build each custom bonus card as its own civ-owned auto-fire tech.
 
     Each card is its own tech (or several, if it outgrows one Effect), so the
     ~189-command ceiling never reaches the player.  `uu_ids` is this civ's
-    unique unit, base and elite, for the "Unique unit" group.
+    unique unit, base and elite, for the "Unique unit" group; `ut_ids` its
+    Castle and Imperial unique techs, for "Unique techs".
     """
     import custom_bonus
     cards = custom_bonus.normalize(civ_def.get("custom_bonuses"))
@@ -2856,6 +2858,18 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                     if u < n_units and units[u] is not None}
         if kind == "uu":
             return custom_bonus.with_forms({u for u in uu_ids if u >= 0})
+        if kind == "techs":
+            return tech_copies(arg)
+        if kind == "researched_at":
+            sites = line_of(arg)
+            return {i for i, t in enumerate(dat.techs)
+                    if t.civ in (-1, civ_index) and i not in custom_bonus.TECH_AGES
+                    and any(rl.location_id in sites for rl in t.research_locations)}
+        if kind == "uts":
+            return {t for t in ut_ids if t is not None and t >= 0}
+        if kind == "tech_costs":
+            return {int(c.type): int(c.amount) for c in dat.techs[arg].resource_costs
+                    if c.amount > 0 and 0 <= c.type <= 3}
         if kind == "trained_at":
             sites = line_of(arg)                       # every copy of the building
             here = {i for i, u in enumerate(units)
@@ -2866,6 +2880,27 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             mine = here & present if present else here
             return custom_bonus.with_forms(mine)
         return set()
+
+    # A civ researches copies of some techs rather than the originals: a
+    # Pasture civ's Mill upgrades are civ-gated Khitan techs that bonus 356
+    # copies to fresh ids, and _allocate_tech copies others.  A card naming the
+    # original must reach the copy — the 345/356 bug class.  Copies keep the
+    # name and string id, so match on both.
+    by_name: dict[tuple[str, int], set[int]] = {}
+    for i, t in enumerate(dat.techs):
+        if t.civ == civ_index:
+            by_name.setdefault((t.name, t.language_dll_name), set()).add(i)
+
+    def tech_copies(tids) -> set[int]:
+        out: set[int] = set()
+        for tid in tids:
+            if not (0 <= tid < len(dat.techs)):
+                continue
+            t = dat.techs[tid]
+            if t.civ in (-1, civ_index):
+                out.add(tid)
+            out |= by_name.get((t.name, t.language_dll_name), set())
+        return out
 
     # The engine crashes on an Effect over ~189 commands.  A card is ours to
     # split, so a big one becomes several techs, chunked in card order so an
@@ -2878,6 +2913,8 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         if not cmds:
             if card["target"].get("id") == "unique_unit":
                 _msg = f"Custom bonus \"{text}\" targets the unique unit, but this civ has none — skipped."
+            elif card["target"].get("id") == "unique_techs":
+                _msg = f"Custom bonus \"{text}\" targets unique techs, but this civ has none — skipped."
             else:
                 _msg = f"Custom bonus \"{text}\" targets nothing this civ or game version has — skipped."
             print(f"  WARNING: {_msg}")
@@ -5446,7 +5483,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
 
     # 7a. Player-composed bonus cards — one auto-fire tech each.
     bonus_results["custom_applied"] = _apply_custom_bonuses(
-        dat, civ_index, civ_def, warnings, (uu_id, elite_uu_id))
+        dat, civ_index, civ_def, warnings, (uu_id, elite_uu_id),
+        (castle_ut_tech_id, imp_ut_tech_id))
 
     # 8. Language audio is handled in a single batch call to assign_all_languages()
     #    after all civs are processed — see app.py / build_all.py.

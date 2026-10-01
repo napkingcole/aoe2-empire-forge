@@ -9,7 +9,7 @@
 
 <div class="row g-4 justify-content-center">
 
-  <div class="col-md-5">
+  <div class="col-md-4">
     <a href="{{ url_for('builder_landing') }}" class="text-decoration-none">
       <div class="card h-100 builder-option-card">
         <div class="card-body text-center py-5">
@@ -23,7 +23,7 @@
     </a>
   </div>
 
-  <div class="col-md-5">
+  <div class="col-md-4">
     <a href="{{ url_for('build_mod') }}" class="text-decoration-none">
       <div class="card h-100 builder-option-card">
         <div class="card-body text-center py-5">
@@ -32,6 +32,21 @@
           </div>
           <h4 class="fw-bold mb-2">Build a Mod</h4>
           <p class="text-muted small mb-0">Combine one or more saved civ files into a playable AoE2:DE mod package ready to install and share.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-md-4">
+    <a href="{{ url_for('builder_custom_bonuses') }}" class="text-decoration-none">
+      <div class="card h-100 builder-option-card builder-option-card--new">
+        <span class="new-ribbon" aria-label="New feature">New</span>
+        <div class="card-body text-center py-5">
+          <div class="builder-option-icon mb-3">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+          </div>
+          <h4 class="fw-bold mb-2">Custom Bonuses</h4>
+          <p class="text-muted small mb-0">Make your own civ bonuses — any unit, group, building, villager job or tech, with as many effects as you like — then use them in any civ and share them as a file.</p>
         </div>
       </div>
     </a>

@@ -27,9 +27,7 @@ from typing import Any
 from flask import (Flask, flash, jsonify, redirect, render_template,
                    request, send_file, send_from_directory, session, url_for)
 
-from bonus_names import (bonus_name, skip_reason, unsupported_bonuses,
-                         unsupported_unique_units, unsupported_unique_techs,
-                         unsupported_team_bonuses)
+from bonus_names import bonus_name, skip_reason
 from build_all import (_build_combined_data_zip, _build_combined_ui_zip,
                        _ut_name, _ut_bonus_id, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS)
@@ -1132,27 +1130,9 @@ def results():
                            bonus_name=bonus_name, skip_reason=skip_reason)
 
 
-_BONUS_NEVER_WORKED = {211, 218}
-_BONUS_UNLIKELY     = {327}
-_BONUS_UPCOMING     = {222, 229, 270, 323, 356}
-
-
 @app.route("/limitations")
 def limitations():
-    all_unsupported = unsupported_bonuses()
-    never_worked = [b for b in all_unsupported if b["id"] in _BONUS_NEVER_WORKED]
-    unlikely     = [b for b in all_unsupported if b["id"] in _BONUS_UNLIKELY]
-    upcoming     = [b for b in all_unsupported if b["id"] in _BONUS_UPCOMING]
-    return render_template(
-        "limitations.html",
-        never_worked_bonuses=never_worked,
-        unlikely_bonuses=unlikely,
-        upcoming_bonuses=upcoming,
-        unsupported_units=unsupported_unique_units(),
-        unsupported_castle_uts=unsupported_unique_techs(castle=True),
-        unsupported_imp_uts=unsupported_unique_techs(castle=False),
-        unsupported_team=unsupported_team_bonuses(),
-    )
+    return render_template("limitations.html")
 
 
 @app.route("/how-it-works")
@@ -1599,6 +1579,25 @@ def api_builder_custom_bonus_catalog():
     cat["units"]     = _entries("Unit", "unit")
     cat["buildings"] = _entries("Building", "building")
     cat["unit_categories"] = [{"id": k, "label": v} for k, v in _UNIT_CATEGORIES.items()]
+
+    # Individual techs.  Unique techs are left out — another civ's can't be
+    # researched, and the "Unique techs" tile covers this civ's own — and so are
+    # the ages, which have their own tiles.
+    techs, seen = [], set()
+    for sid, info in sorted(td["data"].get("Tech", {}).items(), key=lambda kv: int(kv[0])):
+        tid = int(sid)
+        node = nodes.get(("tech", tid), {})
+        if tid in custom_bonus.TECH_AGES or node.get("node_type") == "UniqueTech" or not node:
+            continue
+        name = strings.get(int(info.get("LanguageNameId") or -1), "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        rel = f"aoe2techtree/img/Tech/{node.get('picture')}.png"
+        techs.append({"id": tid, "name": name, "kind": "tech", "category": node.get("category", "other"),
+                      "icon": url_for("static", filename=rel) if (static / rel).exists() else ""})
+    cat["techs"] = sorted(techs, key=lambda e: e["name"])
+    cat["tech_categories"] = [{"id": k, "label": v} for k, v in _TECH_CATEGORIES.items()]
     return jsonify(cat)
 
 
@@ -1610,6 +1609,15 @@ _UNIT_CATEGORIES = {
 }
 _CATEGORY_OF_BUILDING = {12: "barracks", 87: "archery", 101: "stable",
                          49: "siege", 45: "dock", 82: "castle"}
+_TECH_CATEGORIES = {
+    "tc": "Town Center", "eco": "Economy", "blacksmith": "Blacksmith", "university": "University",
+    "monastery": "Monastery", "military": "Military", "dock": "Dock", "castle": "Castle", "other": "Other",
+}
+_TECH_CATEGORY_OF_BUILDING = {
+    109: "tc", 68: "eco", 562: "eco", 584: "eco", 84: "eco", 2556: "eco", 1808: "eco", 1734: "eco",
+    103: "blacksmith", 209: "university", 104: "monastery", 1806: "monastery",
+    12: "military", 87: "military", 101: "military", 49: "military", 45: "dock", 82: "castle",
+}
 _techtree_node_cache: dict | None = None
 
 
@@ -1626,15 +1634,22 @@ def _techtree_nodes() -> dict:
                 continue
             for n in data.get("units_techs", []) + data.get("buildings", []):
                 use = n.get("use_type")
-                if use not in ("Unit", "Building"):
+                if use not in ("Unit", "Building", "Tech"):
                     continue
                 key = (use.lower(), n.get("node_id"))
-                entry = nodes.setdefault(key, {"picture": n.get("picture_index"), "buildings": set()})
+                entry = nodes.setdefault(key, {"picture": n.get("picture_index"), "buildings": set(),
+                                               "node_type": n.get("node_type")})
                 if n.get("building_id") is not None:
                     entry["buildings"].add(n["building_id"])
-        for entry in nodes.values():
-            known = [b for b in order if b in entry["buildings"]]
-            entry["category"] = _CATEGORY_OF_BUILDING[known[0]] if known else "other"
+        for (kind, _), entry in nodes.items():
+            if kind == "tech":
+                # Techs file under the building that researches them.
+                b = sorted(entry["buildings"])
+                entry["category"] = next((_TECH_CATEGORY_OF_BUILDING[x] for x in b
+                                          if x in _TECH_CATEGORY_OF_BUILDING), "other")
+            else:
+                known = [b for b in order if b in entry["buildings"]]
+                entry["category"] = _CATEGORY_OF_BUILDING[known[0]] if known else "other"
             del entry["buildings"]
         _techtree_node_cache = nodes
     return _techtree_node_cache

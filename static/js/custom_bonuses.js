@@ -34,7 +34,8 @@ async function cbLoadLibrary() {
   }
 }
 
-const _CB_FASTER = { attack_speed: "attack", train_speed: "train", build_speed: "build" };
+const _CB_FASTER = { attack_speed: "attack", train_speed: "train", build_speed: "build", research_speed: "research" };
+const _CB_COST    = new Set(["cost", "tech_cost"]);    // attrs with a resource picker
 
 function _cbAttr(id)  { return (_cbCatalog?.attrs || []).find(a => a.id === id); }
 function _cbGroup(id) { return (_cbCatalog?.groups || []).find(g => g.id === id); }
@@ -48,6 +49,7 @@ function _cbTargetKind(t) {
   if (!t) return "unit";
   if (t.type === "group") return _cbGroup(t.id)?.kind || "unit";
   if (t.type === "job") return "job";
+  if (t.type === "tech") return "tech";
   return t.kind === "building" ? "building" : "unit";
 }
 
@@ -55,6 +57,7 @@ function _cbTargetLabel(t) {
   if (!t) return "";
   if (t.type === "group") return _cbGroup(t.id)?.label || t.id;
   if (t.type === "job") return _cbJob(t.id)?.label || t.id;
+  if (t.type === "tech") return t.name || `Tech ${t.id}`;
   return t.name || `Unit ${t.id}`;
 }
 
@@ -62,8 +65,13 @@ function _cbNum(v) { return Number.isInteger(v) ? String(v) : String(+v.toFixed(
 
 function _cbEffectText(e, target) {
   const a = _cbAttr(e.attr);
+  if (a?.novalue) return a.label;                      // "free and instant"
   const v = Number(e.value);
   if (!a || !v) return "";
+  if (e.attr === "tech_cost") {
+    const res = e.resource || "all";
+    return `${v > 0 ? "+" : "-"}${_cbNum(Math.abs(v))}${e.op === "mul" ? "%" : ""} ${res === "all" ? "cost" : res + " cost"}`;
+  }
   const sign = v > 0 ? "+" : "-";
   const num  = _cbNum(Math.abs(v));
   if (e.attr === "cost") {
@@ -116,6 +124,7 @@ const _CB_FISHING_SHIP = 13;
 function _cbTabOf(t) {
   if (!t) return _cbTab;
   if (t.type === "job") return "villager";
+  if (t.type === "tech") return "tech";
   if (t.type === "group") return _cbGroup(t.id)?.tab || "group";
   if (t.type === "unit" && t.id === _CB_FISHING_SHIP) return "villager";
   return t.kind === "building" ? "building" : "unit";
@@ -161,16 +170,19 @@ function _cbTilesFor(tab) {
   // drop-off, ...), then the searchable list.  The search filters both.
   const q = (document.getElementById("cb-search").value || "").trim().toLowerCase();
   const hit = label => !q || label.toLowerCase().includes(q);
-  const groups = c.groups.filter(g => g.tab === tab && hit(g.label) && (tab !== "unit" || !_cbCategory));
-  const pool = (tab === "unit" ? c.units : c.buildings)
+  const groups = c.groups.filter(g => g.tab === tab && hit(g.label) && !_cbCategory);
+  const pool = ({ unit: c.units, building: c.buildings, tech: c.techs }[tab] || [])
     .filter(x => hit(x.name))
-    .filter(x => tab !== "unit" || !_cbCategory || x.category === _cbCategory)
-    .map(x => ({ target: { type: "unit", id: x.id, name: x.name, kind: x.kind }, label: x.name, icon: x.icon }));
+    .filter(x => !_cbCategory || x.category === _cbCategory)
+    .map(x => ({ target: x.kind === "tech"
+                   ? { type: "tech", id: x.id, name: x.name }
+                   : { type: "unit", id: x.id, name: x.name, kind: x.kind },
+                 label: x.name, icon: x.icon }));
   if (!groups.length) return pool;
-  return [
-    { heading: tab === "unit" ? "Special" : "Groups" }, ...groups.map(groupTile),
-    ...(pool.length ? [{ heading: tab === "unit" ? "Units" : "Individual buildings" }, ...pool] : []),
-  ];
+  const listHeading = { unit: "Units", building: "Individual buildings", tech: "Individual techs" }[tab];
+  // The Tech tab's groups carry their own sections (Ages, Researched at, ...).
+  const head = tab === "tech" ? sectioned(groups) : [{ heading: tab === "unit" ? "Special" : "Groups" }, ...groups.map(groupTile)];
+  return [...head, ...(pool.length ? [{ heading: listHeading }, ...pool] : [])];
 }
 
 function _cbRenderPicker() {
@@ -184,14 +196,19 @@ function _cbRenderPicker() {
     b.classList.toggle("active", on);
     b.setAttribute("aria-selected", on);
   });
-  const searchable = _cbTab === "unit" || _cbTab === "building";
+  const searchable = ["unit", "building", "tech"].includes(_cbTab);
   document.getElementById("cb-picker-tools").classList.toggle("d-none", !searchable);
   document.getElementById("cb-search").placeholder =
-    _cbTab === "unit" ? "Search units… e.g. knight" : "Search buildings… e.g. tower";
+    { unit: "Search units… e.g. knight", building: "Search buildings… e.g. tower",
+      tech: "Search techs… e.g. forging" }[_cbTab] || "Search…";
 
   const chips = document.getElementById("cb-chips");
-  chips.innerHTML = _cbTab === "unit"
-    ? [{ id: "", label: "All" }, ..._cbCatalog.unit_categories].map(cat =>
+  // Only chips that would show something.
+  const pool = { unit: _cbCatalog.units, tech: _cbCatalog.techs }[_cbTab] || [];
+  const cats = ({ unit: _cbCatalog.unit_categories, tech: _cbCatalog.tech_categories }[_cbTab] || null)
+    ?.filter(cat => pool.some(x => x.category === cat.id));
+  chips.innerHTML = cats
+    ? [{ id: "", label: "All" }, ...cats].map(cat =>
         `<button type="button" class="cb-chip${cat.id === _cbCategory ? " active" : ""}" data-cat="${cat.id}">${cbEsc(cat.label)}</button>`).join("")
     : "";
   chips.querySelectorAll(".cb-chip").forEach(b => b.addEventListener("click", () => {
@@ -232,6 +249,14 @@ function _cbTargetHint(t) {
       ? "Whatever this civ trains there, unique and regional units included — resolved when the mod is built."
       : "");
   }
+  if (t.type === "tech" || _cbGroup(t.id)?.kind === "tech") {
+    const g = _cbGroup(t.id);
+    if (g?.id === "unique_techs") return "This civ's Castle and Imperial unique techs — resolved when the mod is built.";
+    if (g?.section === "Researched at") return "Every tech this civ researches there, resolved when the mod is built. Age advances are separate.";
+    if (g?.id === "set_farm") return "Horse Collar, Heavy Plow and Crop Rotation — or their Pasture replacements on a Pasture civ.";
+    return "Flat cost changes only touch resources the tech already costs, and never go below zero. " +
+           "Free means no cost and no research time, as the game's own free techs do.";
+  }
   if (t.type === "job") {
     return "Applies only while a villager does this job. HP, cost and train time aren't offered here: " +
            "HP carries over when a villager changes job, and only the base Villager is ever trained.";
@@ -269,11 +294,19 @@ function _cbRenderEffects() {
       return `<option value="${x.id}"${x.id === e.attr ? " selected" : ""}>${cbEsc(n.charAt(0).toUpperCase() + n.slice(1))}</option>`;
     }).join("");
     const unitLabel = op => op === "add" ? "flat" : (_CB_FASTER[e.attr] ? "% faster" : "%");
+    if (a?.novalue) {
+      // Free / instant take no amount.
+      return `<div class="cb-effect" data-idx="${i}">
+        <select class="form-select form-select-sm cb-attr">${attrOpts}</select>
+        <span class="cb-op-fixed small text-muted">${e.attr === "free" ? "no cost, no wait" : "no wait"}</span>
+        <button type="button" class="btn btn-sm btn-link text-danger cb-effect-remove" title="Remove effect"><i class="fa-solid fa-xmark"></i></button>
+      </div>`;
+    }
     const opCtl = a && a.ops.length > 1
       ? `<select class="form-select form-select-sm cb-op">${a.ops.map(op =>
           `<option value="${op}"${op === e.op ? " selected" : ""}>${unitLabel(op)}</option>`).join("")}</select>`
       : `<span class="cb-op-fixed small text-muted">${unitLabel(e.op)}</span>`;
-    const resCtl = e.attr === "cost"
+    const resCtl = _CB_COST.has(e.attr)
       ? `<select class="form-select form-select-sm cb-res">${_cbCatalog.cost_resources.map(r =>
           `<option value="${r}"${r === (e.resource || "all") ? " selected" : ""}>${r === "all" ? "all resources" : r}</option>`).join("")}</select>`
       : "";
@@ -293,10 +326,11 @@ function _cbRenderEffects() {
       e.attr = ev.target.value;
       const a = _cbAttr(e.attr);
       if (!a.ops.includes(e.op)) e.op = a.ops[0];
-      if (e.attr !== "cost") delete e.resource;
+      if (!_CB_COST.has(e.attr)) delete e.resource;
+      if (a.novalue) delete e.value;
       _cbRenderEffects();
     });
-    row.querySelector(".cb-value").addEventListener("input", ev => {
+    row.querySelector(".cb-value")?.addEventListener("input", ev => {
       const n = parseFloat(ev.target.value);
       e.value = isNaN(n) ? null : n;
       _cbUpdatePreview();
@@ -358,15 +392,17 @@ function _cbError(msg) {
 
 async function _cbSave() {
   if (!_cbWork.target) return _cbError("Choose who this bonus applies to.");
-  const effects = _cbWork.effects.filter(e => e.value !== null && e.value !== 0 && !isNaN(e.value));
+  const effects = _cbWork.effects.filter(e =>
+    _cbAttr(e.attr)?.novalue || (e.value !== null && e.value !== undefined && e.value !== 0 && !isNaN(e.value)));
   if (!effects.length) return _cbError("Add at least one effect with a non-zero amount.");
   const tooLow = effects.find(e => e.op === "mul" && e.value <= -100);
   if (tooLow) return _cbError(`${_cbAttr(tooLow.attr).label} can't go down by 100% or more.`);
   const card = {
     target:  _cbWork.target,
     effects: effects.map(e => {
+      if (_cbAttr(e.attr)?.novalue) return { attr: e.attr, op: "set" };
       const out = { attr: e.attr, op: e.op, value: e.value };
-      if (e.attr === "cost") out.resource = e.resource || "all";
+      if (_CB_COST.has(e.attr)) out.resource = e.resource || "all";
       return out;
     }),
     text: document.getElementById("cb-text").value.trim(),
@@ -390,6 +426,7 @@ function cbWireEditor() {
   document.getElementById("cb-text").addEventListener("input", _cbUpdatePreview);
   document.querySelectorAll(".cb-tab").forEach(b => b.addEventListener("click", () => {
     _cbTab = b.dataset.tab;
+    _cbCategory = "";
     document.getElementById("cb-search").value = "";
     _cbRenderPicker();
   }));

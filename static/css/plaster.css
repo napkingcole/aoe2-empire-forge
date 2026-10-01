@@ -1946,3 +1946,35 @@ img.card-main-image {
   color: var(--ink-light); border-bottom: 1px solid var(--border-dark);
 }
 .cb-section:first-child { margin-top: 0; }
+
+/* ── Homepage: "new feature" card (Custom Bonuses) ───────────────────────── */
+.builder-option-card--new {
+  position: relative;
+  overflow: hidden;                       /* clips the corner ribbon */
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold-light), 0 0 22px 5px rgba(196, 150, 30, 0.55);
+  animation: new-card-glow 3.2s ease-in-out infinite;
+}
+.builder-option-card--new:hover {
+  border-color: var(--gold-light);
+  box-shadow: 0 0 0 1px var(--gold-light), 0 0 32px 9px rgba(196, 150, 30, 0.7);
+}
+.builder-option-card--new .builder-option-icon { color: var(--gold); }
+@keyframes new-card-glow {
+  0%, 100% { box-shadow: 0 0 0 1px var(--gold-light), 0 0 18px 3px rgba(196, 150, 30, 0.45); }
+  50%      { box-shadow: 0 0 0 1px var(--gold-light), 0 0 30px 8px rgba(196, 150, 30, 0.7); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .builder-option-card--new { animation: none; }
+}
+.new-ribbon {
+  position: absolute; top: 14px; right: -34px;
+  width: 120px; padding: 3px 0;
+  transform: rotate(45deg);
+  background: linear-gradient(180deg, var(--gold-light), var(--gold));
+  color: var(--walnut);
+  font-family: 'Cinzel', serif; font-weight: 700; font-size: .7rem;
+  letter-spacing: .14em; text-align: center; text-transform: uppercase;
+  box-shadow: 0 1px 3px rgba(44, 26, 10, 0.35);
+  pointer-events: none;
+}

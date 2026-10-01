@@ -39,8 +39,11 @@ from genieutils.effect import EffectCommand
 
 _ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
-EC_ADD      = 4
-EC_MULTIPLY = 5
+EC_ADD       = 4
+EC_MULTIPLY  = 5
+EC_TECH_COST = 101    # a=tech, b=resource (0 food 1 wood 2 stone 3 gold, -1 all), c=mode, d
+EC_TECH_TIME = 103    # a=tech, b=-1, c=mode, d
+TECH_SET, TECH_ADD, TECH_MUL = 0, 1, 2   # EC_TECH_COST/TIME mode (c)
 
 # ── Targets ───────────────────────────────────────────────────────────────────
 # A group selects by exactly one of:
@@ -118,6 +121,54 @@ GROUPS: dict[str, dict] = {
     "walls":           {"label": "Walls and gates", "kind": "building", "tab": "building", "section": "", "icon": "stone_wall.png", "classes": [27, 39]},
 }
 
+# ── Tech groups ───────────────────────────────────────────────────────────────
+# kind "tech".  A tech group selects by exactly one of:
+#   techs         an explicit list (age advances, upgrade sets).  Resolved at
+#                 build time to this civ's own copies too — a Pasture civ
+#                 researches copies of the Khitan Mill techs, not the originals.
+#   researched_at every tech this civ can research at that building (and its
+#                 copies), age advances excluded — they have their own tiles.
+#   uts           this civ's Castle and Imperial unique techs.
+_FARM_UPGRADES = [14, 13, 12,             # Horse Collar, Heavy Plow, Crop Rotation
+                  1014, 1013, 1012]       # their Pasture replacements
+TECH_AGES = (101, 102, 103)              # Feudal, Castle, Imperial
+_TG = lambda label, section, icon, **sel: {"label": label, "kind": "tech", "tab": "tech",   # noqa: E731
+                                           "section": section, "icon": icon, **sel}
+TECH_GROUPS: dict[str, dict] = {
+    "age_feudal":     _TG("Feudal Age",   "Ages", "feudal_age.png",   techs=[101]),
+    "age_castle":     _TG("Castle Age",   "Ages", "castle_age.png",   techs=[102]),
+    "age_imperial":   _TG("Imperial Age", "Ages", "imperial_age.png", techs=[103]),
+    "age_all":        _TG("All ages",     "Ages", "fa-hourglass-half", techs=list(TECH_AGES)),
+    "techs_tc":         _TG("Town Center techs",    "Researched at", "town_center.png",    researched_at=109),
+    "techs_mill":       _TG("Mill techs",           "Researched at", "mill.png",           researched_at=68),
+    "techs_lumber":     _TG("Lumber Camp techs",    "Researched at", "lumber_camp.png",    researched_at=562),
+    "techs_mining":     _TG("Mining Camp techs",    "Researched at", "mining_camp.png",    researched_at=584),
+    "techs_market":     _TG("Market techs",         "Researched at", "market.png",         researched_at=84),
+    "techs_blacksmith": _TG("Blacksmith techs",     "Researched at", "blacksmith.png",     researched_at=103),
+    "techs_university": _TG("University techs",     "Researched at", "university.png",     researched_at=209),
+    "techs_monastery":  _TG("Monastery techs",      "Researched at", "monastery.png",      researched_at=104),
+    "techs_dock":       _TG("Dock techs",           "Researched at", "dock.png",           researched_at=45),
+    "techs_barracks":   _TG("Barracks techs",       "Researched at", "barracks.png",       researched_at=12),
+    "techs_archery":    _TG("Archery Range techs",  "Researched at", "archery_range.png",  researched_at=87),
+    "techs_stable":     _TG("Stable techs",         "Researched at", "stable.png",         researched_at=101),
+    "techs_siege":      _TG("Siege Workshop techs", "Researched at", "siege_workshop.png", researched_at=49),
+    "techs_castle":     _TG("Castle techs",         "Researched at", "castle.png",         researched_at=82),
+    "set_farm":         _TG("Farm upgrades",        "Upgrade sets", "farm.png",           techs=_FARM_UPGRADES),
+    "set_lumber":       _TG("Lumber upgrades",      "Upgrade sets", "wood.png",           techs=[202, 203, 221]),
+    "set_gold":         _TG("Gold mining upgrades", "Upgrade sets", "gold_mining.png",    techs=[55, 182]),
+    "set_stone":        _TG("Stone mining upgrades","Upgrade sets", "stone_mining.png",   techs=[278, 279]),
+    "set_carts":        _TG("Wheelbarrow & Hand Cart", "Upgrade sets", "villager.png",    techs=[213, 249]),
+    "set_melee_attack": _TG("Melee attack upgrades", "Upgrade sets", "fa-hand-fist",      techs=[67, 68, 75]),
+    "set_archer_attack":_TG("Archer attack upgrades","Upgrade sets", "fa-bullseye",       techs=[199, 200, 201]),
+    "set_inf_armor":    _TG("Infantry armor",       "Upgrade sets", "infantry_pierce_armor.png", techs=[74, 76, 77]),
+    "set_archer_armor": _TG("Archer armor",         "Upgrade sets", "archer_armor.png",   techs=[211, 212, 219]),
+    "set_cav_armor":    _TG("Cavalry armor",        "Upgrade sets", "fa-horse-head",      techs=[81, 82, 80]),
+    "set_building_armor": _TG("Masonry & Architecture", "Upgrade sets", "stone_wall.png", techs=[50, 51]),
+    "set_ships":        _TG("Ship upgrades",        "Upgrade sets", "ship.png",           techs=[374, 375, 373]),
+    "unique_techs":     _TG("Unique techs",         "Special", "fa-star",                 uts=True),
+}
+GROUPS.update(TECH_GROUPS)
+
 # Villager jobs.  Every job is its own unit, in a male/female pair, and the
 # game's own job bonuses target exactly these pairs — "Lumberjacks 15% faster"
 # is 123/218, "+25% Shepherd" 590/592, Treadmill Crane 118/212.  Herders work
@@ -171,6 +222,13 @@ ATTRS: dict[str, dict] = {
     "work_rate":     {"label": "work rate",        "ops": ("mul",),       "fields": [13],        "kinds": ("unit", "job")},
     "carry":         {"label": "carry capacity",   "ops": ("add",),       "fields": [14],        "kinds": ("unit", "job")},
     "garrison":      {"label": "garrison space",   "ops": ("add",),       "fields": [2],         "kinds": ("unit", "building")},
+    # ── Techs ── (EC_TECH_COST / EC_TECH_TIME; see tech_effect_commands)
+    "tech_cost":     {"label": "cost",             "ops": ("mul", "add"),                        "kinds": ("tech",)},
+    "research_speed":{"label": "research speed",   "ops": ("mul",), "faster": True,             "kinds": ("tech",)},
+    # Valueless.  "Free" is free AND instant, as the game's own free techs are
+    # (Bulgarians, Lithuanians/Poles) — _free_tech_cmds writes exactly this.
+    "free":          {"label": "free and instant", "ops": ("set",), "novalue": True,            "kinds": ("tech",)},
+    "instant":       {"label": "instant research", "ops": ("set",), "novalue": True,            "kinds": ("tech",)},
 }
 
 COST_RESOURCES = ("all", *_RES_COST)
@@ -221,7 +279,8 @@ def catalog() -> dict:
         "jobs":   [{"id": k, "label": j["label"], "work": j["work"], "icon": j["icon"]}
                    for k, j in JOBS.items()],
         "attrs":  [{"id": k, "label": a["label"], "ops": list(a["ops"]),
-                    "kinds": list(a["kinds"])} for k, a in ATTRS.items()],
+                    "kinds": list(a["kinds"]), "novalue": bool(a.get("novalue"))}
+                   for k, a in ATTRS.items()],
         "cost_resources": list(COST_RESOURCES),
     }
 
@@ -246,6 +305,14 @@ def _norm_card(raw) -> dict | None:
         if t.get("id") not in GROUPS:
             return None
         target = {"type": "group", "id": t["id"]}
+    elif ttype == "tech":
+        try:
+            tid = int(t.get("id"))
+        except (TypeError, ValueError):
+            return None
+        if tid < 0:
+            return None
+        target = {"type": "tech", "id": tid, "name": str(t.get("name") or "")}
     elif ttype == "job":
         if t.get("id") not in JOBS:
             return None
@@ -285,6 +352,8 @@ def _norm_effect(raw) -> dict | None:
     op = raw.get("op")
     if op not in spec["ops"]:
         return None
+    if spec.get("novalue"):
+        return {"attr": raw["attr"], "op": "set"}
     try:
         value = float(raw.get("value"))
     except (TypeError, ValueError):
@@ -298,7 +367,7 @@ def _norm_effect(raw) -> dict | None:
     if value == int(value):
         value = int(value)
     out = {"attr": raw["attr"], "op": op, "value": value}
-    if raw["attr"] == "cost":
+    if raw["attr"] in ("cost", "tech_cost"):
         res = raw.get("resource", "all")
         out["resource"] = res if res in COST_RESOURCES else "all"
     return out
@@ -316,6 +385,8 @@ def target_kind(target: dict) -> str:
         return GROUPS[target["id"]]["kind"]
     if target["type"] == "job":
         return "job"
+    if target["type"] == "tech":
+        return "tech"
     return "building" if target.get("kind") == "building" else "unit"
 
 
@@ -324,11 +395,24 @@ def target_label(target: dict) -> str:
         return GROUPS[target["id"]]["label"]
     if target["type"] == "job":
         return JOBS[target["id"]]["label"]
+    if target["type"] == "tech":
+        return target.get("name") or f"Tech {target['id']}"
     return target.get("name") or f"Unit {target['id']}"
 
 
 def effect_text(eff: dict, target: dict | None = None) -> str:
     spec  = ATTRS[eff["attr"]]
+    if spec.get("novalue"):
+        return spec["label"]
+    if eff["attr"] == "tech_cost":
+        v = float(eff["value"])
+        res = eff.get("resource", "all")
+        what = "cost" if res == "all" else f"{res} cost"
+        unit = "%" if eff["op"] == "mul" else ""
+        return f"{'+' if v > 0 else '-'}{_fmt_num(abs(v))}{unit} {what}"
+    if eff["attr"] == "research_speed":
+        v = float(eff["value"])
+        return f"research {_fmt_num(abs(v))}% {'faster' if v > 0 else 'slower'}"
     v     = float(eff["value"])
     sign  = "+" if v > 0 else "-"
     num   = _fmt_num(abs(v))
@@ -417,8 +501,70 @@ def effect_commands(eff: dict, selectors: list[tuple[int, int]]) -> list[EffectC
     return out
 
 
+_RES_INDEX = {"food": 0, "wood": 1, "stone": 2, "gold": 3}   # EC_TECH_COST b
+
+
+def _tech_ids(card: dict, resolve=None) -> list[int]:
+    """Tech ids a tech card addresses — resolved to this civ when building."""
+    t = card["target"]
+    if t["type"] == "tech":
+        ids = resolve("techs", [t["id"]]) if resolve else {t["id"]}
+        return sorted(ids)
+    g = GROUPS[t["id"]]
+    ids: set[int] = set()
+    if "techs" in g:
+        ids |= resolve("techs", g["techs"]) if resolve else set(g["techs"])
+    if "researched_at" in g and resolve:
+        ids |= resolve("researched_at", g["researched_at"])
+    if g.get("uts") and resolve:
+        ids |= resolve("uts", None)
+    return sorted(ids)
+
+
+def tech_effect_commands(eff: dict, tech_ids: list[int], costs_of=None) -> list[EffectCommand]:
+    """EC_TECH_COST / EC_TECH_TIME for one effect over these techs.
+
+    `costs_of(tid)` -> {resource index: amount} the tech charges; a flat change
+    only touches resources the tech already charges (a tech has three cost
+    slots, like a unit — quirk 14), and never takes one below zero, since a
+    negative cost would pay the player.  Without it, all four are assumed.
+    """
+    a, v = eff["attr"], float(eff.get("value") or 0)
+    out: list[EffectCommand] = []
+    for tid in tech_ids:
+        if a in ("free", "instant"):
+            if a == "free":
+                out += [EffectCommand(type=EC_TECH_COST, a=tid, b=r, c=TECH_SET, d=0.0) for r in range(4)]
+            out.append(EffectCommand(type=EC_TECH_TIME, a=tid, b=-1, c=TECH_SET, d=0.0))
+        elif a == "research_speed":
+            out.append(EffectCommand(type=EC_TECH_TIME, a=tid, b=-1, c=TECH_MUL, d=1.0 / (1.0 + v / 100.0)))
+        elif a == "tech_cost":
+            res = eff.get("resource", "all")
+            if eff["op"] == "mul":
+                # b=-1 is "every resource" — the Italians' age discount.
+                b = -1 if res == "all" else _RES_INDEX[res]
+                out.append(EffectCommand(type=EC_TECH_COST, a=tid, b=b, c=TECH_MUL, d=1.0 + v / 100.0))
+            else:
+                charged = costs_of(tid) if costs_of else {r: None for r in range(4)}
+                wanted = charged if res == "all" else {_RES_INDEX[res]: charged.get(_RES_INDEX[res])} \
+                    if _RES_INDEX[res] in charged else {}
+                for r, amount in sorted(wanted.items()):
+                    if amount is not None and amount + v <= 0:
+                        out.append(EffectCommand(type=EC_TECH_COST, a=tid, b=r, c=TECH_SET, d=0.0))
+                    else:
+                        out.append(EffectCommand(type=EC_TECH_COST, a=tid, b=r, c=TECH_ADD, d=v))
+    return out
+
+
 def card_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
     """Every command one card writes, in card order.  See _selectors."""
+    if target_kind(card["target"]) == "tech":
+        tids = _tech_ids(card, resolve)
+        costs_of = (lambda tid: resolve("tech_costs", tid)) if resolve else None
+        cmds: list[EffectCommand] = []
+        for eff in card["effects"]:
+            cmds.extend(tech_effect_commands(eff, tids, costs_of))
+        return cmds
     sel = _selectors(card, line_of, resolve)
     cmds: list[EffectCommand] = []
     for eff in card["effects"]:
