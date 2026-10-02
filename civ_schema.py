@@ -302,3 +302,26 @@ def is_civbuilder_v1(data: dict) -> bool:
 def is_km_format(data: dict) -> bool:
     """Return True if data looks like a KrakenMeister civ JSON (no 'format' key)."""
     return not is_empireforge(data) and "bonuses" in data and isinstance(data.get("bonuses"), list)
+
+
+# Tech-tree nodes KM's builder never offered, keyed tech → the node whose
+# presence implies it.  A KM tree can't tick them, so their absence carries no
+# intent — but the tree sweep reads absence as "unticked" (CLAUDE.md quirk 15)
+# and disabled them for every imported civ.  Diffing KM's aoe2techtree data
+# against _editor_nodes() gives 8 such techs.  Two are implied here:
+#   35  Galleon — has no effect of its own since the naval rework, so the sweep
+#       cannot tie it to the Galleon unit (442); KM civs with Galleons lost them.
+#   906 Fishing Lines — added after KM; Gillnets (65) now requires it.
+# Carvel Hull / Clinker Construction (907-910) are a per-civ naval choice, and
+# Cranequins (1452) only touches the Mounted Crossbowman, which KM cannot pick.
+KM_IMPLIED_TECHS: dict[int, tuple[str, int]] = {
+    35:  ("units", 442),
+    906: ("techs", 65),
+}
+
+
+def km_implied_techs(units, techs) -> set[int]:
+    """Techs a KM tree implies but could not express.  See KM_IMPLIED_TECHS."""
+    have = {"units": set(units), "techs": set(techs)}
+    return {tid for tid, (kind, node) in KM_IMPLIED_TECHS.items()
+            if node in have[kind]}

@@ -16,6 +16,7 @@ from genieutils.unit import TrainLocation, ResourceCost, ResourceStorage
 
 from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list, team_bonus_ec_list
 import km_custom_uu
+from civ_schema import is_km_format, km_implied_techs
 
 # ── EffectCommand types ───────────────────────────────────────────────────────
 EC_SET       = 0
@@ -995,6 +996,9 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     if not tree_units and not tree_buildings and not tree_techs:
         return
 
+    if is_km_format(civ_def):
+        tree_techs |= km_implied_techs(tree_units, tree_techs)
+
     # Unique buildings we cannot grant are dropped rather than half-honoured:
     # the DAT refuses them anyway, and leaving them in only lit the node up in
     # the F2 viewer (issue #31).  Say so, since the tree editor let them through.
@@ -1786,7 +1790,33 @@ def _civ_present_units(civ_def: dict, dat: DatFile | None = None,
         tree = set(_tree_unit_ids(civ_def))
         present -= tree - _trainable_tree_units(dat, units, tree, own)
         present |= _team_bonus_units(dat, civ_def)
+        if civ_index is not None:
+            present |= _own_tech_units(dat, civ_index)
     return present
+
+
+def _own_tech_units(dat: DatFile, civ_index: int) -> set[int]:
+    """Units a built civ's own techs enable — bonus cards included.
+
+    A civ bonus like "Can train Missionaries" or "Mounted Trebuchet available"
+    copies its make-avail tech for the civ, and a KM tree has no node for the
+    unit, so neither the tree nor the unlock-card table knew it was there.  The
+    button planner then left it on the vanilla button, on top of a unit the civ
+    already had: Wololo's Mounted Trebuchet over the Bombard Cannon, its
+    Missionary over the Warrior Priest, and the War Chariot over the Scorpion
+    for two more civs (Unhinged Empires, 2026-09-28).  Techs the civ's tree
+    disables are skipped.
+    """
+    tt = dat.effects[dat.civs[civ_index].tech_tree_id].effect_commands
+    disabled = {int(ec.d) for ec in tt if ec.type == 102}
+    out: set[int] = set()
+    for tid, tech in enumerate(dat.techs):
+        if tech.civ != civ_index or tid in disabled:
+            continue
+        if 0 <= tech.effect_id < len(dat.effects):
+            out |= {int(ec.a) for ec in dat.effects[tech.effect_id].effect_commands
+                    if ec.type == EC_ENABLE and int(ec.b) == 1 and ec.a >= 0}
+    return out
 
 
 # Tech 104 "Dark Age" fires for every civ at the start and switches a handful of
@@ -4626,22 +4656,93 @@ def _add_alt_prereq(dat: DatFile, original_tid: int, new_tid: int,
     same requirement.  Other civs are unaffected, since they cannot research a
     tech gated to ours and their own route is left intact.
 
+    The copy does not go into the dependent directly, though: it joins an
+    OR-gate (see _alt_prereq_gate), and only the gate takes the dependent's
+    spare slot.  Written directly, every civ in a mod spent one of the
+    dependent's six slots, so the third civ with Winged Hussar (786 has two
+    spare) or the fourth with early eco upgrades silently lost the bonus.
+
     `limit` caps how far into dat.techs to scan, so freshly appended copies are
     not themselves rewired.  Returns the number of techs re-pointed.
     """
-    n = 0
-    for tech in dat.techs[:limit]:
+    gate = _alt_prereq_gate(dat, original_tid, limit)
+    if gate == -1:
+        return 0
+    _gate_add(dat, gate, new_tid)
+    return sum(1 for tech in dat.techs[:limit] if gate in tech.required_techs)
+
+
+_ALT_GATE_PREFIX = "EF alt-prereq gate "
+
+
+def _alt_prereq_gate(dat: DatFile, original_tid: int,
+                     limit: int | None = None) -> int:
+    """Return the OR-gate standing in for `original_tid`, creating it on first use.
+
+    The gate is a global (civ=-1) invisible auto-fire tech with
+    required_tech_count=1 whose slots hold every civ's private copy of the
+    original, so it fires for any player whose civ owns one.  It is written
+    once into each tech that names the original.  Keyed on its name so a
+    DatFile reused across civs (build_all) finds the same gate.  Returns -1
+    when no dependent had a free slot for it.
+    """
+    name = f"{_ALT_GATE_PREFIX}{original_tid}"
+    for i, t in enumerate(dat.techs):
+        if t.name == name:
+            return i
+    dependents = [t for t in dat.techs[:limit]
+                  if original_tid in t.required_techs
+                  and not t.name.startswith(_ALT_GATE_PREFIX)]
+    gate_tid = len(dat.techs)
+    placed = 0
+    for tech in dependents:
         reqs = list(tech.required_techs)
-        if original_tid not in reqs or new_tid in reqs:
-            continue
         if -1 not in reqs:
             print(f"       WARNING: tech {tech.name!r} has no free required_techs "
                   f"slot — prerequisite {original_tid} could not be re-pointed")
             continue
-        reqs[reqs.index(-1)] = new_tid
+        reqs[reqs.index(-1)] = gate_tid
         tech.required_techs = tuple(reqs)
-        n += 1
-    return n
+        placed += 1
+    if not placed:
+        return -1
+    dat.techs.append(_make_gate_tech(dat, original_tid, name))
+    return gate_tid
+
+
+def _make_gate_tech(dat: DatFile, template_tid: int, name: str):
+    gate = deepcopy(dat.techs[template_tid])
+    gate.name = name
+    gate.civ = -1
+    gate.effect_id = -1
+    gate.required_techs = (-1,) * 6
+    gate.required_tech_count = 1
+    gate.research_locations = [ResearchLocation(location_id=-1, research_time=0,
+                                                button_id=0, hot_key_id=-1)]
+    gate.resource_costs = _zero_costs()
+    return gate
+
+
+def _gate_add(dat: DatFile, gate_tid: int, member_tid: int) -> None:
+    """Add member_tid to the gate, chaining into a child gate when full.
+    The last slot is kept for the child, so a gate never runs out."""
+    reqs = list(dat.techs[gate_tid].required_techs)
+    if member_tid in reqs:
+        return
+    free = reqs.count(-1)
+    if free >= 2:
+        reqs[reqs.index(-1)] = member_tid
+        dat.techs[gate_tid].required_techs = tuple(reqs)
+        return
+    child = next((r for r in reqs if r != -1
+                  and dat.techs[r].name.startswith(_ALT_GATE_PREFIX)), None)
+    if child is None:
+        child = len(dat.techs)
+        dat.techs.append(_make_gate_tech(dat, gate_tid,
+                                         f"{dat.techs[gate_tid].name}+"))
+        reqs[reqs.index(-1)] = child
+        dat.techs[gate_tid].required_techs = tuple(reqs)
+    _gate_add(dat, child, member_tid)
 
 
 # Bonuses whose catalog tech is a civ-gated *trigger* that some other tech names

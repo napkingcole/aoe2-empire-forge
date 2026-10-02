@@ -2554,7 +2554,7 @@ def api_convert_km():
 
 def _km_to_draft(km: dict) -> dict:
     """Convert a KrakenMeister civ JSON dict to a wizard draft dict."""
-    from civ_schema import _DRAFT_VER
+    from civ_schema import _DRAFT_VER, km_implied_techs
 
     raw_b = km.get("bonuses", [])
     civ_bons  = raw_b[0] if len(raw_b) > 0 and isinstance(raw_b[0], list) else []
@@ -2593,6 +2593,8 @@ def _km_to_draft(km: dict) -> dict:
             "buildings": [int(x) for x in (raw_tree[1] or [])],
             "techs":     [int(x) for x in (raw_tree[2] or [])],
         }
+        tree["techs"] += sorted(km_implied_techs(tree["units"], tree["techs"])
+                                - set(tree["techs"]))
     else:
         tree = {"units": [], "buildings": [], "techs": []}
 

@@ -115,6 +115,21 @@ if dlc.exists():
         got = civ_name_sid(name, str(dlc), slot=slot)
         check(f"{name} (slot {slot}) gets its own sid {sid}, not Britons' 10271",
               got == sid, f"got {got}")
+
+    # A mod config's "replace" names a civ by its display name, but the DAT
+    # spells some differently ('Byzantine', 'Mayan', 'Magyars').  Building
+    # Unhinged Empires (2026-09-28) silently skipped the civ replacing the
+    # Byzantines.  Every name civilizations.json uses must resolve to its slot.
+    from dat_reader import load_dat
+    from build_civ import _find_civ_slot
+    dat = load_dat(str(dlc))
+    for slot, entry in enumerate(r):
+        for n in {entry["name"], entry["techtree_id"]}:
+            got = _find_civ_slot(dat, n.lower())
+            if got != slot:
+                check(f"{n!r} resolves to slot {slot} (DAT {dat.civs[slot].name!r})",
+                      False, f"got {got}")
+    check("every civilizations.json name resolves to its own DAT slot", True)
 else:
     print("  skip  no updated DAT present (game data is gitignored)")
 

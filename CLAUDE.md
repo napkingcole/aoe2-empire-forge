@@ -46,7 +46,7 @@ Aoe2 Tech Tree
 Github Repo: https://github.com/SiegeEngineers/aoe2techtree
 
 My civ mod tool
-`~/Sites/aoe2`, specifically `build.py` - Before Empire Forge, I would take Krakenmeister created mods and heavily modify my civilizations with Python and Genieutils, much like what we are doing here. There is a lot of good information in this directory, for special effects (auras), custom naming of units, mechanics, custom buildings, and more.
+`~/Sites/aoe2`, specifically `build.py` - My mod, Unhinged Empires. It started on Krakenmeister's output; since 2026-09-28 it is built **by Empire Forge** (`update.py` → `build_all.py` on its `civs/`) with `build.py` as a post-step for its custom UTs, second UUs, Mint, Great Cannon and more. It imports `CAMPAIGN_STRING_POOL`, `unit_label`, `_allocate_tech` and `_grid_hotkeys` from `civ_appender` — keep those stable. A good source for special effects (auras), custom naming of units, mechanics and custom buildings; its own `CLAUDE.md` covers the pipeline.
 
 
 What follows is the always-in-context summary of the most critical facts.
