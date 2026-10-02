@@ -414,5 +414,11 @@
   "437": "Fishing Ships and Villagers drop off +5% food",
   "438": "Loot 25% of the resource cost of each destroyed building",
   "439": "Barracks and Siege Workshop upgrades cost -66% gold",
-  "440": "Varangian Guards and Longships move +10% faster"
+  "440": "Varangian Guards and Longships move +10% faster",
+  "441": "Infantry armor upgrades also apply to cavalry",
+  "442": "Siege Weapons +1 pierce armor and +30% damage vs. buildings",
+  "443": "Stable technologies research 50% faster",
+  "444": "Skirmishers regenerate 5 HP per minute in Feudal Age, 10 in Castle Age",
+  "445": "Villagers gathering stone slowly generate food",
+  "446": "Outposts can be upgraded to Fortified Outposts, which fire arrows"
 }

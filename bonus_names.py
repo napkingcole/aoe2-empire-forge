@@ -143,12 +143,15 @@ def unsupported_unique_techs(castle: bool) -> list[dict]:
 # Wu, Muisca, Mapuche, Tupi.  This bound has to cover them, because it is what
 # unsupported_team_bonuses() iterates: while it said 80, ids 81-83 were offered
 # in the picker but never checked for an implementation.
-_TEAM_BONUS_COUNT = 87   # +3: Saxons, Varangians, Danes (Viking Sagas)
+_TEAM_BONUS_COUNT = 91   # +3: Saxons, Varangians, Danes (Viking Sagas); +4: Chronicles (87-90)
 
-# These vanilla effect IDs belong to the Chronicles DLC civ pool, which is
-# separate from the standard AoE2 DE civ pool. Chronicles civs cannot be
-# selected in regular game modes, so their team bonuses are intentionally
-# excluded from the catalog.
+# The Chronicles civs' team-bonus effects.  The civs themselves can't be picked
+# outside Chronicles mode, but their effects are ordinary DAT data, so the ones
+# that touch only standard units and techs ARE offered (2026-10-02, cards carry
+# "chronicles": true): Macedonians 1219 -> T87, Thracians 1247 -> T89, Puru
+# 1257 -> T90, and Spartans 1130 -> T88 as a team_ec_list minus its three
+# Chronicles-only techs.  Not offered: Achaemenids 1102 duplicates team bonus 40
+# (Houses), and Athenians 1118 only speeds Chronicles-only techs.
 # Effects: Achaemenids=1102, Athenians=1118, Spartans=1130,
 #          Macedonians=1219, Thracians=1247, Puru=1257
 CHRONICLES_EFFECT_IDS: frozenset[int] = frozenset({1102, 1118, 1130, 1219, 1247, 1257})

@@ -1951,6 +1951,7 @@ function _applyCardOverride(p, ov, label) {
   if (ov.icon2)   p.icon2Override  = ov.icon2;
   if (ov.lines)   p.lines          = ov.lines;
   if (ov.multiplier === false) p.noMultiplier = true;
+  if (ov.chronicles)  p.chronicles     = true;
   // For progression: use explicit ages if provided, otherwise (re)extract from label
   if (p.type === 'progression') {
     p.ageValues = ov.ages || p.ageValues || _extractAgeValues(label);
@@ -2049,7 +2050,11 @@ function _makeBonusCardEl(c, mult, isSelected, toggleFn, getDraftEntry, prefix =
   el.dataset.cat     = cat.key;
   el.style.cssText   = `--cat-color:var(--cat-${cat.key});`;
   el.title           = c.label.replace(/"/g, '&quot;');
-  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
+  // Cards ported from the Chronicles civs carry a small helmet badge.
+  const chron = p.chronicles
+    ? `<img class="chronicles-badge" src="/static/gladiator-helmet.png" alt="Chronicles" title="From the Chronicles civilizations">`
+    : '';
+  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult)}${chron}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
   // Use c.id directly in closures — no need to parse data-bonus-id
   el.addEventListener('click', e => {
     if (e.target.closest('.multiplier-circle')) return;

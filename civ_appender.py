@@ -788,6 +788,7 @@ IMP_SCORPION_NAME_SID      = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 0)
 ROYAL_ELEPHANT_NAME_SID    = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 1)
 ROYAL_LANCER_NAME_SID      = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 2)
 CITY_WALLS_NAME_SID        = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 3)
+FORTIFIED_OUTPOST_NAME_SID = _campaign_sid(BONUS_FIXED_POOL_OFFSET + 4)
 
 # City Walls help SID: first pool slot AFTER the per-civ UT_HELP block.
 # Comes from the 60000-68999 safe range (confirmed working as language_dll_help for techs).
@@ -796,7 +797,7 @@ CITY_WALLS_HELP_SID        = _campaign_sid(UT_HELP_POOL_OFFSET + MAX_TOTAL_CIVS 
 # Hero unit name SIDs: one per civ from the 44000-range pool.
 # _apply_hero_unit sets unit.language_dll_name = hero_name_sid so wizard_build
 # can write the custom strings at hero_name_sid, +1000, +21000.
-HERO_POOL_OFFSET = BONUS_FIXED_POOL_OFFSET + 4   # 4 fixed bonus slots before hero block
+HERO_POOL_OFFSET = BONUS_FIXED_POOL_OFFSET + 5   # 5 fixed bonus slots before hero block
 
 # (sid, text) pairs callers should write UNCONDITIONALLY, once per build —
 # not per-civ-looped, since these are the fixed/shared strings above.
@@ -4048,6 +4049,47 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                 "name":      "City Walls",
                 "help_sid":  CITY_WALLS_HELP_SID,
             })
+        return True
+
+    if bonus_id == 446:          # Fortified Outposts — one research upgrades every Outpost
+        # The Macedonians' team bonus (Chronicles) releases global tech 1270,
+        # researched AT an Outpost, whose single command upgrades 598 -> 2415
+        # with c=2.  c=2 appears on exactly four upgrades in the DAT — 1270 and
+        # the three Achaemenid Town Center upgrades — all "this building only"
+        # (resource 508 is the matching per-Outpost local resource).  This card
+        # is the civ-wide version: the same upgrade with c=-1, the form all 404
+        # ordinary vanilla upgrades use, so every Outpost converts at once, and
+        # 2415 shares the Outpost's (Villager 118, button 6) slot, so new ones
+        # are built fortified too (quirk 3).  Fletching/Bodkin/Bracer/Chemistry
+        # and the age-ups already buff 2415 for every civ.
+        _FORT_OUTPOST_TECH, _OUTPOST, _FORT_OUTPOST = 1270, 598, 2415
+        eff = Effect(name="Fortified Outposts",
+                     effect_commands=[EffectCommand(type=EC_UPGRADE, a=_OUTPOST,
+                                                    b=_FORT_OUTPOST, c=-1, d=0.0)])
+        dat.effects.append(eff)
+        new_tech = deepcopy(dat.techs[_FORT_OUTPOST_TECH])   # location 598, icon, hotkey
+        new_tech.name                = "Fortified Outposts"
+        new_tech.civ                 = civ_index
+        new_tech.effect_id           = len(dat.effects) - 1
+        # No prerequisite: vanilla's only one is 1269, the team bonus's release.
+        new_tech.required_techs      = (-1, -1, -1, -1, -1, -1)
+        new_tech.required_tech_count = 0
+        # Vanilla's 50 wood, without the per-Outpost resource 508.
+        new_tech.resource_costs      = (
+            ResearchResourceCost(type=1, amount=50, flag=1),
+            ResearchResourceCost(type=-1, amount=0, flag=0),
+            ResearchResourceCost(type=-1, amount=0, flag=0),
+        )
+        # Button 2, so an ally's team bonus (T87, button 1) can't stack on it.
+        for loc in new_tech.research_locations:
+            loc.button_id = 2
+        new_tech.language_dll_name        = FORTIFIED_OUTPOST_NAME_SID
+        new_tech.language_dll_description = FORTIFIED_OUTPOST_NAME_SID + 1000
+        new_tech.language_dll_help        = FORTIFIED_OUTPOST_NAME_SID + 21000
+        new_tech.language_dll_tech_tree   = FORTIFIED_OUTPOST_NAME_SID + 150000
+        dat.techs.append(new_tech)
+        if extra_strings is not None:
+            extra_strings.append({"sid": FORTIFIED_OUTPOST_NAME_SID, "name": "Fortified Outposts"})
         return True
 
     if bonus_id == 195:          # Blacksmith upgrades free one age after they're available

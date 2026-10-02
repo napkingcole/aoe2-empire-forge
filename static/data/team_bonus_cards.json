@@ -644,5 +644,34 @@
     "heading": "+2 LOS",
     "stat": "Siege Weapons +2 line of sight",
     "description": "Siege Weapons"
+  },
+  "T87": {
+    "chronicles": true,
+    "heading": "Fortify",
+    "stat": "Outposts can be individually upgraded into Fortified Outposts",
+    "entity": "outpost",
+    "description": "Outposts",
+    "multiplier": false
+  },
+  "T88": {
+    "chronicles": true,
+    "heading": "+50%",
+    "stat": "Barracks technologies research 50% faster",
+    "entity": "barracks",
+    "description": "Barracks Techs"
+  },
+  "T89": {
+    "chronicles": true,
+    "heading": "+3 LOS",
+    "stat": "Buildings +3 line of sight",
+    "entity": "house",
+    "description": "Buildings"
+  },
+  "T90": {
+    "chronicles": true,
+    "heading": "+15% speed",
+    "stat": "Trade Carts move 15% faster",
+    "entity": "trade_cart",
+    "description": "Trade Carts"
   }
 }

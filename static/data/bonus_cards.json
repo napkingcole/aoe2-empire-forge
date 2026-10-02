@@ -3415,5 +3415,63 @@
     "entity": "varangian_guard",
     "entity2": "longboat",
     "description": "Varangian Guard + Longship"
+  },
+  "441": {
+    "chronicles": true,
+    "type": "dual",
+    "heading": "Shared Armor",
+    "stat": "Infantry armor upgrades also apply to cavalry",
+    "entity": "knight",
+    "entity2": "barracks",
+    "description": "Cavalry"
+  },
+  "442": {
+    "chronicles": true,
+    "heading": "+1P / +30%",
+    "stat": "Siege +1 pierce armor and +30% damage vs. buildings",
+    "entity": "mangonel",
+    "description": "Siege Weapons"
+  },
+  "443": {
+    "chronicles": true,
+    "heading": "+50%",
+    "stat": "Stable technologies research 50% faster",
+    "entity": "stable",
+    "description": "Stable Techs"
+  },
+  "444": {
+    "chronicles": true,
+    "type": "progression",
+    "stat": "HP Regeneration",
+    "entity": "skirmisher",
+    "description": "Skirmishers",
+    "prog_label": "HP per minute:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "5"
+      },
+      {
+        "age": "castle",
+        "value": "10"
+      }
+    ]
+  },
+  "445": {
+    "chronicles": true,
+    "type": "dual",
+    "heading": "+[food]",
+    "stat": "Villagers gathering stone slowly generate food",
+    "entity": "villager",
+    "entity2": "stone_mining",
+    "description": "Stone Miners"
+  },
+  "446": {
+    "chronicles": true,
+    "heading": "Arrows",
+    "stat": "Outposts can be upgraded to Fortified Outposts, which fire arrows",
+    "entity": "outpost",
+    "description": "Outposts",
+    "multiplier": false
   }
 }
