@@ -457,13 +457,21 @@ check("the split keeps card order — every HP add precedes every HP multiply",
 # ── Effect-cap guard for every civ-owned effect ─────────────────────────────
 # Only the tech-tree and team-bonus effects used to be measured.  A Custom
 # Imperial UT merges its picks into one effect: these four are 85+67+56+50.
+# It used to be reported; it is now split like a card (issue #49), into hidden
+# techs that require the UT — the Imperial Nomads shape.
 cd = civ_def([])
 cd["bonuses"] = [[], [], [], [[60, 1], [64, 1], [8, 1], [47, 1]], []]
 with contextlib.redirect_stdout(io.StringIO()):
     res = ca.apply_civ(dat, cd, target_slot=12)
 over = [w for w in res.get("warnings", []) if "effect commands" in w and "soft limit" in w]
-check("an oversized custom UT effect is reported by name, not left to crash the game",
-      len(over) == 1, res.get("warnings"))
+check("an oversized custom UT is split, so nothing is over the cap", not over, over)
+ut_tid = res.get("imp_ut_tech_id")
+cont = [t for t in dat.techs if t.civ == 12 and t.name.endswith("(cont.)")]
+sizes = [len(dat.effects[t.effect_id].effect_commands) for t in [dat.techs[ut_tid]] + cont]
+check("...into the UT plus hidden techs that fire once the UT is researched",
+      cont and all(t.required_techs[0] == ut_tid and t.required_tech_count == 1
+                   and t.research_locations[0].location_id == -1 for t in cont), sizes)
+check("...each under the cap", max(sizes) <= 185 and sum(sizes) > 185, sizes)
 with contextlib.redirect_stdout(io.StringIO()):
     res = ca.apply_civ(dat, civ_def(cards), target_slot=13)
 check("a normal civ raises no effect-size warning",

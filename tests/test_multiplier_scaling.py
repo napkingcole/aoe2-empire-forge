@@ -73,6 +73,36 @@ print("\n=== packed armor keeps its class byte ===")
 # d = class_id<<8 | amount; scaling the whole int would change the armor class
 check("EC_ADD c=8 class3 +1 x2 stays class 3", scaled(EC_ADD, 8, (3 << 8) | 1, 2), (3 << 8) | 2)
 
+print("\n=== packed ATTACK too, and both ops, signs and overflow (issue #49) ===")
+from civ_appender import _scale_ec_cmds                 # noqa: E402
+
+
+def packed(type_, c, d, mult):
+    return [x.d for x in _scale_ec_cmds(
+        EffectCommand(type=type_, a=-1, b=-1, c=c, d=float(d)), mult)]
+
+
+# Attack packs exactly like armour; d*N turned melee (4) +1 into class 8 +2.
+check("EC_ADD c=9 melee +1 x2 stays melee", scaled(EC_ADD, 9, 1025, 2), 1026)
+check("a negative add keeps its class: melee -1 x3 is melee -3",
+      scaled(EC_ADD, 8, -1025, 3), -1027)
+# MULTIPLY's byte is the factor x100: compound the factor, never the bits.
+check("EC_MULTIPLY c=9 x1.25 vs buildings x2 is x1.56",
+      scaled(EC_MULTIPLY, 9, (11 << 8) | 125, 2), (11 << 8) | 156)
+check("a debuff compounds too: x0.5 x2 is x0.25",
+      scaled(EC_MULTIPLY, 9, (3 << 8) | 50, 2), (3 << 8) | 25)
+big = packed(EC_MULTIPLY, 9, (11 << 8) | 125, 10)          # x9.31 needs 3 commands
+check("x1.25 x10 splits so each byte fits (no float overflow)",
+      len(big) == 3 and all((int(d) & 0xFF) <= 255 and int(d) >> 8 == 11 for d in big), 1)
+prod = 1.0
+for d in big:
+    prod *= (int(d) & 0xFF) / 100
+check("...and the split still multiplies by ~1.25**10", round(prod, 1), round(1.25 ** 10, 1))
+add = packed(EC_ADD, 8, (3 << 8) | 100, 3)                 # +300 pierce armour
+check("+100 x3 splits into 255 + 45, both pierce",
+      sorted(int(d) for d in add) == sorted([(3 << 8) | 255, (3 << 8) | 45]), 1)
+check("an add that fits stays one command", len(packed(EC_ADD, 9, 1025, 4)), 1)
+
 print("\n=== must NOT move ===")
 # d is a unit id, not an amount — civ bonuses 100 and 139
 check("EC_SET ATTR_DEAD_UNIT keeps the unit id", scaled(EC_SET, 57, 888, 3), 888)
