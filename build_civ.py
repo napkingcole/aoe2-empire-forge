@@ -882,7 +882,9 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
             # sid+100000, an arithmetic offset that lands on an unverified,
             # almost certainly brand-new id (confirmed never working
             # in-game; see CAMPAIGN_STRING_POOL's docstring).
-            if (use_type == "Tech" and node_type == "Research"
+            # Viking Sagas retyped these nodes "Research" → "UniqueTech"; the
+            # bundled pre-DLC trees still say "Research" (issue #46).
+            if (use_type == "Tech" and node_type in ("Research", "UniqueTech")
                     and node.get("Building ID") == 82):
                 if node_id == _orig_castle_ut_tid and _new_castle_ut_tid is not None:
                     node["Node ID"] = _new_castle_ut_tid

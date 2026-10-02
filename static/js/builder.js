@@ -11,13 +11,25 @@ const DRAFT_VER    = 4;   // keep in sync with civ_schema._DRAFT_VER
 
 // ── Draft helpers ─────────────────────────────────────────────────────────────
 
+// Each tab edits its own copy (sessionStorage is per tab and survives reloads),
+// so two civs open side by side no longer overwrite each other (issue #51).
+// localStorage keeps the last-saved draft from any tab: it seeds a tab that has
+// no copy yet, which is how a draft survives closing the browser, and how Edit
+// Civ / the KM converter hand one over.
 function loadDraft() {
-  try { return JSON.parse(localStorage.getItem(EF_DRAFT_KEY) || "{}"); }
+  let raw = null;
+  try { raw = sessionStorage.getItem(EF_DRAFT_KEY); } catch {}
+  if (raw === null) {
+    try { raw = localStorage.getItem(EF_DRAFT_KEY); } catch {}
+  }
+  try { return JSON.parse(raw || "{}"); }
   catch { return {}; }
 }
 
 function saveDraft() {
-  localStorage.setItem(EF_DRAFT_KEY, JSON.stringify(draft));
+  const json = JSON.stringify(draft);
+  try { sessionStorage.setItem(EF_DRAFT_KEY, json); } catch {}
+  localStorage.setItem(EF_DRAFT_KEY, json);
 }
 
 let draft = loadDraft();
@@ -987,6 +999,7 @@ document.getElementById("btn-export-json").addEventListener("click", async () =>
   modal.show();
   document.getElementById("btn-confirm-fresh").addEventListener("click", () => {
     localStorage.removeItem(EF_DRAFT_KEY);
+    try { sessionStorage.removeItem(EF_DRAFT_KEY); } catch {}
     draft = { bonuses: [], team_bonuses: [] };
     modal.hide();
     location.reload();

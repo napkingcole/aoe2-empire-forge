@@ -1790,7 +1790,10 @@ def _civ_present_units(civ_def: dict, dat: DatFile | None = None,
         tree = set(_tree_unit_ids(civ_def))
         present -= tree - _trainable_tree_units(dat, units, tree, own)
         present |= _team_bonus_units(dat, civ_def)
-        if civ_index is not None:
+        # Only on top of a real tree: an empty set means "bare tree, no
+        # constraint" to every caller, and own-tech units alone would turn
+        # that into "only these few units".
+        if civ_index is not None and present:
             present |= _own_tech_units(dat, civ_index)
     return present
 
@@ -2255,15 +2258,18 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
     "multiplier": false rather than silently offering a control that does
     nothing.
 
-    Special case: EC_ADD with c=8 (armor attribute) uses packed d values where
-    d = (armor_class_id << 8) | amount.  Only the amount byte must be scaled;
-    the class_id byte identifies which armor class to modify and must be
-    preserved unchanged.  Scaling the whole packed integer would corrupt the
-    class_id (e.g. 769 * 2 = 1538, changing class 3 → class 6)."""
+    Special case: attack (c=9) and armour (c=8), ADD and MULTIPLY alike, pack
+    d = class << 8 | value; only the value scales (see _PACKED_DAMAGE_ATTRS).
+    When the scaled value outgrows its byte this returns just the first
+    command — callers that build effects use _scale_ec_cmds, which splits."""
     result = deepcopy(ec)
     if multiplier <= 1:
         return result
-    if result.type == EC_MULTIPLY:
+    if _is_packed_damage(result):
+        # Attack/armour: class and amount share d.  A single command can only
+        # carry what fits the amount byte; _scale_ec_cmds splits the rest.
+        result.d = _scale_packed_cmds(result, multiplier)[0].d
+    elif result.type == EC_MULTIPLY:
         result.d = result.d ** multiplier
     elif result.type == EC_MUL_RESOURCE:
         # cMulResource multiplies a player resource, so it compounds exactly
@@ -2279,11 +2285,6 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
         # "-50% cost" is d=0.5, so x2 must compound to 0.25 (-75%), exactly
         # like EC_MULTIPLY.  Multiplying d instead would make the bonus WEAKER.
         result.d = result.d ** multiplier
-    elif result.type == EC_ADD and int(result.c) == 8:
-        d_int = int(result.d)
-        class_id = d_int >> 8
-        amount   = d_int & 0xFF
-        result.d = float((class_id << 8) | (amount * multiplier))
     elif result.type == EC_SPAWN:
         # The only scalable type whose count is not in `d`.  `d` is 0.0 on every
         # vanilla spawn command, so the generic "scale d" rule could never do
@@ -2311,6 +2312,58 @@ def _scale_ec_for_multiplier(ec: EffectCommand, multiplier: int) -> EffectComman
     elif result.type in (EC_ADD, EC_RESOURCE):
         result.d = result.d * multiplier
     return result
+
+
+# Attack (9) and armour (8) pack two values into d: |d| = class * 256 + value,
+# negated as a whole for a negative ADD.  The value byte caps at 255 — for
+# EC_MULTIPLY it is the factor x100, so one command multiplies by at most 2.55
+# and "more" means several commands (UGC guide, xs/tricks.md).  Vanilla packs
+# all 1,425 of its attack commands this way, ADD and MULTIPLY alike.
+#
+# The generic rules corrupted both halves.  `d * N` on a "+1 melee attack"
+# (1025) at x2 gave 2050 — class 8, cavalry.  `d ** N` on "x1.25 vs buildings"
+# (2941) at x10 gave 6.6e39, past float32, and the build died writing the DAT
+# (issue #49); at smaller N it wrote a random class instead.
+_PACKED_DAMAGE_ATTRS = (8, 9)
+
+
+def _is_packed_damage(ec: EffectCommand) -> bool:
+    return ec.type in (EC_ADD, EC_MULTIPLY) and int(ec.c) in _PACKED_DAMAGE_ATTRS
+
+
+def _scale_packed_cmds(ec: EffectCommand, multiplier: int) -> list[EffectCommand]:
+    """One packed attack/armour command scaled N times, split so that every
+    command's value byte fits.  Order of the split commands doesn't matter:
+    they are all adds, or all multiplies, of the same class."""
+    sign = -1 if ec.d < 0 else 1
+    packed = abs(int(ec.d))
+    cls, value = packed >> 8, packed & 0xFF
+
+    def cmd(v: int) -> EffectCommand:
+        out = deepcopy(ec)
+        out.d = float(sign * ((cls << 8) | v))
+        return out
+
+    if ec.type == EC_ADD:
+        total = value * multiplier
+        chunks = [255] * (total // 255) + ([total % 255] if total % 255 else [])
+        return [cmd(v) for v in chunks] or [cmd(0)]
+    # EC_MULTIPLY: the byte is a percentage; compound the factor, not the bits.
+    factor = (value / 100) ** multiplier
+    chunks = []
+    while factor > 2.55:
+        chunks.append(255)
+        factor /= 2.55
+    chunks.append(max(0, min(255, round(factor * 100))))
+    return [cmd(v) for v in chunks]
+
+
+def _scale_ec_cmds(ec: EffectCommand, multiplier: int) -> list[EffectCommand]:
+    """_scale_ec_for_multiplier, as a list: the result for a packed attack/armour
+    command that outgrows its value byte is several commands, not one."""
+    if multiplier > 1 and _is_packed_damage(ec):
+        return _scale_packed_cmds(ec, multiplier)
+    return [_scale_ec_for_multiplier(ec, multiplier)]
 
 
 def _is_trigger_helper(dat: DatFile, unit_id: int) -> bool:
@@ -2349,11 +2402,16 @@ def _multiply_effect(dat: DatFile, effect_id: int, multiplier: int) -> None:
     discarded the part of the result it did not expect to change."""
     if multiplier <= 1 or effect_id < 0 or effect_id >= len(dat.effects):
         return
+    out: list = []
     for ec in dat.effects[effect_id].effect_commands:
         if ec.type == EC_SPAWN and _is_trigger_helper(dat, int(ec.a)):
+            out.append(ec)
             continue
-        scaled = _scale_ec_for_multiplier(ec, multiplier)
-        ec.c, ec.d = scaled.c, scaled.d
+        scaled = _scale_ec_cmds(ec, multiplier)
+        ec.c, ec.d = scaled[0].c, scaled[0].d
+        out.append(ec)
+        out.extend(scaled[1:])
+    dat.effects[effect_id].effect_commands = out
 
 
 def _apply_ec_list_entry(dat: DatFile, civ_index: int, ec_entry: dict,
@@ -2371,7 +2429,7 @@ def _apply_ec_list_entry(dat: DatFile, civ_index: int, ec_entry: dict,
     cmds = [EffectCommand(type=d["type"], a=d["A"], b=d["B"], c=d["C"], d=d["D"])
             for d in ecs_dicts]
     if multiplier > 1:
-        cmds = [_scale_ec_for_multiplier(cmd, multiplier) for cmd in cmds]
+        cmds = [s for cmd in cmds for s in _scale_ec_cmds(cmd, multiplier)]
 
     eff = Effect(name="C-Bonus EC-list", effect_commands=cmds)
     dat.effects.append(eff)
@@ -2813,6 +2871,41 @@ def _add_auto_fire_tech(dat: DatFile, civ_index: int, cmds: list[EffectCommand],
     # upgrade techs themselves in _add_upgrade_tier_tech.
     tech.repeatable = 1
     dat.techs.append(tech)
+
+
+_UT_EFFECT_CHUNK = 180
+
+
+def _split_oversized_ut(dat: DatFile, civ_index: int, ut_tid: int | None) -> int:
+    """Keep a UT's effect under the engine's ~189-command cap by moving the
+    overflow into hidden auto-fire techs that require the UT.
+
+    The vanilla shape: Imperial Nomads (641) is a Mongol auto-fire tech that
+    requires the Mongol UT, and Thalassocracy chains three more off the Malay
+    UT.  Chunks keep their order, so an add-then-multiply on one stat still
+    applies in that order.  Returns how many techs now carry the UT (1 = no
+    split was needed).
+    """
+    if ut_tid is None or not 0 <= ut_tid < len(dat.techs):
+        return 0
+    ut = dat.techs[ut_tid]
+    if not 0 <= ut.effect_id < len(dat.effects):
+        return 0
+    cmds = list(dat.effects[ut.effect_id].effect_commands)
+    if len(cmds) <= _UT_EFFECT_CHUNK:
+        return 1
+    dat.effects[ut.effect_id].effect_commands = cmds[:_UT_EFFECT_CHUNK]
+    parts = 1
+    for start in range(_UT_EFFECT_CHUNK, len(cmds), _UT_EFFECT_CHUNK):
+        dat.effects.append(Effect(name=f"{ut.name} (cont.)",
+                                  effect_commands=cmds[start:start + _UT_EFFECT_CHUNK]))
+        tech = _make_tech(name=f"{ut.name} (cont.)", effect_id=len(dat.effects) - 1,
+                          civ_index=civ_index, age_req=ut_tid)
+        # A trickle in the spilled half needs the same flag the UT has (quirk 1).
+        tech.repeatable = ut.repeatable
+        dat.techs.append(tech)
+        parts += 1
+    return parts
 
 
 def _upgrade_line(neighbours: dict[int, set[int]], unit_id: int) -> set[int]:
@@ -4388,8 +4481,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                         extra = []
                         if multiplier > 1:
                             for ec in src_cmds:
-                                scaled = _scale_ec_for_multiplier(ec, multiplier - 1)
-                                extra.append(scaled)
+                                extra.extend(_scale_ec_cmds(ec, multiplier - 1))
                         if extra:
                             new_eff = Effect(name=f"C-Bonus extra {bonus_id}",
                                              effect_commands=extra)
@@ -4491,8 +4583,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             # The player's own DAT is the source of truth whenever it still has
             # one, so a balance patch to a vanilla team bonus rides along free.
             for ec in safe_cmds:
-                dat.effects[tb_eff_id].effect_commands.append(
-                    _scale_ec_for_multiplier(ec, multiplier))
+                dat.effects[tb_eff_id].effect_commands.extend(
+                    _scale_ec_cmds(ec, multiplier))
             team_cmd_counts.append((tb_id, len(safe_cmds)))
             team_applied += 1
             continue
@@ -4509,8 +4601,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         for ec_dict in ec_dicts:
             cmd = EffectCommand(type=ec_dict["type"], a=ec_dict["A"],
                                 b=ec_dict["B"], c=ec_dict["C"], d=float(ec_dict["D"]))
-            dat.effects[tb_eff_id].effect_commands.append(
-                _scale_ec_for_multiplier(cmd, multiplier))
+            dat.effects[tb_eff_id].effect_commands.extend(
+                _scale_ec_cmds(cmd, multiplier))
         team_cmd_counts.append((tb_id, len(ec_dicts)))
         team_applied += 1
 
@@ -4860,6 +4952,52 @@ def _lock_unclaimed_optin_techs(dat: DatFile, civ_index: int, civ_def: dict) -> 
     cmds.extend(EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(tid))
                 for tid in to_lock)
     return len(to_lock)
+
+
+# Bonus 102 "Each garrisoned relic gives +1 attack to Knights and Unique Unit".
+# The Lithuanian techs it copies (699-702) name the Leitis by id, and add
+# MELEE attack (class 4) — so for any other civ the Unique Unit half went to a
+# unit it doesn't have, and a ranged UU (Mangudai) would ignore melee anyway.
+_RELIC_ATTACK_TECHS = (699, 700, 701, 702)
+_LEITIS, _ELITE_LEITIS = 1234, 1236
+
+
+def _uu_attack_class(dat: DatFile, civ_index: int, unit_id: int) -> int:
+    """3 (pierce) or 4 (melee) — whichever base attack the unit deals more of."""
+    try:
+        attacks = dat.civs[civ_index].units[unit_id].type_50.attacks
+    except (IndexError, AttributeError):
+        return 4
+    amounts = {a.class_: a.amount for a in attacks if a.class_ in (3, 4)}
+    return 3 if amounts.get(3, 0) > amounts.get(4, 0) else 4
+
+
+def _retarget_relic_attack_to_uu(dat: DatFile, civ_index: int,
+                                 bonus_tech_map: dict[int, int],
+                                 uu_id: int, elite_uu_id: int) -> int:
+    """Point bonus 102's Leitis commands at this civ's own UU (issue #48).
+
+    Only touches the civ's private copies of 699-702 (they are civ-gated, so
+    _allocate_tech gave them their own effects).  Returns commands rewritten.
+    """
+    targets = {_LEITIS: uu_id, _ELITE_LEITIS: elite_uu_id if elite_uu_id >= 0 else uu_id}
+    if uu_id < 0:
+        return 0
+    rewritten = 0
+    for tid in _RELIC_ATTACK_TECHS:
+        new_tid = bonus_tech_map.get(tid)
+        if new_tid is None or new_tid == tid:
+            continue
+        eff_id = dat.techs[new_tid].effect_id
+        if not 0 <= eff_id < len(dat.effects):
+            continue
+        for ec in dat.effects[eff_id].effect_commands:
+            if ec.type == EC_ADD and int(ec.c) == 9 and int(ec.a) in targets:
+                ec.a = targets[int(ec.a)]
+                cls = _uu_attack_class(dat, civ_index, int(ec.a))
+                ec.d = float(cls * 256 + (int(ec.d) & 255))
+                rewritten += 1
+    return rewritten
 
 
 def _restore_elite_upgrade_location(dat: DatFile, tech_id: int, civ_index: int) -> None:
@@ -5580,6 +5718,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         # also have their research_location wiped by step 0; restore them now.
         for _clone_tid in bonus_results.get("bonus_tech_map", {}).values():
             _restore_elite_upgrade_location(dat, _clone_tid, civ_index)
+        _retarget_relic_attack_to_uu(dat, civ_index, bonus_results.get("bonus_tech_map", {}),
+                                     uu_id, elite_uu_id)
     bonus_results["extra_unit_strings"].extend(km_uu_custom_unit_strings)
 
     # 7a. Player-composed bonus cards — one auto-fire tech each.
@@ -5609,6 +5749,15 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                     f"are full. Drop another unit trained there to make room.")
             print(f"  WARNING: {_msg}")
             warnings.append(_msg)
+
+    # 7d. A Custom UT merges several catalog effects into one, and stacking
+    #     multipliers grows it further (a packed attack multiply at x10 needs
+    #     three commands).  Spill the overflow into hidden techs that fire once
+    #     the UT is researched, so the next guard has nothing to say about it.
+    for _ut_tid in (castle_ut_tech_id, imp_ut_tech_id):
+        _parts = _split_oversized_ut(dat, civ_index, _ut_tid)
+        if _parts > 1:
+            print(f"       {dat.techs[_ut_tid].name}: split across {_parts} techs")
 
     # Guard: ANY effect exceeding ~189 commands crashes the game at startup.
     # Two of ours accumulate without bound — the tech tree effect (a command per
@@ -5925,7 +6074,7 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                     # Enable the destination civ's own base UU (e.g. Anarchy)
                     print(f"       {label} bonus {bonus_id}: deferring base-UU "
                           f"enable (type=2 a={a}) for substitution")
-                    pending_base_uu_subs.append(_scale_ec_for_multiplier(ec, multiplier))
+                    pending_base_uu_subs.extend(_scale_ec_cmds(ec, multiplier))
                 # All other EC_ENABLE (including non-UU) are intentionally skipped
                 continue
             if ec.type == EC_UPGRADE:
@@ -5934,17 +6083,17 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                 print(f"       {label} bonus {bonus_id}: deferring unit "
                       f"substitution for type={ec.type} command (needs this "
                       f"civ's own elite UU)")
-                pending_elite_uu_subs.append(_scale_ec_for_multiplier(ec, multiplier))
+                pending_elite_uu_subs.extend(_scale_ec_cmds(ec, multiplier))
                 continue
-            scaled = _scale_ec_for_multiplier(ec, multiplier)
+            scaled = _scale_ec_cmds(ec, multiplier)
             if ec.type in (EC_SET, EC_ADD, EC_MULTIPLY):
                 if a in src_base_uu_ids:
-                    pending_base_uu_subs.append(scaled)
+                    pending_base_uu_subs.extend(scaled)
                     continue
                 if a in src_elite_uu_ids:
-                    pending_elite_uu_subs.append(scaled)
+                    pending_elite_uu_subs.extend(scaled)
                     continue
-            cmds.append(scaled)
+            cmds.extend(scaled)
     return cmds, pending_elite_uu_subs, pending_base_uu_subs
 
 

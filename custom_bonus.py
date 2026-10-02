@@ -478,10 +478,15 @@ def effect_commands(eff: dict, selectors: list[tuple[int, int]]) -> list[EffectC
     out: list[EffectCommand] = []
 
     if "armor" in spec:
-        d = float(spec["armor"] * 256 + abs(v))
-        d = d if v > 0 else -d
-        for a, b in selectors:
-            out.append(EffectCommand(type=EC_ADD, a=a, b=b, c=spec["field"], d=d))
+        # The amount is one byte: past 255 it would spill into the class, so
+        # larger values go out as several commands (issue #49's sweep).
+        total = int(abs(v))
+        chunks = [255] * (total // 255) + ([total % 255] if total % 255 else [])
+        for amount in chunks:
+            d = float(spec["armor"] * 256 + amount)
+            d = d if v > 0 else -d
+            for a, b in selectors:
+                out.append(EffectCommand(type=EC_ADD, a=a, b=b, c=spec["field"], d=d))
         return out
 
     fields = spec["fields"]

@@ -77,7 +77,9 @@
         const isEF = fmt === "empireforge_v2" || fmt === "civbuilder_v1";
         if (isEF) {
           // Empire Forge file — load directly into wizard
+          // Both copies: this tab may already hold another civ's working copy.
           localStorage.setItem(EF_DRAFT_KEY, JSON.stringify(data));
+          try { sessionStorage.setItem(EF_DRAFT_KEY, JSON.stringify(data)); } catch {}
           window.location.href = "{{ url_for('builder_new') }}";
         } else if (data.bonuses && Array.isArray(data.bonuses)) {
           // Looks like a KM file — send to converter

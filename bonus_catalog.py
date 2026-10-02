@@ -66,6 +66,12 @@ DELIBERATE DIVERGENCE FROM KM — do not "restore" these from his source:
     Flaming Camel and the unbuildable Saboteur (706), but demolition **ships**
     are class 22 (Warship), shared with Galleys, so they can never be swept in
     by class.  Added 527/528/1104 and the Grenadier (1911) by id.
+  - 55 ("Stable units +1P armor in Castle and Imperial Age") — KM's commands
+    were d=1025, armour class 4 (MELEE) +1: the shape of vanilla effects
+    333/334 `Inf Cav +1 armor Age3/4`, copied without changing the class.
+    Now d=769, class 3 (pierce) +1 (issue #47, 2026-10-02).
+    tests/test_armor_class_text.py sweeps every card's armour class
+    against its text.
 
   Not catalog changes but the same sweep, both in civ_appender:
   - 360 ("Heavy Cavalry Archer available in Castle Age") needs

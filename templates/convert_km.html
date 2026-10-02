@@ -152,7 +152,9 @@ async function convertKm(km) {
 
 document.getElementById("btn-open-wizard").addEventListener("click", () => {
   if (!_convertedDraft) return;
+  // Both copies: this tab may already hold another civ's working copy.
   localStorage.setItem(EF_DRAFT_KEY, JSON.stringify(_convertedDraft));
+  try { sessionStorage.setItem(EF_DRAFT_KEY, JSON.stringify(_convertedDraft)); } catch {}
   window.location.href = "{{ url_for('builder_new') }}";
 });
 

@@ -198,5 +198,31 @@ print("  note  unresolved entries (pre-existing): " + ("; ".join(bad) or "none")
 check("every resolvable opt-in unit still resolves",
       all(int(b.split()[0]) in {1133, 1371, 1302} for b in bad), "; ".join(bad))
 
+# ── Issue #46: UT nodes retarget whatever DE calls their Node Type ────────────
+# Viking Sagas retyped the Castle UT nodes "Research" → "UniqueTech".  The
+# patcher matched only "Research", so against the installed (post-DLC) trees
+# the replaced civ's own UTs stayed, drawn as unavailable, and the custom UTs
+# never appeared.  The bundled pre-DLC files hid it.
+import tempfile                                             # noqa: E402
+from build_civ import _patch_per_civ_techtree               # noqa: E402
+
+for node_type in ("Research", "UniqueTech"):
+    huns = load("HUNS")
+    for n in huns["civ_techs_units"]:
+        if n.get("Node ID") in (483, 21):
+            n["Node Type"] = node_type
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "HUNS.json"
+        p.write_text(json.dumps(huns), encoding="utf-8")
+        out = json.loads(_patch_per_civ_techtree(p, {"tree": {"units": [], "buildings": [], "techs": []}},
+            civ_result={"orig_castle_ut_tech_id": 483, "orig_imp_ut_tech_id": 21,
+                        "castle_ut_tech_id": 9001, "imp_ut_tech_id": 9002,
+                        "castle_ut_name": "Probe Drill", "imp_ut_name": "Probe Quote"}))
+    ids = {n["Node ID"]: n for n in out["civ_techs_units"] if n.get("Building ID") == 82}
+    check(f"[{node_type}] vanilla UTs replaced by the custom civ's",
+          9001 in ids and 9002 in ids and 483 not in ids and 21 not in ids, sorted(ids))
+    check(f"[{node_type}] custom UTs shown as available",
+          all(ids.get(t, {}).get("Node Status") == "ResearchedCompleted" for t in (9001, 9002)))
+
 print("\nAll checks passed." if not failures else f"\n{failures} check(s) failed.")
 sys.exit(1 if failures else 0)
