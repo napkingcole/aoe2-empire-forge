@@ -203,6 +203,50 @@ _TEAM_BONUS_NAMES: dict[str, str] = json.loads(
     (Path(__file__).parent / "team_bonus_names.json").read_text(encoding="utf-8"))
 
 
+def _kv_text(text: str) -> str:
+    """Make user text safe inside a key-value strings line: `ID "text"`.
+
+    A real newline ends the line — the UT description textarea accepts Enter,
+    and one line break split the civ-selection string in two, so the game got an
+    unterminated string and the description never showed (issue #38).  The game
+    renders a literal \\n as a line break, which is what the user meant.  A bare
+    double quote closes the string early; vanilla files escape it as \\".
+    Backslashes are left alone so a hand-typed \\n keeps working.
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+    return re.sub(r'(?<!\\)"', r'\\"', text)
+
+
+def ut_name_and_desc(name: str, desc: str) -> tuple[str, str]:
+    """(name, description) for a unique tech.
+
+    A name typed with its own parenthetical — "Upgrade 1 (Cavalry attack
+    faster)", the workaround players used while descriptions didn't reach the
+    selection screen — is split, and the parenthetical is used when the
+    description field is empty.  When both are given the name is kept whole:
+    dropping text the player typed is worse than an extra bracket.  KM's packed
+    "Name (description)" strings take the same split.
+    """
+    name, desc = (name or "").strip(), (desc or "").strip()
+    short, sep, paren = name.partition(" (")
+    if desc:
+        return name, desc
+    if sep and paren.endswith(")"):
+        return short, paren[:-1].strip()
+    return name, ""
+
+
+def ut_selection_text(name: str, desc: str) -> str:
+    """'Ballistas (Scorpions attack +33% faster)' — the game's own form, which
+    leaves out a description's closing full stop."""
+    desc = desc.rstrip(".").strip()
+    return f"{name} ({desc})" if desc else name
+
+
+def ut_research_label(name: str, desc: str) -> str:
+    return "Research " + ut_selection_text(name, desc)
+
+
 def _load_vanilla_civ_descriptions() -> dict[int, str]:
     """Extract vanilla civ descriptions (sids 120150-120194) from the bundled
     aoe2techtree locale JSON, converting <br> → literal \\n for the modded-strings
@@ -517,6 +561,14 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # Enrich civ_result with UT names so _patch_per_civ_techtree can update node labels.
         civ_result["castle_ut_name"] = castle_ut_name
         civ_result["imp_ut_name"]    = imp_ut_name
+        # The description field — read here too.  This route used to ignore it,
+        # so a wizard civ built from Build Mod showed "Name" on the civ
+        # selection screen while the wizard's own build showed "Name
+        # (description)": one field, two routes, two readers.
+        castle_ut_desc = ((civ_def.get("castle_ut") or {}).get("description") or "").strip() \
+            if isinstance(civ_def.get("castle_ut"), dict) else ""
+        imp_ut_desc = ((civ_def.get("imperial_ut") or {}).get("description") or "").strip() \
+            if isinstance(civ_def.get("imperial_ut"), dict) else ""
 
         # UT string IDs: real existing vanilla ids from
         # civ_appender.CAMPAIGN_STRING_POOL (see that module's docstring —
@@ -621,7 +673,9 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # Section break + UTs
         desc_parts.append(
             "\\n\\n<b>Unique Techs:<b> \\n"
-            f"• {castle_ut_name}\\n• {imp_ut_name}"
+            + "\\n".join("• " + _kv_text(ut_selection_text(*ut_name_and_desc(nm, ds)))
+                         for nm, ds in ((castle_ut_name, castle_ut_desc),
+                                        (imp_ut_name, imp_ut_desc)))
         )
         if team_bonus_entries:
             tb_lines = []
@@ -673,17 +727,17 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
             # into one string; split so the button label matches vanilla
             # style (just the name) and the tooltip shows the description
             # after the cost token.
-            for name_sid_ut, desc_sid_ut, help_sid_ut, full in (
-                (castle_ut_sid, castle_ut_desc_sid, castle_ut_help_sid, castle_ut_name),
-                (imp_ut_sid, imp_ut_desc_sid, imp_ut_help_sid, imp_ut_name),
+            for name_sid_ut, desc_sid_ut, help_sid_ut, full, typed_desc in (
+                (castle_ut_sid, castle_ut_desc_sid, castle_ut_help_sid, castle_ut_name, castle_ut_desc),
+                (imp_ut_sid, imp_ut_desc_sid, imp_ut_help_sid, imp_ut_name, imp_ut_desc),
             ):
-                short, _, paren = full.partition(" (")
-                desc = paren.rstrip(")") if paren else ""
+                short, desc = ut_name_and_desc(full, typed_desc)
+                short, desc = _kv_text(short), _kv_text(desc)
                 string_lines[lang].append(f'{name_sid_ut} "{short}"')
-                # lang_desc in the DAT tech points to name_sid+DLL_CREATION_OFFSET
-                # (name_sid+1000). The Castle research button reads this SID.
-                # Use just the short name so the button label fits on one line.
-                string_lines[lang].append(f'{name_sid_ut + DLL_CREATION_OFFSET} "Research {short}"')
+                # +1000 holds "Research Name (description)", as every vanilla
+                # unique tech does — the civ selection pane lists UTs from it.
+                string_lines[lang].append(
+                    f'{name_sid_ut + DLL_CREATION_OFFSET} "{ut_research_label(short, desc)}"')
                 # Castle UI reads name_sid+21000 for UT button hover tooltips.
                 # UT_POOL_OFFSET uses 44000-range SIDs so +21000 = 65000-range, which
                 # is safe and overridable (unlike the old 70000-range where +21000

@@ -45,6 +45,7 @@ run "bonus 54 fishermen"          "$PY" tests/test_bonus_54_fishermen.py
 run "audit fixes (python)"        "$PY" tests/test_audit_fixes.py
 run "team bonus catalog"          "$PY" tests/test_team_bonus_catalog.py
 run "spawn scaling + UU flags"    "$PY" tests/test_spawn_and_flags.py
+run "UT multiplier flags"         "$PY" tests/test_ut_multiplier_flags.py
 
 # Build smoke: builds ONE civ end to end (~25s, of which ~17s is loading the
 # DAT).  Everything above this line is a pure data check that never builds a
@@ -61,6 +62,7 @@ else
     run "dat_path fallback"       "$PY" tests/test_dat_path_fallback.py
     run "issues 38-44 batch"      "$PY" tests/test_issues_40_44.py
     run "custom bonus composer"   "$PY" tests/test_custom_bonus.py
+    run "UT text, both routes"    "$PY" tests/test_ut_description_routes.py
 fi
 
 # Route round-trip builds all 19 saved civs down BOTH routes and compares them —

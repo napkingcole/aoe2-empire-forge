@@ -1413,7 +1413,7 @@ const _BONUS_CAT_OVERRIDES = {
    53: 'unlock',   61: 'unlock',   68: 'unlock',   69: 'unlock',
    93: 'unlock',   99: 'unlock',  103: 'unlock',
   109: 'unlock',  193: 'unlock',  209: 'unlock',  213: 'unlock',
-  221: 'unlock',  247: 'unlock',  252: 'unlock',
+  221: 'unlock',  247: 'unlock',  252: 'unlock',  223: 'unlock',
   270: 'unlock',  282: 'unlock',  283: 'unlock',  286: 'unlock',
   287: 'unlock',  297: 'unlock',  298: 'unlock',   91: 'unlock',
   299: 'unlock',  300: 'unlock',  307: 'unlock',  308: 'unlock',

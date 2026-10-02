@@ -12,6 +12,8 @@ import zipfile
 from pathlib import Path
 
 from build_all import (
+    _kv_text,
+    ut_name_and_desc, ut_selection_text, ut_research_label,
     _build_combined_data_zip,
     _build_combined_ui_zip,
     _ut_name,
@@ -49,20 +51,6 @@ import custom_bonus
 
 
 # ── Draft → civ_def ──────────────────────────────────────────────────────────
-
-def _kv_text(text: str) -> str:
-    """Make user text safe inside a key-value strings line: `ID "text"`.
-
-    A real newline ends the line — the UT description textarea accepts Enter,
-    and one line break split the civ-selection string in two, so the game got an
-    unterminated string and the description never showed (issue #38).  The game
-    renders a literal \\n as a line break, which is what the user meant.  A bare
-    double quote closes the string early; vanilla files escape it as \\".
-    Backslashes are left alone so a hand-typed \\n keeps working.
-    """
-    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
-    return re.sub(r'(?<!\\)"', r'\\"', text)
-
 
 def _draft_to_civ_def(draft: dict) -> dict:
     """Convert wizard draft JSON to the civ_def format expected by apply_civ."""
@@ -271,7 +259,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     desc_parts.append(
         "\\n\\n<b>Unique Techs:<b> \\n"
         + "\\n".join(
-            f"• {nm}" + (f" — {dsc}" if dsc else "")
+            "• " + ut_selection_text(*ut_name_and_desc(nm, dsc))
             for nm, dsc in ((castle_ut_name, castle_ut_desc_text),
                             (imp_ut_name, imp_ut_desc_text))
         )
@@ -363,13 +351,15 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             (castle_ut_sid, castle_ut_desc_sid, castle_ut_help_sid, castle_ut_name, castle_ut_desc_text),
             (imp_ut_sid,    imp_ut_desc_sid,    imp_ut_help_sid,    imp_ut_name,    imp_ut_desc_text),
         ):
-            short, _, paren = full_name.partition(" (")
-            # Prefer the wizard's explicit description field; fall back to any
-            # parenthetical embedded in the tech name (legacy format).
-            desc = ut_desc_text or (paren.rstrip(")") if paren else "")
+            short, desc = ut_name_and_desc(full_name, ut_desc_text)
             string_lines[lang].append(f'{ut_sid} "{short}"')
+            # +1000 is where the game keeps "Research Name (description)" — 116
+            # of its 116 real unique techs do.  The civ selection pane reads the
+            # unique techs from it, so writing the bare name left our civs
+            # listing "Upgrade 1, Upgrade 2" where the Romans list "Ballistas
+            # (Scorpions attack +33% faster; ...)".
             string_lines[lang].append(
-                f'{ut_sid + DLL_CREATION_OFFSET} "Research {short}"')
+                f'{ut_sid + DLL_CREATION_OFFSET} "{ut_research_label(short, desc)}"')
             help_body = f"Research <b>{short}<b> (<cost>)"
             if desc:
                 help_body += f"\\n{desc}"

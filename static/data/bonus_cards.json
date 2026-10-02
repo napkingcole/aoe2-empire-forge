@@ -2,7 +2,7 @@
   "_note": [
     "Single-column layout — fields map top to bottom:",
     "",
-    "  ┌── HEADER (auto: category color + name) ──────┐",
+    "  ┌── HEADER (auto: category color + name) ───────┐",
     "  │  [icon]          ← entity, icon               │",
     "  │  [icon]  [icon]  ← dual only (icon + icon2)   │",
     "  │  [heading]       ← heading                    │",
@@ -1650,10 +1650,11 @@
     "multiplier": false
   },
   "223": {
-    "type": "value",
-    "heading": "FREE",
-    "stat": "Start with a free Horse",
-    "entity": "scout",
+    "type": "desc",
+    "_note": "Hidden 2026-10-02. Nomad-only (user, 2026-10-02): the horse tech 238 needs Shadow TC Foundation 308, which only a placed Town Center FOUNDATION fires - i.e. a Nomad start. On a normal start the completed TC fires Shadow TC Annex 307 first, whose helper (1640 -> 242) disables 238, so no horse ever spawns.",
+    "heading": "UNLOCK",
+    "stat": "Start with a Horse Scout on Nomad starts",
+    "entity": "horse",
     "description": "Starting Units",
     "multiplier": false
   },

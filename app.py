@@ -28,9 +28,11 @@ from flask import (Flask, flash, jsonify, redirect, render_template,
                    request, send_file, send_from_directory, session, url_for)
 
 from bonus_names import bonus_name, skip_reason
+import custom_bonus
 from build_all import (_build_combined_data_zip, _build_combined_ui_zip,
                        _ut_name, _ut_bonus_id, _BONUS_NAMES, _TEAM_BONUS_NAMES,
-                       _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS)
+                       _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS,
+                       _kv_text, ut_name_and_desc, ut_selection_text, ut_research_label)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
@@ -735,9 +737,19 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 (civ_def.get("imperial_ut") or {}).get("name")
                 or _ut_name(imp_ut_bid, castle=False)
             )
-            # Strip any parenthesized description suffix so button labels stay short.
-            castle_ut_name_short = castle_ut_name.partition(" (")[0]
-            imp_ut_name_short    = imp_ut_name.partition(" (")[0]
+            # (name, description) the same way the other two routes do — see
+            # build_all.ut_name_and_desc.  This is the THIRD copy of the Build
+            # Mod string writer (with build_all.build_mod and the wizard's), and
+            # the one the web Build Mod page runs; fixing the other two first
+            # left a build from this page still listing bare UT names.
+            castle_ut_desc_text = ((civ_def.get("castle_ut") or {}).get("description") or "").strip() \
+                if isinstance(civ_def.get("castle_ut"), dict) else ""
+            imp_ut_desc_text    = ((civ_def.get("imperial_ut") or {}).get("description") or "").strip() \
+                if isinstance(civ_def.get("imperial_ut"), dict) else ""
+            castle_ut_name_short, castle_ut_desc_text = (
+                _kv_text(x) for x in ut_name_and_desc(castle_ut_name, castle_ut_desc_text))
+            imp_ut_name_short, imp_ut_desc_text = (
+                _kv_text(x) for x in ut_name_and_desc(imp_ut_name, imp_ut_desc_text))
             # Enrich result with UT names for CivTechTrees node label updates.
             result["castle_ut_name"] = castle_ut_name
             result["imp_ut_name"]    = imp_ut_name
@@ -750,8 +762,6 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             imp_ut_desc_sid    = result.get("imp_ut_desc_sid")    or imp_ut_sid
             castle_ut_help_sid = result.get("castle_ut_help_sid")
             imp_ut_help_sid    = result.get("imp_ut_help_sid")
-            castle_ut_desc_text = ((civ_def.get("castle_ut") or {}).get("description") or "").strip()
-            imp_ut_desc_text    = ((civ_def.get("imperial_ut") or {}).get("description") or "").strip()
 
             # uu_info was already resolved inside the log context above.
             uu_info = uu_info_resolved
@@ -821,12 +831,15 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     continue
                 suffix = f" [x{mult}]" if mult > 1 else ""
                 desc_parts.append(f"• {txt}{suffix} \\n")
+            # Custom bonus cards — the other two routes list them; this one didn't.
+            for _card in custom_bonus.normalize(civ_def.get("custom_bonuses")):
+                desc_parts.append(f"• {_kv_text(custom_bonus.card_text(_card))} \\n")
             desc_parts.append("\\n<b>Unique Unit:<b> \\n")
             uu_display = uu_override_name or (uu_info["name"] if uu_info else "Unique Unit")
             desc_parts.append(f"{uu_display} \\n")
             desc_parts.append("\\n<b>Unique Techs:<b> \\n")
-            desc_parts.append(f"• {castle_ut_name} \\n")
-            desc_parts.append(f"• {imp_ut_name} \\n")
+            desc_parts.append(f"• {ut_selection_text(castle_ut_name_short, castle_ut_desc_text)} \\n")
+            desc_parts.append(f"• {ut_selection_text(imp_ut_name_short, imp_ut_desc_text)} \\n")
             if team_bonus_entries:
                 desc_parts.append("\\n<b>Team Bonus:<b> \\n")
                 for entry in team_bonus_entries:
@@ -860,8 +873,9 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 # Castle UT: language_dll_help (60xxx pool SID) drives the research-button
                 # hover tooltip — NOT name+21000, which is the unit-train-button slot.
                 string_lines[lang].append(f'{castle_ut_sid} "{castle_ut_name_short}"')
+                # "Research Name (description)" — what every vanilla UT keeps at +1000.
                 string_lines[lang].append(
-                    f'{castle_ut_sid + DLL_CREATION_OFFSET} "Research {castle_ut_name_short}"')
+                    f'{castle_ut_sid + DLL_CREATION_OFFSET} "{ut_research_label(castle_ut_name_short, castle_ut_desc_text)}"')
                 _castle_ut_help = f"Research <b>{castle_ut_name_short}<b> (<cost>)"
                 if castle_ut_desc_text:
                     _castle_ut_help += f"\\n{castle_ut_desc_text}"
@@ -877,7 +891,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 # Imperial UT
                 string_lines[lang].append(f'{imp_ut_sid} "{imp_ut_name_short}"')
                 string_lines[lang].append(
-                    f'{imp_ut_sid + DLL_CREATION_OFFSET} "Research {imp_ut_name_short}"')
+                    f'{imp_ut_sid + DLL_CREATION_OFFSET} "{ut_research_label(imp_ut_name_short, imp_ut_desc_text)}"')
                 _imp_ut_help = f"Research <b>{imp_ut_name_short}<b> (<cost>)"
                 if imp_ut_desc_text:
                     _imp_ut_help += f"\\n{imp_ut_desc_text}"

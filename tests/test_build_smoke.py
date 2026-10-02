@@ -227,6 +227,15 @@ check("unique unit tooltip quotes the overridden cost",
       any("65W" in t and "30G" in t for t in cost_lines),
       f"cost lines: {cost_lines[:3]}")
 
+# Unique techs carry their description the way the game's own do: "Research
+# Name (description)" at name+1000, which the civ selection pane lists, and
+# "Name (description)" in the civ text.  Ours used to write the bare name.
+check("UT +1000 string is 'Research Name (description)', as every vanilla UT's is",
+      any(t == "Research Smoke Anarchy (Unique unit can be created at the Barracks)" for _, t in rows),
+      [t for _, t in rows if t.startswith("Research Smoke")])
+check("civ description lists the UT as 'Name (description)'",
+      any("• Smoke Anarchy (Unique unit can be created at the Barracks)" in t for _, t in rows))
+
 # Custom bonus cards reach the civ-selection description, quotes escaped.
 desc_rows = [t for _, t in rows if "Cavalry: +20% HP, +2 pierce armor" in t]
 check("custom bonus card text is in the civ description", bool(desc_rows))
