@@ -87,7 +87,7 @@ def describe_ec(ec) -> str:
         mode = {0: "set", 1: "add", -1: "trickle"}.get(b, f"mode{b}")
         return f"RESOURCE  {_res(a)} {mode} {d}"
     if t == EC_ENABLE:
-        return f"ENABLE  unit {a}  {'show' if b == 1 else 'hide'}"
+        return f"ENABLE  unit {a}  {'hide' if b == 0 else 'show'}"
     if t == EC_UPGRADE:
         return f"UPGRADE  unit {a} → unit {b}"
     if t == EC_ADD:

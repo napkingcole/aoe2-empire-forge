@@ -105,5 +105,54 @@ check("T89: buildings +3 line of sight",
 check("T90: trade carts +15% speed",
       any(c.type == 5 and int(c.b) == 19 and int(c.c) == 5 for c in tb))
 
+# ── Chronicles unique units (unlock cards 447-454) ───────────────────────────
+from civ_appender import _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS   # noqa: E402
+
+UNITS = [b for b, spec in _UNLOCK_UNIT_BONUSES.items() if spec.get("chronicles")]
+check("eight Chronicles unit cards", UNITS == list(range(447, 455)), UNITS)
+check("every Chronicles string id is distinct",
+      len(set(CHRONICLES_SIDS.values())) == len(CHRONICLES_SIDS) == 28, len(CHRONICLES_SIDS))
+
+# One card per civ: six of these train at the Castle and share the UU button,
+# so a civ can only fit a couple (both pages of the Castle are one slot each).
+written: set[str] = set()
+for b, SLOT2 in zip(UNITS, range(2, 10)):
+    n2 = len(dat.techs)
+    with contextlib.redirect_stdout(io.StringIO()):
+        res2 = apply_civ(dat, {"alias": "ChronUnits", "bonuses": [{"id": b, "multiplier": 1}],
+                               "team_bonuses": []}, target_slot=SLOT2)
+    written |= {e["name"] for e in res2["bonus_results"].get("extra_unit_strings", [])}
+    check(f"{b}: applies with no warnings",
+          res2["bonus_results"]["applied"] >= 1 and not res2["bonus_results"]["skipped"]
+          and not res2.get("warnings"), (res2["bonus_results"]["skipped"], res2.get("warnings")))
+    mine2 = {t.name: (i, t) for i, t in enumerate(dat.techs) if i >= n2 and t.civ == SLOT2}
+    spec = _UNLOCK_UNIT_BONUSES[b]
+    src_make, src_elite = (dat.techs[t] for t in spec["techs"])
+    make = mine2.get(src_make.name)
+    elite = mine2.get(src_elite.name)
+    check(f"{b} {spec['name']}: make-avail and elite techs are this civ's own copies",
+          make is not None and elite is not None)
+    if make and elite:
+        check(f"{b} {spec['name']}: unlocks in the standard Castle Age, elite in the standard Imperial Age",
+              102 in make[1].required_techs and 103 in elite[1].required_techs)
+        check(f"{b} {spec['name']}: elite upgrade button carries our own name string",
+              elite[1].language_dll_name == CHRONICLES_SIDS[("tech", spec["techs"][1])])
+    units = dat.civs[SLOT2].units
+    check(f"{b} {spec['name']}: every form carries our own name string",
+          all(units[u].language_dll_name == CHRONICLES_SIDS[("unit", u)] for u in spec["names"]))
+from civ_appender import unit_label                  # noqa: E402
+check("logs and warnings name a renamed unit by its name, not a campaign line",
+      unit_label(dat, 9, 2390) == "2390 (Sannāhya)", unit_label(dat, 9, 2390))
+check("unit names reach the strings writer (incl. the macron in Sannāhya)",
+      {"Immortal (Melee)", "Immortal (Ranged)", "Strategos", "Sannāhya", "Elite Sannāhya"} <= written,
+      sorted(written)[:12])
+
+# EC_ENABLE with b=-1 also shows a unit (27 vanilla commands use it).  Every
+# "is this an enable?" check used to demand b == 1, so these units — and the
+# Saxon Hearth Troop, whose make-avail is b=-1 too — were invisible to them.
+from build_civ import _uu_actual_unit_id              # noqa: E402
+check("a b=-1 make-avail resolves to its unit (Hearth Troop 1461 -> 2705), not the tech id",
+      _uu_actual_unit_id(dat, 1461) == 2705, _uu_actual_unit_id(dat, 1461))
+
 print("\nAll checks passed." if not failures else f"\n{failures} check(s) failed.")
 sys.exit(1 if failures else 0)

@@ -365,6 +365,27 @@ def _string_table() -> dict[int, str]:
     return _vanilla_strings
 
 
+def _is_enable(ec) -> bool:
+    """EC_ENABLE that shows a unit.  b=1 is the usual form, but vanilla also
+    enables with b=-1 (27 commands: Hearth Troop, Flemish Revolution, every
+    Chronicles unit), and only b=0 hides — so "enable" is b != 0."""
+    return ec.type == 2 and int(ec.b) != 0
+
+
+# Names we wrote ourselves, by string id.  Every CAMPAIGN_STRING_POOL id is a
+# vanilla CAMPAIGN line we repurpose, so looking one up in the vanilla table
+# returns dialogue ("Bertrand: Mmmm...venison.") — never the unit's name.
+_OWN_STRING_NAMES: dict[int, str] = {}
+
+
+def _display_name(sid: int, codename: str | None) -> str | None:
+    """A unit's display name for logs and warnings: our own name for a pool id,
+    otherwise the vanilla string, otherwise the codename."""
+    if sid in _CAMPAIGN_POOL_SET:
+        return _OWN_STRING_NAMES.get(sid) or codename
+    return _string_table().get(sid) or codename
+
+
 def unit_label(dat: DatFile, civ_index: int, unit_id: int) -> str:
     """'775 (Missionary)' for logs — display name, falling back to the codename.
 
@@ -377,9 +398,8 @@ def unit_label(dat: DatFile, civ_index: int, unit_id: int) -> str:
         unit = None
     if unit is None:
         return f"{unit_id} (?)"
-    name = _string_table().get(getattr(unit, "language_dll_name", -1) or -1)
-    if not name:
-        name = getattr(unit, "name", None) or "?"
+    name = _display_name(getattr(unit, "language_dll_name", -1) or -1,
+                         getattr(unit, "name", None)) or "?"
     return f"{unit_id} ({name})"
 
 
@@ -669,6 +689,9 @@ CAMPAIGN_STRING_POOL: list[int] = [
 ]
 
 
+_CAMPAIGN_POOL_SET: frozenset[int] = frozenset(CAMPAIGN_STRING_POOL)
+
+
 def _campaign_sid(slot_index: int) -> int:
     """Look up a campaign-override string id by absolute slot index.
 
@@ -798,6 +821,13 @@ CITY_WALLS_HELP_SID        = _campaign_sid(UT_HELP_POOL_OFFSET + MAX_TOTAL_CIVS 
 # can write the custom strings at hero_name_sid, +1000, +21000.
 HERO_POOL_OFFSET = BONUS_FIXED_POOL_OFFSET + 4   # 4 fixed bonus slots before hero block
 
+# Chronicles unit names (the unlock cards 447-454): one fixed slot per unit and
+# per elite-upgrade tech, right after the hero block.  These units' own name
+# ids (405xxx) live in the Chronicles string table, which nothing guarantees a
+# normal match loads, so the cards write their own text — the same way custom
+# UUs do.  Shared across civs: the unit data is identical in every civ.
+CHRONICLES_UNIT_POOL_OFFSET = HERO_POOL_OFFSET + MAX_TOTAL_CIVS
+
 # (sid, text) pairs callers should write UNCONDITIONALLY, once per build —
 # not per-civ-looped, since these are the fixed/shared strings above.
 # Harmless to write even if no civ in this build uses bonus 308/309/310.
@@ -811,6 +841,7 @@ FIXED_UNIT_NAME_STRINGS: list[tuple[int, str]] = [
     (ROYAL_ELEPHANT_NAME_SID, "Royal Battle Elephant"),
     (ROYAL_LANCER_NAME_SID, "Royal Lancer"),
 ]
+_OWN_STRING_NAMES.update(FIXED_UNIT_NAME_STRINGS)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1069,7 +1100,7 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         if eid < 0 or eid >= len(dat.effects):
             continue
         for c in dat.effects[eid].effect_commands:
-            if c.type == 2 and int(c.b) == 1:   # EC_ENABLE
+            if _is_enable(c):
                 ec8_unit_techs.setdefault(int(c.a), []).append(tech_id)
             elif c.type == 3:                     # EC_UPGRADE → to unit b
                 ec8_unit_techs.setdefault(int(c.b), []).append(tech_id)
@@ -1142,7 +1173,7 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         if eid < 0 or eid >= len(dat.effects):
             continue
         for c in dat.effects[eid].effect_commands:
-            if c.type == 2 and c.b == 1:        # EC_ENABLE → makes unit available
+            if _is_enable(c):                   # EC_ENABLE → makes unit available
                 enable_map.setdefault(c.a, []).append(tech_id)
             elif c.type == 3:                    # EC_UPGRADE → produces new unit b
                 upgrade_map.setdefault(c.b, []).append(tech_id)
@@ -1249,7 +1280,7 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         if _eid < 0 or _eid >= len(dat.effects):
             continue
         for _c in dat.effects[_eid].effect_commands:
-            if _c.type == EC_ENABLE and int(_c.b) == 1:
+            if _is_enable(_c):
                 _enables.setdefault(_tid, set()).add(int(_c.a))
 
     _extra_disable: set[int] = set()
@@ -1626,7 +1657,7 @@ def _plan_button_layout(dat: DatFile, units, present: set[int],
         """
         make_avail = {tid for tid, t in enumerate(dat.techs)
                       if 0 <= t.effect_id < len(effects)
-                      and any(ec.type == EC_ENABLE and int(ec.b) == 1 and int(ec.a) in line
+                      and any(_is_enable(ec) and int(ec.a) in line
                               for ec in effects[t.effect_id].effect_commands)}
         out = []
         for tid, tech in enumerate(dat.techs):
@@ -1686,7 +1717,7 @@ def _units_enabled_by(dat: DatFile, tech_id: int) -> set[int]:
     if not (0 <= eid < len(dat.effects)):
         return set()
     return {int(ec.a) for ec in dat.effects[eid].effect_commands
-            if ec.type == EC_ENABLE and int(ec.b) == 1 and ec.a >= 0}
+            if _is_enable(ec) and ec.a >= 0}
 
 
 def _team_bonus_units(dat: DatFile, civ_def: dict) -> set[int]:
@@ -1711,7 +1742,7 @@ def _team_bonus_units(dat: DatFile, civ_def: dict) -> set[int]:
         if not cmds:
             cmds = [(c["type"], int(c["A"]), int(c["B"])) for c in team_bonus_ec_list(tb_id)]
         for kind, a, b in cmds:
-            if kind == EC_ENABLE and b == 1:
+            if kind == EC_ENABLE and b != 0:     # b=1 or -1; only 0 hides
                 out.add(a)
             elif kind in (8, EC_TECH_COST, EC_TECH_TIME):
                 # type 8 unlocks the make-avail tech (Viking Sagas onward);
@@ -1745,7 +1776,7 @@ def _trainable_tree_units(dat: DatFile, units, tree: set[int], own) -> set[int]:
     for tid, tech in enumerate(dat.techs):
         if 0 <= tech.effect_id < len(dat.effects):
             for ec in dat.effects[tech.effect_id].effect_commands:
-                if ec.type == EC_ENABLE and int(ec.b) == 1 and ec.a >= 0:
+                if _is_enable(ec) and ec.a >= 0:
                     enablers[int(ec.a)].add(tid)
                 elif ec.type == EC_UPGRADE and ec.a >= 0 and ec.b >= 0 and allowed(tid):
                     upgrades.append((int(ec.a), int(ec.b)))
@@ -1818,7 +1849,7 @@ def _own_tech_units(dat: DatFile, civ_index: int) -> set[int]:
             continue
         if 0 <= tech.effect_id < len(dat.effects):
             out |= {int(ec.a) for ec in dat.effects[tech.effect_id].effect_commands
-                    if ec.type == EC_ENABLE and int(ec.b) == 1 and ec.a >= 0}
+                    if _is_enable(ec) and ec.a >= 0}
     return out
 
 
@@ -1897,7 +1928,7 @@ def button_layout_preview(dat: DatFile, civ_def: dict, tree_techs: set[int]) -> 
 
     def unit_name(uid):
         u = units[uid]
-        return _DISPLAY_NAMES.get(uid) or _string_table().get(u.language_dll_name) or u.name
+        return _DISPLAY_NAMES.get(uid) or _display_name(u.language_dll_name, u.name)
 
     # Which page-1 techs could this civ actually research?  The game only shows
     # a tech once its prerequisites are met, so the preview must not list the
@@ -2519,7 +2550,99 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
     # Shares Barracks button 4 with the Eagle Warrior and Fire Lancer —
     # _resolve_button_collisions moves whichever loses to page 2.
     428: {"name": "Flemish Militia",  "techs": (773,),       "units": (1699,)},
+    # Chronicles unique units (2026-10-03).  Each is a civ-gated make-avail tech
+    # requiring the STANDARD Castle Age (102) plus an elite upgrade requiring
+    # the standard Imperial Age (103) — no Chronicles-only ages.  The unit data
+    # is complete in every civ (Britons included), just disabled.  "names" are
+    # written as our own strings (CHRONICLES_UNIT_POOL_OFFSET); "elite_tech"
+    # names the upgrade button.  EC_ENABLE here is b=-1, as in vanilla's
+    # Flemish Revolution and Hearth Troop, both of which work in normal games.
+    # "units" is what the card makes trainable; alternate forms the unit
+    # switches into (Immortal ranged 2174/2175, the second Hippeus 2168/2169)
+    # are never enabled directly, so they appear only in "names".
+    447: {"name": "Immortal",          "techs": (1114, 1115), "units": (2101, 2102),
+          "chronicles": True, "elite_tech": (1115, "Elite Immortal"),
+          "names": {2101: "Immortal (Melee)", 2174: "Immortal (Ranged)",
+                    2102: "Elite Immortal (Melee)", 2175: "Elite Immortal (Ranged)"}},
+    448: {"name": "Strategos",         "techs": (1124, 1125), "units": (2104, 2105),
+          "chronicles": True, "elite_tech": (1125, "Elite Strategos"),
+          "names": {2104: "Strategos", 2105: "Elite Strategos"}},
+    449: {"name": "Hippeus",           "techs": (1134, 1135), "units": (2107, 2108),
+          "chronicles": True, "elite_tech": (1135, "Elite Hippeus"),
+          "names": {2107: "Hippeus", 2168: "Hippeus", 2108: "Elite Hippeus", 2169: "Elite Hippeus"}},
+    450: {"name": "Companion Cavalry", "techs": (1288, 1289), "units": (2382, 2383),
+          "chronicles": True, "elite_tech": (1289, "Elite Companion Cavalry"),
+          "names": {2382: "Companion Cavalry", 2383: "Elite Companion Cavalry"}},
+    451: {"name": "Phalangite",        "techs": (1290, 1291), "units": (2384, 2385),
+          "chronicles": True, "elite_tech": (1291, "Elite Phalangite"),
+          "names": {2384: "Phalangite", 2385: "Elite Phalangite"}},
+    452: {"name": "Rhomphaia Warrior", "techs": (1300, 1301), "units": (2386, 2387),
+          "chronicles": True, "elite_tech": (1301, "Elite Rhomphaia Warrior"),
+          "names": {2386: "Rhomphaia Warrior", 2387: "Elite Rhomphaia Warrior"}},
+    453: {"name": "Pattiyodha Longbowman", "techs": (1325, 1326), "units": (2388, 2389),
+          "chronicles": True, "elite_tech": (1326, "Elite Pattiyodha Longbowman"),
+          "names": {2388: "Pattiyodha Longbowman", 2389: "Elite Pattiyodha Longbowman"}},
+    454: {"name": "Sannāhya",          "techs": (1327, 1328), "units": (2390, 2391),
+          "chronicles": True, "elite_tech": (1328, "Elite Sannāhya"),
+          "names": {2390: "Sannāhya", 2391: "Elite Sannāhya"}},
 }
+
+# Fixed string ids for the Chronicles unlock cards: every named unit, then every
+# elite-upgrade tech, in table order.  Computed once — the pool is a plain list.
+_CHRONICLES_SID_KEYS: list = [
+    *[("unit", uid) for spec in _UNLOCK_UNIT_BONUSES.values() if spec.get("chronicles")
+      for uid in spec["names"]],
+    *[("tech", spec["elite_tech"][0]) for spec in _UNLOCK_UNIT_BONUSES.values()
+      if spec.get("chronicles")],
+]
+CHRONICLES_SIDS: dict = {k: _campaign_sid(CHRONICLES_UNIT_POOL_OFFSET + i)
+                         for i, k in enumerate(_CHRONICLES_SID_KEYS)}
+
+_TRAIN_BUILDING_NAMES = {82: "Castle", 12: "Barracks", 101: "Stable", 87: "Archery Range"}
+
+
+def _name_chronicles_units(dat: DatFile, civ_index: int, spec: dict, seen: dict,
+                           extra_strings: list | None,
+                           extra_unit_strings: list | None) -> None:
+    """Give an unlocked Chronicles unit, its elite form and its elite-upgrade
+    tech our own name/tooltip strings (see CHRONICLES_UNIT_POOL_OFFSET).
+
+    Only this civ's copies are touched: the units are per-civ data, and the
+    elite tech is the copy _allocate_tech made (`seen[original]`).
+    """
+    units = dat.civs[civ_index].units
+    for uid, name in spec["names"].items():
+        u = units[uid] if uid < len(units) else None
+        if u is None:
+            continue
+        sid = CHRONICLES_SIDS[("unit", uid)]
+        _OWN_STRING_NAMES[sid]  = name
+        u.language_dll_name     = sid
+        u.language_dll_creation = _creation_sid(sid)
+        u.language_dll_help     = _help_sid(sid)
+        if extra_unit_strings is not None:
+            where = ""
+            if u.creatable and u.creatable.train_locations:
+                where = _TRAIN_BUILDING_NAMES.get(u.creatable.train_locations[0].unit_id, "")
+            extra_unit_strings.append({
+                "sid": sid, "name": name, "desc_sid": _help_sid(sid),
+                "help_text": format_unit_tooltip_help(
+                    u, name, extra=f"Trainable at {where}." if where else ""),
+                "ext_sid": _extended_tooltip_sid(sid),
+                "ext_text": format_unit_extended_tooltip(u, name, tag="Chronicles unit"),
+            })
+    elite_tid, elite_name = spec["elite_tech"]
+    new_tid = seen.get(elite_tid)
+    if new_tid is None or new_tid == elite_tid:
+        return
+    sid = CHRONICLES_SIDS[("tech", elite_tid)]
+    tech = dat.techs[new_tid]
+    tech.language_dll_name        = sid
+    tech.language_dll_description = sid + 1000
+    tech.language_dll_help        = sid + 21000
+    tech.language_dll_tech_tree   = sid + 150000
+    if extra_strings is not None:
+        extra_strings.append({"sid": sid, "name": elite_name})
 
 # Mining Camp tech IDs (vanilla AoE2 DE) — the four techs the Bohemians get
 # for free.  Vanilla implements this inside the Bohemian tech-tree effect (803)
@@ -3259,6 +3382,9 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             return True
         print(f"       {spec['name']} unlocked: {len(allocated)} techs allocated "
               f"{spec['techs']}→{tuple(allocated)}")
+        if spec.get("names"):
+            _name_chronicles_units(dat, civ_index, spec, seen,
+                                   extra_strings, extra_unit_strings)
         return True
 
     if bonus_id == 155:          # {ELITE_BATTLE_ELEPHANT, Royal Battle Elephant} free
@@ -4944,7 +5070,7 @@ def _lock_unclaimed_optin_techs(dat: DatFile, civ_index: int, civ_def: dict) -> 
             if not (0 <= eid < len(dat.effects)):
                 continue
             for c in dat.effects[eid].effect_commands:
-                if c.type == EC_ENABLE and int(c.a) == scout and int(c.b) == 1:
+                if _is_enable(c) and int(c.a) == scout:
                     unlocked.add(tid)
                     break
 
@@ -5317,7 +5443,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 eid = t.effect_id
                 if 0 <= eid < len(dat.effects):
                     for ec in dat.effects[eid].effect_commands:
-                        if ec.type == EC_ENABLE and ec.b == 1:
+                        if _is_enable(ec):
                             vanilla_uu_ids.add(ec.a)
                             preserve_indices.add(i)
 
@@ -5977,7 +6103,7 @@ def _src_civ_uu_ids(dat: DatFile, civ_idx: int) -> tuple[set[int], set[int]]:
         eff_id = dat.techs[make_avail_id].effect_id
         if 0 <= eff_id < len(dat.effects):
             for ec in dat.effects[eff_id].effect_commands:
-                if ec.type == EC_ENABLE and int(ec.b) == 1:
+                if _is_enable(ec):
                     base_ids.add(int(ec.a))
         if 0 <= elite_tech_id < len(dat.techs):
             eff2_id = dat.techs[elite_tech_id].effect_id
@@ -6046,7 +6172,7 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         src_elite_uu_ids: set[int] = set()
         if source_tech.civ != -1:
             for ec in all_cmds:
-                if ec.type == EC_ENABLE and int(ec.b) == 1:
+                if _is_enable(ec):
                     src_base_uu_ids.add(int(ec.a))
             if src_base_uu_ids:
                 # Anarchy/Marauders style: derive elite as remainder of unit refs
@@ -6070,7 +6196,7 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         for ec in all_cmds:
             a = int(ec.a)
             if ec.type == EC_ENABLE:
-                if a in src_base_uu_ids and int(ec.b) == 1:
+                if a in src_base_uu_ids and _is_enable(ec):
                     # Enable the destination civ's own base UU (e.g. Anarchy)
                     print(f"       {label} bonus {bonus_id}: deferring base-UU "
                           f"enable (type=2 a={a}) for substitution")

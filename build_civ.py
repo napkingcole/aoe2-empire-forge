@@ -365,7 +365,7 @@ def _uu_actual_unit_id(dat, make_avail_tech_id: int) -> int:
         eff_id = dat.techs[make_avail_tech_id].effect_id
         if 0 <= eff_id < len(dat.effects):
             for ec in dat.effects[eff_id].effect_commands:
-                if ec.type == 2 and ec.b == 1:  # EC_ENABLE, enabled=1
+                if ec.type == 2 and ec.b != 0:  # EC_ENABLE: b=1 or -1 (Hearth Troop) shows
                     return ec.a
     return make_avail_tech_id
 
@@ -842,7 +842,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                 tech = dat.techs[new_tid]
                 if 0 <= tech.effect_id < len(dat.effects):
                     for ec in dat.effects[tech.effect_id].effect_commands:
-                        if ec.type == 2 and int(ec.b) == 1:   # EC_ENABLE show
+                        if ec.type == 2 and int(ec.b) != 0:   # EC_ENABLE show (b=1 or -1)
                             _bonus_enabled_units.add(int(ec.a))
                         elif ec.type == 3:                      # EC_UPGRADE → to unit b
                             _bonus_enabled_units.add(int(ec.b))

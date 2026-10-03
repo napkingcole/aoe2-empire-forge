@@ -3465,5 +3465,69 @@
     "entity": "villager",
     "entity2": "stone_mining",
     "description": "Stone Miners"
+  },
+  "447": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Immortal",
+    "entity": "immortal",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "448": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Strategos",
+    "entity": "strategos",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "449": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Hippeus",
+    "entity": "hippeus",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "450": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Companion Cavalry",
+    "entity": "companion_cavalry",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "451": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Phalangite",
+    "entity": "phalangite",
+    "description": "Barracks — Castle Age",
+    "multiplier": false
+  },
+  "452": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Rhomphaia Warrior",
+    "entity": "rhomphaia_warrior",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "453": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Pattiyodha Longbowman",
+    "entity": "pattiyodha_longbowman",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "454": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Sannāhya",
+    "entity": "sannahya",
+    "description": "Stable — Castle Age",
+    "multiplier": false
   }
 }

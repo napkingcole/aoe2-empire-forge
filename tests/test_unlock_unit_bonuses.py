@@ -86,7 +86,7 @@ for tech in dat.techs:
     if tech.civ != SLOT or not (0 <= tech.effect_id < len(dat.effects)):
         continue
     for cmd in dat.effects[tech.effect_id].effect_commands:
-        if cmd.type == 2 and int(cmd.b) == 1:          # EC_ENABLE, show
+        if cmd.type == 2 and int(cmd.b) != 0:          # EC_ENABLE, show (b=1 or -1)
             enabled_by_our_civ.add(int(cmd.a))
         elif cmd.type == 3:                            # EC_UPGRADE (Legionary, Savar)
             enabled_by_our_civ.add(int(cmd.b))

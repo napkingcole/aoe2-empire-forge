@@ -1395,6 +1395,9 @@ const _BONUS_CATEGORIES = [
   { key: 'research', icon: 'fa-flask',        kw: ['research','blacksmith','university','technology','tech','age','upgrade'] },
   { key: 'building', icon: 'fa-chess-rook',   kw: ['castle','tower','wall','krepost','fortif','stone defense','palisade','wonder','house','settlement'] },
   { key: 'unlock',   icon: 'fa-lock-open',    kw: ['unlock','can recruit','can train','can build','can upgrade','replaces','recruitable','is available','be trained','be recruited','be built'] },
+  // Chronicles unit unlocks (cards flagged "chronicles" that unlock a unit).
+  // No keywords: only _classifyBonus puts a card here.
+  { key: 'chronicles', icon: 'fa-landmark',   kw: [] },
   { key: 'general',  icon: 'fa-shield',       kw: [] },
 ];
 
@@ -1463,7 +1466,10 @@ function _classifyBonus(id, label) {
   // civ_appender._UNLOCK_UNIT_BONUSES automatically and the hardcoded 405-417
   // entries above are now belt-and-braces rather than load-bearing.
   if (_isUnlockBonus(id)) {
-    return _BONUS_CATEGORIES.find(c => c.key === 'unlock') || _BONUS_CATEGORIES.at(-1);
+    // Units from the Chronicles civs get their own purple banner; Chronicles
+    // bonuses and techs stay filed by what they do, marked only by the badge.
+    const key = _cardOverrides[String(id)]?.chronicles ? 'chronicles' : 'unlock';
+    return _BONUS_CATEGORIES.find(c => c.key === key) || _BONUS_CATEGORIES.at(-1);
   }
   const lower = label.toLowerCase();
   for (const cat of _BONUS_CATEGORIES) {
