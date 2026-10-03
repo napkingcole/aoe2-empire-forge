@@ -3156,6 +3156,7 @@ HANDLED_BONUS_IDS = {
     339,   # Military buildings + Docks give food (vanilla hit every building)
     403,   # Settlement unlock (handled via Step 5b of _apply_tree_wiring)
     404,   # Mining Camp techs free (Bohemians)
+    446,   # Fortified Outposts, every Outpost at once (Chronicles)
     *_UNLOCK_UNIT_BONUSES,   # 405-416: regional / second unique unit unlocks
 }
 

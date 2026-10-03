@@ -21,6 +21,15 @@ from civ_appender import apply_civ, EC_UPGRADE     # noqa: E402
 failures = 0
 
 
+def dispatched_handler_ids() -> set[int]:
+    import re
+    src = (Path(__file__).resolve().parent.parent / "civ_appender.py").read_text()
+    start = src.index("def _create_bonus_handler")
+    body = src[start:src.index("\ndef ", start + 10)]
+    return {int(x) for m in re.finditer(r"if bonus_id (?:==|in) ([^:]+):", body)
+            for x in re.findall(r"\d+", m.group(1))}
+
+
 def check(label, ok, detail=""):
     global failures
     print(f"  {'ok  ' if ok else 'FAIL'} {label}")
@@ -29,6 +38,13 @@ def check(label, ok, detail=""):
         if detail:
             print(f"       {detail}")
 
+
+# A handler-only bonus the picker doesn't know about is never offered: 446 was
+# built and tested, and still missing from the catalog until this was added.
+from civ_appender import HANDLED_BONUS_IDS          # noqa: E402
+check("every bonus _create_bonus_handler dispatches is in HANDLED_BONUS_IDS",
+      dispatched_handler_ids() <= HANDLED_BONUS_IDS,
+      sorted(dispatched_handler_ids() - HANDLED_BONUS_IDS))
 
 SLOT = 1
 dat = load_dat(find_game_dat())

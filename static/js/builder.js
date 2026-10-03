@@ -2038,6 +2038,14 @@ function wireSearchPicker({ inputId, resultsId, catalog, onSelect }) {
   }, true);
 }
 
+// Cards ported from the Chronicles civs carry a small helmet badge.  Both card
+// renderers (the bulk grid and _makeBonusCardEl) must call this.
+function _chroniclesBadge(p) {
+  return p.chronicles
+    ? `<img class="chronicles-badge" src="/static/gladiator-helmet.png" alt="Chronicles" title="From the Chronicles civilizations">`
+    : '';
+}
+
 function _makeBonusCardEl(c, mult, isSelected, toggleFn, getDraftEntry, prefix = '') {
   const idStr = prefix + c.id;  // e.g. '' + 5 = '5', or 'T' + 5 = 'T5'
   const cat = _classifyBonus(idStr, c.label);
@@ -2050,11 +2058,7 @@ function _makeBonusCardEl(c, mult, isSelected, toggleFn, getDraftEntry, prefix =
   el.dataset.cat     = cat.key;
   el.style.cssText   = `--cat-color:var(--cat-${cat.key});`;
   el.title           = c.label.replace(/"/g, '&quot;');
-  // Cards ported from the Chronicles civs carry a small helmet badge.
-  const chron = p.chronicles
-    ? `<img class="chronicles-badge" src="/static/gladiator-helmet.png" alt="Chronicles" title="From the Chronicles civilizations">`
-    : '';
-  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult)}${chron}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
+  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult)}${_chroniclesBadge(p)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
   // Use c.id directly in closures — no need to parse data-bonus-id
   el.addEventListener('click', e => {
     if (e.target.closest('.multiplier-circle')) return;
@@ -2128,7 +2132,7 @@ function _buildGridHtml(catalog, selIds, bonuses, q, idPrefix) {
     if (visible) anyVisible = true;
     const typeClass = p.type !== 'value' ? ` ${p.type}-bonus` : '';
     const styleAttr = `--cat-color:var(--cat-${cat.key})${visible ? '' : ';display:none'}`;
-    const html = `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${idStr}" data-cat="${cat.key}" style="${styleAttr}" title="${c.label.replace(/"/g, '&quot;')}">${_renderBonusCardInner(p, cat, mult)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
+    const html = `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${idStr}" data-cat="${cat.key}" style="${styleAttr}" title="${c.label.replace(/"/g, '&quot;')}">${_renderBonusCardInner(p, cat, mult)}${_chroniclesBadge(p)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
     if (sel) selHtml += html;
     else availHtml += html;
   }
