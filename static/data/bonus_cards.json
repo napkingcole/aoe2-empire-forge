@@ -3465,13 +3465,5 @@
     "entity": "villager",
     "entity2": "stone_mining",
     "description": "Stone Miners"
-  },
-  "446": {
-    "chronicles": true,
-    "heading": "Arrows",
-    "stat": "Outposts can be upgraded to Fortified Outposts, which fire arrows",
-    "entity": "outpost",
-    "description": "Outposts",
-    "multiplier": false
   }
 }
