@@ -1389,6 +1389,12 @@ def api_builder_meta():
     unlock_bonuses = {
         str(bid): list(spec["units"]) for bid, spec in _UNLOCK_UNIT_BONUSES.items()
     }
+    # Units a card's unit replaces (Scythian Horse Archer -> Cavalry Archer
+    # line), so ticking the card can untick them in the tree the player sees.
+    unlock_replaces = {
+        str(bid): list(spec["replaces"]) for bid, spec in _UNLOCK_UNIT_BONUSES.items()
+        if spec.get("replaces")
+    }
     return jsonify({
         "architectures": arch_options,
         "civs": civ_options,
@@ -1396,6 +1402,7 @@ def api_builder_meta():
         "starting_scouts": _SCOUT_OPTIONS,
         "monk_skins": monk_options,
         "unlock_bonuses": unlock_bonuses,
+        "unlock_replaces": unlock_replaces,
         # Display names for the identity scene ("Hagia Sophia" rather than
         # "Byzantines").  Written by scripts/import_km_art.py; absent until that
         # has been run, so the wizard falls back to civ names.

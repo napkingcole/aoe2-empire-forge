@@ -9,6 +9,7 @@ in the catalog.  DAT-gated.
     venv/bin/python tests/test_chronicles_bonuses.py
 """
 import contextlib
+import json
 import io
 import sys
 from pathlib import Path
@@ -109,14 +110,14 @@ check("T90: trade carts +15% speed",
 from civ_appender import _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS   # noqa: E402
 
 UNITS = [b for b, spec in _UNLOCK_UNIT_BONUSES.items() if spec.get("chronicles")]
-check("eight Chronicles unit cards", UNITS == list(range(447, 455)), UNITS)
+check("ten Chronicles unit cards", UNITS == list(range(447, 457)), UNITS)
 check("every Chronicles string id is distinct",
-      len(set(CHRONICLES_SIDS.values())) == len(CHRONICLES_SIDS) == 28, len(CHRONICLES_SIDS))
+      len(set(CHRONICLES_SIDS.values())) == len(CHRONICLES_SIDS) == 34, len(CHRONICLES_SIDS))
 
 # One card per civ: six of these train at the Castle and share the UU button,
 # so a civ can only fit a couple (both pages of the Castle are one slot each).
 written: set[str] = set()
-for b, SLOT2 in zip(UNITS, range(2, 10)):
+for b, SLOT2 in zip(UNITS, range(2, 2 + len(UNITS))):
     n2 = len(dat.techs)
     with contextlib.redirect_stdout(io.StringIO()):
         res2 = apply_civ(dat, {"alias": "ChronUnits", "bonuses": [{"id": b, "multiplier": 1}],
@@ -146,6 +147,68 @@ check("logs and warnings name a renamed unit by its name, not a campaign line",
 check("unit names reach the strings writer (incl. the macron in Sannāhya)",
       {"Immortal (Melee)", "Immortal (Ranged)", "Strategos", "Sannāhya", "Elite Sannāhya"} <= written,
       sorted(written)[:12])
+
+# ── Hoplite / Scythian: global techs rebuilt with standard prerequisites ─────
+CHRONICLES_ONLY = {1138, 1267, 113, 115, 1335}       # Paphos, Spartan helper, dup ages, empty trigger
+for b in (455, 456):
+    spec = _UNLOCK_UNIT_BONUSES[b]
+    slot = 2 + UNITS.index(b)
+    own = [t for t in dat.techs if t.civ == slot and t.name in {dat.techs[x].name for x in spec["techs"]}]
+    reqs = {r for t in own for r in t.required_techs if r >= 0}
+    check(f"{b} {spec['name']}: both techs are civ-owned copies", len(own) == 2, [t.name for t in own])
+    check(f"{b} {spec['name']}: no Chronicles-only prerequisite survives",
+          not reqs & CHRONICLES_ONLY, sorted(reqs))
+    make = next((t for t in own if all(l.location_id == -1 for l in t.research_locations)), None)
+    check(f"{b} {spec['name']}: the unlock fires on its own — no cost gate",
+          make is not None and not [r for r in make.resource_costs if r.type >= 0 and r.amount > 0])
+
+slot = 2 + UNITS.index(456)
+scy = next(t for t in dat.techs if t.civ == slot and t.name.startswith("Functional Enable Scythian"))
+check("456: the unlock hides the Cavalry Archer, as in the game",
+      any(c.type == 2 and int(c.a) == 39 and int(c.b) == 0
+          for c in dat.effects[scy.effect_id].effect_commands))
+from civ_appender import _tree_unit_ids               # noqa: E402
+tree = {"tree": {"units": [4, 39, 474, 2485, 2486], "buildings": [87], "techs": []}}
+check("456: picking it takes the Cavalry Archer line out of the tree",
+      _tree_unit_ids(tree) == {4, 2485, 2486}, sorted(_tree_unit_ids(tree)))
+
+import tempfile                                          # noqa: E402
+from build_civ import _patch_per_civ_techtree, _find_civ_techtrees_folder   # noqa: E402
+folder = _find_civ_techtrees_folder(find_game_dat())
+if folder and (folder / "ATHENIANS.json").exists():
+    out = json.loads(_patch_per_civ_techtree(
+        folder / "BRITONS.json",
+        {"tree": {"units": [4, 39, 474, 2485, 2486, 2110, 2111], "buildings": [12, 87, 101], "techs": [39]},
+         "bonuses": []}, dat=dat, slot=slot))
+    units = {n["Node ID"]: n for n in out["civ_techs_units"] if n.get("Use Type") == "Unit"}
+    check("F2: Cavalry Archer / Heavy Cav Archer nodes became the Scythian ones",
+          2485 in units and 2486 in units and 39 not in units and 474 not in units, sorted(units)[:12])
+    check("F2: the Elite Scythian node links to the Scythian",
+          units.get(2486, {}).get("Link ID") == 2485)
+    check("F2: Husbandry (also Node ID 39, a tech) is untouched",
+          any(n.get("Node ID") == 39 and n.get("Use Type") == "Tech" for n in out["civ_techs_units"]))
+    check("F2: Hoplite and Elite Hoplite nodes are injected",
+          2110 in units and 2111 in units)
+else:
+    print("  skip  F2 checks: no CivTechTrees folder with the Chronicles civs")
+
+# Hoplite beside the Phalangite: one of them moves to page 2 of the Barracks,
+# and its elite upgrade goes with it.  The planner used to copy the ORIGINAL
+# global Elite Hoplite too (prerequisites it can never meet) — inert, but junk.
+with contextlib.redirect_stdout(io.StringIO()):
+    res3 = apply_civ(dat, {"alias": "Barracks Pair", "bonuses": [{"id": 451, "multiplier": 1},
+                                                                  {"id": 455, "multiplier": 1}],
+                           "team_bonuses": [],
+                           "tree": {"units": [74, 2110, 2111, 2384, 2385], "buildings": [12], "techs": []}},
+                    target_slot=12)
+elites = [t for t in dat.techs if t.civ == 12 and t.name == "Elite Hoplite"]
+# (A five-unit tree makes the sweep disable nearly everything, so the tree
+# effect itself runs long here — only the button warning is the point.)
+check("Hoplite + Phalangite: both trainable (no full-Barracks warning)",
+      not [w for w in res3.get("warnings", []) if "can't be trained" in w], res3.get("warnings"))
+check("exactly one Elite Hoplite, and it has standard prerequisites only",
+      len(elites) == 1 and not {r for r in elites[0].required_techs if r >= 0} & CHRONICLES_ONLY,
+      [[r for r in t.required_techs if r >= 0] for t in elites])
 
 # EC_ENABLE with b=-1 also shows a unit (27 vanilla commands use it).  Every
 # "is this an enable?" check used to demand b == 1, so these units — and the

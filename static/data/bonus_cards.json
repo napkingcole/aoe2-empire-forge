@@ -3529,5 +3529,21 @@
     "entity": "sannahya",
     "description": "Stable — Castle Age",
     "multiplier": false
+  },
+  "455": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Hoplite",
+    "entity": "hoplite",
+    "description": "Barracks — Castle Age",
+    "multiplier": false
+  },
+  "456": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Scythian Horse Archer",
+    "entity": "scythian_horse_archer",
+    "description": "Replaces Cavalry Archer — Castle Age",
+    "multiplier": false
   }
 }

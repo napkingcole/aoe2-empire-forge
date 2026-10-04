@@ -2328,6 +2328,7 @@ function wireCustomBonusPicker() {
 // there is no independent state to reconcile.  The map is served by
 // /api/builder/meta so it can't drift from civ_appender._UNLOCK_UNIT_BONUSES.
 let _unlockBonusUnits = {};   // {bonusId: [unitId, ...]}
+let _unlockReplaces   = {};   // {bonusId: [unitId, ...]} units the card's unit replaces
 
 function _isUnlockBonus(id) {
   return Object.prototype.hasOwnProperty.call(_unlockBonusUnits, String(id));
@@ -2361,12 +2362,20 @@ function _toggleUnlockBonus(id) {
   const units = _unlockBonusUnits[String(id)] || [];
   const has   = units.some(u => draft.tree.units.includes(u));
 
+  // A replacement unit (Scythian Horse Archer) takes the replaced line out of
+  // the tree while it is picked, and gives it back when it is dropped — the
+  // build enforces the same rule, so the tree never shows a unit it won't get.
+  const replaced = (_unlockReplaces[String(id)] || []).map(Number);
   if (has) {
     draft.tree.units = draft.tree.units.filter(u => !units.includes(u));
+    for (const u of replaced) {
+      if (!draft.tree.units.includes(u)) draft.tree.units.push(u);
+    }
   } else {
     for (const u of units) {
       if (!draft.tree.units.includes(u)) draft.tree.units.push(u);
     }
+    draft.tree.units = draft.tree.units.filter(u => !replaced.includes(u));
   }
   _deriveUnlockBonuses();
   saveDraft();
@@ -3972,6 +3981,7 @@ async function init() {
     window._metaScouts        = meta.starting_scouts || [];
     window._metaMonks         = meta.monk_skins      || [];
     _unlockBonusUnits         = meta.unlock_bonuses  || {};
+    _unlockReplaces           = meta.unlock_replaces || {};
     // A draft with no tree yet (new civ, or one saved before this defaulted to
     // full) gets the wide-open tree before anything reads draft.tree.
     await _seedFullTreeIfEmpty();

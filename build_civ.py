@@ -29,7 +29,8 @@ from pathlib import Path
 from dat_reader import find_game_dat, load_dat, dat_info
 from civ_appender import (apply_civ, _KM_UU_TECHS, _KM_UU_NAMES, get_km_uu_index,
                           get_civ_bonuses, get_team_bonuses,
-                          UNSUPPORTED_UNIQUE_BUILDINGS)
+                          UNSUPPORTED_UNIQUE_BUILDINGS, _apply_unit_replacements,
+                          _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS, _help_sid)
 import km_custom_uu
 
 # Languages KM ships string files for.
@@ -81,6 +82,9 @@ def _tree_sets(civ_def: dict) -> tuple[set, set, set]:
     # (issue #31).  Filtered here rather than at each call site so every consumer
     # of the tree sees the same thing.
     b -= UNSUPPORTED_UNIQUE_BUILDINGS
+    # A replacement unit takes the replaced line out of the tree (Scythian Horse
+    # Archer -> no Cavalry Archer line), the same rule apply_civ reads.
+    u = _apply_unit_replacements({int(x) for x in u})
     # The Huns bonus hides the House in the DAT whatever the tree says, so the
     # viewer should not draw one either (issue #40).
     if any(e[0] == 131 for e in get_civ_bonuses(civ_def)):
@@ -466,7 +470,43 @@ _OPT_IN_UNIT_NODE_SOURCES: dict[int, list[str]] = {
     2588: ["INCAS.json",       "MAPUCHE.json"],    # Champi Runner
     2633: ["AZTECS.json",      "INCAS.json"],      # Catapult Galleon
     1302: ["CHINESE.json"],                 # Dragon Ship
+    2110: ["ATHENIANS.json",   "SPARTANS.json"],   # Hoplite (Chronicles)
+    2111: ["ATHENIANS.json",   "SPARTANS.json"],   # Elite Hoplite
 }
+
+
+def _retarget_replaced_nodes(data: dict, unit_ids: set, dat, slot) -> int:
+    """A replacement unit takes over the replaced line's nodes in the viewer:
+    with the Scythian Horse Archer card, the Cavalry Archer and Heavy Cavalry
+    Archer nodes become the Scythian and Elite Scythian (no civ's tree file has
+    a Scythian node to copy).  Only Unit nodes — Husbandry shares Node ID 39."""
+    remap: dict[int, int] = {}
+    for spec in _UNLOCK_UNIT_BONUSES.values():
+        if spec.get("replaces") and set(spec["units"]) & unit_ids:
+            remap.update(zip(spec["replaces"], spec["units"]))
+    if not remap:
+        return 0
+    changed = 0
+    for key in ("civ_techs_units", "civ_techs_buildings"):
+        for node in data.get(key, []):
+            if node.get("Use Type") != "Unit":
+                continue
+            old = node.get("Node ID")
+            if old in remap:
+                new = remap[old]
+                spec_names = next(sp["names"] for sp in _UNLOCK_UNIT_BONUSES.values()
+                                  if new in sp.get("names", {}))
+                sid = CHRONICLES_SIDS[("unit", new)]
+                node["Node ID"] = new
+                node["Name"] = spec_names[new]
+                node["Name String ID"] = sid
+                node["Help String ID"] = _help_sid(sid)
+                if dat is not None and slot is not None:
+                    node["Picture Index"] = dat.civs[slot].units[new].icon_id
+                changed += 1
+            if node.get("Link ID") in remap:
+                node["Link ID"] = remap[node["Link ID"]]
+    return changed
 
 
 def _inject_regional_unit_nodes(data: dict, tree_units: set,
@@ -937,7 +977,9 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                     changed += 1
         return changed
 
-    changed  = patch_nodes(data.get("civ_techs_buildings", []))
+    # Before the status pass, so the retargeted nodes are judged as the new units.
+    retargeted = _retarget_replaced_nodes(data, unit_ids, dat, slot)
+    changed  = retargeted + patch_nodes(data.get("civ_techs_buildings", []))
     changed += patch_nodes(data.get("civ_techs_units",     []))
 
     # Inject RegionalUnit nodes for opt-in units (Elephant Archer, Slinger,

@@ -1023,6 +1023,7 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         tree_units     = set(raw_tree[0] if len(raw_tree) > 0 and isinstance(raw_tree[0], list) else [])
         tree_buildings = set(raw_tree[1] if len(raw_tree) > 1 and isinstance(raw_tree[1], list) else [])
         tree_techs     = set(raw_tree[2] if len(raw_tree) > 2 and isinstance(raw_tree[2], list) else [])
+    tree_units = _apply_unit_replacements({int(u) for u in tree_units})
 
     if not tree_units and not tree_buildings and not tree_techs:
         return
@@ -2105,8 +2106,21 @@ def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict) -> l
                 EffectCommand(type=102, a=-1, b=-1, c=-1, d=float(tid)))
             disabled.add(tid)
 
+    # A global tech is superseded when one of this civ's own techs performs the
+    # same upgrades — a rebuilt unlock card's elite tech (Elite Hoplite) beside
+    # the original it replaced.  Moving both made a second, unresearchable copy.
+    def upgrades(t):
+        if not 0 <= t.effect_id < len(dat.effects):
+            return frozenset()
+        return frozenset((int(c.a), int(c.b)) for c in dat.effects[t.effect_id].effect_commands
+                         if c.type == EC_UPGRADE)
+    owned = {upgrades(t) for t in dat.techs if t.civ == civ_index} - {frozenset()}
+
     def tech_ok(tid):
-        return dat.techs[tid].civ in (-1, civ_index) and tid not in disabled
+        t = dat.techs[tid]
+        if t.civ == -1 and upgrades(t) in owned:
+            return False
+        return t.civ in (-1, civ_index) and tid not in disabled
 
     plan = _plan_button_layout(dat, units, present, runtime, tech_ok, _button_picks(civ_def))
     if not plan["moves"]:
@@ -2585,7 +2599,66 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
     454: {"name": "Sannāhya",          "techs": (1327, 1328), "units": (2390, 2391),
           "chronicles": True, "elite_tech": (1328, "Elite Sannāhya"),
           "names": {2390: "Sannāhya", 2391: "Elite Sannāhya"}},
+    # These two are GLOBAL techs (civ=-1) gated on Chronicles-only prerequisites,
+    # so _allocate_tech would hand back the original untouched.  "rebuild" makes
+    # civ-owned copies with standard prerequisites instead: {tech: requires},
+    # where a required tech that is itself rebuilt means its copy.
+    #   Hoplite: 1136 needs Paphos Shadow Tech 1138 and is cost-gated (1 food);
+    #   Elite Hoplite 1137 needs the Spartan-only 1267.
+    #   Scythian Horse Archer: 1336 needs the duplicate Castle Age 113 and its
+    #   empty trigger 1335; the elite 1334 needs the duplicate Imperial Age 115.
+    455: {"name": "Hoplite",           "techs": (1136, 1137), "units": (2110, 2111),
+          "chronicles": True, "elite_tech": (1137, "Elite Hoplite"),
+          "names": {2110: "Hoplite", 2111: "Elite Hoplite"},
+          "rebuild": {1136: (102,), 1137: (103, 1136)}},
+    # A REPLACEMENT, as in the game: 1336 also hides the Cavalry Archer (39).
+    # "replaces" takes the Cavalry Archer line out of the tree too (see
+    # _apply_unit_replacements), or researching Heavy Cavalry Archer would
+    # upgrade into a trainable unit on the same button and bring the line back.
+    456: {"name": "Scythian Horse Archer", "techs": (1336, 1334), "units": (2485, 2486),
+          "chronicles": True, "elite_tech": (1334, "Elite Scythian Horse Archer"),
+          "names": {2485: "Scythian Horse Archer", 2486: "Elite Scythian Horse Archer"},
+          "rebuild": {1336: (102,), 1334: (103, 1336)},
+          "replaces": (39, 474)},
 }
+
+
+def _apply_unit_replacements(units: set) -> set:
+    """Tree units after any picked replacement: a tree holding a unit whose
+    unlock card "replaces" others (the Scythian Horse Archer replaces the
+    Cavalry Archer line) does not hold those others.  Every reader of tree
+    units goes through this, so the tree, the sweep and the F2 viewer agree."""
+    out = set(units)
+    for spec in _UNLOCK_UNIT_BONUSES.values():
+        if spec.get("replaces") and out & set(spec["units"]):
+            out -= set(spec["replaces"])
+    return out
+
+
+def _rebuild_unlock_techs(dat: DatFile, civ_index: int, spec: dict) -> dict:
+    """Civ-owned copies of an unlock card's global techs, with the standard
+    prerequisites in spec["rebuild"].  Returns {original: copy}, the same
+    shape _allocate_tech fills in, so naming can find the elite copy."""
+    made: dict[int, int] = {}
+    for tid in spec["techs"]:
+        src = dat.techs[tid]
+        tech = deepcopy(src)
+        eff = deepcopy(dat.effects[src.effect_id])
+        dat.effects.append(eff)
+        tech.effect_id = len(dat.effects) - 1
+        tech.civ = civ_index
+        req = [made.get(r, r) for r in spec["rebuild"][tid]]
+        tech.required_techs = tuple(req) + (-1,) * (6 - len(req))
+        tech.required_tech_count = len(req)
+        if all(loc.location_id == -1 for loc in tech.research_locations):
+            # An unlock fires on its own: no cost gate, no delay (quirk 6 keeps
+            # the single (-1, 0) location rather than an empty list).
+            tech.resource_costs = _zero_costs()
+            tech.research_locations = [ResearchLocation(location_id=-1, research_time=0,
+                                                        button_id=0, hot_key_id=-1)]
+        dat.techs.append(tech)
+        made[tid] = len(dat.techs) - 1
+    return made
 
 # Fixed string ids for the Chronicles unlock cards: every named unit, then every
 # elite-upgrade tech, in table order.  Computed once — the pool is a plain list.
@@ -3366,6 +3439,13 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _add_auto_fire_tech(dat, civ_index,
                             _free_tech_cmds(_MINING_CAMP_TECHS),
                             name="C-Bonus, free Mining Camp techs")
+        return True
+
+    if bonus_id in _UNLOCK_UNIT_BONUSES and _UNLOCK_UNIT_BONUSES[bonus_id].get("rebuild"):
+        spec = _UNLOCK_UNIT_BONUSES[bonus_id]
+        made = _rebuild_unlock_techs(dat, civ_index, spec)
+        print(f"       {spec['name']} unlocked: techs rebuilt for this civ {made}")
+        _name_chronicles_units(dat, civ_index, spec, made, extra_strings, extra_unit_strings)
         return True
 
     if bonus_id in _UNLOCK_UNIT_BONUSES:
@@ -4429,9 +4509,9 @@ def _tree_unit_ids(civ_def: dict) -> set[int]:
     """
     tree = civ_def.get("tree") or []
     if isinstance(tree, dict):
-        return {int(u) for u in (tree.get("units") or [])}
+        return _apply_unit_replacements({int(u) for u in (tree.get("units") or [])})
     if tree and isinstance(tree[0], (list, tuple)):
-        return {int(u) for u in tree[0]}
+        return _apply_unit_replacements({int(u) for u in tree[0]})
     return set()
 
 
