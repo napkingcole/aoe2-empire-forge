@@ -1457,11 +1457,12 @@ def _grid_hotkeys(dat: DatFile) -> tuple[dict, dict]:
             by_bldg[(bldg, pos)][hk] += 1
             by_pos[pos][hk] += 1
 
+    # dat_lazy.train_locations reads an untouched civ's from the load cache —
+    # parsing every unit of all 63 civs just to vote made every build slow.
+    import dat_lazy
     for civ in dat.civs:
-        for u in civ.units:
-            if u is not None and u.creatable is not None:
-                for tl in u.creatable.train_locations:
-                    note(tl.unit_id, tl.button_id, tl.hot_key_id)
+        for bldg, btn, hk in dat_lazy.train_locations(civ.units):
+            note(bldg, btn, hk)
     for tech in dat.techs:
         for rl in tech.research_locations:
             note(rl.location_id, rl.button_id, rl.hot_key_id)
