@@ -79,9 +79,8 @@ Each is its own commit; none should move a golden hash unless noted.
    suite. Refresh the bundled `CivTechTrees/` and `civilizations.json` from the
    current install (DLC files are Microsoft's: keep them out of git per
    `.gitignore` — decide whether the bundled fallbacks should exist at all).
-6. **`futuravailableunits.json`** — depending on the morning check: ship the
-   player's own file (as `civilizations.json` already does), or stop shipping it.
-   *Moves the golden hash of that one file, intentionally.*
+6. **`futuravailableunits.json`** — stop shipping it (decision 2).
+   *Removes that one file from the golden output, intentionally.*
 7. **Prune `_BUILD_JOBS`** (keep the last N, or drop finished jobs after an hour).
 8. `_DAT_OBJ_CACHE` keyed by path → key by path + mtime, so a game patch while
    the app runs is picked up.
@@ -168,14 +167,22 @@ lines (City Walls 116, 221 at 79, 332 at 59, 283 at 56, 81 at 44, 103 at 43),
 - `apply_civ` (598 lines) and `_apply_tree_wiring` (416) — natural follow-ups
   once Phase 4 has shown the pattern.
 
-## Open questions for you
+## Decisions (answered 2026-10-05)
 
-1. Ship the perf branch alone as 2.4.1, or together with Chronicles as 2.5.0?
-2. `futuravailableunits.json`: once compared, ship the player's own or none?
-3. Should the bundled `CivTechTrees/` / `civilizations.json` fallbacks exist at
-   all, or should the app require the game's own copies?
-4. Phase 2 canonical behaviour: OK to treat the web route as the reference
-   wherever routes disagree?
+1. **Release:** perf + Chronicles ship together as 2.5.0.
+2. **`futuravailableunits.json`:** stop shipping it. The game's own copy is the
+   player's copy, so shipping the player's file and shipping nothing are the
+   same — and nothing is the version that keeps working after we stop
+   maintaining. (Repo copy was missing Saxons/Varangians/Danes and 38 other
+   civs' entries had changed — confirmed against the 2026-10-05 install files
+   in `ignore/10-5-2026/`.) A later feature: generate the replaced civ's entry
+   from its tree, starting from the player's file.
+3. **Bundled game files:** build from the player's files. Empire Forge's
+   philosophy is that an unmaintained exe keeps working by reading the player's
+   own data — a stale bundled copy works against that. Decide in Phase 1
+   whether a missing file is a clear error or a warned fallback.
+4. **Canonical route:** yes — where the routes disagree, the web Build Mod
+   route's output is the reference (it is the one actually used).
 
 ## Findings this plan answers (review of 2026-10-04)
 
