@@ -92,6 +92,33 @@ def _tree_sets(civ_def: dict) -> tuple[set, set, set]:
     return u, b, t
 
 
+def keeps_vanilla_hover(uu_info: dict | None, dll: int, renamed: bool, custom_desc: str,
+                        dat=None, slot: int | None = None, unit_id=None) -> bool:
+    """Leave the game's own Castle hover tooltip (string dll+21000, and the
+    dll+100000 help) for an unchanged vanilla unique unit.
+
+    The game's text is richer than anything we write — description, upgrades,
+    and a (<cost>) token the engine renders with resource icons from the unit's
+    actual cost — and the ids are the game's, shared with the civ that really
+    owns the unit, so overwriting them degraded the Mongols' own Mangudai too
+    (reported in-game 2026-10-05).  Only when it IS a real tooltip, though:
+    57 of 59 vanilla UUs have one at +21000, but KM unit 80's slot holds "Click
+    to remove this unit from the queue.", which is why the writers used to
+    overwrite unconditionally.
+    """
+    if not uu_info or not uu_info.get("vanilla") or renamed or custom_desc:
+        return False
+    # A changed cost keeps our "Costs:" line: whether the game's (<cost>) token
+    # shows a civ's overridden cost is untested (the confirmed Elite Budget
+    # Knight tooltip carries both the token AND a literal cost).  Compared
+    # against Gaia's copy of the unit, which a build never touches.
+    if dat is not None and slot is not None and unit_id is not None:
+        if uu_cost_text(dat, slot, unit_id) != uu_cost_text(dat, 0, unit_id):
+            return False
+    from civ_appender import _string_table
+    return "(<cost>)" in (_string_table().get(dll + 21000) or "")
+
+
 def uu_cost_text(dat, slot: int, unit_id) -> str:
     """'Costs: 65W 30G' for a unit in this civ's slot, or '' if unavailable.
 
@@ -433,6 +460,12 @@ def _resolve_uu_info(civ_def: dict, dat, slot: int,
             # matches vanilla's own offset convention) and silently breaks
             # for KM-custom ones (pool ids aren't offset-related at all).
             "dll_help": u.language_dll_help,
+            # A vanilla DE unit: its name and tooltip strings are the GAME's,
+            # shared with the civ that really owns it (the Mongols' Mangudai).
+            # The writers leave them alone unless the player renamed or
+            # re-described the unit — the vanilla tooltip is richer than any
+            # we write (description, upgrades, <cost> icons).
+            "vanilla":  bool(pair),
             # Custom name from wizard overrides the KM name table.
             "name":     (civ_def.get("unique_unit") or {}).get("name") or _KM_UU_NAMES.get(km_uu_idx, "Unique Unit"),
         }
