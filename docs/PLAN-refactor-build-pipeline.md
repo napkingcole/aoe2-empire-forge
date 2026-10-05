@@ -167,9 +167,9 @@ lines (City Walls 116, 221 at 79, 332 at 59, 283 at 56, 81 at 44, 103 at 43),
 - `apply_civ` (598 lines) and `_apply_tree_wiring` (416) — natural follow-ups
   once Phase 4 has shown the pattern.
 
-## Unreleased since v2.4.0 (on `main`, ships with the refactor)
+## Released in v2.5.0 (2026-10-05)
 
-Kept here so the next changelog writes itself — add a line as each change lands.
+Shipped as v2.5.0. Start a new "Unreleased since v2.5.0" list for the refactor.
 
 - **NEW** Chronicles bonus cards (441–445, team 87–90), marked with a helmet:
   cavalry gain infantry armor upgrades, siege +1P/+30% vs buildings, Stable
