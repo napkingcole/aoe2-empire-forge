@@ -107,6 +107,20 @@ for dat in (load_dat(path), DatFile.parse(str(path))):
     outs.append(dat.to_bytes())
 check("a full apply_civ build saves byte-identical, lazy vs eager", outs[0] == outs[1])
 
+# Saving: level-3 raw deflate (dat_lazy.SAVE_LEVEL) — any level inflates to
+# the same bytes — and the mod zip stores the already-compressed DAT as is.
+import zipfile                                               # noqa: E402
+import zlib                                                  # noqa: E402
+from build_all import _build_combined_data_zip               # noqa: E402
+saved = dat_lazy.save_bytes(lazy)
+check("the saved DAT inflates to exactly the bytes a full parse writes",
+      zlib.decompress(saved, wbits=-15) == eager.to_bytes())
+with zipfile.ZipFile(io.BytesIO(_build_combined_data_zip(lazy, {}, {}))) as zf:
+    info = zf.getinfo("resources/_common/dat/empires2_x2_p1.dat")
+    check("the mod zip stores the DAT uncompressed, and it reads back intact",
+          info.compress_type == zipfile.ZIP_STORED
+          and zlib.decompress(zf.read(info), wbits=-15) == eager.to_bytes())
+
 os.environ["EMPIREFORGE_EAGER_DAT"] = "1"
 check("EMPIREFORGE_EAGER_DAT=1 falls back to the plain parse",
       type(dat_lazy.parse(path).civs[1]).__name__ == "Civ")

@@ -320,6 +320,17 @@ def _read_units_recording(bh: ByteHandler, n: int) -> tuple[list, list[int], lis
     return units, starts, summary
 
 
+# zlib level for a DAT we write.  genieutils uses the default (6): 6.6s and
+# 12.0 MB for today's DAT.  Level 3 is 2.5s and 14.0 MB — the game inflates
+# any level the same way, and ~4s off every build was judged worth 2 MB.
+SAVE_LEVEL = 3
+
+
+def save_bytes(dat: DatFile, level: int = SAVE_LEVEL) -> bytes:
+    """The compressed DAT, as DatFile.save would write it (raw deflate)."""
+    return zlib.compress(dat.to_bytes(), level=level, wbits=-15)
+
+
 def parse(path: str | Path) -> DatFile:
     """DatFile.parse, with lazily parsed civ units (see the module docstring)."""
     if os.environ.get("EMPIREFORGE_EAGER_DAT"):
