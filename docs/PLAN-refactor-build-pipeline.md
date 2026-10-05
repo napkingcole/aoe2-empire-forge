@@ -167,6 +167,30 @@ lines (City Walls 116, 221 at 79, 332 at 59, 283 at 56, 81 at 44, 103 at 43),
 - `apply_civ` (598 lines) and `_apply_tree_wiring` (416) — natural follow-ups
   once Phase 4 has shown the pattern.
 
+## Unreleased since v2.4.0 (on `main`, ships with the refactor)
+
+Kept here so the next changelog writes itself — add a line as each change lands.
+
+- **NEW** Chronicles bonus cards (441–445, team 87–90), marked with a helmet:
+  cavalry gain infantry armor upgrades, siege +1P/+30% vs buildings, Stable
+  techs 50% faster, skirmisher regeneration, stone miners gain food; team:
+  per-Outpost Fortified Outposts, Barracks techs 50% faster, buildings +3 LOS,
+  trade carts +15% speed.
+- **NEW** Chronicles units as Unlock cards under a purple Chronicles banner:
+  Immortal, Strategos, Hippeus, Companion Cavalry, Phalangite, Rhomphaia
+  Warrior, Pattiyodha Longbowman, Sannāhya, Hoplite, Scythian Horse Archer
+  (replaces the Cavalry Archer line).
+- **FASTER** Builds: the game file loads in ~1s instead of ~18s after the first
+  time, and a two-civ build takes seconds. Mods are ~2 MB larger.
+- **FIX** An unchanged vanilla unique unit keeps the game's own tooltip
+  (description, upgrades, cost icons) — and no longer degrades the original
+  civ's (reported in-game 2026-10-05: the Mangudai).
+- **FIX** Units enabled the way the game enables Hearth Troop now count as
+  enabled everywhere (tech tree node, button pages).
+- **FIX** Warnings no longer name renamed units with stray campaign dialogue.
+- *Pending from the refactor:* stop shipping a stale `futuravailableunits.json`.
+- *Untested in-game:* Chronicles units round still in progress.
+
 ## Decisions (answered 2026-10-05)
 
 1. **Release:** perf + Chronicles ship together as 2.5.0.
