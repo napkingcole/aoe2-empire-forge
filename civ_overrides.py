@@ -431,10 +431,10 @@ def _apply_hero_unit(dat, slot: int, draft: dict) -> None:
     dat.techs.append(imp_tech)
     print(f"       Hero unit: Imperial Age auto-fire enable tech id={new_tech_id} eff_id={new_eff_id}")
 
-    # Disable the standard Trebuchet: tech 256 enables unit 331 (PTREB) at Castle btn 2
-    # on Imperial Age, which would overwrite the hero at the same button.
-    tt_eff.effect_commands.append(EffectCommand(type=102, a=-1, b=-1, c=-1, d=256.0))
-    print("       Hero unit: disabled Trebuchet tech 256 (frees Castle btn 2)")
+    # The hero used to share Castle button 2 with the Trebuchet, so this
+    # disabled tech 256 (the Trebuchet's Imperial unlock) to make room — which
+    # is why picking a hero cost the civ its Trebuchet.  The hero now trains on
+    # button 4 (civ_appender._place_hero), so the Trebuchet stays (2026-10-05).
 
     # ── Language string DAT fields — assign a pool-allocated ID as language_dll_name
     # so wizard_build.py can write custom strings to it reliably.  Campaign heroes

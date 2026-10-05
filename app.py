@@ -39,7 +39,8 @@ from build_civ import (
     _decode_flag, _find_civ_techtrees_folder,
     _patch_per_civ_techtree, _canonical_techtree_id,
     civ_name_sid, civ_roster,
-    _resolve_uu_info, _find_adjacent_json, uu_cost_text, keeps_vanilla_hover,
+    _resolve_uu_info, _find_adjacent_json, uu_cost_text, keeps_vanilla_hover, rich_unit_tooltip,
+    renamed_uu_tooltip,
 )
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
                            _refresh_uu_tooltips)
@@ -811,8 +812,10 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             # Hero unit string IDs — read after _apply_hero_unit has set language_dll_name.
             _hero_raw  = (civ_def.get("hero_unit") or {})
             _hero_bid  = _hero_raw.get("base_unit_id")
-            _hero_name = (_hero_raw.get("name") or "").strip()
-            _hero_desc = (_hero_raw.get("description") or "").strip()
+            # Escaped for the key-value file, as the wizard route always did — a
+            # quote in a hero's name used to end the string early on this route.
+            _hero_name = _kv_text((_hero_raw.get("name") or "").strip())
+            _hero_desc = _kv_text((_hero_raw.get("description") or "").strip())
             _hero_dll  = -1
             _hero_cost_str = ""
             if _hero_bid is not None and _hero_name:
@@ -874,13 +877,18 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
 
                 # Hero unit name + Castle train-button tooltip.
                 if _hero_dll > 0 and _hero_name:
-                    _hero_hover = f"Create <b>{_hero_name}<b>"
-                    if _hero_desc:
-                        _hero_hover += f"\\n{_hero_desc}"
-                    if _hero_cost_str:
-                        _hero_hover += f"\\n{_hero_cost_str}"
+                    # The base hero's own game tooltip, renamed (cost icons,
+                    # upgrades, stats); plain text only if it has none.
+                    _hero_hover = rich_unit_tooltip(dat, _hero_bid, _hero_name, _hero_desc)
+                    if _hero_hover is None:
+                        _hero_hover = f"Create <b>{_hero_name}<b>"
+                        if _hero_desc:
+                            _hero_hover += f"\\n{_hero_desc}"
+                        if _hero_cost_str:
+                            _hero_hover += f"\\n{_hero_cost_str}"
                     string_lines[lang].append(f'{_hero_dll} "{_hero_name}"')
-                    string_lines[lang].append(f'{_hero_dll + DLL_CREATION_OFFSET} "{_hero_hover}"')
+                    # +1000 is the short "Create X" label, as every vanilla unit's is.
+                    string_lines[lang].append(f'{_hero_dll + DLL_CREATION_OFFSET} "Create {_hero_name}"')
                     string_lines[lang].append(f'{_hero_dll + 21000} "{_hero_hover}"')
                     string_lines[lang].append(f'{_hero_dll + DLL_HELP_OFFSET} "{_hero_hover}"')
 
@@ -989,6 +997,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     _cost = uu_cost_text(dat, slot, uu_info.get("unit_id"))
                     if _cost:
                         _uu_hover += f"\\n{_cost}"
+                    _uu_hover = renamed_uu_tooltip(dat, slot, uu_info, uu_info.get("unit_id"),
+                                                   _kv_text(uu_display), uu_override_desc, _uu_hover)
                     _keep = keeps_vanilla_hover(uu_info, uu_dll, is_renamed, uu_override_desc,
                                                 dat, slot, uu_info.get("unit_id"))
                     if not _keep:
@@ -1006,6 +1016,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     _put(uu_elite_dll, uu_elite_name)
                     _put(uu_elite_dll + DLL_CREATION_OFFSET, f"Create {uu_elite_name}")
                     _put(uu_elite_dll + 10000, uu_elite_name)
+                    _elite_hover = renamed_uu_tooltip(dat, slot, uu_info, (uu_info or {}).get("elite_id"),
+                                                      _kv_text(uu_elite_name), uu_override_desc, _elite_hover)
                     if not keeps_vanilla_hover(uu_info, uu_elite_dll,
                                                bool(uu_info) and is_renamed, uu_override_desc,
                                                dat, slot, (uu_info or {}).get("elite_id")):

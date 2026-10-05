@@ -43,7 +43,7 @@ from build_civ import (
     _decode_flag,
     _find_civ_techtrees_folder,
     _patch_per_civ_techtree,
-    _canonical_techtree_id, _resolve_uu_info, uu_cost_text, keeps_vanilla_hover,
+    _canonical_techtree_id, _resolve_uu_info, uu_cost_text, keeps_vanilla_hover, renamed_uu_tooltip,
     civ_name_sid, civ_roster,
 )
 from civ_appender import _KM_UU_NAMES
@@ -840,6 +840,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 # vanilla UU keeps the game's own, richer tooltip — except where
                 # that slot holds something else (the Ratha), which is the
                 # "stale string" this used to overwrite unconditionally for.
+                _hover = renamed_uu_tooltip(dat, slot, uu_info, uu_info.get("unit_id"),
+                                            _kv_text(uu_display), "", _hover)
                 _keep = keeps_vanilla_hover(uu_info, uu_dll, is_renamed, "",
                                             dat, slot, uu_info.get("unit_id"))
                 if not _keep:
@@ -852,6 +854,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 _put(uu_elite_dll, uu_elite_name)
                 _put(uu_elite_dll + DLL_CREATION_OFFSET, f"Create {uu_elite_name}")
                 _put(uu_elite_dll + 10000, uu_elite_name)
+                _ehover = renamed_uu_tooltip(dat, slot, uu_info, (uu_info or {}).get("elite_id"),
+                                             _kv_text(uu_elite_name), "", _ehover)
                 if not keeps_vanilla_hover(uu_info, uu_elite_dll,
                                            bool(uu_info) and is_renamed, "",
                                            dat, slot, (uu_info or {}).get("elite_id")):

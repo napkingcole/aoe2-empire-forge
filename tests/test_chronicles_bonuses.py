@@ -252,6 +252,9 @@ for label, uu, slot in (("with a Castle UU", 11, 14), ("with a Crusader Knight U
     check(f"hero {label}: the Trebuchet keeps Castle button 2", treb_btn == 2, treb_btn)
     check(f"hero {label}: the hero is on button 4, or moved to page 2 by the planner",
           hero_btn == 4 or 21 <= hero_btn <= 35, hero_btn)
+    tt = dat.effects[dat.civs[slot].tech_tree_id].effect_commands
+    check(f"hero {label}: the Trebuchet's Imperial unlock (tech 256) is not disabled",
+          not any(c.type == 102 and int(c.d) == 256 for c in tt))
     check(f"hero {label}: nothing is left untrainable",
           not [w for w in hres.get("warnings", []) if "can't be trained" in w], hres.get("warnings"))
 
