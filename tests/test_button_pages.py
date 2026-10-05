@@ -307,8 +307,12 @@ check("no Elite Elephant Archer on button 8 for a civ without Elephant Archers",
 # one (reported 2026-09-28, a real civ with one KM UU).
 print("\n=== other civs' UUs in the tree are not the civ's ===")
 CASTLE = 82
+# The editor has no node for a Chronicles unit — those arrive only through
+# their Unlock cards — so a real full tree never lists them.
+from civ_appender import _UNLOCK_UNIT_BONUSES as _UNLOCKS          # noqa: E402
+_chronicles = {u for spec in _UNLOCKS.values() if spec.get("chronicles") for u in spec["names"]}
 castle_units = sorted(uid for uid, u in enumerate(dat.civs[1].units)
-                      if u is not None and u.creatable is not None
+                      if u is not None and u.creatable is not None and uid not in _chronicles
                       and any(tl.unit_id == CASTLE for tl in u.creatable.train_locations))
 full_tree = {"alias": "Full Tree", "description": "", "architecture": 2, "language": 0,
              "wonder": -1, "castle": -1,

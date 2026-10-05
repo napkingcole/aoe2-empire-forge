@@ -9,6 +9,20 @@ Python side needs the project venv (for `genieutils`); the runner picks it up
 automatically. Adding a test means dropping a file in here and adding a `run`
 line to `run_all.sh`.
 
+### Before a release only: the previous game version
+
+```
+EMPIREFORGE_DAT="$PWD/ignore/6-6-26/empires2_x2_p1.dat" ./tests/run_all.sh
+```
+
+A second pass against the DAT from before the latest DLC. It guards the code
+that only offers what the player's own game has (a player who hasn't updated
+must not see the new civs' cards, and builds must not name effect ids their
+DAT lacks). Players on an old patch are rare once Steam has updated everyone,
+so this is **not needed for everyday changes — run it before tagging a
+release.** When the next DLC lands, swap `ignore/6-6-26/` for the current
+(Viking Sagas) DAT: right after a patch is when this pass matters most.
+
 ## Why these exist
 
 The expensive way to find a bug in this project is to package a mod, move it to

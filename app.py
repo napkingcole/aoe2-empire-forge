@@ -39,7 +39,7 @@ from build_civ import (
     _decode_flag, _find_civ_techtrees_folder,
     _patch_per_civ_techtree, _canonical_techtree_id,
     civ_name_sid, civ_roster,
-    _resolve_uu_info, _find_adjacent_json, uu_cost_text,
+    _resolve_uu_info, _find_adjacent_json, uu_cost_text, keeps_vanilla_hover,
 )
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
                            _refresh_uu_tooltips)
@@ -989,8 +989,11 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     _cost = uu_cost_text(dat, slot, uu_info.get("unit_id"))
                     if _cost:
                         _uu_hover += f"\\n{_cost}"
-                    _put(uu_dll + DLL_HELP_OFFSET, _uu_hover)
-                    if not _ext_sid_taken:
+                    _keep = keeps_vanilla_hover(uu_info, uu_dll, is_renamed, uu_override_desc,
+                                                dat, slot, uu_info.get("unit_id"))
+                    if not _keep:
+                        _put(uu_dll + DLL_HELP_OFFSET, _uu_hover)
+                    if not _ext_sid_taken and not _keep:
                         _put(uu_dll + 21000, _uu_hover)
                 if uu_elite_dll and uu_elite_name:
                     _elite_hover = f"Create <b>{uu_elite_name}<b>"
@@ -1003,8 +1006,11 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     _put(uu_elite_dll, uu_elite_name)
                     _put(uu_elite_dll + DLL_CREATION_OFFSET, f"Create {uu_elite_name}")
                     _put(uu_elite_dll + 10000, uu_elite_name)
-                    _put(uu_elite_dll + DLL_HELP_OFFSET, _elite_hover)
-                    _put(uu_elite_dll + 21000, _elite_hover)
+                    if not keeps_vanilla_hover(uu_info, uu_elite_dll,
+                                               bool(uu_info) and is_renamed, uu_override_desc,
+                                               dat, slot, (uu_info or {}).get("elite_id")):
+                        _put(uu_elite_dll + DLL_HELP_OFFSET, _elite_hover)
+                        _put(uu_elite_dll + 21000, _elite_hover)
 
             flag_png = _decode_flag(civ_def)
             if flag_png:
@@ -1389,6 +1395,12 @@ def api_builder_meta():
     unlock_bonuses = {
         str(bid): list(spec["units"]) for bid, spec in _UNLOCK_UNIT_BONUSES.items()
     }
+    # Units a card's unit replaces (Scythian Horse Archer -> Cavalry Archer
+    # line), so ticking the card can untick them in the tree the player sees.
+    unlock_replaces = {
+        str(bid): list(spec["replaces"]) for bid, spec in _UNLOCK_UNIT_BONUSES.items()
+        if spec.get("replaces")
+    }
     return jsonify({
         "architectures": arch_options,
         "civs": civ_options,
@@ -1396,6 +1408,7 @@ def api_builder_meta():
         "starting_scouts": _SCOUT_OPTIONS,
         "monk_skins": monk_options,
         "unlock_bonuses": unlock_bonuses,
+        "unlock_replaces": unlock_replaces,
         # Display names for the identity scene ("Hagia Sophia" rather than
         # "Byzantines").  Written by scripts/import_km_art.py; absent until that
         # has been run, so the wizard falls back to civ names.

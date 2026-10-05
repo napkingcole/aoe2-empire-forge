@@ -33,7 +33,7 @@ from build_civ import (
     _canonical_techtree_id,
     civ_name_sid,
     civ_roster,
-    _resolve_uu_info,
+    _resolve_uu_info, keeps_vanilla_hover,
     _patch_per_civ_techtree,
     _find_adjacent_json,
     _find_civ_techtrees_folder,
@@ -439,6 +439,9 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
                 if not _ext_sid_taken:
                     _put(dll + 21000, _uu_hover)
                 _put(dll + DLL_HELP_OFFSET, _uu_hover)
+            elif keeps_vanilla_hover(uu_info, dll, False, uu_override_desc or "",
+                                     dat, slot, uu_info.get("unit_id")):
+                pass        # an unchanged vanilla UU keeps the game's richer tooltip
             elif _uu_cost_str:
                 # No name override but write cost to Castle hover tooltip.
                 _uu_hover = f"Create <b>{uu_display}<b>\\n{_uu_cost_str}"
@@ -463,7 +466,10 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
                 _put(uu_elite_dll, uu_elite_name)
                 _put(uu_elite_dll + DLL_CREATION_OFFSET, f"Create {uu_elite_name}")
                 _put(uu_elite_dll + 21000, _elite_hover)
-            _put(uu_elite_dll + DLL_HELP_OFFSET, _elite_hover)
+            if not keeps_vanilla_hover(uu_info, uu_elite_dll, bool(uu_override_name),
+                                       uu_override_desc or "",
+                                       dat, slot, (uu_info or {}).get("elite_id")):
+                _put(uu_elite_dll + DLL_HELP_OFFSET, _elite_hover)
 
     # Vanilla civ-name + description fallbacks for all unmodified civs.
     # Driven by the live roster, so civs a DLC added keep their real names

@@ -29,7 +29,8 @@ from pathlib import Path
 from dat_reader import find_game_dat, load_dat, dat_info
 from civ_appender import (apply_civ, _KM_UU_TECHS, _KM_UU_NAMES, get_km_uu_index,
                           get_civ_bonuses, get_team_bonuses,
-                          UNSUPPORTED_UNIQUE_BUILDINGS)
+                          UNSUPPORTED_UNIQUE_BUILDINGS, _apply_unit_replacements,
+                          _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS, _help_sid)
 import km_custom_uu
 
 # Languages KM ships string files for.
@@ -81,11 +82,41 @@ def _tree_sets(civ_def: dict) -> tuple[set, set, set]:
     # (issue #31).  Filtered here rather than at each call site so every consumer
     # of the tree sees the same thing.
     b -= UNSUPPORTED_UNIQUE_BUILDINGS
+    # A replacement unit takes the replaced line out of the tree (Scythian Horse
+    # Archer -> no Cavalry Archer line), the same rule apply_civ reads.
+    u = _apply_unit_replacements({int(x) for x in u})
     # The Huns bonus hides the House in the DAT whatever the tree says, so the
     # viewer should not draw one either (issue #40).
     if any(e[0] == 131 for e in get_civ_bonuses(civ_def)):
         b.discard(70)
     return u, b, t
+
+
+def keeps_vanilla_hover(uu_info: dict | None, dll: int, renamed: bool, custom_desc: str,
+                        dat=None, slot: int | None = None, unit_id=None) -> bool:
+    """Leave the game's own Castle hover tooltip (string dll+21000, and the
+    dll+100000 help) for an unchanged vanilla unique unit.
+
+    The game's text is richer than anything we write — description, upgrades,
+    and a (<cost>) token the engine renders with resource icons from the unit's
+    actual cost — and the ids are the game's, shared with the civ that really
+    owns the unit, so overwriting them degraded the Mongols' own Mangudai too
+    (reported in-game 2026-10-05).  Only when it IS a real tooltip, though:
+    57 of 59 vanilla UUs have one at +21000, but KM unit 80's slot holds "Click
+    to remove this unit from the queue.", which is why the writers used to
+    overwrite unconditionally.
+    """
+    if not uu_info or not uu_info.get("vanilla") or renamed or custom_desc:
+        return False
+    # A changed cost keeps our "Costs:" line: whether the game's (<cost>) token
+    # shows a civ's overridden cost is untested (the confirmed Elite Budget
+    # Knight tooltip carries both the token AND a literal cost).  Compared
+    # against Gaia's copy of the unit, which a build never touches.
+    if dat is not None and slot is not None and unit_id is not None:
+        if uu_cost_text(dat, slot, unit_id) != uu_cost_text(dat, 0, unit_id):
+            return False
+    from civ_appender import _string_table
+    return "(<cost>)" in (_string_table().get(dll + 21000) or "")
 
 
 def uu_cost_text(dat, slot: int, unit_id) -> str:
@@ -365,7 +396,7 @@ def _uu_actual_unit_id(dat, make_avail_tech_id: int) -> int:
         eff_id = dat.techs[make_avail_tech_id].effect_id
         if 0 <= eff_id < len(dat.effects):
             for ec in dat.effects[eff_id].effect_commands:
-                if ec.type == 2 and ec.b == 1:  # EC_ENABLE, enabled=1
+                if ec.type == 2 and ec.b != 0:  # EC_ENABLE: b=1 or -1 (Hearth Troop) shows
                     return ec.a
     return make_avail_tech_id
 
@@ -429,6 +460,12 @@ def _resolve_uu_info(civ_def: dict, dat, slot: int,
             # matches vanilla's own offset convention) and silently breaks
             # for KM-custom ones (pool ids aren't offset-related at all).
             "dll_help": u.language_dll_help,
+            # A vanilla DE unit: its name and tooltip strings are the GAME's,
+            # shared with the civ that really owns it (the Mongols' Mangudai).
+            # The writers leave them alone unless the player renamed or
+            # re-described the unit — the vanilla tooltip is richer than any
+            # we write (description, upgrades, <cost> icons).
+            "vanilla":  bool(pair),
             # Custom name from wizard overrides the KM name table.
             "name":     (civ_def.get("unique_unit") or {}).get("name") or _KM_UU_NAMES.get(km_uu_idx, "Unique Unit"),
         }
@@ -466,7 +503,43 @@ _OPT_IN_UNIT_NODE_SOURCES: dict[int, list[str]] = {
     2588: ["INCAS.json",       "MAPUCHE.json"],    # Champi Runner
     2633: ["AZTECS.json",      "INCAS.json"],      # Catapult Galleon
     1302: ["CHINESE.json"],                 # Dragon Ship
+    2110: ["ATHENIANS.json",   "SPARTANS.json"],   # Hoplite (Chronicles)
+    2111: ["ATHENIANS.json",   "SPARTANS.json"],   # Elite Hoplite
 }
+
+
+def _retarget_replaced_nodes(data: dict, unit_ids: set, dat, slot) -> int:
+    """A replacement unit takes over the replaced line's nodes in the viewer:
+    with the Scythian Horse Archer card, the Cavalry Archer and Heavy Cavalry
+    Archer nodes become the Scythian and Elite Scythian (no civ's tree file has
+    a Scythian node to copy).  Only Unit nodes — Husbandry shares Node ID 39."""
+    remap: dict[int, int] = {}
+    for spec in _UNLOCK_UNIT_BONUSES.values():
+        if spec.get("replaces") and set(spec["units"]) & unit_ids:
+            remap.update(zip(spec["replaces"], spec["units"]))
+    if not remap:
+        return 0
+    changed = 0
+    for key in ("civ_techs_units", "civ_techs_buildings"):
+        for node in data.get(key, []):
+            if node.get("Use Type") != "Unit":
+                continue
+            old = node.get("Node ID")
+            if old in remap:
+                new = remap[old]
+                spec_names = next(sp["names"] for sp in _UNLOCK_UNIT_BONUSES.values()
+                                  if new in sp.get("names", {}))
+                sid = CHRONICLES_SIDS[("unit", new)]
+                node["Node ID"] = new
+                node["Name"] = spec_names[new]
+                node["Name String ID"] = sid
+                node["Help String ID"] = _help_sid(sid)
+                if dat is not None and slot is not None:
+                    node["Picture Index"] = dat.civs[slot].units[new].icon_id
+                changed += 1
+            if node.get("Link ID") in remap:
+                node["Link ID"] = remap[node["Link ID"]]
+    return changed
 
 
 def _inject_regional_unit_nodes(data: dict, tree_units: set,
@@ -842,7 +915,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                 tech = dat.techs[new_tid]
                 if 0 <= tech.effect_id < len(dat.effects):
                     for ec in dat.effects[tech.effect_id].effect_commands:
-                        if ec.type == 2 and int(ec.b) == 1:   # EC_ENABLE show
+                        if ec.type == 2 and int(ec.b) != 0:   # EC_ENABLE show (b=1 or -1)
                             _bonus_enabled_units.add(int(ec.a))
                         elif ec.type == 3:                      # EC_UPGRADE → to unit b
                             _bonus_enabled_units.add(int(ec.b))
@@ -937,7 +1010,9 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                     changed += 1
         return changed
 
-    changed  = patch_nodes(data.get("civ_techs_buildings", []))
+    # Before the status pass, so the retargeted nodes are judged as the new units.
+    retargeted = _retarget_replaced_nodes(data, unit_ids, dat, slot)
+    changed  = retargeted + patch_nodes(data.get("civ_techs_buildings", []))
     changed += patch_nodes(data.get("civ_techs_units",     []))
 
     # Inject RegionalUnit nodes for opt-in units (Elephant Archer, Slinger,

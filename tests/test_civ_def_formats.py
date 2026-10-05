@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from civ_appender import (  # noqa: E402
-    _tree_unit_ids, get_civ_bonuses, get_team_bonuses, get_ut_entries,
+    _tree_unit_ids, get_civ_bonuses, get_team_bonuses, get_ut_entries, _apply_unit_replacements,
     get_km_uu_index, _UNLOCK_UNIT_BONUSES,
 )
 
@@ -171,6 +171,9 @@ for path in CORPUS:
     # mode that reads as "no derived unlocks" instead of as an error.
     declared = set(tree.get("units", []) if isinstance(tree, dict)
                    else (tree[0] if isinstance(tree, list) and tree else []))
+    # ...after any picked replacement, which the accessor applies on purpose
+    # (the Scythian Horse Archer takes the Cavalry Archer line out of the tree).
+    declared = _apply_unit_replacements({int(u) for u in declared})
     if declared and got["tree_units"] != declared:
         bad.append(f"{path.name}: tree units {got['tree_units']} != {declared}")
     # Accessors are reads.  get_civ_bonuses appends derived unlocks to its own

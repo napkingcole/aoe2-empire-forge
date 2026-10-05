@@ -84,5 +84,9 @@
   "83": "Towers and Castles provide +10 population space",
   "84": "Repairers work +25% faster",
   "85": "Knight-line +1 attack vs. Infantry",
-  "86": "Siege Weapons +2 line of sight"
+  "86": "Siege Weapons +2 line of sight",
+  "87": "Outposts can be individually upgraded into Fortified Outposts",
+  "88": "Barracks technologies research 50% faster",
+  "89": "Buildings +3 line of sight",
+  "90": "Trade Carts move 15% faster"
 }

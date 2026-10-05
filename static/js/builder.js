@@ -1395,6 +1395,9 @@ const _BONUS_CATEGORIES = [
   { key: 'research', icon: 'fa-flask',        kw: ['research','blacksmith','university','technology','tech','age','upgrade'] },
   { key: 'building', icon: 'fa-chess-rook',   kw: ['castle','tower','wall','krepost','fortif','stone defense','palisade','wonder','house','settlement'] },
   { key: 'unlock',   icon: 'fa-lock-open',    kw: ['unlock','can recruit','can train','can build','can upgrade','replaces','recruitable','is available','be trained','be recruited','be built'] },
+  // Chronicles unit unlocks (cards flagged "chronicles" that unlock a unit).
+  // No keywords: only _classifyBonus puts a card here.
+  { key: 'chronicles', icon: 'fa-landmark',   kw: [] },
   { key: 'general',  icon: 'fa-shield',       kw: [] },
 ];
 
@@ -1463,7 +1466,10 @@ function _classifyBonus(id, label) {
   // civ_appender._UNLOCK_UNIT_BONUSES automatically and the hardcoded 405-417
   // entries above are now belt-and-braces rather than load-bearing.
   if (_isUnlockBonus(id)) {
-    return _BONUS_CATEGORIES.find(c => c.key === 'unlock') || _BONUS_CATEGORIES.at(-1);
+    // Units from the Chronicles civs get their own purple banner; Chronicles
+    // bonuses and techs stay filed by what they do, marked only by the badge.
+    const key = _cardOverrides[String(id)]?.chronicles ? 'chronicles' : 'unlock';
+    return _BONUS_CATEGORIES.find(c => c.key === key) || _BONUS_CATEGORIES.at(-1);
   }
   const lower = label.toLowerCase();
   for (const cat of _BONUS_CATEGORIES) {
@@ -1951,6 +1957,7 @@ function _applyCardOverride(p, ov, label) {
   if (ov.icon2)   p.icon2Override  = ov.icon2;
   if (ov.lines)   p.lines          = ov.lines;
   if (ov.multiplier === false) p.noMultiplier = true;
+  if (ov.chronicles)  p.chronicles     = true;
   // For progression: use explicit ages if provided, otherwise (re)extract from label
   if (p.type === 'progression') {
     p.ageValues = ov.ages || p.ageValues || _extractAgeValues(label);
@@ -2037,6 +2044,14 @@ function wireSearchPicker({ inputId, resultsId, catalog, onSelect }) {
   }, true);
 }
 
+// Cards ported from the Chronicles civs carry a small helmet badge.  Both card
+// renderers (the bulk grid and _makeBonusCardEl) must call this.
+function _chroniclesBadge(p) {
+  return p.chronicles
+    ? `<img class="chronicles-badge" src="/static/gladiator-helmet.png" alt="Chronicles" title="From the Chronicles civilizations">`
+    : '';
+}
+
 function _makeBonusCardEl(c, mult, isSelected, toggleFn, getDraftEntry, prefix = '') {
   const idStr = prefix + c.id;  // e.g. '' + 5 = '5', or 'T' + 5 = 'T5'
   const cat = _classifyBonus(idStr, c.label);
@@ -2049,7 +2064,7 @@ function _makeBonusCardEl(c, mult, isSelected, toggleFn, getDraftEntry, prefix =
   el.dataset.cat     = cat.key;
   el.style.cssText   = `--cat-color:var(--cat-${cat.key});`;
   el.title           = c.label.replace(/"/g, '&quot;');
-  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
+  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult)}${_chroniclesBadge(p)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
   // Use c.id directly in closures — no need to parse data-bonus-id
   el.addEventListener('click', e => {
     if (e.target.closest('.multiplier-circle')) return;
@@ -2123,7 +2138,7 @@ function _buildGridHtml(catalog, selIds, bonuses, q, idPrefix) {
     if (visible) anyVisible = true;
     const typeClass = p.type !== 'value' ? ` ${p.type}-bonus` : '';
     const styleAttr = `--cat-color:var(--cat-${cat.key})${visible ? '' : ';display:none'}`;
-    const html = `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${idStr}" data-cat="${cat.key}" style="${styleAttr}" title="${c.label.replace(/"/g, '&quot;')}">${_renderBonusCardInner(p, cat, mult)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
+    const html = `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${idStr}" data-cat="${cat.key}" style="${styleAttr}" title="${c.label.replace(/"/g, '&quot;')}">${_renderBonusCardInner(p, cat, mult)}${_chroniclesBadge(p)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
     if (sel) selHtml += html;
     else availHtml += html;
   }
@@ -2313,6 +2328,7 @@ function wireCustomBonusPicker() {
 // there is no independent state to reconcile.  The map is served by
 // /api/builder/meta so it can't drift from civ_appender._UNLOCK_UNIT_BONUSES.
 let _unlockBonusUnits = {};   // {bonusId: [unitId, ...]}
+let _unlockReplaces   = {};   // {bonusId: [unitId, ...]} units the card's unit replaces
 
 function _isUnlockBonus(id) {
   return Object.prototype.hasOwnProperty.call(_unlockBonusUnits, String(id));
@@ -2346,12 +2362,20 @@ function _toggleUnlockBonus(id) {
   const units = _unlockBonusUnits[String(id)] || [];
   const has   = units.some(u => draft.tree.units.includes(u));
 
+  // A replacement unit (Scythian Horse Archer) takes the replaced line out of
+  // the tree while it is picked, and gives it back when it is dropped — the
+  // build enforces the same rule, so the tree never shows a unit it won't get.
+  const replaced = (_unlockReplaces[String(id)] || []).map(Number);
   if (has) {
     draft.tree.units = draft.tree.units.filter(u => !units.includes(u));
+    for (const u of replaced) {
+      if (!draft.tree.units.includes(u)) draft.tree.units.push(u);
+    }
   } else {
     for (const u of units) {
       if (!draft.tree.units.includes(u)) draft.tree.units.push(u);
     }
+    draft.tree.units = draft.tree.units.filter(u => !replaced.includes(u));
   }
   _deriveUnlockBonuses();
   saveDraft();
@@ -3957,6 +3981,7 @@ async function init() {
     window._metaScouts        = meta.starting_scouts || [];
     window._metaMonks         = meta.monk_skins      || [];
     _unlockBonusUnits         = meta.unlock_bonuses  || {};
+    _unlockReplaces           = meta.unlock_replaces || {};
     // A draft with no tree yet (new civ, or one saved before this defaulted to
     // full) gets the wide-open tree before anything reads draft.tree.
     await _seedFullTreeIfEmpty();

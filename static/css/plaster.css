@@ -66,6 +66,7 @@
   --cat-research: #5e2900;   /* amber        */
   --cat-building: #525252;   /* stone gray   */
   --cat-unlock:   #32044a;   /* cyan         */
+  --cat-chronicles: #6f4177; /* royal purple — matches the Chronicles DLC banner */
   --cat-general:  #475569;   /* slate        */
 
   /* UT card category colors */
@@ -1977,4 +1978,16 @@ img.card-main-image {
   letter-spacing: .14em; text-align: center; text-transform: uppercase;
   box-shadow: 0 1px 3px rgba(44, 26, 10, 0.35);
   pointer-events: none;
+}
+
+/* Chronicles-derived bonus cards: a small helmet in the bottom-right corner. */
+.bonus-card .chronicles-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 22px;
+  height: auto;
+  z-index: 3;
+  pointer-events: auto;
+  filter: drop-shadow(1px 1px 1px rgb(0 0 0 / 0.6));
 }

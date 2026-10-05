@@ -414,5 +414,20 @@
   "437": "Fishing Ships and Villagers drop off +5% food",
   "438": "Loot 25% of the resource cost of each destroyed building",
   "439": "Barracks and Siege Workshop upgrades cost -66% gold",
-  "440": "Varangian Guards and Longships move +10% faster"
+  "440": "Varangian Guards and Longships move +10% faster",
+  "441": "Infantry armor upgrades also apply to cavalry",
+  "442": "Siege Weapons +1 pierce armor and +30% damage vs. buildings",
+  "443": "Stable technologies research 50% faster",
+  "444": "Skirmishers regenerate 5 HP per minute in Feudal Age, 10 in Castle Age",
+  "445": "Villagers gathering stone slowly generate food",
+  "447": "Unlock the Immortal (Achaemenid infantry and archer, Castle, Castle Age)",
+  "448": "Unlock the Strategos (Athenian infantry, Castle, Castle Age)",
+  "449": "Unlock the Hippeus (Spartan cavalry, Castle, Castle Age)",
+  "450": "Unlock the Companion Cavalry (Macedonian cavalry, Castle, Castle Age)",
+  "451": "Unlock the Phalangite (Macedonian infantry, Barracks, Castle Age)",
+  "452": "Unlock the Rhomphaia Warrior (Thracian infantry, Castle, Castle Age)",
+  "453": "Unlock the Pattiyodha Longbowman (Puru archer, Castle, Castle Age)",
+  "454": "Unlock the Sannāhya (Puru elephant, Stable, Castle Age)",
+  "455": "Unlock the Hoplite (Greek infantry, Barracks, Castle Age)",
+  "456": "Unlock the Scythian Horse Archer (replaces the Cavalry Archer line, Archery Range, Castle Age)"
 }

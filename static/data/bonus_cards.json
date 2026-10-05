@@ -3415,5 +3415,135 @@
     "entity": "varangian_guard",
     "entity2": "longboat",
     "description": "Varangian Guard + Longship"
+  },
+  "441": {
+    "chronicles": true,
+    "type": "dual",
+    "heading": "Shared Armor",
+    "stat": "Infantry armor upgrades also apply to cavalry",
+    "entity": "knight",
+    "entity2": "barracks",
+    "description": "Cavalry"
+  },
+  "442": {
+    "chronicles": true,
+    "heading": "+1P / +30%",
+    "stat": "Siege +1 pierce armor and +30% damage vs. buildings",
+    "entity": "mangonel",
+    "description": "Siege Weapons"
+  },
+  "443": {
+    "chronicles": true,
+    "heading": "+50%",
+    "stat": "Stable technologies research 50% faster",
+    "entity": "stable",
+    "description": "Stable Techs"
+  },
+  "444": {
+    "chronicles": true,
+    "type": "progression",
+    "stat": "HP Regeneration",
+    "entity": "skirmisher",
+    "description": "Skirmishers",
+    "prog_label": "HP per minute:",
+    "ages": [
+      {
+        "age": "feudal",
+        "value": "5"
+      },
+      {
+        "age": "castle",
+        "value": "10"
+      }
+    ]
+  },
+  "445": {
+    "chronicles": true,
+    "type": "dual",
+    "heading": "+[food]",
+    "stat": "Villagers gathering stone slowly generate food",
+    "entity": "villager",
+    "entity2": "stone_mining",
+    "description": "Stone Miners"
+  },
+  "447": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Immortal",
+    "entity": "immortal",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "448": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Strategos",
+    "entity": "strategos",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "449": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Hippeus",
+    "entity": "hippeus",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "450": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Companion Cavalry",
+    "entity": "companion_cavalry",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "451": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Phalangite",
+    "entity": "phalangite",
+    "description": "Barracks — Castle Age",
+    "multiplier": false
+  },
+  "452": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Rhomphaia Warrior",
+    "entity": "rhomphaia_warrior",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "453": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Pattiyodha Longbowman",
+    "entity": "pattiyodha_longbowman",
+    "description": "Castle — Castle Age",
+    "multiplier": false
+  },
+  "454": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Sannāhya",
+    "entity": "sannahya",
+    "description": "Stable — Castle Age",
+    "multiplier": false
+  },
+  "455": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Hoplite",
+    "entity": "hoplite",
+    "description": "Barracks — Castle Age",
+    "multiplier": false
+  },
+  "456": {
+    "chronicles": true,
+    "heading": "UNLOCK",
+    "stat": "Scythian Horse Archer",
+    "entity": "scythian_horse_archer",
+    "description": "Replaces Cavalry Archer — Castle Age",
+    "multiplier": false
   }
 }

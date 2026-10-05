@@ -43,7 +43,7 @@ from build_civ import (
     _decode_flag,
     _find_civ_techtrees_folder,
     _patch_per_civ_techtree,
-    _canonical_techtree_id, _resolve_uu_info, uu_cost_text,
+    _canonical_techtree_id, _resolve_uu_info, uu_cost_text, keeps_vanilla_hover,
     civ_name_sid, civ_roster,
 )
 from civ_appender import _KM_UU_NAMES
@@ -835,11 +835,16 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                     _put(uu_dll, uu_display)
                     _put(uu_dll + DLL_CREATION_OFFSET, f"Create {uu_display}")
                 _put(uu_dll + 10000, uu_display)
-                _put(uu_dll + DLL_HELP_OFFSET, _hover)
                 # Castle train-button hover reads name+21000. KM-custom UUs
-                # write this via extra_unit_strings/ext_sid; vanilla UUs need
-                # it written here or a stale campaign string bleeds through.
-                _put(uu_dll + 21000, _hover)
+                # write this via extra_unit_strings/ext_sid. An unchanged
+                # vanilla UU keeps the game's own, richer tooltip — except where
+                # that slot holds something else (the Ratha), which is the
+                # "stale string" this used to overwrite unconditionally for.
+                _keep = keeps_vanilla_hover(uu_info, uu_dll, is_renamed, "",
+                                            dat, slot, uu_info.get("unit_id"))
+                if not _keep:
+                    _put(uu_dll + DLL_HELP_OFFSET, _hover)
+                    _put(uu_dll + 21000, _hover)
             if uu_elite_dll and uu_elite_name:
                 _ecost  = uu_cost_text(dat, slot,
                                        uu_info.get("elite_id") if uu_info else None)
@@ -847,8 +852,11 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 _put(uu_elite_dll, uu_elite_name)
                 _put(uu_elite_dll + DLL_CREATION_OFFSET, f"Create {uu_elite_name}")
                 _put(uu_elite_dll + 10000, uu_elite_name)
-                _put(uu_elite_dll + DLL_HELP_OFFSET, _ehover)
-                _put(uu_elite_dll + 21000, _ehover)
+                if not keeps_vanilla_hover(uu_info, uu_elite_dll,
+                                           bool(uu_info) and is_renamed, "",
+                                           dat, slot, (uu_info or {}).get("elite_id")):
+                    _put(uu_elite_dll + DLL_HELP_OFFSET, _ehover)
+                    _put(uu_elite_dll + 21000, _ehover)
 
         # Button PNGs (104×104 civ picker emblem).
         # Use the canonical civTechTrees name (e.g. "britons"), not the DAT
