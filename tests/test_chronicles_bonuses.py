@@ -112,7 +112,7 @@ from civ_appender import _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS   # noqa: E402
 UNITS = [b for b, spec in _UNLOCK_UNIT_BONUSES.items() if spec.get("chronicles")]
 check("ten Chronicles unit cards", UNITS == list(range(447, 457)), UNITS)
 check("every Chronicles string id is distinct",
-      len(set(CHRONICLES_SIDS.values())) == len(CHRONICLES_SIDS) == 34, len(CHRONICLES_SIDS))
+      len(set(CHRONICLES_SIDS.values())) == len(CHRONICLES_SIDS) == 36, len(CHRONICLES_SIDS))
 
 # One card per civ: six of these train at the Castle and share the UU button,
 # so a civ can only fit a couple (both pages of the Castle are one slot each).
@@ -209,6 +209,54 @@ check("Hoplite + Phalangite: both trainable (no full-Barracks warning)",
 check("exactly one Elite Hoplite, and it has standard prerequisites only",
       len(elites) == 1 and not {r for r in elites[0].required_techs if r >= 0} & CHRONICLES_ONLY,
       [[r for r in t.required_techs if r >= 0] for t in elites])
+
+# ── Palintonon (457): the Chronicles skin of the Trebuchet, +15% attack ─────
+from civ_appender import CHRONICLES_SIDS as _SIDS        # noqa: E402
+athenians = next(c for c in dat.civs if c.name == "Athenians")
+with contextlib.redirect_stdout(io.StringIO()):
+    res4 = apply_civ(dat, {"alias": "Palintonon", "bonuses": [{"id": 457, "multiplier": 1}],
+                           "team_bonuses": []}, target_slot=13)
+mine4 = dat.civs[13].units
+check("457: applies with no warnings", not res4.get("warnings"), res4.get("warnings"))
+for uid in (42, 331):
+    check(f"457: unit {uid} wears the Athenian art (standing, attack, icon)",
+          mine4[uid].standing_graphic == athenians.units[uid].standing_graphic
+          and mine4[uid].icon_id == athenians.units[uid].icon_id
+          and mine4[uid].type_50.attack_graphic == athenians.units[uid].type_50.attack_graphic)
+    check(f"457: unit {uid} is named with our own string",
+          mine4[uid].language_dll_name == _SIDS[("unit", uid)])
+check("457: stats are untouched (same attack entries as the Trebuchet)",
+      [(a.class_, a.amount) for a in mine4[42].type_50.attacks]
+      == [(a.class_, a.amount) for a in dat.civs[1].units[42].type_50.attacks])
+boost = [c for t in dat.techs if t.civ == 13 and t.name == "C-Bonus, Palintonon attack"
+         for c in dat.effects[t.effect_id].effect_commands]
+check("457: +15% on each attack entry of the UNPACKED unit only",
+      sorted((int(c.a), int(c.d) >> 8, int(c.d) & 255) for c in boost) == [(42, 3, 115), (42, 11, 115)],
+      [(int(c.a), int(c.d) >> 8, int(c.d) & 255) for c in boost])
+check("457: another civ's Trebuchet keeps its own art",
+      dat.civs[2].units[42].standing_graphic != athenians.units[42].standing_graphic)
+
+# ── Hero on Castle button 4, so the Trebuchet keeps button 2 ────────────────
+from civ_overrides import _apply_hero_unit              # noqa: E402
+LIU_BEI = 1966
+for label, uu, slot in (("with a Castle UU", 11, 14), ("with a Crusader Knight UU (also button 4)", 39, 15)):
+    hero_civ = {"alias": "Hero", "bonuses": [], "team_bonuses": [], "unique_unit": {"km_idx": uu},
+                "hero_unit": {"base_unit_id": LIU_BEI, "name": "Probe Hero"},
+                "tree": {"units": [4, 38, 42, 331, 440], "buildings": [82, 12, 101, 87], "techs": []}}
+    with contextlib.redirect_stdout(io.StringIO()):
+        hres = apply_civ(dat, hero_civ, target_slot=slot)
+        _apply_hero_unit(dat, slot, hero_civ)
+    u = dat.civs[slot].units
+    hero_btn = u[LIU_BEI].creatable.train_locations[0].button_id
+    treb_btn = u[331].creatable.train_locations[0].button_id
+    check(f"hero {label}: the Trebuchet keeps Castle button 2", treb_btn == 2, treb_btn)
+    check(f"hero {label}: the hero is on button 4, or moved to page 2 by the planner",
+          hero_btn == 4 or 21 <= hero_btn <= 35, hero_btn)
+    tt = dat.effects[dat.civs[slot].tech_tree_id].effect_commands
+    check(f"hero {label}: the Trebuchet's Imperial unlock (tech 256) is not disabled",
+          not any(c.type == 102 and int(c.d) == 256 for c in tt))
+    check(f"hero {label}: nothing is left untrainable",
+          not [w for w in hres.get("warnings", []) if "can't be trained" in w], hres.get("warnings"))
 
 # EC_ENABLE with b=-1 also shows a unit (27 vanilla commands use it).  Every
 # "is this an enable?" check used to demand b == 1, so these units — and the

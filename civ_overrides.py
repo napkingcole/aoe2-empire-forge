@@ -346,7 +346,7 @@ def _apply_hero_unit(dat, slot: int, draft: dict) -> None:
     Enable and configure a hero unit for the civ.
 
     Standard defaults applied to every hero (matching Liu Bei / Three Kingdoms hero):
-      - Castle btn 2 (W key, hotkey 16381), 60 s train time
+      - Castle btn 4 (placed by civ_appender._place_hero), 60 s train time
       - 500 Food / 500 Gold cost
       - 300 HP floor
       - hero_mode 1 (one-at-a-time + passive regen, Liu Bei pattern)
@@ -431,10 +431,10 @@ def _apply_hero_unit(dat, slot: int, draft: dict) -> None:
     dat.techs.append(imp_tech)
     print(f"       Hero unit: Imperial Age auto-fire enable tech id={new_tech_id} eff_id={new_eff_id}")
 
-    # Disable the standard Trebuchet: tech 256 enables unit 331 (PTREB) at Castle btn 2
-    # on Imperial Age, which would overwrite the hero at the same button.
-    tt_eff.effect_commands.append(EffectCommand(type=102, a=-1, b=-1, c=-1, d=256.0))
-    print("       Hero unit: disabled Trebuchet tech 256 (frees Castle btn 2)")
+    # The hero used to share Castle button 2 with the Trebuchet, so this
+    # disabled tech 256 (the Trebuchet's Imperial unlock) to make room — which
+    # is why picking a hero cost the civ its Trebuchet.  The hero now trains on
+    # button 4 (civ_appender._place_hero), so the Trebuchet stays (2026-10-05).
 
     # ── Language string DAT fields — assign a pool-allocated ID as language_dll_name
     # so wizard_build.py can write custom strings to it reliably.  Campaign heroes
@@ -467,13 +467,12 @@ def _apply_hero_unit(dat, slot: int, draft: dict) -> None:
               "(a pool SID with no text written shows campaign dialogue)")
 
     if unit.creatable:
-        # ── Train location: always Castle btn 2 (W key = hotkey 16381) ───────
+        # ── Train location: placed by apply_civ (civ_appender._place_hero) ──
+        # Castle button 4, or wherever the button planner moved it — button 2
+        # is the Trebuchet's, and forcing it here took the Trebuchet away.
+        # Only the train time is the hero's own default.
         if unit.creatable.train_locations:
-            loc = unit.creatable.train_locations[0]
-            loc.unit_id    = 82   # Castle
-            loc.button_id  = 2
-            loc.hot_key_id = 16381  # W key, button 2 — matches Liu Bei
-            loc.train_time = _HERO_TRAIN_TIME
+            unit.creatable.train_locations[0].train_time = _HERO_TRAIN_TIME
 
         # ── Cost: 500 Food / 500 Gold ─────────────────────────────────────────
         rc = unit.creatable.resource_costs

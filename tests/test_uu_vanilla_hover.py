@@ -109,8 +109,22 @@ for route, build in (("web", build_web), ("cli", build_cli), ("wizard", build_wi
     check(f"[{route}] the Ratha, whose slot is not a tooltip, still gets one written",
           (RATHA + 21000) in s and "Ratha" in s[RATHA + 21000], s.get(RATHA + 21000))
     s = build(civ(11, name="Steppe Riders"))
+    tip = s.get(MANGUDAI + 21000, "")
     check(f"[{route}] a renamed Mangudai still gets its own tooltip",
-          "Steppe Riders" in s.get(MANGUDAI + 21000, ""), s.get(MANGUDAI + 21000))
+          "Steppe Riders" in tip, tip)
+    check(f"[{route}] ...in the game's rich format (cost icons, stat line)",
+          "(<cost>)" in tip and "<hp>" in tip, tip[:120])
+    if route != "cli":                       # the CLI route has never written hero strings
+        h = civ(11)
+        h["hero_unit"] = {"base_unit_id": 1966, "name": "QA Hero", "description": "Test hero"}
+        s = build(h)
+        sid = next((k for k, v in s.items() if v == "QA Hero"), None)
+        check(f"[{route}] hero: +1000 is the short 'Create' label",
+              sid is not None and s.get(sid + 1000) == "Create QA Hero", s.get((sid or 0) + 1000))
+        tip = s.get((sid or 0) + 21000, "")
+        check(f"[{route}] hero: tooltip is the base hero's, renamed, with our description",
+              tip.startswith("Create <b>QA Hero<b> (<cost>)") and "Test hero" in tip and "<hp>" in tip
+              and "Costs:" not in tip, tip[:140])
 
 print("\nAll checks passed." if not failures else f"\n{failures} check(s) failed.")
 sys.exit(1 if failures else 0)

@@ -2076,6 +2076,35 @@ def button_layout_preview(dat: DatFile, civ_def: dict, tree_techs: set[int]) -> 
     return out
 
 
+# The hero trains at the Castle on button 4 (hotkey 16730, button 4's own),
+# not button 2: button 2 is the Trebuchet's (packed) slot, and a hero there
+# simply took the Trebuchet away (reported 2026-10-05).  Button 4 is free in the
+# vanilla Castle layout; when something else claims it — the Cuman Mercenaries'
+# Kipchak, a Crusader Knight UU — _resolve_button_collisions moves one of the
+# two to page 2 like any other clash.
+HERO_CASTLE_BUTTON, HERO_CASTLE_HOTKEY = 4, 16730
+
+
+def _hero_unit_id(civ_def: dict) -> int | None:
+    hero = civ_def.get("hero_unit") or {}
+    base_id = hero.get("base_unit_id") if isinstance(hero, dict) else None
+    return int(base_id) if base_id is not None else None
+
+
+def _place_hero(dat: DatFile, civ_index: int, civ_def: dict) -> None:
+    """Put the hero on its Castle button before the button planner runs."""
+    hero = _hero_unit_id(civ_def)
+    units = dat.civs[civ_index].units
+    if hero is None or not 0 <= hero < len(units) or units[hero] is None:
+        return
+    unit = units[hero]
+    if unit.creatable and unit.creatable.train_locations:
+        loc = unit.creatable.train_locations[0]
+        loc.unit_id    = BUILDING_CASTLE
+        loc.button_id  = HERO_CASTLE_BUTTON
+        loc.hot_key_id = HERO_CASTLE_HOTKEY
+
+
 def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict) -> list[dict]:
     """Move colliding unit lines to the building's second page.  Returns a log.
 
@@ -2091,6 +2120,11 @@ def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict) -> l
     this civ and the original is disabled for it (the _allocate_tech pattern).
     """
     present = _civ_present_units(civ_def, dat, civ_index)
+    # The hero is enabled later (civ_overrides) and is never in the tree, but
+    # _place_hero has already put it on its Castle button — it must count.
+    hero = _hero_unit_id(civ_def)
+    if hero is not None:
+        present.add(hero)
     # ...and units its own techs place in a building in-game (Anarchy).
     runtime = _runtime_train_locations(dat, civ_index)
     present |= {uid for uid, _ in runtime}
@@ -2661,6 +2695,31 @@ def _rebuild_unlock_techs(dat: DatFile, civ_index: int, spec: dict) -> dict:
         made[tid] = len(dat.techs) - 1
     return made
 
+# Unit skins: another civ's version of the SAME unit slots, copied onto this
+# civ.  The Chronicles civs don't have a separate Palintonon unit — they give
+# units 42/331 (Trebuchet, unpacked/packed) different art and name strings.
+# Diffing Britons vs Athenians, exactly these fields differ (stats, cost and
+# sounds are identical), so exactly these are copied; the names are written as
+# our own strings because 405062/405063 are Chronicles-only.  Every Trebuchet
+# tech keeps working: same unit ids.
+_UNIT_SKIN_FIELDS = (
+    "standing_graphic", "dying_graphic", "icon_id",
+    ("dead_fish", "walking_graphic"),
+    ("type_50", "attack_graphic"), ("type_50", "frame_delay"), ("type_50", "graphic_displacement"),
+    ("building", "construction_graphic_id"),
+)
+_UNIT_SKIN_BONUSES: dict[int, dict] = {
+    # "attack_bonus": % added to every attack entry of the listed (firing) units,
+    # as vanilla's own "+25% attack" bonus (104) writes it: a packed EC_MULTIPLY
+    # per attack class, displayed attack untouched.  Unpacked form only — the
+    # packed Trebuchet doesn't fire (user, 2026-10-05).
+    457: {"name": "Palintonon", "source_civ": "Athenians", "chronicles": True,
+          "units": (42, 331),
+          "names": {42: "Palintonon", 331: "Palintonon (Packed)"},
+          "attack_bonus": {42: 15}},
+}
+
+
 # Fixed string ids for the Chronicles unlock cards: every named unit, then every
 # elite-upgrade tech, in table order.  Computed once — the pool is a plain list.
 _CHRONICLES_SID_KEYS: list = [
@@ -2668,11 +2727,43 @@ _CHRONICLES_SID_KEYS: list = [
       for uid in spec["names"]],
     *[("tech", spec["elite_tech"][0]) for spec in _UNLOCK_UNIT_BONUSES.values()
       if spec.get("chronicles")],
+    # Unit skins last, so adding one never shifts an id already handed out.
+    *[("unit", uid) for spec in _UNIT_SKIN_BONUSES.values() for uid in spec["names"]],
 ]
 CHRONICLES_SIDS: dict = {k: _campaign_sid(CHRONICLES_UNIT_POOL_OFFSET + i)
                          for i, k in enumerate(_CHRONICLES_SID_KEYS)}
 
 _TRAIN_BUILDING_NAMES = {82: "Castle", 12: "Barracks", 101: "Stable", 87: "Archery Range"}
+
+def _apply_unit_skin(dat: DatFile, civ_index: int, spec: dict,
+                     extra_unit_strings: list | None) -> bool:
+    src = next((c for c in dat.civs if c.name == spec["source_civ"]), None)
+    if src is None:
+        print(f"       WARNING: {spec['name']}: no {spec['source_civ']} civ in this DAT — skipped")
+        return True
+    units = dat.civs[civ_index].units
+    for uid in spec["units"]:
+        dst, ref = units[uid], src.units[uid]
+        if dst is None or ref is None:
+            continue
+        for field in _UNIT_SKIN_FIELDS:
+            if isinstance(field, tuple):
+                a, b = getattr(dst, field[0], None), getattr(ref, field[0], None)
+                if a is not None and b is not None:
+                    setattr(a, field[1], deepcopy(getattr(b, field[1])))
+            else:
+                setattr(dst, field, deepcopy(getattr(ref, field)))
+    _name_chronicles_units(dat, civ_index, spec, {}, None, extra_unit_strings)
+    cmds = []
+    for uid, pct in spec.get("attack_bonus", {}).items():
+        for atk in units[uid].type_50.attacks:
+            cmds.append(EffectCommand(type=EC_MULTIPLY, a=uid, b=-1, c=9,
+                                      d=float((atk.class_ << 8) | (100 + pct))))
+    if cmds:
+        _add_auto_fire_tech(dat, civ_index, cmds, name=f"C-Bonus, {spec['name']} attack")
+    print(f"       {spec['name']}: skin from {spec['source_civ']} on units {spec['units']}"
+          + (f", +{list(spec['attack_bonus'].values())[0]}% attack" if cmds else ""))
+    return True
 
 
 def _name_chronicles_units(dat: DatFile, civ_index: int, spec: dict, seen: dict,
@@ -2705,6 +2796,8 @@ def _name_chronicles_units(dat: DatFile, civ_index: int, spec: dict, seen: dict,
                 "ext_sid": _extended_tooltip_sid(sid),
                 "ext_text": format_unit_extended_tooltip(u, name, tag="Chronicles unit"),
             })
+    if not spec.get("elite_tech"):
+        return
     elite_tid, elite_name = spec["elite_tech"]
     new_tid = seen.get(elite_tid)
     if new_tid is None or new_tid == elite_tid:
@@ -3353,6 +3446,7 @@ HANDLED_BONUS_IDS = {
     403,   # Settlement unlock (handled via Step 5b of _apply_tree_wiring)
     404,   # Mining Camp techs free (Bohemians)
     *_UNLOCK_UNIT_BONUSES,   # 405-416: regional / second unique unit unlocks
+    *_UNIT_SKIN_BONUSES,     # 457: Palintonon (Chronicles skin of the Trebuchet)
 }
 
 
@@ -3441,6 +3535,9 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
                             _free_tech_cmds(_MINING_CAMP_TECHS),
                             name="C-Bonus, free Mining Camp techs")
         return True
+
+    if bonus_id in _UNIT_SKIN_BONUSES:
+        return _apply_unit_skin(dat, civ_index, _UNIT_SKIN_BONUSES[bonus_id], extra_unit_strings)
 
     if bonus_id in _UNLOCK_UNIT_BONUSES and _UNLOCK_UNIT_BONUSES[bonus_id].get("rebuild"):
         spec = _UNLOCK_UNIT_BONUSES[bonus_id]
@@ -5946,6 +6043,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
 
     # 7c. Two lines on one training button: keep one, move the rest to page 2.
     #     Last, so every unit the tree and bonuses enabled is already in place.
+    _place_hero(dat, civ_index, civ_def)
     button_layout = _resolve_button_collisions(dat, civ_index, civ_def)
     for _entry in button_layout:
         if _entry["to"] is None:

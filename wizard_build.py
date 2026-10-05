@@ -33,7 +33,7 @@ from build_civ import (
     _canonical_techtree_id,
     civ_name_sid,
     civ_roster,
-    _resolve_uu_info, keeps_vanilla_hover,
+    _resolve_uu_info, keeps_vanilla_hover, rich_unit_tooltip, renamed_uu_tooltip,
     _patch_per_civ_techtree,
     _find_adjacent_json,
     _find_civ_techtrees_folder,
@@ -333,14 +333,19 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             # +1000 = language_dll_creation (bottom-bar text when cursor is on button)
             # +21000 = Castle hover tooltip (floating panel with stats/cost/description)
             # +100000 = language_dll_help (same hover panel, belt-and-suspenders)
-            _hero_hover = f"Create <b>{_hero_name}<b>"
-            if _hero_desc:
-                _hero_hover += f"\\n{_hero_desc}"
-            if _hero_cost_str:
-                _hero_hover += f"\\n{_hero_cost_str}"
+            # The base hero's own game tooltip, renamed (cost icons, upgrades,
+            # stats); plain text only if it has none.
+            _hero_hover = rich_unit_tooltip(dat, _hero_bid, _hero_name, _hero_desc)
+            if _hero_hover is None:
+                _hero_hover = f"Create <b>{_hero_name}<b>"
+                if _hero_desc:
+                    _hero_hover += f"\\n{_hero_desc}"
+                if _hero_cost_str:
+                    _hero_hover += f"\\n{_hero_cost_str}"
             string_lines[lang].append(f'{_hero_dll} "{_hero_name}"')
+            # +1000 is the short "Create X" label, as every vanilla unit's is.
             string_lines[lang].append(
-                f'{_hero_dll + DLL_CREATION_OFFSET} "{_hero_hover}"')
+                f'{_hero_dll + DLL_CREATION_OFFSET} "Create {_hero_name}"')
             string_lines[lang].append(
                 f'{_hero_dll + 21000} "{_hero_hover}"')
             string_lines[lang].append(
@@ -433,7 +438,9 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
                 desc_body = uu_override_desc or ""
                 if _uu_cost_str:
                     desc_body = (desc_body + "\\n" + _uu_cost_str) if desc_body else _uu_cost_str
-                _uu_hover = f"Create <b>{uu_display}<b>" + (f"\\n{desc_body}" if desc_body else "")
+                _uu_hover = renamed_uu_tooltip(
+                    dat, slot, uu_info, uu_info.get("unit_id"), uu_display, uu_override_desc or "",
+                    f"Create <b>{uu_display}<b>" + (f"\\n{desc_body}" if desc_body else ""))
                 _put(dll, uu_display)
                 _put(dll + DLL_CREATION_OFFSET, f"Create {uu_display}")
                 if not _ext_sid_taken:
@@ -461,6 +468,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
                                if _elite_body else _uu_elite_cost_str)
             _elite_hover = (f"Create <b>{uu_elite_name}<b>"
                             + (f"\\n{_elite_body}" if _elite_body else ""))
+            _elite_hover = renamed_uu_tooltip(dat, slot, uu_info, (uu_info or {}).get("elite_id"),
+                                              uu_elite_name, uu_override_desc or "", _elite_hover)
             _put(uu_elite_dll + 10000, uu_elite_name)
             if uu_override_name:
                 _put(uu_elite_dll, uu_elite_name)

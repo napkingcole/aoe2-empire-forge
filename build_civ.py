@@ -21,6 +21,7 @@ import base64
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import zipfile
@@ -117,6 +118,51 @@ def keeps_vanilla_hover(uu_info: dict | None, dll: int, renamed: bool, custom_de
             return False
     from civ_appender import _string_table
     return "(<cost>)" in (_string_table().get(dll + 21000) or "")
+
+
+def rich_unit_tooltip(dat, unit_id, name: str, desc: str = "") -> str | None:
+    """The game's own Castle tooltip for unit_id's BASE unit, renamed.
+
+    Vanilla tooltips read: "Create <b>Name<b> (<cost>)", the description, a grey
+    "Upgrades: ..." line, then "<hp> <attack> <armor> <piercearmor> <range>"; the
+    engine draws the cost with resource icons, fills the stat tokens from the
+    unit, and appends the hotkey.  A hero or renamed unit kept none of that — we
+    wrote "Create <b>Name<b>\\nDescription\\nCosts: 500F 500G" (reported
+    in-game 2026-10-05).  This keeps every line but the name (and the
+    description, if one is given).
+
+    The template is found through Gaia's copy of the unit, which a build never
+    renames.  None when that unit has no real tooltip (no "(<cost>)"), so the
+    caller can fall back to plain text.  `name`/`desc` must already be escaped
+    for the key-value file (_kv_text).
+    """
+    try:
+        sid = dat.civs[0].units[unit_id].language_dll_name
+    except (IndexError, TypeError, AttributeError):
+        return None
+    from civ_appender import _string_table
+    template = _string_table().get(sid + 21000) or ""
+    if "(<cost>)" not in template:
+        return None
+    lines = template.split("\\n")
+    lines[0] = re.sub(r"<b>.*?<b>", lambda _m: f"<b>{name}<b>", lines[0], count=1)
+    if desc:
+        if len(lines) > 1 and not lines[1].startswith("<GREY>"):
+            lines[1] = desc
+        else:
+            lines.insert(1, desc)
+    return "\\n".join(lines)
+
+
+def renamed_uu_tooltip(dat, slot: int, uu_info: dict | None, unit_id, name: str,
+                       desc: str, plain: str) -> str:
+    """Tooltip for a renamed / re-described vanilla UU: the game's own, renamed
+    (rich_unit_tooltip), when its cost is unchanged; otherwise `plain`, whose
+    "Costs:" line is the one we know shows a changed cost."""
+    if (uu_info and uu_info.get("vanilla") and unit_id is not None
+            and uu_cost_text(dat, slot, unit_id) == uu_cost_text(dat, 0, unit_id)):
+        return rich_unit_tooltip(dat, unit_id, name, desc) or plain
+    return plain
 
 
 def uu_cost_text(dat, slot: int, unit_id) -> str:
