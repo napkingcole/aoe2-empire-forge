@@ -1979,15 +1979,17 @@ img.card-main-image {
   box-shadow: 0 1px 3px rgba(44, 26, 10, 0.35);
   pointer-events: none;
 }
-
+.bonus-card[data-cat="chronicles"] .card-who {
+  padding-right: 15px;
+}
 /* Chronicles-derived bonus cards: a small helmet in the bottom-right corner. */
 .bonus-card .chronicles-badge {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  width: 22px;
+  right: 4px;
+  bottom: 4px;
+  width: 25px;
   height: auto;
-  z-index: 3;
+  z-index: 13;
   pointer-events: auto;
   filter: drop-shadow(1px 1px 1px rgb(0 0 0 / 0.6));
 }
