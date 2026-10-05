@@ -262,8 +262,10 @@ for label, uu, slot in (("with a Castle UU", 11, 14), ("with a Crusader Knight U
 # "is this an enable?" check used to demand b == 1, so these units — and the
 # Saxon Hearth Troop, whose make-avail is b=-1 too — were invisible to them.
 from build_civ import _uu_actual_unit_id              # noqa: E402
-check("a b=-1 make-avail resolves to its unit (Hearth Troop 1461 -> 2705), not the tech id",
-      _uu_actual_unit_id(dat, 1461) == 2705, _uu_actual_unit_id(dat, 1461))
+# (Immortal rather than the Hearth Troop: the Hearth Troop is Viking Sagas
+# content, absent from the pre-DLC DAT the release-only pass runs against.)
+check("a b=-1 make-avail resolves to its unit (Immortal 1114 -> 2101), not the tech id",
+      _uu_actual_unit_id(dat, 1114) == 2101, _uu_actual_unit_id(dat, 1114))
 
 print("\nAll checks passed." if not failures else f"\n{failures} check(s) failed.")
 sys.exit(1 if failures else 0)
