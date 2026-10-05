@@ -59,6 +59,7 @@ if [ "${SKIP_SMOKE:-0}" = "1" ]; then
     echo
     echo "──── build smoke: SKIPPED (SKIP_SMOKE=1 was set)"
 else
+    run "lazy DAT loading"     "$PY" tests/test_lazy_dat.py
     run "build smoke (python)" "$PY" tests/test_build_smoke.py
     run "civ with no UU (python)" "$PY" tests/test_no_uu_civ.py
     run "unlock unit bonuses"     "$PY" tests/test_unlock_unit_bonuses.py
