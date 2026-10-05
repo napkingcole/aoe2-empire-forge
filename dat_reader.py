@@ -85,11 +85,15 @@ def load_civ_era_exclusions(dat_path: str | Path) -> set[str] | None:
 
 
 def load_dat(path: str | Path) -> DatFile:
-    """Parse and return a DatFile from the given path."""
+    """Parse and return a DatFile from the given path.
+
+    Civ units are parsed lazily (see dat_lazy) — ~1-2s instead of ~18s once a
+    DAT has been seen.  The saved bytes are identical either way."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"DAT file not found: {path}")
-    return DatFile.parse(str(path))
+    import dat_lazy
+    return dat_lazy.parse(path)
 
 
 def dat_info(dat: DatFile) -> dict:

@@ -318,13 +318,8 @@ def _build_combined_data_zip(dat,
     against DAT civ count and silently ignores modded-strings 120150+i for
     the picker UI unless this file is present in the mod.
     """
-    with tempfile.NamedTemporaryFile(suffix=".dat", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
-        dat.save(tmp_path)
-        dat_bytes = Path(tmp_path).read_bytes()
-    finally:
-        os.unlink(tmp_path)
+    import dat_lazy
+    dat_bytes = dat_lazy.save_bytes(dat)
 
     info_json = json.dumps(
         {"Title": mod_name, "CacheStatus": 0, "Description": "", "Author": "",
@@ -343,7 +338,10 @@ def _build_combined_data_zip(dat,
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("info.json", info_json)
-        zf.writestr("resources/_common/dat/empires2_x2_p1.dat", dat_bytes)
+        # The DAT is already raw-deflated (dat_lazy.save_bytes), so deflating it
+        # again costs ~1s for no size gain: store it as is.
+        zf.writestr("resources/_common/dat/empires2_x2_p1.dat", dat_bytes,
+                    compress_type=zipfile.ZIP_STORED)
         if civs_json_bytes is not None:
             zf.writestr("resources/_common/dat/civilizations.json", civs_json_bytes)
         if futura_bytes is not None:
