@@ -180,6 +180,11 @@ Kept here so the next changelog writes itself — add a line as each change land
   Immortal, Strategos, Hippeus, Companion Cavalry, Phalangite, Rhomphaia
   Warrior, Pattiyodha Longbowman, Sannāhya, Hoplite, Scythian Horse Archer
   (replaces the Cavalry Archer line).
+- **NEW** Palintonon card (Chronicles): the Trebuchet takes the Palintonon's
+  look and name, with +15% attack (unpacked form). Same slots, so every
+  Trebuchet tech still applies.
+- **FIX** Heroes train on Castle button 4 instead of 2, so picking a hero no
+  longer takes the Trebuchet away; a clash on button 4 moves to page two.
 - **FASTER** Builds: the game file loads in ~1s instead of ~18s after the first
   time, and a two-civ build takes seconds. Mods are ~2 MB larger.
 - **FIX** An unchanged vanilla unique unit keeps the game's own tooltip

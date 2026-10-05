@@ -3545,5 +3545,16 @@
     "entity": "scythian_horse_archer",
     "description": "Replaces Cavalry Archer — Castle Age",
     "multiplier": false
+  },
+  "457": {
+    "chronicles": true,
+    "category": "chronicles",
+    "type": "dual",
+    "heading": "+15% ATK",
+    "stat": "The Palintonon replaces the Trebuchet, with +15% attack",
+    "entity": "palintonon",
+    "entity2": "trebuchet",
+    "description": "Castle — Trebuchet slot",
+    "multiplier": false
   }
 }

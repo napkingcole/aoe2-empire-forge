@@ -1453,6 +1453,11 @@ const _BONUS_CAT_OVERRIDES = {
 };
 
 function _classifyBonus(id, label) {
+  // A card can name its own category (the Palintonon skin sits under the
+  // Chronicles banner without being an Unlock card).  Data next to the card,
+  // rather than another id in the table below.
+  const own = _cardOverrides[String(id)]?.category;
+  if (own) return _BONUS_CATEGORIES.find(c => c.key === own) || _BONUS_CATEGORIES.at(-1);
   if (_BONUS_CAT_OVERRIDES[id]) {
     return _BONUS_CATEGORIES.find(c => c.key === _BONUS_CAT_OVERRIDES[id])
         || _BONUS_CATEGORIES.at(-1);
