@@ -61,7 +61,7 @@ except ImportError:
     check("#44 Pillow is installed (requirements.txt)", False,
           "without it only PNG flags survive, unresized")
 
-cards = json.loads((ROOT / "static/data/bonus_cards.json").read_text())
+cards = json.loads((ROOT / "static/data/bonus_cards.json").read_text(encoding="utf-8"))
 check("#41 bonus 324 (villager aura) is withdrawn from the picker",
       cards["324"].get("type") == "hidden")
 
@@ -74,7 +74,7 @@ if dat_path is None:
     print("  skip  no game DAT found — DAT checks not run")
     sys.exit(1 if failures else 0)
 
-poles = json.loads((ROOT / "static/aoe2techtree/data/trees/POLES.json").read_text())
+poles = json.loads((ROOT / "static/aoe2techtree/data/trees/POLES.json").read_text(encoding="utf-8"))
 live = [n for n in poles["buildings"] + poles["units_techs"]
         if n.get("node_status") != "NotAvailable"]
 tree = [

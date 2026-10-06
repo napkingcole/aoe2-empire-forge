@@ -139,7 +139,7 @@ print("\n=== every route reading dat_path goes through the resolver ===")
 # file entirely — a wrong path would come back "Game files found".  Validating a
 # candidate and consuming a DAT are opposite jobs; only the second one falls back.
 EXEMPT_MARKERS = ('.strip().strip(\'"\')',)   # the validate-dat read
-src = (ROOT / "app.py").read_text()
+src = (ROOT / "app.py").read_text(encoding="utf-8")
 raw = [ln.strip() for ln in src.splitlines()
        if 'request.args.get("dat_path"' in ln
        and "_resolve_dat_path" not in ln
@@ -356,7 +356,7 @@ team_offered = {b["id"] for b in bc["team"]}
 check("the bonus catalog is not empty", len(civ_offered) > 300,
       f"{len(civ_offered)} civ bonuses")
 
-all_names = json.loads((ROOT / "bonus_names.json").read_text())
+all_names = json.loads((ROOT / "bonus_names.json").read_text(encoding="utf-8"))
 dead = set()
 for k in all_names:
     techs = civ_bonus_techs(int(k)) or []
@@ -373,7 +373,7 @@ check("bonuses implemented without techs are untouched",
 
 # Team bonuses copy a vanilla effect wholesale, so an effect this DAT lacks
 # means a dead card — unless a team_ec_list entry stands in.
-team_names_j = json.loads((ROOT / "team_bonus_names.json").read_text())
+team_names_j = json.loads((ROOT / "team_bonus_names.json").read_text(encoding="utf-8"))
 dead_team = set()
 for k in team_names_j:
     ei = _probe_team_effect(int(k))
@@ -403,7 +403,7 @@ check("...and the ones that do have art still show it",
 # fails here rather than silently showing the wrong portrait.
 import re                                                        # noqa: E402
 _blk = re.search(r'_ICON_MAP: dict\[int, str\] = \{(.*?)\n    \}',
-                 (ROOT / "app.py").read_text(), re.S).group(1)
+                 (ROOT / "app.py").read_text(encoding="utf-8"), re.S).group(1)
 _hand = {int(a): b for a, b in re.findall(r'(\d+):\s*"([^"]+)"', _blk)}
 
 

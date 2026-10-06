@@ -24,7 +24,7 @@ failures = 0
 
 def dispatched_handler_ids() -> set[int]:
     import re
-    src = (Path(__file__).resolve().parent.parent / "civ_appender.py").read_text()
+    src = (Path(__file__).resolve().parent.parent / "civ_appender.py").read_text(encoding="utf-8")
     start = src.index("def _create_bonus_handler")
     body = src[start:src.index("\ndef ", start + 10)]
     return {int(x) for m in re.finditer(r"if bonus_id (?:==|in) ([^:]+):", body)

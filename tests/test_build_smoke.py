@@ -117,13 +117,13 @@ def _tree():
     realistic input rather than a hand-picked list that might dodge it.
     """
     import json
-    data = json.loads((ROOT / "static/aoe2techtree/data/data.json").read_text())
+    data = json.loads((ROOT / "static/aoe2techtree/data/data.json").read_text(encoding="utf-8"))
     units, bldgs, techs = set(), set(), set()
     for cv in data["civs"].values():
         units.update(cv.get("Unit", []))
         bldgs.update(cv.get("Building", []))
         techs.update(cv.get("Tech", []))
-    main = (ROOT / "static/aoe2techtree/js/main.js").read_text()
+    main = (ROOT / "static/aoe2techtree/js/main.js").read_text(encoding="utf-8")
     # _REGIONAL_UNIT_IDS is derived from _REGIONAL_GROUPS rather than written
     # out, so read the group table itself: every line without `standard: true`
     # is opt-in, and its line-owned techs go with it (Cranequins cannot be

@@ -56,11 +56,11 @@ def main() -> int:
     if not snap_path.exists():
         return _fail(f"missing snapshot {snap_path.name}; "
                      "regenerate with scripts/probe_resource_attrs.py")
-    attested = set(json.loads(snap_path.read_text())["vanilla_written"])
+    attested = set(json.loads(snap_path.read_text(encoding="utf-8"))["vanilla_written"])
 
-    names = json.loads((ROOT / "llm" / "resource_attrs.json").read_text())
-    raw = json.loads((ROOT / "bonus_catalog_raw.json").read_text())
-    bonus_names = json.loads((ROOT / "bonus_names.json").read_text())
+    names = json.loads((ROOT / "llm" / "resource_attrs.json").read_text(encoding="utf-8"))
+    raw = json.loads((ROOT / "bonus_catalog_raw.json").read_text(encoding="utf-8"))
+    bonus_names = json.loads((ROOT / "bonus_names.json").read_text(encoding="utf-8"))
 
     print("=== Catalog resource ids are attested in vanilla ===")
 

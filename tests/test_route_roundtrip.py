@@ -228,14 +228,14 @@ for name in drift:
     print(f"    {name}\n      upload={upload[name][:16]}  wizard={wizard[name][:16]}")
 
 if "--baseline" in sys.argv:
-    BASELINE.write_text(json.dumps(upload, indent=2, sort_keys=True) + "\n")
+    BASELINE.write_text(json.dumps(upload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"\n  wrote baseline for {len(upload)} civs → {BASELINE.name}")
 elif "--check" in sys.argv:
     print("\n=== Against baseline ===")
     if not BASELINE.exists():
         check("baseline exists", False, "run with --baseline first")
     else:
-        old = json.loads(BASELINE.read_text())
+        old = json.loads(BASELINE.read_text(encoding="utf-8"))
         gone = sorted(set(old) - set(upload))
         new = sorted(set(upload) - set(old))
         changed = sorted(n for n in set(old) & set(upload) if old[n] != upload[n])

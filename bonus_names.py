@@ -69,7 +69,7 @@ def _load() -> dict[int, str]:
     global _NAMES
     if _NAMES is None:
         p = Path(__file__).parent / "bonus_names.json"
-        _NAMES = {int(k): v for k, v in json.loads(p.read_text()).items()}
+        _NAMES = {int(k): v for k, v in json.loads(p.read_text(encoding="utf-8")).items()}
     return _NAMES
 
 
@@ -77,7 +77,7 @@ def _load_team() -> dict[int, str]:
     global _TEAM_NAMES
     if _TEAM_NAMES is None:
         p = Path(__file__).parent / "team_bonus_names.json"
-        _TEAM_NAMES = {int(k): v for k, v in json.loads(p.read_text()).items()}
+        _TEAM_NAMES = {int(k): v for k, v in json.loads(p.read_text(encoding="utf-8")).items()}
     return _TEAM_NAMES
 
 

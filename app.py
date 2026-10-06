@@ -110,7 +110,7 @@ def _load_uu_stats_disk(dat_path: str) -> dict | None:
         f = _uu_stats_cache_path(dat_path)
         if not f.exists():
             return None
-        with open(f) as fh:
+        with open(f, encoding="utf-8") as fh:
             data = json.load(fh)
         if data.get("_v") != _UU_STATS_DISK_VERSION:
             return None
@@ -133,7 +133,7 @@ def _save_uu_stats_disk(dat_path: str, stats: dict) -> None:
             "_mtime": int(Path(dat_path).stat().st_mtime),
         }
         payload.update({str(k): v for k, v in stats.items()})
-        with open(_uu_stats_cache_path(dat_path), "w") as fh:
+        with open(_uu_stats_cache_path(dat_path), "w", encoding="utf-8") as fh:
             json.dump(payload, fh)
     except Exception:
         pass
@@ -395,7 +395,7 @@ VANILLA_DISPLAY_NAMES: dict[str, str] = {
 _CIV_NAMES_BY_DAT_INDEX: list[str] = []
 try:
     _civ_list = json.loads(
-        (Path(__file__).parent / "civilizations.json").read_text()
+        (Path(__file__).parent / "civilizations.json").read_text(encoding="utf-8")
     ).get("civilization_list", [])
     _CIV_NAMES_BY_DAT_INDEX = [c.get("internal_name", "") for c in _civ_list]
 except Exception:

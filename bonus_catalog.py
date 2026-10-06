@@ -217,7 +217,7 @@ _catalog_data: dict | None = None
 def _load() -> dict:
     global _catalog_data
     if _catalog_data is None:
-        with open(_CATALOG_PATH) as f:
+        with open(_CATALOG_PATH, encoding="utf-8") as f:
             _catalog_data = json.load(f)
     return _catalog_data
 
