@@ -196,6 +196,9 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.5.1": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Civ bonuses not showing in the Windows app.</strong> 2.5.0 added a unit name with an accented letter (Sannāhya), and the Windows app read the bonus list in the wrong text encoding, so the whole bonus screen came up empty. Fixed — and names with accents no longer show garbled characters on Windows",
+    ],
     "2.5.0": [
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Chronicles bonuses.</strong> Bonuses from the Chronicles civilizations that work with ordinary units and techs, marked with a helmet: cavalry also receive the infantry armor upgrades (Macedonians), siege +1 pierce armor and +30% vs. buildings, Stable technologies research 50% faster, skirmishers regenerate HP, and stone miners slowly generate food. Team bonuses: Outposts can be upgraded into arrow-firing Fortified Outposts, Barracks technologies research 50% faster, buildings +3 line of sight, Trade Carts +15% speed. <em>Thanks to Min-maxer96 and Dreams Alike for the Fortified Outpost idea</em>",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Chronicles units</strong> under a new purple Chronicles banner: Immortal, Strategos, Hippeus, Companion Cavalry, Phalangite, Rhomphaia Warrior, Pattiyodha Longbowman, Sannāhya and Hoplite, each with its elite upgrade — plus the <strong>Scythian Horse Archer</strong>, which replaces the Cavalry Archer line",
