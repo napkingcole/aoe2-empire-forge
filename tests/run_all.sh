@@ -41,6 +41,7 @@ run "civ roster"                  "$PY" tests/test_civ_roster.py
 run "button pages"                "$PY" tests/test_button_pages.py
 run "UT cost override"            "$PY" tests/test_ut_cost_override.py
 run "multiplier scaling"          "$PY" tests/test_multiplier_scaling.py
+run "explicit file encodings"     "$PY" tests/test_explicit_encoding.py
 run "armour class vs card text"  "$PY" tests/test_armor_class_text.py
 run "relic bonus reaches the UU"  "$PY" tests/test_relic_bonus_uu.py
 run "chronicles bonus cards"      "$PY" tests/test_chronicles_bonuses.py

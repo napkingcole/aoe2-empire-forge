@@ -9,6 +9,19 @@ Python side needs the project venv (for `genieutils`); the runner picks it up
 automatically. Adding a test means dropping a file in here and adding a `run`
 line to `run_all.sh`.
 
+### Before a release only: Windows-style file encoding
+
+```
+LC_ALL=C LANG=C PYTHONUTF8=0 PYTHONIOENCODING=utf-8 ./tests/run_all.sh
+```
+
+Every test runs on a Mac, where Python reads text files as UTF-8 by default;
+the Windows exe reads them as cp1252. That gap shipped a broken civ-bonus
+screen in v2.5.0 (one non-ASCII name). This pass makes the default ASCII for
+files (stricter than cp1252, so it catches every case) while keeping the console
+UTF-8 as a Windows console is. `test_explicit_encoding.py` lints for the cause
+on every run; this pass catches anything the lint can't see.
+
 ### Before a release only: the previous game version
 
 ```

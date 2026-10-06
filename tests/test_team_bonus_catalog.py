@@ -59,8 +59,8 @@ def check(label, cond, extra=""):
         print(f"  FAIL {label}" + (f"\n       {extra}" if extra else ""))
 
 
-catalog = json.loads((ROOT / "bonus_catalog_raw.json").read_text())
-names = json.loads((ROOT / "team_bonus_names.json").read_text())
+catalog = json.loads((ROOT / "bonus_catalog_raw.json").read_text(encoding="utf-8"))
+names = json.loads((ROOT / "team_bonus_names.json").read_text(encoding="utf-8"))
 team_map = catalog["team"]
 team_ec = catalog["team_ec_list"]
 

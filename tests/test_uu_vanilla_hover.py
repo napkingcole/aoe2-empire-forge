@@ -86,7 +86,7 @@ def build_cli(c) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         (tmp / "c.json").write_text(json.dumps(c), encoding="utf-8")
-        (tmp / "cfg.json").write_text(json.dumps({"mod_name": "Hover", "civs": [{"json": str(tmp / "c.json"), "replace": "Britons"}]}))
+        (tmp / "cfg.json").write_text(json.dumps({"mod_name": "Hover", "civs": [{"json": str(tmp / "c.json"), "replace": "Britons"}]}), encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()):
             build_all.build_mod(tmp / "cfg.json", dat_path, tmp / "out.zip")
         return strings_of((tmp / "out.zip").read_bytes())

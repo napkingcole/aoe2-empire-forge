@@ -1392,7 +1392,7 @@ def main() -> None:
     if not civ_path.exists():
         print(f"ERROR: Civ JSON not found: {civ_path}")
         sys.exit(1)
-    with open(civ_path) as f:
+    with open(civ_path, encoding="utf-8") as f:
         civ_def = json.load(f)
     alias = civ_def.get("alias", "Custom Civ")
     print(f"Civ definition: {alias!r}")

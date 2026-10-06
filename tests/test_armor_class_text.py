@@ -52,8 +52,8 @@ def sweep(kind, names, ec_list_of):
                   f"text names {sorted(named)}")
 
 
-sweep("civ", json.loads((ROOT / "bonus_names.json").read_text()), civ_bonus_ec_list)
-sweep("team", json.loads((ROOT / "team_bonus_names.json").read_text()), team_bonus_ec_list)
+sweep("civ", json.loads((ROOT / "bonus_names.json").read_text(encoding="utf-8")), civ_bonus_ec_list)
+sweep("team", json.loads((ROOT / "team_bonus_names.json").read_text(encoding="utf-8")), team_bonus_ec_list)
 
 print(f"  {checked} armour cards checked")
 if checked < 5:

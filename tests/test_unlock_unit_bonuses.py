@@ -50,8 +50,8 @@ def check(label, cond, extra=""):
 # until 2026-09-17.
 import json                                                     # noqa: E402
 
-names = json.loads((ROOT / "bonus_names.json").read_text())
-cards = json.loads((ROOT / "static/data/bonus_cards.json").read_text())
+names = json.loads((ROOT / "bonus_names.json").read_text(encoding="utf-8"))
+cards = json.loads((ROOT / "static/data/bonus_cards.json").read_text(encoding="utf-8"))
 unsupported = {b["id"] for b in bonus_names.unsupported_bonuses()}
 
 for bid, spec in sorted(_UNLOCK_UNIT_BONUSES.items()):

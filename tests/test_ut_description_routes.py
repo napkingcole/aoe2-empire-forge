@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory() as tmp:
     tmp = Path(tmp)
     (tmp / "probe.json").write_text(json.dumps(CIV), encoding="utf-8")
     (tmp / "cfg.json").write_text(json.dumps(
-        {"mod_name": "Route Probe", "civs": [{"json": str(tmp / "probe.json"), "replace": "Britons"}]}))
+        {"mod_name": "Route Probe", "civs": [{"json": str(tmp / "probe.json"), "replace": "Britons"}]}), encoding="utf-8")
     with contextlib.redirect_stdout(io.StringIO()):
         build_all.build_mod(tmp / "cfg.json", dat_path, tmp / "out.zip")
     outer = zipfile.ZipFile(tmp / "out.zip")

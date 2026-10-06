@@ -51,7 +51,7 @@ def check(label, cond, extra=""):
 
 print("=== the roster loads from civilizations.json ===")
 roster = civ_roster()
-bundled = json.loads((ROOT / "civilizations.json").read_text())["civilization_list"]
+bundled = json.loads((ROOT / "civilizations.json").read_text(encoding="utf-8"))["civilization_list"]
 check("one entry per civ slot", len(roster) == len(bundled),
       f"{len(roster)} vs {len(bundled)}")
 check("slot 0 is Gaia", roster[0]["name"] == "Gaia", roster[0])

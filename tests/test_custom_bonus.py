@@ -181,7 +181,7 @@ with tempfile.TemporaryDirectory() as tmp:
     saved = cb.upsert(cav)
     check("upsert assigns an id", bool(saved and saved.get("id")))
     check("the library file is a shareable pack",
-          __import__("json").loads(cb.library_path().read_text())["format"] == cb.PACK_FORMAT)
+          __import__("json").loads(cb.library_path().read_text(encoding="utf-8"))["format"] == cb.PACK_FORMAT)
 
     edited = cb.upsert({**cav, "id": saved["id"], "text": "Edited"})
     lib = cb.load_library()
