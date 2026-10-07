@@ -6,6 +6,7 @@ This is a best-effort, fail-silent check — no internet access or GitHub
 being unreachable must never block or break the app.
 """
 import json
+import sys
 import urllib.error
 import urllib.request
 
@@ -24,8 +25,30 @@ def _parse_version(v: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
+def running_from_store() -> bool:
+    """True when this process runs from an MSIX package (the Microsoft Store build).
+
+    The Store delivers its own updates and its policy forbids pointing users at
+    another download, so the GitHub check stands down.  Asked of Windows rather
+    than baked in at build time, so one exe behaves right either way:
+    GetCurrentPackageFullName answers APPMODEL_ERROR_NO_PACKAGE (15700) for an
+    unpackaged process, and "buffer too small" for a packaged one.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        length = ctypes.c_uint32(0)
+        rc = ctypes.windll.kernel32.GetCurrentPackageFullName(ctypes.byref(length), None)
+        return rc != 15700
+    except (AttributeError, OSError):
+        return False
+
+
 def check_for_update(timeout: float = 3.0) -> dict | None:
     """Return {"current", "latest", "url"} if a newer release exists, else None."""
+    if running_from_store():
+        return None
     try:
         req = urllib.request.Request(
             _API_URL,

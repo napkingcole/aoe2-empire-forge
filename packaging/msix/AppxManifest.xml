@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Microsoft Store package for Empire Forge.  build_msix.ps1 fills in
+  __VERSION__ from version.py and lays this out beside the one-folder
+  PyInstaller build (EF_STORE=1).
+
+  Identity Name, Publisher and PublisherDisplayName are assigned by Partner
+  Center (Product management > Product identity) and must match it exactly,
+  or the upload is rejected.  DisplayName must be a name reserved there.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="NapKingCole.EmpireForgeCivBuilderforAgeofEmpiresII"
+    Publisher="CN=CA1F137C-6886-4287-8536-1F31A0CD7B1F"
+    Version="__VERSION__"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Empire Forge — Civ Builder for Age of Empires II</DisplayName>
+    <PublisherDisplayName>NapKingCole</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application
+      Id="EmpireForge"
+      Executable="AOE2EmpireForge\AOE2EmpireForge.exe"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Empire Forge — Civ Builder for Age of Empires II"
+        Description="Design your own Age of Empires II: Definitive Edition civilizations and build them into a game mod."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" ShortName="Empire Forge" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

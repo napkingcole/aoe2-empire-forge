@@ -66,3 +66,35 @@ jobs:
             throw "release $env:TAG has no AOE2EmpireForge.exe asset"
           }
           Write-Host "release $env:TAG has assets: $assets"
+
+  # The Microsoft Store package: a one-folder build wrapped as an unsigned
+  # MSIX (Partner Center signs Store submissions).  A separate job, so a
+  # packaging failure can never hold up the exe release above.  Upload the
+  # .msix from the run's artifacts to Partner Center by hand.
+  msix:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Build one-folder bundle
+        env:
+          EF_STORE: "1"
+        run: |
+          pyinstaller aoe2civbuilder.spec --noconfirm
+
+      - name: Pack MSIX
+        run: |
+          ./packaging/msix/build_msix.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AOE2EmpireForge-msix
+          path: dist/*.msix

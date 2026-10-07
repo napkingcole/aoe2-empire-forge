@@ -30,6 +30,7 @@ from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
 import custom_bonus
+from voice_source import voice_clips
 from version import __version__ as _APP_VERSION
 from civ_schema import is_civbuilder_v1, is_empireforge, to_draft as _schema_to_draft
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
@@ -359,7 +360,8 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                             button_pngs: dict[str, bytes],
                             combined_strings: dict[str, str],
                             mod_name: str = "Custom Civs",
-                            lang_values: set[int] | None = None) -> bytes:
+                            lang_values: set[int] | None = None,
+                            dat_path: str | Path | None = None) -> bytes:
     """Package all UI assets for every civ into one ui zip."""
     info_json = json.dumps(
         {"Title": f"{mod_name} (UI)", "CacheStatus": 0, "Description": "", "Author": "",
@@ -415,27 +417,21 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
             # Voices need BOTH the DAT SoundItem remap (assign_all_languages)
             # and the physical .wem files here — the remap alone leaves the
             # engine falling back to Wwise routing, i.e. the replaced slot's
-            # original voice (confirmed in-game 2026-09-25).  The spec bundles
-            # voice_files/, but a value with no folder still copies nothing —
-            # say so rather than shipping a civ that ignores the chosen voice.
-            voice_root = Path(__file__).parent / "voice_files"
+            # original voice (confirmed in-game 2026-09-25).  The files come
+            # from the player's own Wwise banks (voice_source); a voice that
+            # can't be extracted copies nothing — say so rather than shipping
+            # a civ that silently ignores the chosen voice.
+            clips, missing, wwise = voice_clips(set(lang_values), dat_path)
             wem_count = 0
-            missing: list[int] = []
-            for lang_val in lang_values:
-                lang_dir = voice_root / str(lang_val)
-                if lang_dir.is_dir():
-                    for wem in sorted(lang_dir.iterdir()):
-                        if wem.suffix == ".wem":
-                            zf.writestr(
-                                f"resources/_common/drs/sounds/{wem.name}",
-                                wem.read_bytes(),
-                            )
-                            wem_count += 1
-                else:
-                    missing.append(lang_val)
+            for lang_val in sorted(clips):
+                for stem, data in sorted(clips[lang_val].items()):
+                    zf.writestr(f"resources/_common/drs/sounds/{stem}.wem", data)
+                    wem_count += 1
             if missing:
-                print(f"  WARNING: no voice files found for language value(s) "
-                      f"{sorted(missing)} — looked in {voice_root}")
+                where = (f"in {wwise}" if wwise else
+                         "— the game's wwise folder was not found next to the DAT")
+                print(f"  WARNING: could not extract voice files for language "
+                      f"value(s) {missing} {where}")
                 print("           Those civs will use the replaced slot's original "
                       "voice in-game, not the chosen one.")
             if wem_count:
@@ -1005,7 +1001,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                                          civs_json_bytes=civs_json_bytes)
     unique_lang_values = {lang_val for _, lang_val in lang_assignments}
     ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings, mod_name=mod_name,
-                                      lang_values=unique_lang_values)
+                                      lang_values=unique_lang_values, dat_path=dat_path)
 
     with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as outer:
         outer.writestr(f"{prefix}-data.zip", data_zip)

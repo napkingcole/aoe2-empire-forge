@@ -29,6 +29,7 @@ from flask import (Flask, flash, jsonify, redirect, render_template,
 
 from bonus_names import bonus_name, skip_reason
 import custom_bonus
+from voice_source import voice_values
 from build_all import (_build_combined_data_zip, _build_combined_ui_zip,
                        _ut_name, _ut_bonus_id, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS,
@@ -80,12 +81,15 @@ _UU_STATS_CACHE: dict[str, dict] = {}
 # Bump this when _UU_TRAITS changes so stale disk caches are automatically invalidated.
 _UU_STATS_DISK_VERSION = 3  # bumped: fixed cost fallback + amount-mode cost parsing
 
-_CACHE_DIR = Path(__file__).parent / ".cache"
+def _cache_dir() -> Path:
+    """Per-user, so it survives restarts: next to the code it lands in the
+    one-file exe's temp folder (wiped every launch) or a read-only MSIX install."""
+    return custom_bonus.data_dir() / "cache"
 
 
 def _uu_stats_cache_path(dat_path: str) -> Path:
     h = hashlib.md5(dat_path.encode()).hexdigest()[:10]
-    return _CACHE_DIR / f"uu_stats_{h}.json"
+    return _cache_dir() / f"uu_stats_{h}.json"
 
 
 def _uu_table_fingerprint() -> str:
@@ -126,7 +130,7 @@ def _load_uu_stats_disk(dat_path: str) -> dict | None:
 def _save_uu_stats_disk(dat_path: str, stats: dict) -> None:
     """Write stats to disk so future app restarts skip the slow parse."""
     try:
-        _CACHE_DIR.mkdir(exist_ok=True)
+        _cache_dir().mkdir(parents=True, exist_ok=True)
         payload: dict = {
             "_v":     _UU_STATS_DISK_VERSION,
             "_tbl":   _uu_table_fingerprint(),
@@ -1152,7 +1156,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                                                 civs_json_bytes=civs_json_bytes)
             ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings,
                                               mod_name=mod_name,
-                                              lang_values=unique_lang_values)
+                                              lang_values=unique_lang_values,
+                                              dat_path=dat_path)
 
         out_path = sd / f"{prefix}.zip"
         with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as outer:
@@ -1405,14 +1410,14 @@ def api_builder_meta():
                 monk_options.append(_o)
         except Exception:                                        # noqa: BLE001
             arch_options, monk_options = _ARCH_OPTIONS, MONK_SKIN_OPTIONS
-    # Driven by which voice_files/<value>/ folders actually exist, not a fixed
-    # count.  build_all bundles those .wem files into the mod, so offering a
-    # voice we have no folder for would silently ship a civ with no audio.
-    # Drop a new folder in and the option appears.
+    # Driven by voice_wwise_map.json, not a fixed count: the build extracts
+    # those clips from the player's own Wwise banks, so offering a voice the
+    # map can't name would silently ship a civ with no audio.  A rebuilt map
+    # adds the option by itself.
     voice_options = sorted([
         {"value": i - 1, "label": c.get("name", "")}
         for i, c in enumerate(roster)
-        if i > 0 and (i - 1) in _available_voice_values() and c.get("name")
+        if i > 0 and (i - 1) in voice_values() and c.get("name")
     ], key=lambda x: x["label"])
     # bonus_id → unit_ids, so the wizard can derive the "Unlock ..." bonuses
     # from the tech tree without keeping its own copy of the table.
@@ -1457,31 +1462,6 @@ _scene_names_cache: dict | None = None
 # Kingdoms / Dynasties of China civs: he has Shu/Wu/Wei at 45-47 and
 # Jurchens/Khitans at 48-49, where the live DAT has Shu=48 … Khitans=52.
 # Without this remap, choosing Shu would silently render a Jurchen castle.
-_VOICE_FILES_DIR = Path(__file__).parent / "voice_files"
-
-
-# The 43 languages KM extracted (values 0-42).  Used as a floor when the
-# voice_files/ tree isn't present at all.
-_VOICE_FALLBACK_VALUES = frozenset(range(43))
-
-
-def _available_voice_values() -> set[int]:
-    """Voice values with a voice_files/<value>/ folder holding at least one .wem.
-
-    The spec bundles voice_files/, so the scan works in the packaged exe too.
-    The historical 0-42 fallback only covers a checkout without the (gitignored)
-    folder, where scanning alone would render the Voice dropdown empty.
-    """
-    out: set[int] = set()
-    try:
-        for d in _VOICE_FILES_DIR.iterdir():
-            if d.is_dir() and d.name.isdigit() and any(d.glob("*.wem")):
-                out.add(int(d.name))
-    except OSError:
-        pass
-    return out or set(_VOICE_FALLBACK_VALUES)
-
-
 _SCENE_ART_OVERRIDES = {48: 45, 49: 46, 50: 47, 51: 48, 52: 49}
 
 # Which art indices actually exist is read off disk rather than hardcoded to
@@ -2718,9 +2698,27 @@ if __name__ == "__main__":
 
     werkzeug.serving.BaseWSGIServer.log_startup = _quiet_log_startup
 
+    def _free_port(preferred: int = 8080) -> int:
+        """8080, or any free port when something else holds it.
+
+        Probed with a plain socket: Werkzeug's own server sets SO_REUSEADDR,
+        which on Windows can bind over a port another program is using.
+        """
+        import socket
+        for port in (preferred, 0):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind(("127.0.0.1", port))
+                    return s.getsockname()[1]
+                except OSError:
+                    continue
+        return preferred
+
+    port = _free_port()
+
     def _open_browser():
-        webbrowser.open("http://127.0.0.1:8080")
+        webbrowser.open(f"http://127.0.0.1:{port}")
 
     threading.Timer(1.0, _open_browser).start()
     threading.Thread(target=_run_update_check, daemon=True).start()
-    app.run(debug=False, port=8080, threaded=True)
+    app.run(debug=False, port=port, threaded=True)

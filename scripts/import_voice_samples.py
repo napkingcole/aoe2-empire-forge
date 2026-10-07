@@ -32,13 +32,13 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "voice_files"
+SRC = ROOT / "ignore" / "voice_files"
 OUT = ROOT / "static" / "audio" / "voice"
 
 # Hand-supplied single clips ("hello" lines), named after the civ:
 #   ignore/voice_samples/armenians.ogg -> static/audio/voice/43.mp3
-# These only feed the PICKER PREVIEW.  The mod build reads voice_files/<value>/
-# and needs the game's real .wem files under the exact names the DAT references,
+# These only feed the PICKER PREVIEW.  The mod build extracts clips from the
+# player's Wwise banks (voice_source.py) and needs the game's real .wem files under the exact names the DAT references,
 # so a clip here does not make a civ's voice work in-game.
 SAMPLE_SRC = ROOT / "ignore" / "voice_samples"
 SAMPLE_EXTS = {".ogg", ".wav", ".mp3", ".m4a", ".flac", ".opus"}
