@@ -4,6 +4,8 @@
 
 **Design custom civilizations for Age of Empires II: Definitive Edition and generate playable mods — no modding experience required!**
 
+**Website:** [empireforge.app](https://empireforge.app) — download, guides, FAQ and changelog.
+
 Empire Forge is a standalone civ builder. Name a civilization, pick its architecture, spoken language, build out its tech tree, choose bonuses, design a unique unit and unique technologies — then combine it with other civs into a ready-to-install AoE2:DE mod.
 
 It runs entirely on your own computer: launching it starts a small local server and opens your browser, and every build reads your actual installed game files fresh, rather than making assumptions about the game's data file that break the moment a new DLC is released.
@@ -61,6 +63,7 @@ Short version: KrakenMeister's builder became stale once more and more DLCs were
 
 ## Questions / feedback
 
+- Website: [empireforge.app](https://empireforge.app) (FAQ and support)
 - Email: [aoenapkingcole@gmail.com](mailto:aoenapkingcole@gmail.com)
 - Discord Server: [server](https://discord.gg/cQ5x7bfxDB)
 - Discord: `napkingcole84` ([profile](https://discord.com/users/napkingcole84))
