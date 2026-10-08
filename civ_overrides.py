@@ -312,6 +312,11 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
             if u and u.type_50:
                 u.type_50.bonus_damage_resistance = resistance
 
+    # Charge Attack is the Comitatenses / Coustillier charge: event 1 (attacking
+    # spends it), type 1 "attack charge".  This wrote type 2 until 2026-10-08 —
+    # undocumented ("??? charge" in the UGC guide) and used by no vanilla unit.
+    # Type 1 is not melee-only: Alexander's Mercenary Archer and Harald are
+    # ranged units that carry it.
     if flags.get("charge_pool") is not None:
         pool = float(flags["charge_pool"])
         rate = float(flags.get("charge_rate") or 0.25)
@@ -320,7 +325,7 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
                 u.creatable.max_charge    = pool
                 u.creatable.recharge_rate = rate
                 u.creatable.charge_event  = 1
-                u.creatable.charge_type   = 2
+                u.creatable.charge_type   = 1
 
     if flags.get("regen_hp"):
         regen_amount   = float(flags.get("regen_amount")   or 1)
