@@ -609,13 +609,13 @@
     "description": "Monks & Units"
   },
   "T82": {
-    "_label": "Skirmishers and Spearmen +2 LOS and +2 attack range",
+    "_label": "Spearman-line and Skirmishers +2 line of sight",
     "type": "dual",
-    "entity": "archer",
+    "entity": "spearman",
     "entity2": "skirmisher",
-    "heading": "+2 LOS, +2 [range]",
-    "stat": "Skirmishers and Spearmen +2 LOS and +2 attack range",
-    "description": "Archers & Skirmishers"
+    "heading": "+2 LOS",
+    "stat": "Increased Line of Sight",
+    "description": "Spearman-line & Skirmishers"
   },
   "T83": {
     "_label": "Towers and Castles provide +10 population space",
