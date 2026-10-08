@@ -869,6 +869,28 @@ _FULL_TREE_PATH = Path(__file__).parent / "static" / "aoe2techtree" / "data" / "
 _editor_nodes_cache: dict[str, set[int]] | None = None
 
 
+def _team_revived_techs(dat: DatFile) -> set[int]:
+    """Techs a team bonus re-enables by disabling the tech that disables them.
+
+    The shape is team effect -> type=102 on a "disabler" tech -> type=102 in the
+    disabler's own effect; the last ids are the answer.  Today that is only
+    Imperial Skirmisher 655 (Vietnamese team bonus 653 -> 656), read from the
+    DAT so the next bonus built this way is covered without a code change.
+    """
+    out: set[int] = set()
+    for civ in dat.civs:
+        if not 0 <= civ.team_bonus_id < len(dat.effects):
+            continue
+        for ec in dat.effects[civ.team_bonus_id].effect_commands:
+            tid = int(ec.d)
+            if ec.type != 102 or not 0 <= tid < len(dat.techs):
+                continue
+            eid = dat.techs[tid].effect_id
+            if 0 <= eid < len(dat.effects):
+                out |= {int(c.d) for c in dat.effects[eid].effect_commands if c.type == 102}
+    return out
+
+
 def _editor_nodes() -> dict[str, set[int]]:
     """Return {'techs','units','buildings'} — the ids FULL.json draws as nodes."""
     global _editor_nodes_cache
@@ -1157,6 +1179,16 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     # nobody's intent.
     nodes = _editor_nodes()
     all_disableable |= (nodes["techs"] - _PROTECTED_TECHS)
+
+    # ── Step 1c: ...but never a tech some team bonus brings back.
+    #
+    # Imperial Skirmisher 655 is off for everyone by the game's own means: tech
+    # 656 auto-fires after Elite Skirmisher and disables it, and the Vietnamese
+    # team bonus disables 656 so the team keeps it.  655 reached the pool only
+    # because the Turks — who have no Skirmishers — disable it, and from there
+    # the sweep wrote it into every civ without the unit, where no team bonus
+    # can undo it: allies of a civ with the card never got the upgrade (#62).
+    all_disableable -= _team_revived_techs(dat)
 
     # ── Step 2: Build reverse maps from effect inspection of each disableable tech.
     # enable_map:  unit/building_id → [tech_ids that make it available via EC_ENABLE b=1]
