@@ -314,6 +314,11 @@ def is_km_format(data: dict) -> bool:
 #   906 Fishing Lines — added after KM; Gillnets (65) now requires it.
 # Carvel Hull / Clinker Construction (907-910) are a per-civ naval choice, and
 # Cranequins (1452) only touches the Mounted Crossbowman, which KM cannot pick.
+#
+# The build no longer needs this: civ_appender._apply_tree_wiring keeps the
+# unticked prerequisites of every ticked node, for any format (2026-10-08).
+# It remains for app.py's KM import, so the editor shows the imported tree
+# as the build will make it.
 KM_IMPLIED_TECHS: dict[int, tuple[str, int]] = {
     35:  ("units", 442),
     906: ("techs", 65),

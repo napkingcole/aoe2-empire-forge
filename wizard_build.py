@@ -120,6 +120,12 @@ def _draft_to_civ_def(draft: dict) -> dict:
     # in the TT effect, making the hero immediately trainable from Castle Age.
     # Instead, _apply_hero_unit creates an Imperial Age auto-fire tech (full_tech_mode=1)
     # that fires EC_ENABLE(hero_id, 1) only when Imperial Age is reached.
+    #
+    # It still has to reach apply_civ: civ_appender._place_hero moves it to its
+    # own Castle button and the button planner counts it.  Without this key the
+    # wizard route left the hero on its vanilla button — the Trebuchet's.
+    if draft.get("hero_unit"):
+        civ_def["hero_unit"] = draft["hero_unit"]
 
     # Emblem: wizard stores a data-URI under draft.emblem;
     # _decode_flag expects it under civ_def["customFlagData"].

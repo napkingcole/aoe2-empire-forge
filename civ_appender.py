@@ -16,7 +16,6 @@ from genieutils.unit import TrainLocation, ResourceCost, ResourceStorage
 
 from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list, team_bonus_ec_list
 import km_custom_uu
-from civ_schema import is_km_format, km_implied_techs
 
 # ── EffectCommand types ───────────────────────────────────────────────────────
 EC_SET       = 0
@@ -1028,9 +1027,6 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     if not tree_units and not tree_buildings and not tree_techs:
         return
 
-    if is_km_format(civ_def):
-        tree_techs |= km_implied_techs(tree_units, tree_techs)
-
     # Unique buildings we cannot grant are dropped rather than half-honoured:
     # the DAT refuses them anyway, and leaving them in only lit the node up in
     # the F2 viewer (issue #31).  Say so, since the tree editor let them through.
@@ -1232,6 +1228,82 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     for tech_id in tree_techs:
         if tech_id in ec8_info:
             ec8_to_add.add(tech_id)
+
+    # ── Step 3b': Keep the prerequisites of everything the civ keeps.
+    #
+    # A ticked node can depend on an unticked one, and disabling the prerequisite
+    # silently strands it: tech 35 (the Dock's Galleon research) has no effect of
+    # its own, but 911 — the War Galley -> Galleon upgrade, which is not an editor
+    # node — requires it, as do Fast Fire Ship 246, Carrack 904 and Dragon Ship
+    # 1010.  The editor hangs the Galleon off the War Galley, never off 35, so a
+    # civ saved with the unit and without 35 got a Galleon it could never reach
+    # (and Gillnets 65 without Fishing Lines 906 the same way).  Decided
+    # 2026-10-08: a ticked unit or tech wins over its unticked prerequisite.
+    #
+    # Roots are the ticked techs plus every tech that makes a tree unit available
+    # or upgrades to one, whether or not it is an editor node.  Only editor-node
+    # prerequisites are re-kept — those are the ones a player can untick.  A
+    # root that needs a non-node tech staying disabled is dead and contributes
+    # nothing: Chronicles' own Champion upgrade 1174 sits behind shadow tech
+    # 1138, and following it would switch on Chronicles techs for every civ
+    # with Champions.  required_tech_count is "k of the listed n": Gillnets 65
+    # lists (Castle Age, 912, 906) and needs two, where 912 "Gillnets
+    # requirement" itself needs 906 — so 906 is required in practice.  When a
+    # requirement is met by what is already live it is left alone; otherwise
+    # every reachable prerequisite is followed.
+    _producers: dict[int, set[int]] = {}
+    for _tid, _t in enumerate(dat.techs):
+        if _t.civ not in (-1, civ_index) or not 0 <= _t.effect_id < len(dat.effects):
+            continue
+        for _c in dat.effects[_t.effect_id].effect_commands:
+            _out = int(_c.b) if _c.type == 3 else int(_c.a) if _is_enable(_c) else None
+            if _out is not None:
+                _producers.setdefault(_out, set()).add(_tid)
+
+    def _reqs(tid):
+        """(listed prerequisites, how many of them are needed)."""
+        t = dat.techs[tid]
+        reqs = [r for r in t.required_techs if 0 <= r < len(dat.techs)]
+        return reqs, min(t.required_tech_count, len(reqs))
+
+    def _memo(test):
+        cache: dict[int, bool] = {}
+
+        def run(tid):
+            if tid not in cache:
+                cache[tid] = False               # a cycle satisfies nothing
+                reqs, need = _reqs(tid)
+                cache[tid] = test(tid) and sum(map(run, reqs)) >= need
+            return cache[tid]
+        return run
+
+    _off = lambda t: t in all_disableable and t not in keep_enabled      # noqa: E731
+    # free: fires as things stand.  reachable: fires once node prereqs are kept.
+    _free      = _memo(lambda t: not _off(t))
+    _reachable = _memo(lambda t: not (_off(t) and t not in nodes["techs"]))
+
+    _roots = {t for t in tree_techs if 0 <= t < len(dat.techs)}
+    for _uid in tree_units | tree_buildings:
+        _roots |= {t for t in _producers.get(_uid, ()) if not _off(t)}
+    _prereq_kept: dict[int, int] = {}            # kept tech -> the tech needing it
+    _seen: set[int] = set()
+    _stack = [t for t in _roots if _reachable(t)]
+    while _stack:
+        _tid = _stack.pop()
+        _reqs_of, _need = _reqs(_tid)
+        if sum(map(_free, _reqs_of)) >= _need:
+            continue
+        for _r in _reqs_of:
+            if _r in _seen or not _reachable(_r):
+                continue
+            _seen.add(_r)
+            _stack.append(_r)
+            if _off(_r) and _r not in _PROTECTED_TECHS:
+                _prereq_kept[_r] = _tid
+    keep_enabled |= set(_prereq_kept)
+    if _prereq_kept:
+        print(f"       Kept {len(_prereq_kept)} unticked prerequisite(s) of ticked "
+              f"nodes: " + ", ".join(f"{r} (for {w})" for r, w in sorted(_prereq_kept.items())))
 
     # ── Step 3c: Mutual exclusions and bonus-driven keep-alive.
     # Armored Elephants replace the ram-line for Indian civs — disable rams when present.
