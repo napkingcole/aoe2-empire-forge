@@ -1583,19 +1583,38 @@ def _runtime_train_locations(dat: DatFile, civ_index: int) -> dict[tuple[int, in
     civ with Marauders and Battle Elephants clashes on Stable 4 only in-game —
     this makes those slots visible to the resolver.  Only techs the civ owns
     (its UT and bonus copies) count.
+
+    MULTIPLY attr 158 is the other verb: it *inserts* an entry (32767 = at the
+    tail) and selects it, so the attr 42 that follows names a building for an
+    entry the DAT list does not have.  Mapuche's "Spearman and Skirmisher lines
+    train at Settlements" (bonus 371) is built that way; read as a select, its
+    Settlement landed on entry 0 — the Barracks and Archery Range — and the
+    resolver moved the Barracks Spearman to page 2 to clear a Settlement clash
+    that never exists (issue #61).  Inserted entries are left out: the
+    resolver can only move entries the DAT holds.  Vanilla inserts only at the
+    tail; an insert mid-list would also shift the entries after it.
     """
+    units = dat.civs[civ_index].units
     out: dict[tuple[int, int], int] = {}
     for tech in dat.techs:
         if tech.civ != civ_index or not (0 <= tech.effect_id < len(dat.effects)):
             continue
         entry: dict[int, int] = {}
         for ec in dat.effects[tech.effect_id].effect_commands:
-            if ec.type != EC_SET or ec.a < 0:
+            if ec.a < 0 or int(ec.c) not in (42, 158):
                 continue
-            if int(ec.c) == 158:
-                entry[int(ec.a)] = int(ec.d)
-            elif int(ec.c) == 42 and ec.d >= 0:
-                out[(int(ec.a), entry.get(int(ec.a), 0))] = int(ec.d)
+            uid = int(ec.a)
+            if int(ec.c) == 158 and ec.type == EC_MULTIPLY:
+                entry[uid] = -1                     # a new entry, not in the DAT
+            elif ec.type != EC_SET:
+                continue
+            elif int(ec.c) == 158:
+                entry[uid] = int(ec.d)
+            elif ec.d >= 0 and entry.get(uid, 0) >= 0:
+                u = units[uid] if 0 <= uid < len(units) else None
+                n = len(u.creatable.train_locations) if u is not None and u.creatable else 0
+                if entry.get(uid, 0) < n:
+                    out[(uid, entry.get(uid, 0))] = int(ec.d)
     return out
 
 

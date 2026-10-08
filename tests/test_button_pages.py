@@ -360,6 +360,25 @@ chariot = [l["name"] for b in button_layout_preview(dat, preview_def, PREVIEW_TE
            for c in b["conflicts"] for l in c["lines"] if 1962 in l["units"]]
 check("the War Chariot is called that, without '(Focus Fire)'", chariot == ["War Chariot"], chariot)
 
+# Bonus 371 ADDS a Settlement train location (MULTIPLY attr 158 by 32767, then
+# attr 42) — read as a select, it landed on entry 0 for both lines, and the
+# Archery Range Skirmisher and the Barracks Spearman, both on button 2,
+# "clashed at the Settlement": the Barracks Spearman went to page 2 (#61).
+print("\n=== an added train location leaves the existing ones alone (#61) ===")
+SPEAR_LINE, SKIRM_LINE = (93, 358, 359), (7, 6)
+settle_civ = {"alias": "Settlers", "description": "", "architecture": 2, "language": 0,
+              "wonder": -1, "castle": -1,
+              "bonuses": [[[371, 1]], [], [], [], []],
+              "tree": [[83, 13, 74, 75, 77, *SPEAR_LINE, 4, 24, *SKIRM_LINE],
+                       [BARRACKS, RANGE, 109, 70], [101, 102, 103, 197, 429, 98]]}
+with contextlib.redirect_stdout(io.StringIO()):
+    apply_civ(dat, settle_civ, target_slot=10)
+template = dat.civs[1].units
+for uid, bldg in [*((u, BARRACKS) for u in SPEAR_LINE), *((u, RANGE) for u in SKIRM_LINE)]:
+    got = [(tl.unit_id, tl.button_id) for tl in dat.civs[10].units[uid].creatable.train_locations]
+    want = [(tl.unit_id, tl.button_id) for tl in template[uid].creatable.train_locations]
+    check(f"{uid} keeps its train locations", got == want, f"{got} vs {want}")
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)
