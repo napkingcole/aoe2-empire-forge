@@ -4947,8 +4947,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             # effectiveness, the buildings need commands vanilla never wrote.
             if bonus_id == _DROPOFF_DISCOUNT_BONUS:
                 _apply_dropoff_discount(dat, civ_index, multiplier)
-            if bonus_id == _ELEPHANT_ARMOUR_BONUS:
-                _apply_elephant_armour(dat, civ_index, multiplier)
+            _apply_elephant_extensions(dat, civ_index, tech_ids, multiplier)
             continue
 
         ec_entries = civ_bonus_ec_list(bonus_id)
@@ -5146,25 +5145,56 @@ def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> No
     print(f"       Drop-off buildings: {len(cmds)} discounted to {factor:.4f}")
 
 
-# Bonus 303 — "Elephant units +1/+1P armor".  The catalog copies vanilla tech
-# 640, which only touches the Battle Elephant line (1132/1134): that is the
-# Khmer bonus as DE wrote it.  The card says elephant units, and the user chose
-# all of them (issue #60, 2026-10-08), so the rest get the same commands here.
-_ELEPHANT_ARMOUR_BONUS = 303
-_ELEPHANT_ARMOUR_CMDS = ((8, 1025.0), (8, 769.0))   # +1 melee (class 4), +1 pierce (class 3)
+# Elephant bonuses that DE wrote for one line.  The cards say elephant units
+# (or melee elephant units), and the user chose all of them (issue #60,
+# 2026-10-08), so each vanilla template tech below is extended to the rest of
+# its set: its per-unit commands are copied onto every unit it leaves out.
+#   640  card 303  +1/+1 armour          Battle Elephant only (Khmer)
+#   672  card 79   +10% speed            Battle Elephant only, card says melee
+#   662  card 83   -25% cost, Castle     Battle Elephant only
+#   663  card 83   -35% cost, Imperial   Battle Elephant only
+#   846  card 292  bonus-damage and conversion resistance — every vanilla
+#                  elephant, not our Royal Battle Elephant or the Sannahya
+#   626  Howdah    +1/+1 armour          Battle and War Elephant (Burmese UT)
+# Civ cards get a civ-owned auto-fire tech gated like the template (the
+# half-catalog pattern bonus 312 uses); Howdah's commands join the UT itself.
+_MELEE_ELEPHANT_UNITS = [239, 558, 1132, 1134, 1180, 1744, 1746, 2390, 2391]
+_ELEPHANT_EXTENSIONS: dict[int, list[int]] = {
+    640: _ELEPHANT_UNITS, 672: _MELEE_ELEPHANT_UNITS, 662: _ELEPHANT_UNITS,
+    663: _ELEPHANT_UNITS, 846: _ELEPHANT_UNITS, 626: _ELEPHANT_UNITS,
+}
 
 
-def _apply_elephant_armour(dat: DatFile, civ_index: int, multiplier: int) -> None:
-    """Bonus 303's other elephants — everything in _ELEPHANT_UNITS that tech 640
-    leaves out, scaled by the card multiplier like the catalog copy."""
-    covered = {int(c.a) for c in dat.effects[dat.techs[640].effect_id].effect_commands}
-    cmds = [scaled
-            for uid in _ELEPHANT_UNITS if uid not in covered
-            for attr, packed in _ELEPHANT_ARMOUR_CMDS
+def _elephant_extension_cmds(dat: DatFile, template_tid: int,
+                             multiplier: int) -> list[EffectCommand]:
+    """The template's per-unit commands, copied onto the elephants it misses.
+
+    Every template here gives each of its units the same commands, so the
+    first covered unit in the set is the pattern.  Scaled like the copy of the
+    template itself, so a x2 card is x2 on every line."""
+    units = _ELEPHANT_EXTENSIONS[template_tid]
+    by_unit: dict[int, list] = defaultdict(list)
+    for c in dat.effects[dat.techs[template_tid].effect_id].effect_commands:
+        if c.type in (EC_SET, EC_ADD, EC_MULTIPLY) and c.a >= 0:
+            by_unit[int(c.a)].append(c)
+    pattern = next((by_unit[u] for u in units if u in by_unit), [])
+    return [scaled
+            for uid in units if uid not in by_unit
+            for c in pattern
             for scaled in _scale_ec_cmds(
-                EffectCommand(type=EC_ADD, a=uid, b=-1, c=attr, d=packed), multiplier)]
-    _add_auto_fire_tech(dat, civ_index, cmds, name="C-Bonus, all elephants armor")
-    print(f"       Elephant armour: {len(cmds)} commands for the non-Battle-Elephant lines")
+                EffectCommand(type=c.type, a=uid, b=c.b, c=c.c, d=c.d), multiplier)]
+
+
+def _apply_elephant_extensions(dat: DatFile, civ_index: int, techs, multiplier: int) -> None:
+    """Civ cards: one auto-fire tech per extended template, same age gate."""
+    for tid in techs:
+        if tid not in _ELEPHANT_EXTENSIONS:
+            continue
+        cmds = _elephant_extension_cmds(dat, tid, multiplier)
+        age = next((r for r in dat.techs[tid].required_techs if r in (101, 102, 103)), -1)
+        _add_auto_fire_tech(dat, civ_index, cmds, age_req=age,
+                            name=f"C-Bonus, all elephants ({tid})")
+        print(f"       Elephants: tech {tid} extended with {len(cmds)} commands")
 
 
 # Bonus 105 — "Economic upgrades cost -33% food and available one age earlier".
@@ -6549,6 +6579,9 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                     pending_elite_uu_subs.extend(scaled)
                     continue
             cmds.extend(scaled)
+        # Howdah reaches every elephant, not just the two lines DE wrote.
+        if tech_id in _ELEPHANT_EXTENSIONS:
+            cmds.extend(_elephant_extension_cmds(dat, tech_id, multiplier))
     return cmds, pending_elite_uu_subs, pending_base_uu_subs
 
 

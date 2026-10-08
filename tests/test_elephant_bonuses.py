@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """Elephant bonuses reach every elephant.  DAT-gated.
 
-Card 303 "Elephant units +1/+1P armor" copies vanilla tech 640, the Khmer bonus,
-which only touches the Battle Elephant line.  The card says elephant units, and
-the user chose all of them (issue #60), so _apply_elephant_armour gives the
-other lines the same packed-armour commands, scaled by the same multiplier.
+DE wrote several elephant bonuses for one line: card 303 (+1/+1 armour), 79
+(+10% speed) and 83 (-25%/-35% cost) touch only the Battle Elephant; 292
+(bonus-damage and conversion resistance) misses our Royal Battle Elephant and
+the Sannahya; the Howdah UT covers Battle and War Elephants.  The cards say
+elephant units (79: melee elephant units), and the user chose all of them
+(issue #60, 2026-10-08), so _ELEPHANT_EXTENSIONS copies each template's
+per-unit commands onto the units it leaves out.
 
-The checks sum what the civ's own techs add to attribute 8 per unit and armour
-class, so they compare the copy and the extension on equal terms, and a line
-the extension drops shows up as a mismatch against the Battle Elephant.
+Each check sums what the civ's own techs do to a unit — per attribute, command
+type and age gate — and compares every elephant in the card's set with the
+Battle Elephant, which every template covers.  A dropped line, a lost age gate
+or a multiplier applied to only some lines all show up as a mismatch.
 
     venv/bin/python tests/test_elephant_bonuses.py
 """
@@ -22,7 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from dat_reader import find_game_dat, load_dat              # noqa: E402
-from civ_appender import apply_civ, _ELEPHANT_UNITS, EC_ADD  # noqa: E402
+from civ_appender import (apply_civ, _ELEPHANT_UNITS, _MELEE_ELEPHANT_UNITS,  # noqa: E402
+                          EC_ADD, EC_MULTIPLY, EC_SET)
 from civ_schema import FORMAT_KEY                           # noqa: E402
 
 failures = 0
@@ -51,34 +56,69 @@ class5 = {uid for uid, u in enumerate(dat.civs[1].units)
           and any(a.class_ == 5 for a in (u.type_50.armours or []))} - HEROES
 check("every class-5 elephant is in _ELEPHANT_UNITS", class5 <= set(_ELEPHANT_UNITS),
       f"missing {sorted(class5 - set(_ELEPHANT_UNITS))}")
+ranged = {u for u in _ELEPHANT_UNITS if dat.civs[1].units[u].type_50.max_range > 0}
+check("melee elephants are exactly the range-0 ones",
+      set(_MELEE_ELEPHANT_UNITS) == set(_ELEPHANT_UNITS) - ranged,
+      f"ranged={sorted(ranged)}")
 
 
-def armour_gain(slot):
-    """unit -> {armour class: total added} from this civ's own techs."""
-    gain = defaultdict(lambda: defaultdict(int))
+def summary(slot):
+    """unit -> {(attr, type, age): combined value} over this civ's own techs."""
+    out = defaultdict(dict)
     for t in dat.techs:
         if t.civ != slot or not 0 <= t.effect_id < len(dat.effects):
             continue
+        age = next((r for r in t.required_techs if r in (101, 102, 103)), -1)
         for c in dat.effects[t.effect_id].effect_commands:
-            if c.type == EC_ADD and int(c.c) == 8 and c.a in _ELEPHANT_UNITS:
-                packed = int(c.d)
-                gain[int(c.a)][packed >> 8] += packed & 0xFF
-    return gain
+            if c.type not in (EC_SET, EC_ADD, EC_MULTIPLY) or c.a not in _ELEPHANT_UNITS:
+                continue
+            s = out[int(c.a)]
+            if c.type == EC_ADD and int(c.c) in (8, 9):          # packed: per class
+                key = (int(c.c), EC_ADD, age, int(c.d) >> 8)
+                s[key] = s.get(key, 0) + (int(c.d) & 0xFF)
+            elif c.type == EC_ADD:
+                key = (int(c.c), EC_ADD, age)
+                s[key] = round(s.get(key, 0) + c.d, 4)
+            elif c.type == EC_MULTIPLY:
+                key = (int(c.c), EC_MULTIPLY, age)
+                s[key] = round(s.get(key, 1) * c.d, 4)
+            else:
+                s[(int(c.c), EC_SET, age)] = round(c.d, 4)
+    return out
 
 
-for slot, mult in ((5, 1), (6, 2)):
-    civ = {"format": FORMAT_KEY, "alias": f"Elephants x{mult}", "architecture": 2,
-           "language": 0, "bonuses": [{"id": 303, "multiplier": mult}],
-           "tree": {"units": [83, 1132, 1134, 239, 558, 873, 875], "buildings": [101, 109, 70],
-                    "techs": [101, 102, 103]}}
-    with contextlib.redirect_stdout(io.StringIO()):
-        apply_civ(dat, civ, target_slot=slot)
-    gain = armour_gain(slot)
-    want = {4: mult, 3: mult}
-    check(f"x{mult}: Battle Elephant keeps vanilla's +{mult}/+{mult}",
-          dict(gain[1132]) == want, f"{dict(gain[1132])}")
-    wrong = {uid: dict(gain[uid]) for uid in _ELEPHANT_UNITS if dict(gain[uid]) != want}
-    check(f"x{mult}: every elephant gets +{mult}/+{mult}", not wrong, f"{wrong}")
+TREE = {"units": [83, 1132, 1134, 239, 558, 873, 875], "buildings": [101, 109, 70],
+        "techs": [101, 102, 103]}
+CASES = [(303, "+1/+1 armour", _ELEPHANT_UNITS), (79, "+10% speed", _MELEE_ELEPHANT_UNITS),
+         (83, "cost -25%/-35%", _ELEPHANT_UNITS), (292, "resistance", _ELEPHANT_UNITS)]
+slot = 4
+for bonus, what, units in CASES:
+    for mult in (1, 2):
+        slot += 1
+        civ = {"format": FORMAT_KEY, "alias": f"E{bonus}x{mult}", "architecture": 2,
+               "language": 0, "bonuses": [{"id": bonus, "multiplier": mult}], "tree": TREE}
+        with contextlib.redirect_stdout(io.StringIO()):
+            apply_civ(dat, civ, target_slot=slot)
+        got = summary(slot)
+        ref = got[1132]
+        wrong = sorted(u for u in units if got[u] != ref)
+        check(f"card {bonus} {what} x{mult}: every elephant matches the Battle Elephant",
+              ref and not wrong, f"ref={ref} wrong={wrong} e.g. {got[wrong[0]] if wrong else ''}")
+        if bonus == 79:
+            extra = sorted(u for u in _ELEPHANT_UNITS if u not in units and got[u])
+            check("card 79 leaves the ranged elephants alone", not extra, f"{extra}")
+
+# Howdah is an Imperial UT, so its commands join the UT's own effect.
+slot += 1
+km = {"alias": "Howdah", "description": "", "architecture": 2, "language": 0,
+      "wonder": -1, "castle": -1, "bonuses": [[], [], [], [[5, 1]], []],
+      "tree": [TREE["units"], TREE["buildings"], TREE["techs"]]}
+with contextlib.redirect_stdout(io.StringIO()):
+    apply_civ(dat, km, target_slot=slot)
+got = summary(slot)
+wrong = sorted(u for u in _ELEPHANT_UNITS if got[u] != got[1132])
+check("Howdah: every elephant matches the Battle Elephant", got[1132] and not wrong,
+      f"ref={got[1132]} wrong={wrong}")
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
