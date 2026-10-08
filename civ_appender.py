@@ -2940,8 +2940,12 @@ def _name_chronicles_units(dat: DatFile, civ_index: int, spec: dict, seen: dict,
 # and use a civ-owned auto-fire tech instead, which is what bonus 404 needs.
 _MINING_CAMP_TECHS = [55, 182, 278, 279]   # Gold/Gold Shaft/Stone/Stone Shaft Mining
 
-# Elephant unit IDs
-_ELEPHANT_UNITS = [239, 558, 873, 875, 1120, 1122, 1132, 1134, 1744, 1746, 1180]
+# Elephant unit IDs — every trainable unit carrying elephant armour class 5,
+# base and elite, plus our Royal Battle Elephant (1180, bonus 309).  The
+# Sannahya (2390/2391, Chronicles, unlocked by card 454) was missing until
+# 2026-10-08.  Campaign heroes on class 5 are left out.
+_ELEPHANT_UNITS = [239, 558, 873, 875, 1120, 1122, 1132, 1134, 1744, 1746, 1180,
+                   2390, 2391]
 
 # Farmer unit IDs and their work-rate multipliers (from KM source)
 _FARMER_WORK_RATES = [(214, 1.23), (259, 1.23), (50, 1.15), (1187, 1.15)]
@@ -4943,6 +4947,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             # effectiveness, the buildings need commands vanilla never wrote.
             if bonus_id == _DROPOFF_DISCOUNT_BONUS:
                 _apply_dropoff_discount(dat, civ_index, multiplier)
+            if bonus_id == _ELEPHANT_ARMOUR_BONUS:
+                _apply_elephant_armour(dat, civ_index, multiplier)
             continue
 
         ec_entries = civ_bonus_ec_list(bonus_id)
@@ -5138,6 +5144,27 @@ def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> No
     _add_auto_fire_tech(dat, civ_index, cmds,
                         name="C-Bonus, -25% drop-off buildings")
     print(f"       Drop-off buildings: {len(cmds)} discounted to {factor:.4f}")
+
+
+# Bonus 303 — "Elephant units +1/+1P armor".  The catalog copies vanilla tech
+# 640, which only touches the Battle Elephant line (1132/1134): that is the
+# Khmer bonus as DE wrote it.  The card says elephant units, and the user chose
+# all of them (issue #60, 2026-10-08), so the rest get the same commands here.
+_ELEPHANT_ARMOUR_BONUS = 303
+_ELEPHANT_ARMOUR_CMDS = ((8, 1025.0), (8, 769.0))   # +1 melee (class 4), +1 pierce (class 3)
+
+
+def _apply_elephant_armour(dat: DatFile, civ_index: int, multiplier: int) -> None:
+    """Bonus 303's other elephants — everything in _ELEPHANT_UNITS that tech 640
+    leaves out, scaled by the card multiplier like the catalog copy."""
+    covered = {int(c.a) for c in dat.effects[dat.techs[640].effect_id].effect_commands}
+    cmds = [scaled
+            for uid in _ELEPHANT_UNITS if uid not in covered
+            for attr, packed in _ELEPHANT_ARMOUR_CMDS
+            for scaled in _scale_ec_cmds(
+                EffectCommand(type=EC_ADD, a=uid, b=-1, c=attr, d=packed), multiplier)]
+    _add_auto_fire_tech(dat, civ_index, cmds, name="C-Bonus, all elephants armor")
+    print(f"       Elephant armour: {len(cmds)} commands for the non-Battle-Elephant lines")
 
 
 # Bonus 105 — "Economic upgrades cost -33% food and available one age earlier".
