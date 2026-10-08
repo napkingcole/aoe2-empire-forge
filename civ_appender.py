@@ -5677,6 +5677,61 @@ def _copy_architecture(src_civ, dst_civ) -> None:
     dst_civ.icon_set = src_civ.icon_set
 
 
+# A civ's Monk voice has one gender, the voice civ's: the 13 civs whose vanilla
+# Monk is a woman (Vikings, Incas, Mapuche, ...) select with priestess sound
+# 597, and their Monk lines (423/424, which our voices are extracted onto) are
+# female recordings; every other civ's are male.  Neither has the other gender.
+# So a skin of the other gender — a female Monk speaking British, a male one
+# speaking Mapuche (#58) — takes the villager lines of its own gender in the
+# same language instead, as vanilla does for Jadwiga, a female missionary hero
+# voiced with the female villager sound (435).  The Monk carrying a relic (286)
+# speaks too; 134 is silent.  User's design, 2026-10-08.
+_PRIESTESS_SELECT = 597
+_MONK_VOICE_UNITS = (125, 286)
+_VILLAGER_BY_GENDER = {False: 83, True: 293}       # male / female Villager
+
+
+def _female_monk_civs(dat: DatFile) -> set[int]:
+    """DAT civ indices whose vanilla Monk is a woman, read once per DatFile.
+
+    Cached on the DatFile on the first build, before any slot is overwritten:
+    build_all reuses one DAT for several civs, and a slot an earlier civ
+    replaced is a Britons clone with a male Monk (quirk 10's lesson)."""
+    cached = getattr(dat, "_ef_female_monk_civs", None)
+    if cached is None:
+        cached = {i for i, c in enumerate(dat.civs)
+                  if len(c.units) > 125 and c.units[125] is not None
+                  and c.units[125].selection_sound == _PRIESTESS_SELECT}
+        dat._ef_female_monk_civs = cached
+    return cached
+
+
+def _match_monk_voice(dat: DatFile, dst_civ, skin_idx: int | None,
+                      voice_idx: int | None) -> None:
+    """Give a Monk skin whose gender the voice civ lacks the villager lines of
+    its own gender.  Indices are vanilla civs; genders come from the cache."""
+    if skin_idx is None or voice_idx is None:
+        return
+    female = _female_monk_civs(dat)
+    skin_f, voice_f = skin_idx in female, voice_idx in female
+    if skin_f == voice_f:
+        return
+    src = dst_civ.units[_VILLAGER_BY_GENDER[skin_f]]
+    for uid in _MONK_VOICE_UNITS:
+        u = dst_civ.units[uid]
+        if u is None:
+            continue
+        u.selection_sound          = src.selection_sound
+        u.wwise_selection_sound_id = src.wwise_selection_sound_id
+        if u.bird is not None and src.bird is not None:
+            for f in ("attack_sound", "move_sound", "wwise_attack_sound_id",
+                      "wwise_move_sound_id"):
+                setattr(u.bird, f, getattr(src.bird, f))
+    g = "female" if skin_f else "male"
+    print(f"       Monk voice: {g} skin, {'female' if voice_f else 'male'} voice-civ "
+          f"Monks — using the {g} villager lines")
+
+
 def _copy_monk_skin(src_civ, dst_civ) -> None:
     """Copy the three Monk-appearance units from one civ to another.
 
@@ -5904,6 +5959,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     monk_src_civ = (dat.civs[monk_src]
                     if isinstance(monk_src, int) and 0 < monk_src < len(dat.civs)
                     else None)
+    # Read the vanilla Monk genders before this slot is overwritten (cached).
+    _female_monk_civs(dat)
+    _voice_idx = int(civ_def.get("language", 0) or 0) + 1
 
     if overwrite:
         dat.civs[civ_index] = new_civ
@@ -5929,6 +5987,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             print(f"       Monk skin: from DAT civ {monk_src} ({monk_src_civ.name!r})")
         else:
             print(f"       Monk skin: architecture default ({_monk_from.name!r})")
+        _match_monk_voice(dat, dat.civs[civ_index],
+                          monk_src if monk_src_civ is not None else arch_src, _voice_idx)
 
     # Starting scout: the deepcopy base (civ 1) starts with a Scout Cavalry, so
     # leaving this unset keeps vanilla behaviour.

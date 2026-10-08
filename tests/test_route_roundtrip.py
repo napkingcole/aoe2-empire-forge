@@ -125,6 +125,8 @@ def _unit_fp(u):
         _seq(cre, "resource_costs", ("type", "amount", "flag")),
         _seq(cre, "train_locations", ("location_id", "button_id", "train_time")),
         _seq(bird, "tasks", ("proceeding_graphic_id",)),
+        # Voice lines: the Monk's follow its skin's gender (#58).
+        getattr(u, "selection_sound", None), getattr(bird, "move_sound", None),
     )
 
 
