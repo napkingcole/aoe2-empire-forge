@@ -13,6 +13,7 @@ from genieutils.civ import Civ
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import Tech, ResearchLocation, ResearchResourceCost
 from genieutils.unit import TrainLocation, ResourceCost, ResourceStorage
+from civ_schema import RETIRED_CIV_BONUSES
 
 from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list, team_bonus_ec_list
 import km_custom_uu
@@ -4904,6 +4905,9 @@ def get_civ_bonuses(civ_def: dict) -> list:
         # derivation back into civ_def — making it sticky across tree changes,
         # which is the exact staleness this design exists to avoid.
         entries = list(raw[0]) if isinstance(raw[0], list) else []
+    # Withdrawn cards (civ_schema.RETIRED_CIV_BONUSES) drop out here, on every path.
+    entries = [e for e in entries
+               if not (isinstance(e, (list, tuple)) and e and e[0] in RETIRED_CIV_BONUSES)]
 
     units = _tree_unit_ids(civ_def)
     if units:

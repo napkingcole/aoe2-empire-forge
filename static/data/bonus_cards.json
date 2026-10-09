@@ -2436,7 +2436,8 @@
     "multiplier": false
   },
   "333": {
-    "type": "value",
+    "type": "hidden",
+    "_note": "Withdrawn 2026-10-09 (issue #69): the Siege Tower has no ranged attack, so adding attack never made it fire. civ_schema.RETIRED_CIV_BONUSES drops it from saved civs and KM imports.",
     "heading": "Attack",
     "stat": "Siege Towers can fire arrows at enemy units",
     "entity": "siege_tower",

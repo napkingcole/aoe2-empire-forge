@@ -37,6 +37,16 @@ _FORMAT_KEY_V1 = "civbuilder_v1"
 #     so the unit dealt the engine minimum of 1 damage to everything.
 RETIRED_UU_FLAGS = frozenset({"ignore_armor"})
 
+# Civ bonus cards withdrawn because they cannot do what they say.  Filtered in
+# civ_appender.get_civ_bonuses, the accessor every build path, the in-game
+# description and the View Civ page read through, so an old civ or a KM import
+# that carries one still loads but no longer claims it.
+#   333 "Siege Towers can fire arrows" — withdrawn 2026-10-09 (issue #69).  KM's
+#     card only ADDS attack; the Siege Tower has no range, projectile, reload or
+#     attack at all, so nothing ever fired (reported in-game).  Making it shoot
+#     means building a ranged attack from scratch — not done, so not offered.
+RETIRED_CIV_BONUSES = frozenset({333})
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
