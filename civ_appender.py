@@ -3442,11 +3442,27 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             ids = grown
         return {u for u in ids if u < n_units and units[u] is not None}
 
+    # "Long Swordsman and up" (#63): the unit, its alternate forms, and every
+    # unit its upgrades lead to — never the ones before it.
+    forward = custom_bonus.upgrade_edges(dat)
+
+    def up_of(uid: int) -> set[int]:
+        ids: set[int] = {uid}
+        while True:
+            grown = custom_bonus.with_forms(
+                set().union(*(custom_bonus.upgrades_after(forward, u) for u in ids)))
+            if grown == ids:
+                break
+            ids = grown
+        return {u for u in ids if u < n_units and units[u] is not None}
+
     # Build-time answers the library can't know: what this civ trains at a
     # building, and which unit is its UU.  Both keep alternate forms.
     present = _civ_present_units(civ_def, dat, civ_index) | {u for u in uu_ids if u >= 0}
 
     def resolve(kind: str, arg) -> set[int]:
+        if kind == "up":
+            return up_of(arg)
         if kind == "units":
             return {u for u in custom_bonus.with_forms(set(arg))
                     if u < n_units and units[u] is not None}

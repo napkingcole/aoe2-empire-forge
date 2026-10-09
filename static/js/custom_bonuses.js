@@ -26,15 +26,21 @@ async function cbLoadCatalog() {
   return _cbCatalog;
 }
 
-// The per-target effect lists need the game DAT, which may still be loading on
-// a first visit; until they arrive every effect of the right kind is offered.
+// The per-target effect lists, the unit-line tiles and the "top" flags need the
+// game DAT, which may still be loading on a first visit; until they arrive
+// every effect of the right kind is offered and only single units are listed.
 function _cbRefreshAllowed(attempt) {
   if (attempt > 10) return;
   setTimeout(async () => {
     try {
       const c = await (await fetch("/api/builder/custom-bonus/catalog")).json();
-      if (c.allowed) _cbCatalog.allowed = c.allowed;
-      else _cbRefreshAllowed(attempt + 1);
+      if (!c.allowed) return _cbRefreshAllowed(attempt + 1);
+      // Everything that needed the DAT: effect lists, line tiles, top flags.
+      _cbCatalog.allowed = c.allowed;
+      _cbCatalog.lines = c.lines;
+      _cbCatalog.units = c.units;
+      delete _cbCatalog.allowed_pending;
+      if (_cbWork) { _cbRenderPicker(); _cbRenderEffects(); }
     } catch (e) { /* keep offering everything */ }
   }, 3000);
 }
@@ -75,6 +81,17 @@ function _cbTargetLabel(t) {
   return t.name || `Unit ${t.id}`;
 }
 
+// What a card is about, as its text says it (mirrors custom_bonus.card_text):
+// a unit with no scope is its whole line ("Militia line" — every card before
+// #63 meant this); scope "up" is the unit and its upgrades ("Long Swordsman
+// and up"), or just the unit when nothing comes after it ("Champion").
+function _cbSubject(t) {
+  const label = _cbTargetLabel(t);
+  if (t?.type !== "unit" || t.kind === "building") return label;
+  if (t.scope !== "up") return `${label} line`;
+  return t.top ? label : `${label} and up`;
+}
+
 function _cbNum(v) { return Number.isInteger(v) ? String(v) : String(+v.toFixed(3)); }
 
 function _cbEffectText(e, target) {
@@ -101,8 +118,7 @@ function _cbEffectText(e, target) {
 
 function cbCardText(card) {
   if (card.text) return card.text;
-  let subject = _cbTargetLabel(card.target);
-  if (card.target?.type === "unit" && card.target.kind !== "building") subject += " line";
+  const subject = _cbSubject(card.target);
   const parts = (card.effects || []).map(e => _cbEffectText(e, card.target)).filter(Boolean);
   return parts.length ? `${subject}: ${parts.join(", ")}` : subject;
 }
@@ -130,7 +146,10 @@ function _cbAttrsFor(target) {
   const key = !target ? null
     : target.type === "group" ? `group:${target.id}`
     : target.type === "job"   ? `job:${target.id}`
-    : target.type === "unit"  ? `${kind}:${target.id}` : null;
+    : target.type !== "unit"  ? null
+    : kind === "building"      ? `building:${target.id}`
+    : target.scope === "up"    ? `unit:${target.id}`
+    : _cbCatalog?.allowed?.[`line:${target.id}`] ? `line:${target.id}` : `unit:${target.id}`;
   const ok = key && _cbCatalog?.allowed?.[key];
   return ok ? all.filter(a => ok.includes(a.id)) : all;
 }
@@ -155,7 +174,8 @@ function _cbTabOf(t) {
 }
 
 function _cbSameTarget(a, b) {
-  return !!a && !!b && a.type === b.type && String(a.id) === String(b.id) && (a.kind || "") === (b.kind || "");
+  return !!a && !!b && a.type === b.type && String(a.id) === String(b.id) && (a.kind || "") === (b.kind || "")
+      && (a.scope || "") === (b.scope || "");
 }
 
 function _cbIcon(icon, label) {
@@ -200,20 +220,37 @@ function _cbTilesFor(tab) {
     .filter(x => !_cbCategory || x.category === _cbCategory)
     .map(x => ({ target: x.kind === "tech"
                    ? { type: "tech", id: x.id, name: x.name }
-                   : { type: "unit", id: x.id, name: x.name, kind: x.kind },
+                   : x.kind === "unit"
+                     // A single unit is "this unit and up" (#63); whole lines
+                     // are the line tiles below.
+                     ? { type: "unit", id: x.id, name: x.name, kind: "unit", scope: "up",
+                         ...(x.top ? { top: true } : {}) }
+                     : { type: "unit", id: x.id, name: x.name, kind: x.kind },
                  label: x.name, icon: x.icon }));
-  if (!groups.length) return pool;
-  const listHeading = { unit: "Units", building: "Individual buildings", tech: "Individual techs" }[tab];
+  // Unit lines, by building (#63): the whole line, alternates included.
+  const lineTiles = [];
+  if (tab === "unit") {
+    let last = null;
+    for (const ln of (c.lines || []).filter(l => (hit(l.name) || l.members.some(hit))
+                                              && (!_cbCategory || l.category === _cbCategory))) {
+      if (ln.building_name !== last) { lineTiles.push({ heading: `${ln.building_name} lines` }); last = ln.building_name; }
+      lineTiles.push({ target: { type: "unit", id: ln.id, name: ln.name.replace(/ line$/, ""), kind: "unit" },
+                       label: ln.name, icon: ln.icon });
+    }
+  }
+  if (!groups.length && !lineTiles.length) return pool;
+  const listHeading = { unit: "Single units (and their upgrades)", building: "Individual buildings", tech: "Individual techs" }[tab];
   // The Tech tab's groups carry their own sections (Ages, Researched at, ...).
-  const head = tab === "tech" ? sectioned(groups) : [{ heading: tab === "unit" ? "Special" : "Groups" }, ...groups.map(groupTile)];
-  return [...head, ...(pool.length ? [{ heading: listHeading }, ...pool] : [])];
+  const head = tab === "tech" ? sectioned(groups)
+             : groups.length ? [{ heading: tab === "unit" ? "Special" : "Groups" }, ...groups.map(groupTile)] : [];
+  return [...head, ...lineTiles, ...(pool.length ? [{ heading: listHeading }, ...pool] : [])];
 }
 
 function _cbRenderPicker() {
   // The choice stays visible while browsing another tab.
   const chosen = document.getElementById("cb-target-chosen");
   chosen.innerHTML = _cbWork.target
-    ? `<i class="fa-solid fa-check me-1"></i>${cbEsc(_cbTargetLabel(_cbWork.target))}`
+    ? `<i class="fa-solid fa-check me-1"></i>${cbEsc(_cbSubject(_cbWork.target))}`
     : `<span class="text-muted fw-normal">— pick one below</span>`;
   document.querySelectorAll(".cb-tab").forEach(b => {
     const on = b.dataset.tab === _cbTab;
@@ -290,7 +327,13 @@ function _cbTargetHint(t) {
       ? "Applies to every Dock, including the Malay Harbor it upgrades into."
       : "Applies to every age version of this building.";
   }
-  return "Applies to the whole upgrade line and any alternate forms — e.g. Knight also covers Cavalier and Paladin.";
+  if (t.scope === "up") {
+    return t.top ? "Applies to this unit (and its alternate forms) — nothing upgrades from it."
+                 : "Applies to this unit and every upgrade after it, not the ones before — e.g. Long Swordsman covers Two-Handed Swordsman, Champion and Legionary, but not Militia.";
+  }
+  const line = (_cbCatalog?.lines || []).find(l => String(l.id) === String(t.id));
+  return line ? `Covers ${line.members.join(", ")} — whichever this civ has.`
+              : "Applies to the whole upgrade line and any alternate forms — e.g. Knight also covers Cavalier and Paladin.";
 }
 
 function _cbSetTarget(target) {

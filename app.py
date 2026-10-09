@@ -1629,10 +1629,12 @@ def api_builder_custom_bonus_catalog():
     if dat_path and str(dat_path) in _DAT_OBJ_CACHE:
         dat_path = str(dat_path)
         if dat_path not in _CB_ALLOWED_CACHE:
-            entries = ([(f"unit:{u['id']}", "unit", u["id"]) for u in cat["units"]]
-                       + [(f"building:{b['id']}", "building", b["id"]) for b in cat["buildings"]])
-            _CB_ALLOWED_CACHE[dat_path] = custom_bonus.allowed_attrs(_get_dat(dat_path), entries)
-        cat["allowed"] = _CB_ALLOWED_CACHE[dat_path]
+            _CB_ALLOWED_CACHE[dat_path] = _custom_bonus_dat_parts(_get_dat(dat_path), cat)
+        parts = _CB_ALLOWED_CACHE[dat_path]
+        cat["allowed"] = parts["allowed"]
+        cat["lines"] = parts["lines"]
+        for u in cat["units"]:
+            u["top"] = u["id"] in parts["tops"]
     else:
         cat["allowed_pending"] = True
         if dat_path and str(dat_path) not in _DAT_LOADING:
@@ -1648,8 +1650,32 @@ def api_builder_custom_bonus_catalog():
     return jsonify(cat)
 
 
-# dat_path -> custom_bonus.allowed_attrs result; the DAT never changes under a path.
+# dat_path -> _custom_bonus_dat_parts result; the DAT never changes under a path.
 _CB_ALLOWED_CACHE: dict[str, dict] = {}
+
+
+def _custom_bonus_dat_parts(dat, cat: dict) -> dict:
+    """The composer's DAT-derived parts: effects per target, unit lines, tops.
+
+    A single-unit pick means "this unit and up" (#63), so its effects are
+    judged on that chain; a line tile on the whole line.  `tops` are units
+    nothing upgrades from — their "and up" is just themselves."""
+    names = {u["id"]: u["name"] for u in cat["units"]}
+    icons = {u["id"]: u["icon"] for u in cat["units"]}
+    fwd = custom_bonus.upgrade_edges(dat)
+    lines = custom_bonus.unit_lines(dat, set(names))
+    entries = ([(f"unit:{uid}", "unit", custom_bonus.upgrades_after(fwd, uid)) for uid in names]
+               + [(f"building:{b['id']}", "building", b["id"]) for b in cat["buildings"]]
+               + [(f"line:{ln['base']}", "unit", ln["members"]) for ln in lines])
+    return {
+        "allowed": custom_bonus.allowed_attrs(dat, entries),
+        "lines": [{"id": ln["base"], "name": f"{names[ln['base']]} line",
+                   "building": ln["building"], "building_name": ln["building_name"],
+                   "category": _CATEGORY_OF_BUILDING.get(ln["building"], "other"),
+                   "icon": icons.get(ln["base"], ""),
+                   "members": [names[m] for m in ln["members"]]} for ln in lines],
+        "tops": {uid for uid in names if not (fwd.get(uid, set()) - {uid})},
+    }
 
 
 # Training building -> picker chip.  Order matters: a unit trained in two places

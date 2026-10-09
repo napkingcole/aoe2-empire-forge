@@ -308,8 +308,9 @@ _CAPABLE = {
 def allowed_attrs(dat, entries: list[tuple[str, str, int]]) -> dict[str, list[str]]:
     """target key -> the effect ids that do something for it.
 
-    `entries` is (key, kind, id) for the composer's individual units and
-    buildings ("unit:38", "building:68"); groups and villager jobs are added
+    `entries` is (key, kind, id or ids) for the composer's individual units,
+    buildings and lines ("unit:38", "building:68", "line:74"); groups and
+    villager jobs are added
     here.  Membership is the catalog-time view, from the template civ: class
     groups take every trainable unit (or building) of the class, "trained at"
     groups what trains there, and "Unique unit" — resolved per civ at build
@@ -342,13 +343,108 @@ def allowed_attrs(dat, entries: list[tuple[str, str, int]]) -> dict[str, list[st
         return [k for k, a in ATTRS.items() if kind in a["kinds"]
                 and (k not in _CAPABLE or us is None or any(_CAPABLE[k](u) for u in us))]
 
-    out = {key: allowed(kind, with_forms({tid})) for key, kind, tid in entries}
+    out = {key: allowed(kind, with_forms(set(tid) if isinstance(tid, (set, frozenset, list, tuple))
+                                         else {tid}))
+           for key, kind, tid in entries}
     for gid, g in GROUPS.items():
         if g["kind"] in ("unit", "building"):
             out[f"group:{gid}"] = allowed(g["kind"], members(g["kind"], g))
     for jid, j in JOBS.items():
         out[f"job:{jid}"] = allowed("job", set(j["units"]))
     return out
+
+
+# ── Unit lines (#63) ─────────────────────────────────────────────────────────
+# The composer's line tiles, per military building.  A line is everything an
+# EC_UPGRADE chain connects — alternates included, so the Militia line reaches
+# the Legionary and the Knight line the Savar — and it is named after its base:
+# a member trained there that nothing upgrades into (lowest id on a tie, so
+# Camel Rider rather than Camel Scout).  Only lines of two or more: a lone unit
+# is already its own tile in the unit list.
+LINE_BUILDINGS = ((12, "Barracks"), (87, "Archery Range"), (101, "Stable"),
+                  (49, "Siege Workshop"), (45, "Dock"))
+# Presentation only: the base the graph finds -> the unit the line is called
+# after.  The Gurjaras' Camel Scout upgrades into the Camel Rider, so it is the
+# graph's base, but the line is the Camel Rider line.
+LINE_NAMED_AFTER = {1755: 329}
+
+
+def upgrade_edges(dat) -> dict[int, set[int]]:
+    """unit -> the units an EC_UPGRADE turns it into (directed)."""
+    fwd: dict[int, set[int]] = {}
+    for tech in dat.techs:
+        if 0 <= tech.effect_id < len(dat.effects):
+            for ec in dat.effects[tech.effect_id].effect_commands:
+                if ec.type == 3 and ec.a >= 0 and ec.b >= 0:
+                    fwd.setdefault(int(ec.a), set()).add(int(ec.b))
+    return fwd
+
+
+def upgrades_after(fwd: dict[int, set[int]], uid: int) -> set[int]:
+    """uid and every unit its upgrades lead to — "and up"."""
+    seen, stack = {uid}, [uid]
+    while stack:
+        for nxt in fwd.get(stack.pop(), ()):
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return seen
+
+
+def unit_lines(dat, pickable: set[int]) -> list[dict]:
+    """[{building, building_name, base, members}] for the composer's line tiles.
+
+    `pickable` is the unit ids the composer offers, which keeps campaign-only
+    units out of the lines and their names."""
+    fwd = upgrade_edges(dat)
+    both: dict[int, set[int]] = {}
+    for a, bs in fwd.items():
+        for b in bs:
+            both.setdefault(a, set()).add(b)
+            both.setdefault(b, set()).add(a)
+    has_pred = {b for bs in fwd.values() for b in bs}
+    units = dat.civs[1].units
+    out, seen = [], set()
+    for bid, bname in LINE_BUILDINGS:
+        here = sorted(i for i, u in enumerate(units) if u is not None and u.creatable
+                      and i in pickable
+                      and any(l.unit_id == bid for l in u.creatable.train_locations))
+        for uid in here:
+            if uid in seen:
+                continue
+            line, stack = {uid}, [uid]
+            while stack:
+                for nxt in both.get(stack.pop(), ()):
+                    if nxt not in line:
+                        line.add(nxt)
+                        stack.append(nxt)
+            seen |= line
+            members = sorted(line & pickable)
+            if len(members) < 2:
+                continue
+            bases = [u for u in members if u in here and u not in has_pred] or [uid]
+            base = min(bases)
+            out.append({"building": bid, "building_name": bname,
+                        "base": LINE_NAMED_AFTER.get(base, base),
+                        "members": _chain_order(members, fwd)})
+    return out
+
+
+def _chain_order(members: list[int], fwd: dict[int, set[int]]) -> list[int]:
+    """Members in upgrade order (Galley, War Galley, Galleon); ties by id."""
+    inside = set(members)
+    preds = {m: {a for a in inside if m in fwd.get(a, ())} for m in inside}
+    out, ready = [], sorted(m for m in inside if not preds[m])
+    while ready:
+        m = ready.pop(0)
+        out.append(m)
+        for n in sorted(fwd.get(m, ())):
+            if n in preds and m in preds[n]:
+                preds[n].discard(m)
+                if not preds[n] and n not in out and n not in ready:
+                    ready.append(n)
+        ready.sort()
+    return out + sorted(inside - set(out))             # a cycle, never seen: still listed
 
 
 def catalog() -> dict:
@@ -407,6 +503,15 @@ def _norm_card(raw) -> dict | None:
             return None
         target = {"type": "unit", "id": uid, "name": str(t.get("name") or ""),
                   "kind": "building" if t.get("kind") == "building" else "unit"}
+        # scope (units only): absent = the whole upgrade line, alternates
+        # included — what every card meant before #63, so saved cards keep it.
+        # "up" = this unit and the upgrades after it ("Long Swordsman and up":
+        # Two-Handed, Champion, Legionary — not Militia).  `top` marks a unit
+        # nothing upgrades from, whose "and up" is just itself.
+        if target["kind"] == "unit" and t.get("scope") == "up":
+            target["scope"] = "up"
+            if t.get("top"):
+                target["top"] = True
     else:
         return None
 
@@ -517,8 +622,12 @@ def card_text(card: dict) -> str:
     if card.get("text"):
         return card["text"]
     subject = target_label(card["target"])
-    if card["target"]["type"] == "unit" and card["target"].get("kind") != "building":
-        subject += " line"
+    t = card["target"]
+    if t["type"] == "unit" and t.get("kind") != "building":
+        if t.get("scope") != "up":
+            subject += " line"
+        elif not t.get("top"):
+            subject += " and up"
     return f"{subject}: " + ", ".join(effect_text(e, card["target"]) for e in card["effects"])
 
 
@@ -537,7 +646,11 @@ def _selectors(card: dict, line_of, resolve=None) -> list[tuple[int, int]]:
         # The exact pair, never an upgrade line — jobs don't upgrade.
         return [(uid, -1) for uid in JOBS[t["id"]]["units"]]
     if t["type"] != "group":
-        return [(uid, -1) for uid in sorted(line_of(t["id"]))]
+        if t.get("scope") == "up":
+            ids = resolve("up", t["id"]) if resolve else with_forms({t["id"]})
+        else:
+            ids = line_of(t["id"])
+        return [(uid, -1) for uid in sorted(ids)]
 
     g = GROUPS[t["id"]]
     pairs = [(-1, cls) for cls in g.get("classes", ())]
