@@ -48,7 +48,7 @@ Grab the latest release from the [Releases page](https://github.com/napkingcole/
 
 1. **Build a Civ.** Step through the wizard — Identity, Bonuses, Team Bonus, Tech Tree, Unique Unit, Castle UT, Imperial UT, Heroes, Review — or use **Convert KM Civ** to bring in an existing [KrakenMeister](https://krakenmeister.com/civbuilder) civ JSON and keep editing it from there. Save your civ as a `.civbuilder.json` file.
 2. **Build a Mod.** Upload one or more saved civ files, point at your `empires2_x2_p1.dat` (auto-detected), assign each civ to the vanilla civ slot it should replace, and build. You get a `.zip` with two mod folders (`-data` and `-ui`) in a few seconds.
-3. **Install.** Unzip both into your AoE2:DE `mods/local/` folder, make sure the UI mod is enabled in the in-game mod manager, and select your mod as the data mod when starting a skirmish. Both mods must be active together, or your civs will play correctly but show vanilla names and icons.
+3. **Install.** Unzip both into your AoE2:DE `mods/local/` folder, make sure the UI mod is enabled in the in-game mod manager, and select your mod as the data mod when starting a skirmish. Both mods must be active together, or your civs will play correctly but show vanilla names and icons. The reverse also happens: if the civ selection screen shows your bonuses but the game plays the original civ (its buildings, voices, tech tree and unique unit), the data mod isn't selected for that game. Choose it in the lobby's Data Mod dropdown; in multiplayer the host picks it.
 
 The in-app **How It Works** and **Known Limitations** pages have the full walkthrough and the current list of unsupported bonus effects.
 
