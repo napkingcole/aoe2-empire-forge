@@ -77,6 +77,7 @@ else
     run "population limit bonus"  "$PY" tests/test_pop_cap_bonus.py
     run "population space bonus"  "$PY" tests/test_pop_space_bonus.py
     run "range, blast, conversion" "$PY" tests/test_range_blast_conversion.py
+    run "civ share summary"       "$PY" tests/test_civ_summary.py
     run "dat_path fallback"       "$PY" tests/test_dat_path_fallback.py
     run "issues 38-44 batch"      "$PY" tests/test_issues_40_44.py
     run "custom bonus composer"   "$PY" tests/test_custom_bonus.py

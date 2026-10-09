@@ -2132,8 +2132,55 @@ def api_builder_prewarm():
     return jsonify({"status": "warming"})
 
 
+@app.route("/civ/view")
+def civ_view():
+    """Show off a civ (#57): an in-game-style card, Markdown / text to copy,
+    and a print layout.  The civ comes from the Builder (localStorage) or a
+    dropped .civbuilder.json; the page posts it to /api/civ/summary."""
+    return render_template("civ_view.html")
+
+
+@app.route("/api/civ/summary", methods=["POST"])
+def api_civ_summary():
+    import civ_summary
+    from civ_schema import from_draft, is_empireforge, is_km_format
+    raw = (request.get_json(silent=True) or {}).get("civ")
+    if not isinstance(raw, dict) or not raw:
+        return jsonify({"error": "No civ given."}), 400
+    try:
+        # A Builder draft has no `format` either, so is_km_format would take it
+        # for a KM file: tell them apart first (drafts carry _draftVer, and
+        # their bonuses are dicts where KM's are nested lists).
+        bonuses = raw.get("bonuses") or []
+        is_draft = "_draftVer" in raw or (bonuses and isinstance(bonuses[0], dict))
+        if is_empireforge(raw):
+            schema = raw
+        elif is_draft or not is_km_format(raw):
+            schema = from_draft(raw)
+        else:
+            schema = from_draft(_km_to_draft(raw))
+        techtree = json.loads(_FULL_TREE_FILE.read_text(encoding="utf-8"))
+        summary = civ_summary.summarize(schema, _uu_catalog_entries(), techtree)
+    except Exception as exc:                    # noqa: BLE001 — a bad file is the user's, not a 500
+        return jsonify({"error": f"Couldn't read that civ: {exc}"}), 400
+    return jsonify({"summary": summary,
+                    "markdown": civ_summary.to_markdown(summary),
+                    "text": civ_summary.to_text(summary)})
+
+
+_FULL_TREE_FILE = Path(__file__).parent / "static" / "aoe2techtree" / "data" / "trees" / "FULL.json"
+
+
 @app.route("/api/builder/uu/catalog")
 def api_builder_uu_catalog():
+    return jsonify(_uu_catalog_entries())
+
+
+def _uu_catalog_entries() -> list[dict]:
+    """The UU picker's entries: km_idx, name, icon, stats, training cost.
+
+    Shared by the picker endpoint and the civ share page (#57), so a unit
+    looks the same in both."""
     import civ_appender as ca
     import km_custom_uu as kcu
 
@@ -2331,7 +2378,7 @@ def api_builder_uu_catalog():
             "elite_upgrade": elite_upgrades.get(km_idx),
         })
     catalog.sort(key=lambda x: x["name"])
-    return jsonify(catalog)
+    return catalog
 
 
 def _split_ut_label(label: str) -> tuple[str, str]:

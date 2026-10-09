@@ -736,6 +736,19 @@ function _reviewRow(label, value) {
   return `<tr><td class="text-muted small pe-3" style="white-space:nowrap;width:1%">${label}</td><td class="small">${value}</td></tr>`;
 }
 
+// "View & share" (#57): the share page reads the draft from localStorage —
+// a new tab doesn't inherit this one's sessionStorage reliably.
+document.addEventListener("click", e => {
+  if (!e.target.closest("#btn-view-share")) return;
+  try {
+    localStorage.setItem("ef_share_civ", JSON.stringify(draft));
+  } catch (err) {
+    alert("Couldn't hand the civ to the share page (browser storage is blocked). Save the civ and open the file there instead.");
+    return;
+  }
+  window.open("/civ/view?from=builder", "_blank");
+});
+
 function populateReview() {
   const el = document.getElementById("review-content");
 

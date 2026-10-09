@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}View Civ — AOE2: Empire Forge{% endblock %}
+
+{% block content %}
+<style>
+  /* The card mimics the in-game civilization panel: dark, gold frame, gold
+     Cinzel title.  Colours are local tokens so print keeps them exactly. */
+  .cv-wrap { max-width: 760px; margin: 0 auto; }
+  .cv-card {
+    --cv-bg: #121110; --cv-bg2: #1c1915; --cv-gold: #e8b23a; --cv-gold-dim: #a07a26;
+    --cv-text: #ece6d8; --cv-muted: #b5ab97; --cv-good: #8fcf7a; --cv-bad: #e48a7a;
+    position: relative; background: radial-gradient(ellipse at top, var(--cv-bg2), var(--cv-bg) 70%);
+    color: var(--cv-text); border: 2px solid var(--cv-gold-dim); border-radius: 6px;
+    box-shadow: 0 0 0 4px var(--cv-bg), 0 0 0 6px var(--cv-gold), 0 10px 30px rgba(0,0,0,.35);
+    padding: 1.6rem 1.8rem 1.2rem; margin: 10px 6px 18px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .cv-head { display: flex; align-items: center; justify-content: center; gap: .8rem; text-align: center; }
+  .cv-emblem { width: 56px; height: 56px; object-fit: contain; }
+  .cv-name { font-family: 'Cinzel', serif; font-weight: 700; color: var(--cv-gold); font-size: 2rem;
+             letter-spacing: .04em; margin: 0; line-height: 1.1; }
+  .cv-tagline { text-align: center; font-size: 1.15rem; margin: .4rem 0 0; }
+  .cv-desc { text-align: center; color: var(--cv-muted); font-style: italic; margin: .35rem 0 0; }
+  .cv-rule { height: 1px; margin: 1rem auto .4rem; width: 70%;
+             background: linear-gradient(90deg, transparent, var(--cv-gold), transparent); }
+  .cv-sec { margin-top: 1rem; }
+  .cv-sec h2 { font-family: 'Cinzel', serif; color: var(--cv-gold); font-size: 1.05rem; font-weight: 700;
+               margin: 0 0 .35rem; letter-spacing: .03em; }
+  .cv-sec ul { margin: 0; padding-left: 1.1rem; }
+  .cv-sec li { margin: .12rem 0; }
+  .cv-unit { display: flex; gap: .9rem; align-items: flex-start; }
+  .cv-unit img { width: 64px; height: 64px; border: 1px solid var(--cv-gold-dim); background: #000; flex: none; }
+  .cv-unit-name { font-weight: 600; font-size: 1.05rem; }
+  .cv-unit-base { color: var(--cv-muted); font-weight: 400; font-size: .9rem; }
+  .cv-stats { border-collapse: collapse; margin: .4rem 0; font-size: .88rem; }
+  .cv-stats th, .cv-stats td { padding: .1rem .7rem .1rem 0; text-align: left; }
+  .cv-stats th { color: var(--cv-muted); font-weight: 500; }
+  .cv-changed { color: var(--cv-gold); font-weight: 600; }
+  .cv-meta { font-size: .88rem; color: var(--cv-muted); margin: .1rem 0; }
+  .cv-meta b { color: var(--cv-text); font-weight: 500; }
+  .cv-tt { font-size: .88rem; }
+  .cv-tt div { margin: .15rem 0; }
+  .cv-tt .cv-good { color: var(--cv-good); }
+  .cv-tt .cv-bad { color: var(--cv-bad); }
+  .cv-foot { text-align: center; color: var(--cv-muted); font-size: .75rem; margin-top: 1.2rem; }
+  .cv-drop { border: 2px dashed var(--accent-3, #b08d57); border-radius: 8px; padding: 1.6rem; text-align: center;
+             cursor: pointer; background: rgba(255,255,255,.35); }
+  .cv-drop.cv-over { background: rgba(255,255,255,.7); }
+  @media (max-width: 576px) { .cv-card { padding: 1.1rem 1rem; } .cv-name { font-size: 1.5rem; } }
+  @media print {
+    nav, .cv-controls, footer, .site-footer { display: none !important; }
+    body { background: #fff !important; }
+    .cv-card { margin: 0; box-shadow: none; break-inside: avoid-page; }
+  }
+</style>
+
+<div class="container py-4 cv-wrap">
+  <div class="cv-controls">
+    <h1 class="h3 text-center mb-1">View a Civilization</h1>
+    <p class="text-center text-muted small mb-3">Show off a civ: open its <code>.civbuilder.json</code>, then copy it as
+      Markdown or plain text, or save it as a PDF.</p>
+    <label class="cv-drop d-block mb-3" id="cv-drop">
+      <input type="file" id="cv-file" accept=".json,application/json" class="d-none">
+      <i class="fa-solid fa-file-arrow-up me-1"></i><strong>Open a civ file</strong> — or drop it here
+    </label>
+    <div id="cv-actions" class="d-none d-flex flex-wrap gap-2 justify-content-center mb-2">
+      <button type="button" class="btn btn-sm btn-outline-dark" id="cv-copy-md"><i class="fa-brands fa-markdown me-1"></i>Copy Markdown</button>
+      <button type="button" class="btn btn-sm btn-outline-dark" id="cv-copy-text"><i class="fa-regular fa-copy me-1"></i>Copy text</button>
+      <button type="button" class="btn btn-sm btn-outline-dark" id="cv-print"><i class="fa-solid fa-print me-1"></i>Print / Save as PDF</button>
+    </div>
+    <div id="cv-status" class="text-center small mb-2" role="status" aria-live="polite"></div>
+  </div>
+  <div id="cv-out"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// The civ comes from the Builder ("View & share" stores the draft) or a file
+// the player opens.  The server turns it into one summary, which renders the
+// card and the Markdown / plain text the copy buttons use (civ_summary.py).
+let _cv = null;
+
+function cvEsc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function cvStatus(msg, bad) {
+  const el = document.getElementById("cv-status");
+  el.textContent = msg || "";
+  el.className = "text-center small mb-2 " + (bad ? "text-danger" : "text-muted");
+}
+
+function cvNum(v) { return v == null ? "—" : (Number.isInteger(v) ? v : +(+v).toFixed(2)); }
+
+function cvRender(s) {
+  const sec = (title, body) => body ? `<div class="cv-sec"><h2>${cvEsc(title)}</h2>${body}</div>` : "";
+  const list = items => items && items.length ? `<ul>${items.map(x => `<li>${cvEsc(x)}</li>`).join("")}</ul>` : "";
+  let uu = "";
+  if (s.unique_unit) {
+    const u = s.unique_unit;
+    const hasElite = u.stats.some(r => r.elite != null && r.elite !== r.base);
+    const stats = u.stats.length ? `<table class="cv-stats"><thead><tr><th></th><th>Base</th>${hasElite ? "<th>Elite</th>" : ""}</tr></thead><tbody>${
+      u.stats.map(r => `<tr class="${r.changed ? "cv-changed" : ""}"><th>${cvEsc(r.label)}</th><td>${cvNum(r.base)}</td>${hasElite ? `<td>${cvNum(r.elite)}</td>` : ""}</tr>`).join("")
+    }</tbody></table>` : "";
+    const meta = [["Cost", u.cost], ["Attack bonuses", u.attack_bonuses.join(", ")], ["Traits", u.traits.join(", ")], ["Elite upgrade", u.elite_upgrade]]
+      .filter(([, v]) => v).map(([k, v]) => `<div class="cv-meta"><b>${k}:</b> ${cvEsc(v)}</div>`).join("");
+    uu = `<div class="cv-unit">${u.icon ? `<img src="${cvEsc(u.icon)}" alt="">` : ""}<div>
+      <div class="cv-unit-name">${cvEsc(u.name)}${u.base_name && u.base_name !== u.name ? ` <span class="cv-unit-base">(${cvEsc(u.base_name)})</span>` : ""}</div>
+      ${u.description ? `<div class="cv-desc text-start mt-1">${cvEsc(u.description)}</div>` : ""}
+      ${stats}${meta}${u.stats.some(r => r.changed) ? `<div class="cv-meta"><span class="cv-changed">Gold</span> = changed from the original unit</div>` : ""}
+    </div></div>`;
+  }
+  const uts = s.unique_techs.map(t => `<li><b>${cvEsc(t.name)}</b>${t.description ? ` — ${cvEsc(t.description)}` : ""} <span class="cv-meta">(${cvEsc(t.age)})</span></li>`).join("");
+  const tt = s.tech_tree;
+  const ttBody = (!tt.buildings.length && !tt.missing_buildings.length) ? `<div class="cv-tt">The standard tech tree.</div>`
+    : `<div class="cv-tt">${tt.missing_buildings.length ? `<div><b>No</b> <span class="cv-bad">${cvEsc(tt.missing_buildings.join(", "))}</span></div>` : ""}${
+      tt.buildings.map(b => `<div><b>${cvEsc(b.building)}:</b> ${b.extras.length ? `<span class="cv-good">+ ${cvEsc(b.extras.join(", "))}</span>` : ""}${
+        b.extras.length && b.missing.length ? " · " : ""}${b.missing.length ? `<span class="cv-bad">− ${cvEsc(b.missing.join(", "))}</span>` : ""}</div>`).join("")}</div>`;
+  document.getElementById("cv-out").innerHTML = `<article class="cv-card">
+    <div class="cv-head">${s.emblem ? `<img class="cv-emblem" src="${cvEsc(s.emblem)}" alt="">` : ""}<h1 class="cv-name">${cvEsc(s.name)}</h1></div>
+    ${s.tagline ? `<p class="cv-tagline">${cvEsc(s.tagline)}</p>` : ""}
+    ${s.description ? `<p class="cv-desc">${cvEsc(s.description)}</p>` : ""}
+    <div class="cv-rule"></div>
+    ${sec("Civilization Bonuses", list(s.civ_bonuses))}
+    ${sec("Unique Unit", uu)}
+    ${sec("Unique Technologies", uts ? `<ul>${uts}</ul>` : "")}
+    ${sec("Team Bonus", list(s.team_bonuses))}
+    ${sec("Hero", s.hero ? `<div class="cv-unit-name">${cvEsc(s.hero.name)}</div>${s.hero.description ? `<div class="cv-desc text-start">${cvEsc(s.hero.description)}</div>` : ""}` : "")}
+    ${sec("Tech Tree", ttBody)}
+    <div class="cv-foot">Made with Empire Forge — empireforge.app</div>
+  </article>`;
+  document.title = `${s.name} — AOE2: Empire Forge`;
+}
+
+async function cvShow(civ) {
+  cvStatus("Reading the civ…");
+  try {
+    const r = await fetch("/api/civ/summary", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ civ }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    _cv = data;
+    cvRender(data.summary);
+    document.getElementById("cv-actions").classList.remove("d-none");
+    cvStatus("");
+  } catch (e) {
+    cvStatus(String(e.message || e), true);
+  }
+}
+
+function cvOpenFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let civ;
+    try { civ = JSON.parse(reader.result); } catch (e) { return cvStatus("That file isn't a civ (not valid JSON).", true); }
+    cvShow(civ);
+  };
+  reader.readAsText(file);
+}
+
+async function cvCopy(kind) {
+  if (!_cv) return;
+  try {
+    await navigator.clipboard.writeText(kind === "md" ? _cv.markdown : _cv.text);
+    cvStatus(kind === "md" ? "Markdown copied — paste it into Discord or a doc." : "Text copied.");
+  } catch (e) {
+    cvStatus("Couldn't reach the clipboard — your browser blocked it.", true);
+  }
+}
+
+document.getElementById("cv-file").addEventListener("change", e => cvOpenFile(e.target.files[0]));
+const drop = document.getElementById("cv-drop");
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("cv-over"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("cv-over"); }));
+drop.addEventListener("drop", e => cvOpenFile(e.dataTransfer.files[0]));
+document.getElementById("cv-copy-md").addEventListener("click", () => cvCopy("md"));
+document.getElementById("cv-copy-text").addEventListener("click", () => cvCopy("text"));
+document.getElementById("cv-print").addEventListener("click", () => window.print());
+
+// From the Builder's "View & share": the draft it stored for this page.
+if (new URLSearchParams(location.search).get("from") === "builder") {
+  try {
+    const civ = JSON.parse(localStorage.getItem("ef_share_civ") || "null");
+    if (civ) cvShow(civ);
+  } catch (e) { /* storage blocked: the file picker still works */ }
+}
+</script>
+{% endblock %}
