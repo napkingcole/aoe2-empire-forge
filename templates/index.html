@@ -38,15 +38,33 @@
   </div>
 
   <div class="col-md-4">
-    <a href="{{ url_for('builder_custom_bonuses') }}" class="text-decoration-none">
+    <a href="{{ url_for('civ_view') }}" class="text-decoration-none">
       <div class="card h-100 builder-option-card builder-option-card--new">
         <span class="new-ribbon" aria-label="New feature">New</span>
         <div class="card-body text-center py-5">
           <div class="builder-option-icon mb-3">
-            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <i class="fa-solid fa-share-nodes"></i>
           </div>
-          <h4 class="fw-bold mb-2">Custom Bonuses</h4>
-          <p class="text-muted small mb-0">Make your own civ bonuses — any unit, group, building, villager job or tech, with as many effects as you like — then use them in any civ and share them as a file.</p>
+          <h4 class="fw-bold mb-2">View &amp; Share</h4>
+          <p class="text-muted small mb-0">Show off a civ — a card in the in-game style, copied as Markdown or text, saved as a PNG or WebP image, or printed as a PDF.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  {# Custom Bonuses: a tool used inside the civ flow, so a slim strip under the
+     three steps (make it, play it, show it off) rather than a fourth column. #}
+  <div class="col-12">
+    <a href="{{ url_for('builder_custom_bonuses') }}" class="text-decoration-none">
+      <div class="card builder-option-card builder-option-card--new builder-option-strip">
+        <span class="new-ribbon" aria-label="New feature">New</span>
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-4 text-start">
+          <div class="builder-option-icon flex-shrink-0"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+          <div>
+            <h5 class="fw-bold mb-1">Custom Bonuses</h5>
+            <p class="text-muted small mb-0">Make your own civ bonuses — any unit, unit line, group, building, villager job, tech or the
+              whole civilization, with as many effects as you like — then use them in any civ and share them as a file.</p>
+          </div>
         </div>
       </div>
     </a>
