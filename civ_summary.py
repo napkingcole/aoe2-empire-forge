@@ -207,7 +207,9 @@ def summarize(schema: dict, uu_catalog: list[dict], techtree: dict) -> dict:
     return {
         "name": (schema.get("alias") or "").strip() or "Unnamed civilization",
         "tagline": f"{tagline} civilization" if tagline else "",
-        "description": (schema.get("description") or "").strip(),
+        # The Builder's "Share description" (View Civ only, never the game);
+        # a KM import's description otherwise.
+        "description": ((schema.get("share_description") or schema.get("description") or "").strip()),
         "emblem": schema.get("emblem") if str(schema.get("emblem") or "").startswith("data:image") else "",
         "civ_bonuses": civ_bonuses,
         "unique_unit": _unit_block(entry, uu),
@@ -243,27 +245,33 @@ def _unit_lines(u: dict, md: bool) -> list[str]:
 def _render(s: dict, md: bool) -> str:
     h = (lambda t: f"## {t}") if md else (lambda t: t.upper())
     bullet = "- " if md else "• "
+    # The page's options and edits ride along on the summary: show_* flags,
+    # and lists the player retyped on the card (see /api/civ/render).
     out = [f"# {s['name']}" if md else s["name"].upper()]
-    for line in (s["tagline"], s["description"]):
-        if line:
-            out.append(f"_{line}_" if md and line == s["tagline"] else line)
+    if s.get("tagline"):
+        out.append(f"_{s['tagline']}_" if md else s["tagline"])
+    if s.get("description") and s.get("show_description", True):
+        out.append(s["description"])
     if s["civ_bonuses"]:
         out += ["", h("Civilization bonuses")] + [bullet + x for x in s["civ_bonuses"]]
     if s["unique_unit"]:
         out += ["", h("Unique unit")] + _unit_lines(s["unique_unit"], md)
     if s["unique_techs"]:
-        out += ["", h("Unique technologies")] + [f"{bullet}{t['age']}: {t['text']}" for t in s["unique_techs"]]
+        out += ["", h("Unique technologies")] + [
+            f"{bullet}{t['age']}: {t['text']}" if t.get("age") else f"{bullet}{t['text']}"
+            for t in s["unique_techs"]]
     if s["team_bonuses"]:
         out += ["", h("Team bonus")] + [bullet + x for x in s["team_bonuses"]]
     if s["hero"]:
         out += ["", h("Hero"), s["hero"]["name"]] + ([s["hero"]["description"]] if s["hero"]["description"] else [])
-    tt = s["tech_tree"]
-    out += ["", h("Tech tree")]
-    if not tt["buildings"] and not tt["missing_buildings"]:
+    tt = s["tech_tree"] if s.get("show_tech_tree", True) else None
+    if tt is not None:
+        out += ["", h("Tech tree")]
+    if tt is not None and not tt["buildings"] and not tt["missing_buildings"]:
         out.append("The standard tech tree.")
-    if tt["missing_buildings"]:
+    if tt is not None and tt["missing_buildings"]:
         out.append(f"{bullet}No {', '.join(tt['missing_buildings'])}")
-    for b in tt["buildings"]:
+    for b in (tt or {}).get("buildings", []):
         name = f"**{b['building']}**" if md else b["building"]
         parts = ([f"also {', '.join(b['extras'])}"] if b["extras"] else []) \
             + ([f"missing {', '.join(b['missing'])}"] if b["missing"] else [])

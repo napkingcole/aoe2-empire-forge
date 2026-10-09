@@ -54,6 +54,12 @@
           </div>
           <div class="form-text">Shown on the civ selection screen as "A <em>X</em> Civilization".</div>
         </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold" for="civ-share-desc">Share Description <span class="fw-normal text-muted small">(optional)</span></label>
+          <textarea id="civ-share-desc" class="form-control" rows="2" maxlength="400"
+                    placeholder="A short pitch for your civ — e.g. &quot;Horse lords of the steppe who never stop raiding.&quot;"></textarea>
+          <div class="form-text">Only for the <a href="{{ url_for('civ_view') }}" target="_blank">View Civ</a> card you share. <strong>Not used in game.</strong></div>
+        </div>
       </div>
 
       {# ── Appearance scene ──────────────────────────────────────────────────

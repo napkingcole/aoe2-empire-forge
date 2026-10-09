@@ -264,6 +264,13 @@ document.getElementById("civ-tagline").addEventListener("input", e => {
   saveDraft();
 });
 
+// Share description (#57): only the View Civ card reads it — never the build.
+document.getElementById("civ-share-desc")?.addEventListener("input", e => {
+  const v = e.target.value.trim();
+  if (v) draft.share_description = v; else delete draft.share_description;
+  saveDraft();
+});
+
 document.getElementById("voice-select").addEventListener("change", e => {
   draft.language = parseInt(e.target.value, 10);
   saveDraft();
@@ -4081,6 +4088,8 @@ async function init() {
     // Restore text fields
     if (draft.alias)   document.getElementById("civ-name").value    = draft.alias;
     if (draft.tagline) document.getElementById("civ-tagline").value  = draft.tagline;
+    const shareDesc = document.getElementById("civ-share-desc");
+    if (shareDesc) shareDesc.value = draft.share_description || "";
 
     // Restore emblem preview
     if (draft.emblem) renderEmblemPreview(draft.emblem);

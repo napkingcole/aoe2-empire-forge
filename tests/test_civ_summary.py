@@ -123,6 +123,24 @@ if km_files:
           r.status_code == 200 and d["summary"]["civ_bonuses"], f"{r.status_code} {d.get('error')}")
 else:
     print("  skip  no KM-format civ in my_civs/")
+print("\n=== edits and options reach the copies (/api/civ/render) ===")
+shared = dict(copy.deepcopy(CIV), share_description="Raiders of the test suite.")
+summ = c.post("/api/civ/summary", json={"civ": shared}).get_json()["summary"]
+check("the Builder's Share description is the card's description",
+      summ["description"] == "Raiders of the test suite.", summ["description"])
+check("...and Share description survives a save round-trip",
+      __import__("civ_schema").from_draft(to_draft(shared)).get("share_description") == "Raiders of the test suite.")
+edited = dict(summ, civ_bonuses=["Retyped bonus"], unique_techs=[{"text": "Retyped tech"}],
+              show_tech_tree=False, show_description=False)
+out = c.post("/api/civ/render", json={"summary": edited}).get_json()
+check("retyped lists are what gets copied", "- Retyped bonus" in out["markdown"] and "• Retyped tech" in out["text"],
+      out["markdown"][:200])
+check("hidden tech tree and description stay out", "Tech tree" not in out["markdown"]
+      and "Raiders of the test suite" not in out["markdown"])
+check("a bad render request is a 400", c.post("/api/civ/render", json={"summary": 3}).status_code == 400)
+check("no build route reads Share description",
+      not any("share_description" in (ROOT / f).read_text(encoding="utf-8")
+              for f in ("build_all.py", "wizard_build.py", "civ_appender.py", "build_civ.py")))
 r = c.post("/api/civ/summary", json={"civ": "nonsense"})
 check("not a civ: 400 with a message, not a 500", r.status_code == 400 and r.get_json().get("error"))
 r = c.get("/civ/view")

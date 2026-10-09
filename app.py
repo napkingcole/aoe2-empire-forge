@@ -2168,6 +2168,21 @@ def api_civ_summary():
                     "text": civ_summary.to_text(summary)})
 
 
+@app.route("/api/civ/render", methods=["POST"])
+def api_civ_render():
+    """Markdown and plain text for a summary the player edited on the card
+    (contenteditable lists, description, show/hide options) — the same
+    renderer as /api/civ/summary, so edits reach the copies."""
+    import civ_summary
+    summary = (request.get_json(silent=True) or {}).get("summary")
+    if not isinstance(summary, dict) or not summary.get("name"):
+        return jsonify({"error": "No summary given."}), 400
+    try:
+        return jsonify({"markdown": civ_summary.to_markdown(summary), "text": civ_summary.to_text(summary)})
+    except (KeyError, TypeError, AttributeError) as exc:
+        return jsonify({"error": f"Couldn't render that summary: {exc}"}), 400
+
+
 _FULL_TREE_FILE = Path(__file__).parent / "static" / "aoe2techtree" / "data" / "trees" / "FULL.json"
 
 

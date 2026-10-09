@@ -4,16 +4,22 @@
 {% block content %}
 <style>
   /* The card mimics the in-game civilization panel: dark, gold frame, gold
-     Cinzel title.  Colours are local tokens so print keeps them exactly. */
+     Cinzel title.  Colours are local tokens, so the light (printer-friendly)
+     variant swaps them in one place and print keeps them exactly. */
   .cv-wrap { max-width: 760px; margin: 0 auto; }
+  .cv-shot { padding: 12px; }            /* room for the gold ring in images */
   .cv-card {
-    --cv-bg: #121110; --cv-bg2: #1c1915; --cv-gold: #e8b23a; --cv-gold-dim: #a07a26;
+    --cv-bg: #121110; --cv-bg2: #1c1915; --cv-gold: #e8b23a; --cv-gold-dim: #a07a26; --cv-ring: #121110;
     --cv-text: #ece6d8; --cv-muted: #b5ab97; --cv-good: #8fcf7a; --cv-bad: #e48a7a;
     position: relative; background: radial-gradient(ellipse at top, var(--cv-bg2), var(--cv-bg) 70%);
     color: var(--cv-text); border: 2px solid var(--cv-gold-dim); border-radius: 6px;
-    box-shadow: 0 0 0 4px var(--cv-bg), 0 0 0 6px var(--cv-gold), 0 10px 30px rgba(0,0,0,.35);
-    padding: 1.6rem 1.8rem 1.2rem; margin: 10px 6px 18px;
+    box-shadow: 0 0 0 4px var(--cv-ring), 0 0 0 6px var(--cv-gold);
+    padding: 1.6rem 1.8rem 1.2rem;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .cv-card.cv-light {
+    --cv-bg: #ffffff; --cv-bg2: #fbf8f1; --cv-gold: #8a6414; --cv-gold-dim: #b8913f; --cv-ring: #ffffff;
+    --cv-text: #1d1a15; --cv-muted: #5f574a; --cv-good: #2f7a2a; --cv-bad: #a8332a;
   }
   .cv-head { display: flex; align-items: center; justify-content: center; gap: .8rem; text-align: center; }
   .cv-emblem { width: 56px; height: 56px; object-fit: contain; }
@@ -21,6 +27,7 @@
              letter-spacing: .04em; margin: 0; line-height: 1.1; }
   .cv-tagline { text-align: center; font-size: 1.15rem; margin: .4rem 0 0; }
   .cv-desc { text-align: center; color: var(--cv-muted); font-style: italic; margin: .35rem 0 0; }
+  .cv-desc:empty::before { content: attr(data-placeholder); opacity: .55; }
   .cv-rule { height: 1px; margin: 1rem auto .4rem; width: 70%;
              background: linear-gradient(90deg, transparent, var(--cv-gold), transparent); }
   .cv-sec { margin-top: 1rem; }
@@ -32,10 +39,10 @@
   .cv-unit img { width: 64px; height: 64px; border: 1px solid var(--cv-gold-dim); background: #000; flex: none; }
   .cv-unit-name { font-weight: 600; font-size: 1.05rem; }
   .cv-unit-base { color: var(--cv-muted); font-weight: 400; font-size: .9rem; }
-  .cv-stats { border-collapse: collapse; margin: .4rem 0; font-size: .88rem; }
+  .cv-stats { border-collapse: collapse; margin: .4rem 0; font-size: .88rem; color: var(--cv-text); }
   .cv-stats th, .cv-stats td { padding: .1rem .7rem .1rem 0; text-align: left; }
   .cv-stats th { color: var(--cv-muted); font-weight: 500; }
-  .cv-changed { color: var(--cv-gold); font-weight: 600; }
+  .cv-changed, .cv-changed th { color: var(--cv-gold) !important; font-weight: 600; }
   .cv-meta { font-size: .88rem; color: var(--cv-muted); margin: .1rem 0; }
   .cv-meta b { color: var(--cv-text); font-weight: 500; }
   .cv-tt { font-size: .88rem; }
@@ -43,29 +50,63 @@
   .cv-tt .cv-good { color: var(--cv-good); }
   .cv-tt .cv-bad { color: var(--cv-bad); }
   .cv-foot { text-align: center; color: var(--cv-muted); font-size: .75rem; margin-top: 1.2rem; }
+  /* Editable text: a hint on screen, nothing in images or print. */
+  .cv-card [contenteditable]:hover { outline: 1px dashed color-mix(in srgb, var(--cv-gold) 55%, transparent); outline-offset: 2px; }
+  .cv-card [contenteditable]:focus { outline: 1px solid var(--cv-gold); outline-offset: 2px; }
+  .cv-exporting [contenteditable] { outline: none !important; }
+  .cv-exporting .cv-desc:empty, .cv-exporting .cv-desc:empty::before { display: none; }
   .cv-drop { border: 2px dashed var(--accent-3, #b08d57); border-radius: 8px; padding: 1.6rem; text-align: center;
              cursor: pointer; background: rgba(255,255,255,.35); }
   .cv-drop.cv-over { background: rgba(255,255,255,.7); }
+  .cv-options { background: rgba(255,255,255,.45); border: 1px solid rgba(0,0,0,.12); border-radius: 8px; }
   @media (max-width: 576px) { .cv-card { padding: 1.1rem 1rem; } .cv-name { font-size: 1.5rem; } }
   @media print {
-    nav, .cv-controls, footer, .site-footer { display: none !important; }
+    nav, .cv-controls, footer { display: none !important; }
     body { background: #fff !important; }
-    .cv-card { margin: 0; box-shadow: none; break-inside: avoid-page; }
+    .cv-wrap { max-width: none; width: 100%; padding: 0 !important; }
+    .cv-shot { padding: 6px; }
+    .cv-card { width: 100%; break-inside: avoid-page; }
+    .cv-card [contenteditable] { outline: none !important; }
+    .cv-desc:empty, .cv-desc:empty::before { display: none; }
   }
 </style>
 
 <div class="container py-4 cv-wrap">
   <div class="cv-controls">
     <h1 class="h3 text-center mb-1">View a Civilization</h1>
-    <p class="text-center text-muted small mb-3">Show off a civ: open its <code>.civbuilder.json</code>, then copy it as
-      Markdown or plain text, or save it as a PDF.</p>
+    <p class="text-center text-muted small mb-3">Show off a civ: open its <code>.civbuilder.json</code>, then copy it,
+      save it as an image, or print / save it as a PDF.</p>
     <label class="cv-drop d-block mb-3" id="cv-drop">
       <input type="file" id="cv-file" accept=".json,application/json" class="d-none">
       <i class="fa-solid fa-file-arrow-up me-1"></i><strong>Open a civ file</strong> — or drop it here
     </label>
+
+    <div class="cv-options p-3 mb-3">
+      <div class="small fw-semibold mb-2"><i class="fa-solid fa-sliders me-1"></i>Card options</div>
+      <div class="d-flex flex-wrap gap-4">
+        <div class="form-check form-switch">
+          <input class="form-check-input cv-opt" type="checkbox" role="switch" id="cv-opt-desc" data-opt="show_description" checked>
+          <label class="form-check-label small" for="cv-opt-desc">Show description</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input cv-opt" type="checkbox" role="switch" id="cv-opt-tree" data-opt="show_tech_tree" checked>
+          <label class="form-check-label small" for="cv-opt-tree">Show tech tree</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input cv-opt" type="checkbox" role="switch" id="cv-opt-light" data-opt="light">
+          <label class="form-check-label small" for="cv-opt-light">Printer-friendly (light)</label>
+        </div>
+      </div>
+      <div class="form-text mt-2 mb-0">Click the description, bonuses, unique techs or team bonus on the card to edit them
+        before you share — edits go into the copies, images and PDF, but not back into the civ file.</div>
+    </div>
+
     <div id="cv-actions" class="d-none d-flex flex-wrap gap-2 justify-content-center mb-2">
       <button type="button" class="btn btn-sm btn-outline-dark" id="cv-copy-md"><i class="fa-brands fa-markdown me-1"></i>Copy Markdown</button>
       <button type="button" class="btn btn-sm btn-outline-dark" id="cv-copy-text"><i class="fa-regular fa-copy me-1"></i>Copy text</button>
+      <button type="button" class="btn btn-sm btn-outline-dark" id="cv-png"><i class="fa-regular fa-image me-1"></i>Save PNG</button>
+      <button type="button" class="btn btn-sm btn-outline-dark" id="cv-webp" title="Smaller file; a few apps and platforms can't open WebP">
+        <i class="fa-regular fa-image me-1"></i>Save WebP</button>
       <button type="button" class="btn btn-sm btn-outline-dark" id="cv-print"><i class="fa-solid fa-print me-1"></i>Print / Save as PDF</button>
     </div>
     <div id="cv-status" class="text-center small mb-2" role="status" aria-live="polite"></div>
@@ -75,11 +116,16 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js"></script>
 <script>
 // The civ comes from the Builder ("View & share" stores the draft) or a file
-// the player opens.  The server turns it into one summary, which renders the
-// card and the Markdown / plain text the copy buttons use (civ_summary.py).
+// the player opens.  The server turns it into one summary (civ_summary.py);
+// the card renders it, and the copy buttons send the card's current state —
+// edited lists, description, options — back to the same renderer.
 let _cv = null;
+const CV_OPTS_KEY = "ef_cv_opts";
+let _cvOpts = { show_description: true, show_tech_tree: true, light: false };
+try { Object.assign(_cvOpts, JSON.parse(localStorage.getItem(CV_OPTS_KEY) || "{}")); } catch (e) { /* defaults */ }
 
 function cvEsc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -93,9 +139,19 @@ function cvStatus(msg, bad) {
 
 function cvNum(v) { return v == null ? "—" : (Number.isInteger(v) ? v : +(+v).toFixed(2)); }
 
+function cvApplyOpts() {
+  document.querySelectorAll(".cv-opt").forEach(el => { el.checked = !!_cvOpts[el.dataset.opt]; });
+  const card = document.querySelector(".cv-card");
+  if (!card) return;
+  card.classList.toggle("cv-light", !!_cvOpts.light);
+  document.getElementById("cv-desc").style.display = _cvOpts.show_description ? "" : "none";
+  document.getElementById("cv-sec-tree").style.display = _cvOpts.show_tech_tree ? "" : "none";
+}
+
 function cvRender(s) {
-  const sec = (title, body) => body ? `<div class="cv-sec"><h2>${cvEsc(title)}</h2>${body}</div>` : "";
-  const list = items => items && items.length ? `<ul>${items.map(x => `<li>${cvEsc(x)}</li>`).join("")}</ul>` : "";
+  const sec = (title, body, id) => body ? `<div class="cv-sec"${id ? ` id="${id}"` : ""}><h2>${cvEsc(title)}</h2>${body}</div>` : "";
+  const list = (items, id) => items && items.length
+    ? `<ul id="${id}" contenteditable="true" spellcheck="false">${items.map(x => `<li>${cvEsc(x)}</li>`).join("")}</ul>` : "";
   let uu = "";
   if (s.unique_unit) {
     const u = s.unique_unit;
@@ -111,26 +167,43 @@ function cvRender(s) {
       ${stats}${meta}${u.stats.some(r => r.changed) ? `<div class="cv-meta"><span class="cv-changed">Gold</span> = changed from the original unit</div>` : ""}
     </div></div>`;
   }
-  const uts = s.unique_techs.map(t => `<li><b>${cvEsc(t.name)}</b>${t.description ? ` — ${cvEsc(t.description)}` : ""} <span class="cv-meta">(${cvEsc(t.age)})</span></li>`).join("");
+  const uts = s.unique_techs.length
+    ? `<ul id="cv-uts" contenteditable="true" spellcheck="false">${s.unique_techs.map(t =>
+        `<li><b>${cvEsc(t.name)}</b>${t.description ? ` — ${cvEsc(t.description)}` : ""} <span class="cv-meta">(${cvEsc(t.age)})</span></li>`).join("")}</ul>` : "";
   const tt = s.tech_tree;
   const ttBody = (!tt.buildings.length && !tt.missing_buildings.length) ? `<div class="cv-tt">The standard tech tree.</div>`
     : `<div class="cv-tt">${tt.missing_buildings.length ? `<div><b>No</b> <span class="cv-bad">${cvEsc(tt.missing_buildings.join(", "))}</span></div>` : ""}${
       tt.buildings.map(b => `<div><b>${cvEsc(b.building)}:</b> ${b.extras.length ? `<span class="cv-good">+ ${cvEsc(b.extras.join(", "))}</span>` : ""}${
         b.extras.length && b.missing.length ? " · " : ""}${b.missing.length ? `<span class="cv-bad">− ${cvEsc(b.missing.join(", "))}</span>` : ""}</div>`).join("")}</div>`;
-  document.getElementById("cv-out").innerHTML = `<article class="cv-card">
+  document.getElementById("cv-out").innerHTML = `<div class="cv-shot" id="cv-shot"><article class="cv-card">
     <div class="cv-head">${s.emblem ? `<img class="cv-emblem" src="${cvEsc(s.emblem)}" alt="">` : ""}<h1 class="cv-name">${cvEsc(s.name)}</h1></div>
     ${s.tagline ? `<p class="cv-tagline">${cvEsc(s.tagline)}</p>` : ""}
-    ${s.description ? `<p class="cv-desc">${cvEsc(s.description)}</p>` : ""}
+    <p class="cv-desc" id="cv-desc" contenteditable="true" spellcheck="false"
+       data-placeholder="Click to add a short description…">${cvEsc(s.description)}</p>
     <div class="cv-rule"></div>
-    ${sec("Civilization Bonuses", list(s.civ_bonuses))}
+    ${sec("Civilization Bonuses", list(s.civ_bonuses, "cv-bonuses"))}
     ${sec("Unique Unit", uu)}
-    ${sec("Unique Technologies", uts ? `<ul>${uts}</ul>` : "")}
-    ${sec("Team Bonus", list(s.team_bonuses))}
+    ${sec("Unique Technologies", uts)}
+    ${sec("Team Bonus", list(s.team_bonuses, "cv-team"))}
     ${sec("Hero", s.hero ? `<div class="cv-unit-name">${cvEsc(s.hero.name)}</div>${s.hero.description ? `<div class="cv-desc text-start">${cvEsc(s.hero.description)}</div>` : ""}` : "")}
-    ${sec("Tech Tree", ttBody)}
+    ${sec("Tech Tree", ttBody, "cv-sec-tree")}
     <div class="cv-foot">Made with Empire Forge — empireforge.app</div>
-  </article>`;
+  </article></div>`;
   document.title = `${s.name} — AOE2: Empire Forge`;
+  cvApplyOpts();
+}
+
+// The summary as the card shows it now: retyped lists, description, options.
+function cvCurrentSummary() {
+  const s = JSON.parse(JSON.stringify(_cv.summary));
+  const items = id => [...document.querySelectorAll(`#${id} li`)].map(li => li.innerText.trim()).filter(Boolean);
+  if (document.getElementById("cv-bonuses")) s.civ_bonuses = items("cv-bonuses");
+  if (document.getElementById("cv-team")) s.team_bonuses = items("cv-team");
+  if (document.getElementById("cv-uts")) s.unique_techs = items("cv-uts").map(text => ({ text }));
+  s.description = (document.getElementById("cv-desc")?.innerText || "").trim();
+  s.show_description = !!_cvOpts.show_description;
+  s.show_tech_tree = !!_cvOpts.show_tech_tree;
+  return s;
 }
 
 async function cvShow(civ) {
@@ -163,10 +236,43 @@ function cvOpenFile(file) {
 async function cvCopy(kind) {
   if (!_cv) return;
   try {
-    await navigator.clipboard.writeText(kind === "md" ? _cv.markdown : _cv.text);
+    const r = await fetch("/api/civ/render", { method: "POST", headers: { "Content-Type": "application/json" },
+                                               body: JSON.stringify({ summary: cvCurrentSummary() }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    await navigator.clipboard.writeText(kind === "md" ? data.markdown : data.text);
     cvStatus(kind === "md" ? "Markdown copied — paste it into Discord or a doc." : "Text copied.");
   } catch (e) {
-    cvStatus("Couldn't reach the clipboard — your browser blocked it.", true);
+    cvStatus(e.name === "NotAllowedError" ? "Couldn't reach the clipboard — your browser blocked it." : String(e.message || e), true);
+  }
+}
+
+// PNG for anywhere; WebP is smaller but a few apps can't open it.  The image
+// is the card with its gold ring, at 2x for crisp text.
+async function cvSaveImage(kind) {
+  if (!_cv) return;
+  if (!window.htmlToImage) return cvStatus("Image export needs an internet connection the first time (it loads a helper).", true);
+  const shot = document.getElementById("cv-shot");
+  document.activeElement?.blur();
+  shot.classList.add("cv-exporting");
+  cvStatus("Making the image…");
+  try {
+    const bg = _cvOpts.light ? "#ffffff" : "#121110";
+    const canvas = await htmlToImage.toCanvas(shot, { pixelRatio: 2, backgroundColor: bg, cacheBust: true });
+    const mime = kind === "webp" ? "image/webp" : "image/png";
+    const blob = await new Promise(res => canvas.toBlob(res, mime, 0.92));
+    if (!blob) throw new Error("the browser couldn't encode the image");
+    const ext = blob.type === "image/webp" ? "webp" : "png";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(_cv.summary.name || "civ").replace(/[^\w\- ]+/g, "").trim() || "civ"}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    cvStatus(kind === "webp" && ext !== "webp" ? "This browser can't make WebP — saved a PNG instead." : `Saved ${a.download}.`);
+  } catch (e) {
+    cvStatus(`Couldn't make the image: ${e.message || e}`, true);
+  } finally {
+    shot.classList.remove("cv-exporting");
   }
 }
 
@@ -175,9 +281,17 @@ const drop = document.getElementById("cv-drop");
 ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("cv-over"); }));
 ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("cv-over"); }));
 drop.addEventListener("drop", e => cvOpenFile(e.dataTransfer.files[0]));
+document.querySelectorAll(".cv-opt").forEach(el => el.addEventListener("change", () => {
+  _cvOpts[el.dataset.opt] = el.checked;
+  try { localStorage.setItem(CV_OPTS_KEY, JSON.stringify(_cvOpts)); } catch (e) { /* not remembered */ }
+  cvApplyOpts();
+}));
 document.getElementById("cv-copy-md").addEventListener("click", () => cvCopy("md"));
 document.getElementById("cv-copy-text").addEventListener("click", () => cvCopy("text"));
+document.getElementById("cv-png").addEventListener("click", () => cvSaveImage("png"));
+document.getElementById("cv-webp").addEventListener("click", () => cvSaveImage("webp"));
 document.getElementById("cv-print").addEventListener("click", () => window.print());
+cvApplyOpts();
 
 // From the Builder's "View & share": the draft it stored for this page.
 if (new URLSearchParams(location.search).get("from") === "builder") {

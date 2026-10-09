@@ -151,6 +151,8 @@ def to_draft(schema: dict) -> dict:
         "alias":       s.get("alias",       "Custom Civ"),
         "tagline":     s.get("tagline",      ""),
         "description": s.get("description", ""),
+        # View Civ only (#57); no build route reads it.
+        "share_description": s.get("share_description", ""),
 
         # Appearance
         "architecture": s.get("architecture", 2),
@@ -258,6 +260,7 @@ def from_draft(draft: dict) -> dict:
         "alias":       draft.get("alias",       ""),
         "tagline":     draft.get("tagline",      ""),
         "description": draft.get("description", ""),
+        "share_description": (draft.get("share_description") or "").strip(),
 
         "architecture": draft.get("architecture", 2),
         "language":     draft.get("language",     0),
