@@ -10,7 +10,7 @@ Empire Forge is a standalone civ builder. Name a civilization, pick its architec
 
 It runs entirely on your own computer: launching it starts a small local server and opens your browser, and every build reads your actual installed game files fresh, rather than making assumptions about the game's data file that break the moment a new DLC is released.
 
-> **Heads up:** Most bonuses and tech tree configurations are fully supported; a small number of exotic effects aren't implemented yet and are skipped rather than failing the build — see the in-app Known Limitations page for the current list. Found a bug? Report it on [Discord](https://discord.gg/cQ5x7bfxDB) or [GitHub Issues](https://github.com/napkingcole/aoe2-empire-forge/issues).
+> **Heads up:** Most bonuses and tech tree configurations are fully supported; a small number of exotic effects aren't implemented yet and are skipped rather than failing the build — see the in-app Known Limitations page for the current list. Found a bug? Report it on [Discord](https://discord.gg/CEXf9R6XJ) or [GitHub Issues](https://github.com/napkingcole/aoe2-empire-forge/issues).
 
 ## Screenshots
 
@@ -65,7 +65,7 @@ Short version: KrakenMeister's builder became stale once more and more DLCs were
 
 - Website: [empireforge.app](https://empireforge.app) (FAQ and support)
 - Email: [aoenapkingcole@gmail.com](mailto:aoenapkingcole@gmail.com)
-- Discord Server: [server](https://discord.gg/cQ5x7bfxDB)
+- Discord Server: [server](https://discord.gg/CEXf9R6XJ)
 - Discord: `napkingcole84` ([profile](https://discord.com/users/napkingcole84))
 
 ## License
