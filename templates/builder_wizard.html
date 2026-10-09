@@ -504,6 +504,22 @@
         </div>
         <div class="uo-def" id="uo-cost-def"></div>
 
+        {# ── Elite upgrade cost (#68) ─────────────────────────────────────────── #}
+        <hr class="my-2" style="border-color:oklch(from var(--body-bg) calc(l + 0.12) c h);">
+        <div class="small fw-semibold mb-2" style="color:var(--accent-2);">
+          <i class="fa-solid fa-angles-up me-1"></i>Elite Upgrade
+        </div>
+        <div class="row g-2 mb-1">
+          {% for res_id, label, color in [("food","Food","#c97c2f"),("wood","Wood","#7aab4a"),("stone","Stone","#8a9ba8"),("gold","Gold","#d4a017"),("time","Research","var(--accent-3)")] %}
+          <div class="col-6 col-md">
+            <label class="form-label mb-1" style="font-size:.72rem; font-weight:600; color:{{ color }};">{{ label }}{% if res_id == "time" %} (s){% endif %}</label>
+            <input type="text" id="uo-eu-{{ res_id }}" class="form-control form-control-sm uo-input"
+                   pattern="[0-9]*" inputmode="numeric" placeholder="—" autocomplete="off">
+          </div>
+          {% endfor %}
+        </div>
+        <div class="uo-def" id="uo-eu-def"></div>
+
       </div>
     </div>
   </div>

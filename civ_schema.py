@@ -93,6 +93,9 @@ def to_draft(schema: dict) -> dict:
         uu["overrides"] = overrides
     if adv_flags:
         uu["advanced_flags"] = adv_flags
+    elite_up = norm_elite_upgrade(raw_uu.get("elite_upgrade"))
+    if elite_up:
+        uu["elite_upgrade"] = elite_up
 
     # ── UTs ──────────────────────────────────────────────────────────────────
     def _ut(raw: dict | None) -> dict:
@@ -243,6 +246,9 @@ def from_draft(draft: dict) -> dict:
         "overrides":   {k: v for k, v in overrides.items()  if v is not None},
         "advanced_flags": {k: v for k, v in adv_flags.items() if v is not None},
     }
+    elite_up = norm_elite_upgrade(uu_raw.get("elite_upgrade"))
+    if elite_up:
+        uu_out["elite_upgrade"] = elite_up
 
     schema: dict = {
         "format":         FORMAT_KEY,
@@ -289,6 +295,28 @@ def from_draft(draft: dict) -> dict:
 
 
 # ── Format detection ──────────────────────────────────────────────────────────
+
+def norm_elite_upgrade(raw) -> dict | None:
+    """The Elite UU upgrade's custom cost and research time, or None if unset.
+
+    {"cost": {"food", "wood", "stone", "gold"}, "time": seconds}.  Zero means
+    "keep the game's", exactly as for the UT cost (civ_overrides.
+    _set_tech_cost_time), so an all-zero entry is dropped rather than saved.
+    Issue #68.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    def num(v):
+        try:
+            return max(0, int(float(v or 0)))
+        except (TypeError, ValueError):
+            return 0
+    cost = raw.get("cost") if isinstance(raw.get("cost"), dict) else {}
+    out = {"cost": {r: num(cost.get(r)) for r in ("food", "wood", "stone", "gold")},
+           "time": num(raw.get("time"))}
+    return out if out["time"] or any(out["cost"].values()) else None
+
 
 def is_empireforge(data: dict) -> bool:
     """Return True for any Empire Forge format (current v2 or legacy v1)."""

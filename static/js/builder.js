@@ -3349,6 +3349,7 @@ function selectUU(kmIdx) {
   if (prevIdx != null && prevIdx !== kmIdx) {
     delete draft.unique_unit.overrides;
     delete draft.unique_unit.advanced_flags;
+    delete draft.unique_unit.elite_upgrade;
   }
   draft.unique_unit.km_idx = kmIdx;
   saveDraft();
@@ -3432,6 +3433,17 @@ function populateUUOverrides(unit) {
   const costDef = document.getElementById("uo-cost-def");
   if (costDef) costDef.textContent = costStr ? `Default: ${costStr}` : "";
 
+  // Elite upgrade default: the game's research for a vanilla UU; a KM-custom
+  // UU's upgrade is built with the mod, so there is no number to show yet.
+  const eu = unit.elite_upgrade;
+  const euDef = document.getElementById("uo-eu-def");
+  if (euDef) {
+    const parts = eu ? Object.entries(eu.cost || {}).map(([r, n]) => `${n} ${r}`) : [];
+    if (eu?.time) parts.push(`${eu.time}s`);
+    euDef.textContent = parts.length ? `Default: ${parts.join(", ")}. Blank or 0 keeps the game's.`
+                                     : "Blank or 0 keeps the default.";
+  }
+
   // Restore saved values (or clear if switching units)
   const saved = draft.unique_unit?.overrides || {};
   for (const row of _UO_ROWS) {
@@ -3444,7 +3456,30 @@ function populateUUOverrides(unit) {
     const el = document.getElementById(`uo-cost-${r}`);
     if (el) el.value = saved[`cost_${r}`] ?? "";
   }
+  const savedEu = draft.unique_unit?.elite_upgrade || {};
+  for (const r of _UO_EU) {
+    const el = document.getElementById(`uo-eu-${r}`);
+    if (el) el.value = (r === "time" ? savedEu.time : savedEu.cost?.[r]) || "";
+  }
 
+  _uoUpdateBadge();
+}
+
+// Elite upgrade cost and research time (#68): unique_unit.elite_upgrade =
+// {cost: {food, wood, stone, gold}, time}.  0 / blank keeps the game's value,
+// as for the UT cost; civ_schema.norm_elite_upgrade drops an all-zero entry.
+const _UO_EU = ["food", "wood", "stone", "gold", "time"];
+
+function _uoSaveEliteUpgrade(r, rawVal) {
+  if (!draft.unique_unit) return;
+  let val = rawVal === "" ? 0 : Math.max(0, Math.floor(Number(rawVal)));
+  if (isNaN(val)) val = 0;
+  const eu = draft.unique_unit.elite_upgrade
+          || (draft.unique_unit.elite_upgrade = { cost: {}, time: 0 });
+  if (r === "time") eu.time = val;
+  else { eu.cost = eu.cost || {}; eu.cost[r] = val; }
+  if (!eu.time && !Object.values(eu.cost || {}).some(Boolean)) delete draft.unique_unit.elite_upgrade;
+  saveDraft();
   _uoUpdateBadge();
 }
 
@@ -3458,6 +3493,11 @@ function clearUUOverrides() {
   }
   for (const r of _UO_COSTS) {
     const el = document.getElementById(`uo-cost-${r}`);
+    if (el) el.value = "";
+  }
+  if (draft.unique_unit) { delete draft.unique_unit.elite_upgrade; saveDraft(); }
+  for (const r of _UO_EU) {
+    const el = document.getElementById(`uo-eu-${r}`);
     if (el) el.value = "";
   }
   _uoUpdateBadge();
@@ -3498,7 +3538,8 @@ function _uoSave(key, rawVal) {
 function _uoUpdateBadge() {
   const badge = document.getElementById("uo-badge");
   if (!badge) return;
-  const n = Object.keys(draft.unique_unit?.overrides || {}).length;
+  const n = Object.keys(draft.unique_unit?.overrides || {}).length
+          + (draft.unique_unit?.elite_upgrade ? 1 : 0);
   if (n > 0) { badge.textContent = `${n} override${n > 1 ? "s" : ""}`; badge.classList.remove("d-none"); }
   else        { badge.classList.add("d-none"); }
 }
@@ -3513,6 +3554,10 @@ function _wireUUOverrides() {
   for (const r of _UO_COSTS) {
     document.getElementById(`uo-cost-${r}`)
       ?.addEventListener("input", e => _uoSave(`cost_${r}`, e.target.value));
+  }
+  for (const r of _UO_EU) {
+    document.getElementById(`uo-eu-${r}`)
+      ?.addEventListener("input", e => _uoSaveEliteUpgrade(r, e.target.value));
   }
   document.getElementById("btn-clear-overrides")
     ?.addEventListener("click", clearUUOverrides);

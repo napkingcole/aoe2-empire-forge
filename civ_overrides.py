@@ -16,6 +16,7 @@ keys so both functions are safe no-ops when called on them.
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import ResearchLocation, ResearchResourceCost, Tech
 
+from civ_schema import norm_elite_upgrade
 from civ_appender import (HERO_POOL_OFFSET, _campaign_sid,
                           format_unit_tooltip_help, format_unit_extended_tooltip)
 
@@ -25,7 +26,8 @@ from civ_appender import (HERO_POOL_OFFSET, _campaign_sid,
 def _override_ut_costs(dat, civ_result: dict, draft: dict) -> None:
     """
     After apply_civ creates Castle/Imperial UT techs, patch their costs and
-    research time from the wizard draft (or civbuilder_v1 converted draft).
+    research time from the wizard draft (or civbuilder_v1 converted draft) —
+    and the Elite unique-unit upgrade's, from unique_unit.elite_upgrade.
     """
     for draft_key, result_key in (
         ("castle_ut",  "castle_ut_tech_id"),
@@ -38,32 +40,51 @@ def _override_ut_costs(dat, civ_result: dict, draft: dict) -> None:
         if tech_id is None or tech_id >= len(dat.techs):
             continue
 
-        tech = dat.techs[tech_id]
+        _set_tech_cost_time(dat.techs[tech_id], ut_data.get("cost"), ut_data.get("time"))
 
-        # Zero means "unset", not "free".  Nothing can currently express the
-        # difference: the wizard seeds a new UT with an all-zero cost, KM import
-        # emits zeros, and from_draft/to_draft both write `int(x or 0)` on every
-        # save round-trip.  Applying those zeros stripped the real cost and
-        # research time off a copied vanilla tech, so a KM-imported UT was free
-        # and instant.  Skipping them leaves what apply_civ produced — a vanilla
-        # copy keeps its own cost/time, a synthesised custom UT keeps
-        # _make_tech's free/60s default — which is right in both modes.
-        # A deliberately free UT stays inexpressible until normalize() can carry
-        # absent and zero apart (PLAN-canonical-schema, finding 5).
-        time_val = ut_data.get("time")
-        if time_val is not None and int(time_val) > 0:
-            tech.research_time = int(time_val)
+    # The Elite UU upgrade (#68).  km_uu_elite_tech_id is this civ's own copy of
+    # the upgrade tech — for a vanilla UU too (Teutonic Knight: 364 -> 1514) —
+    # so changing it touches no other civ.
+    elite_up = norm_elite_upgrade((draft.get("unique_unit") or {}).get("elite_upgrade"))
+    elite_tid = civ_result.get("km_uu_elite_tech_id")
+    if elite_up and isinstance(elite_tid, int) and 0 <= elite_tid < len(dat.techs):
+        _set_tech_cost_time(dat.techs[elite_tid], elite_up["cost"], elite_up["time"])
 
-        cost = ut_data.get("cost") or {}
-        wanted = [(res_type, int(cost.get(res_name) or 0))
-                  for res_name, res_type in (("food", 0), ("wood", 1),
-                                             ("stone", 2), ("gold", 3))]
-        if any(amount > 0 for _, amount in wanted):
-            slots = [ResearchResourceCost(type=res_type, amount=amount, flag=1)
-                     for res_type, amount in wanted if amount > 0]
-            while len(slots) < 3:
-                slots.append(ResearchResourceCost(type=-1, amount=0, flag=0))
-            tech.resource_costs = tuple(slots[:3])
+
+def _set_tech_cost_time(tech, cost: dict | None, time_val) -> None:
+    """Write a player-set cost and research time onto a tech.
+
+    Zero means "unset", not "free".  Nothing can currently express the
+    difference: the wizard seeds a new UT with an all-zero cost, KM import
+    emits zeros, and from_draft/to_draft both write `int(x or 0)` on every
+    save round-trip.  Applying those zeros stripped the real cost and
+    research time off a copied vanilla tech, so a KM-imported UT was free
+    and instant.  Skipping them leaves what apply_civ produced — a vanilla
+    copy keeps its own cost/time, a synthesised custom UT keeps
+    _make_tech's free/60s default — which is right in both modes.
+    A deliberately free UT stays inexpressible until normalize() can carry
+    absent and zero apart (PLAN-canonical-schema, finding 5).
+
+    The time lives on each ResearchLocation; genieutils' Tech has no
+    research_time field.  This used to write `tech.research_time`, which
+    Python accepted as a stray attribute and the DAT never saw, so every
+    custom UT research time was silently ignored (found 2026-10-08).
+    """
+    if time_val is not None and int(time_val) > 0:
+        for loc in tech.research_locations:
+            if loc.location_id >= 0:            # -1 is an auto-fire placeholder
+                loc.research_time = int(time_val)
+
+    cost = cost or {}
+    wanted = [(res_type, int(cost.get(res_name) or 0))
+              for res_name, res_type in (("food", 0), ("wood", 1),
+                                         ("stone", 2), ("gold", 3))]
+    if any(amount > 0 for _, amount in wanted):
+        slots = [ResearchResourceCost(type=res_type, amount=amount, flag=1)
+                 for res_type, amount in wanted if amount > 0]
+        while len(slots) < 3:
+            slots.append(ResearchResourceCost(type=-1, amount=0, flag=0))
+        tech.resource_costs = tuple(slots[:3])
 
 
 # ── UU stat overrides + advanced flags ───────────────────────────────────────

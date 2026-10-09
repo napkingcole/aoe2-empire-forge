@@ -2226,9 +2226,20 @@ def api_builder_uu_catalog():
     # they are built from a base unit, not from a DAT tech.
     missing_in_dat: set[int] = set()
     derived_icons: dict[int, str] = {}
+    elite_upgrades: dict[int, dict] = {}     # km_idx -> the game's Elite upgrade cost/time (#68)
     if dat_path:
         try:
             _d = _get_dat(dat_path)
+            _res = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+            for i, (_mk, _el) in ca._KM_UU_TECHS.items():
+                if 0 <= _el < len(_d.techs):
+                    _t = _d.techs[_el]
+                    elite_upgrades[i] = {
+                        "cost": {_res[c.type]: c.amount for c in _t.resource_costs
+                                 if c.type in _res and c.amount > 0},
+                        "time": next((loc.research_time for loc in _t.research_locations
+                                      if loc.location_id >= 0), None),
+                    }
 
             def _tech_live(tech_id: int) -> bool:
                 if tech_id >= len(_d.techs):
@@ -2291,6 +2302,7 @@ def api_builder_uu_catalog():
             "icon":          f"/resources/uniticons/{icon_file}" if icon_file else None,
             "stats":         entry_stats,
             "training_cost": entry_stats["cost"] if entry_stats else None,
+            "elite_upgrade": elite_upgrades.get(km_idx),
         })
     catalog.sort(key=lambda x: x["name"])
     return jsonify(catalog)

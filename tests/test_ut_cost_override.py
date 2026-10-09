@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from genieutils.tech import ResearchResourceCost   # noqa: E402
+from genieutils.tech import ResearchLocation, ResearchResourceCost   # noqa: E402
 from civ_overrides import _override_ut_costs       # noqa: E402
 
 failures = 0
@@ -42,9 +42,21 @@ VANILLA_TIME = 45
 
 
 class FakeTech:
+    """Shaped like genieutils' Tech: the research time is on each research
+    location, and there is no tech-level research_time.  Slotted, so writing a
+    field the real Tech doesn't have raises here instead of passing — the old
+    stand-in carried `research_time`, which is how a UT time that never reached
+    the DAT passed this test for months."""
+    __slots__ = ("research_locations", "resource_costs")
+
     def __init__(self):
-        self.research_time = VANILLA_TIME
+        self.research_locations = [ResearchLocation(location_id=82, research_time=VANILLA_TIME,
+                                                    button_id=7, hot_key_id=-1)]
         self.resource_costs = VANILLA_COST
+
+    @property
+    def time(self):
+        return self.research_locations[0].research_time
 
 
 class FakeDat:
@@ -72,31 +84,31 @@ t = run({"mode": "vanilla", "cost": {"food": 0, "wood": 0, "stone": 0, "gold": 0
          "time": 0, "effects": [{"id": 13, "multiplier": 1}]})
 check("all-zero cost leaves the vanilla cost alone", spend(t) == [(0, 300), (3, 200)],
       f"got {spend(t)}")
-check("time 0 leaves the vanilla research time alone", t.research_time == VANILLA_TIME,
-      f"got {t.research_time}")
+check("time 0 leaves the vanilla research time alone", t.time == VANILLA_TIME,
+      f"got {t.time}")
 
 t = run({"mode": "vanilla", "effects": [{"id": 13, "multiplier": 1}]})
 check("absent cost/time leave both alone",
-      spend(t) == [(0, 300), (3, 200)] and t.research_time == VANILLA_TIME,
-      f"got {spend(t)}, time {t.research_time}")
+      spend(t) == [(0, 300), (3, 200)] and t.time == VANILLA_TIME,
+      f"got {spend(t)}, time {t.time}")
 
 # A real override must still win, or the fix would have broken the feature.
 t = run({"cost": {"food": 0, "wood": 65, "stone": 0, "gold": 30}, "time": 90})
 check("a real cost overrides", spend(t) == [(1, 65), (3, 30)], f"got {spend(t)}")
-check("a real time overrides", t.research_time == 90, f"got {t.research_time}")
+check("a real time overrides", t.time == 90, f"got {t.time}")
 check("unused slots are cleared, not left vanilla", len(t.resource_costs) == 3,
       f"got {len(t.resource_costs)} slots")
 
 t = run({"cost": {"gold": 500}, "time": 1})
 check("a single-resource cost overrides", spend(t) == [(3, 500)], f"got {spend(t)}")
-check("a 1-second time is a real value, not unset", t.research_time == 1,
-      f"got {t.research_time}")
+check("a 1-second time is a real value, not unset", t.time == 1,
+      f"got {t.time}")
 
 # from_draft/to_draft coerce with `or 0`, but a hand-written file can carry null.
 t = run({"cost": {"food": None, "gold": None}, "time": None})
 check("null cost/time are treated as unset, not crashed on",
-      spend(t) == [(0, 300), (3, 200)] and t.research_time == VANILLA_TIME,
-      f"got {spend(t)}, time {t.research_time}")
+      spend(t) == [(0, 300), (3, 200)] and t.time == VANILLA_TIME,
+      f"got {spend(t)}, time {t.time}")
 
 t = run({})
 check("an empty UT dict is a no-op", spend(t) == [(0, 300), (3, 200)], f"got {spend(t)}")
