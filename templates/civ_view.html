@@ -258,6 +258,26 @@ async function cvCopy(kind) {
   }
 }
 
+// html-to-image can't read the cross-origin Google Fonts stylesheet, so on its
+// own the image falls back to a plain serif title.  Fetch the card's two
+// fonts (Google allows it), inline the files as data URIs, and hand that CSS
+// to the exporter.  Cached for the page's life.
+let _cvFontCSS = null;
+function cvFontCSS() {
+  if (!_cvFontCSS) {
+    _cvFontCSS = (async () => {
+      const css = await (await fetch("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@400;500;600&display=swap")).text();
+      const urls = [...new Set([...css.matchAll(/url\((https:[^)]+)\)/g)].map(m => m[1]))];
+      const inlined = await Promise.all(urls.map(async u => {
+        const blob = await (await fetch(u)).blob();
+        return [u, await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); })];
+      }));
+      return inlined.reduce((acc, [u, data]) => acc.split(u).join(data), css);
+    })().catch(() => "");                  // offline: the image just keeps the fallback font
+  }
+  return _cvFontCSS;
+}
+
 // PNG for anywhere; WebP is smaller but a few apps can't open it.  The image
 // is the card with its gold ring, at 2x for crisp text.
 async function cvSaveImage(kind) {
@@ -269,7 +289,9 @@ async function cvSaveImage(kind) {
   cvStatus("Making the image…");
   try {
     const bg = _cvOpts.light ? "#ffffff" : "#121110";
-    const canvas = await htmlToImage.toCanvas(shot, { pixelRatio: 2, backgroundColor: bg, cacheBust: true });
+    const fontEmbedCSS = await cvFontCSS();
+    const canvas = await htmlToImage.toCanvas(shot, { pixelRatio: 2, backgroundColor: bg, cacheBust: true,
+                                                      ...(fontEmbedCSS ? { fontEmbedCSS } : {}) });
     const mime = kind === "webp" ? "image/webp" : "image/png";
     const blob = await new Promise(res => canvas.toBlob(res, mime, 0.92));
     if (!blob) throw new Error("the browser couldn't encode the image");
