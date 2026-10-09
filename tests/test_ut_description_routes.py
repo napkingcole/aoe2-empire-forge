@@ -67,7 +67,10 @@ CIV = {
     "format": "empireforge_v2", "schema_version": 2,
     "alias": "Route Probe", "tagline": "", "description": "",
     "architecture": 1, "language": 0, "wonder_model": -1, "castle_model": -1,
-    "emblem": "", "monk_skin": None, "hero_unit": None, "second_uu": None,
+    "emblem": "", "monk_skin": None, "second_uu": None,
+    # A named hero: its strings are pool ids, so a route that doesn't write them
+    # shows campaign text — the CLI route did ("Prithviraj" / "Scots", 2026-10-09).
+    "hero_unit": {"base_unit_id": 1966, "name": "Probe Hero", "description": "Leads the probe"},
     "unique_unit": {"km_idx": 0, "vanilla_id": None, "name": None, "description": None,
                     "overrides": {}, "advanced_flags": {}},
     "bonuses": [], "team_bonuses": [],
@@ -123,6 +126,9 @@ def route_checks(route: str, texts: list[str]) -> None:
           'Probe Quote (Says \\"hi\\")' in civ_text, civ_text[-200:])
     check(f"[{route}] custom bonus cards are listed in the civ text",
           "Cavalry: +20% HP" in civ_text, civ_text[:300])
+    check(f"[{route}] the hero's name and 'Create' label are written",
+          "Probe Hero" in texts and "Create Probe Hero" in texts,
+          [t for t in texts if "Hero" in t][:4])
 
 
 route_checks("build_all", texts)
@@ -144,6 +150,17 @@ with tempfile.TemporaryDirectory() as tmp:
     zips = list(sd.glob("*.zip"))
     if zips:
         route_checks("web", strings_of(zips[0]))
+
+# ── The Builder's Build button (wizard_build.build_wizard_mod) ────────────────
+from civ_schema import to_draft                            # noqa: E402
+from wizard_build import build_wizard_mod                  # noqa: E402
+with tempfile.TemporaryDirectory() as tmp:
+    with contextlib.redirect_stdout(io.StringIO()):
+        zbytes = build_wizard_mod(to_draft(json.loads(json.dumps(CIV))), str(dat_path), "Britons")
+    (Path(tmp) / "w.zip").write_bytes(zbytes)
+    wiz = strings_of(Path(tmp) / "w.zip")
+    check("[wizard] the hero's name and 'Create' label are written",
+          "Probe Hero" in wiz and "Create Probe Hero" in wiz, [t for t in wiz if "Hero" in t][:4])
 
 print()
 if failures:

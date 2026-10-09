@@ -45,7 +45,7 @@ from build_civ import (
     _find_civ_techtrees_folder,
     _patch_per_civ_techtree,
     _canonical_techtree_id, _resolve_uu_info, uu_cost_text, keeps_vanilla_hover, renamed_uu_tooltip,
-    civ_name_sid, civ_roster,
+    civ_name_sid, civ_roster, rich_unit_tooltip,
 )
 from civ_appender import _KM_UU_NAMES
 
@@ -216,6 +216,44 @@ def _kv_text(text: str) -> str:
     """
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
     return re.sub(r'(?<!\\)"', r'\\"', text)
+
+
+def hero_string_lines(dat, slot: int, hero_raw: dict | None) -> list[str]:
+    """Key-value lines naming the civ's hero: name, "Create X", both tooltips.
+
+    _apply_hero_unit points a NAMED hero at pool string ids (existing campaign
+    strings — "an id we did not write shows campaign text"), so every route
+    must write these or the hero shows whatever sits there: the CLI route
+    never did, and a QA hero showed "Prithviraj" in the Castle and "Scots" on
+    the field (2026-10-09).  One helper for all three routes (app, wizard,
+    build_all).  Call after _apply_hero_unit, so the tooltip quotes the cost the
+    player will actually pay.  [] when the hero has no name — it then keeps its
+    vanilla strings, which is what _apply_hero_unit leaves it on.
+    """
+    hero_raw = hero_raw if isinstance(hero_raw, dict) else {}
+    bid = hero_raw.get("base_unit_id")
+    name = _kv_text((hero_raw.get("name") or "").strip())
+    desc = _kv_text((hero_raw.get("description") or "").strip())
+    if bid is None or not name:
+        return []
+    try:
+        dll = dat.civs[slot].units[bid].language_dll_name or -1
+    except (IndexError, TypeError, AttributeError):
+        dll = -1
+    if dll <= 0:
+        print(f"       WARNING: hero unit {bid} has no language_dll_name — its name can't be written")
+        return []
+    # The base hero's own game tooltip, renamed (cost icons, upgrades, stats);
+    # plain text only if it has none.
+    hover = rich_unit_tooltip(dat, bid, name, desc)
+    if hover is None:
+        cost = uu_cost_text(dat, slot, bid)
+        hover = f"Create <b>{name}<b>" + (f"\\n{desc}" if desc else "") + (f"\\n{cost}" if cost else "")
+    return [f'{dll} "{name}"',
+            # +1000 is the short "Create X" label, as every vanilla unit's is.
+            f'{dll + DLL_CREATION_OFFSET} "Create {name}"',
+            f'{dll + 21000} "{hover}"',
+            f'{dll + DLL_HELP_OFFSET} "{hover}"']
 
 
 def ut_name_and_desc(name: str, desc: str) -> tuple[str, str]:
@@ -586,6 +624,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         _apply_uu_overrides(dat, slot, uu_info, civ_def)
         _refresh_uu_tooltips(dat, slot, civ_result)
         _apply_hero_unit(dat, slot, civ_def)
+        hero_lines = hero_string_lines(dat, slot, civ_def.get("hero_unit"))
         civs_overrides[slot] = {
             "name_sid": name_sid,
             "icon_id": uu_info["icon_id"] if uu_info else None,
@@ -706,6 +745,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # Description string ID follows KM's offset: 120150 - 10271 = 109879 above name_sid.
         for lang in LANGUAGES:
             string_lines[lang].append(f'{name_sid} "{alias}"')
+            string_lines[lang].extend(hero_lines)
             string_lines[lang].append(
                 f'{name_sid + 80000} "Click to play as {alias}."')
             string_lines[lang].append(

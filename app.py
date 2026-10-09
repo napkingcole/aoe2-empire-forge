@@ -33,7 +33,8 @@ from voice_source import voice_values
 from build_all import (_build_combined_data_zip, _build_combined_ui_zip,
                        _ut_name, _ut_bonus_id, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS,
-                       _kv_text, ut_name_and_desc, ut_selection_text, ut_research_label)
+                       _kv_text, ut_name_and_desc, ut_selection_text, ut_research_label,
+                       hero_string_lines)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
@@ -828,23 +829,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     except (IndexError, AttributeError):
                         pass
 
-            # Hero unit string IDs — read after _apply_hero_unit has set language_dll_name.
-            _hero_raw  = (civ_def.get("hero_unit") or {})
-            _hero_bid  = _hero_raw.get("base_unit_id")
-            # Escaped for the key-value file, as the wizard route always did — a
-            # quote in a hero's name used to end the string early on this route.
-            _hero_name = _kv_text((_hero_raw.get("name") or "").strip())
-            _hero_desc = _kv_text((_hero_raw.get("description") or "").strip())
-            _hero_dll  = -1
-            _hero_cost_str = ""
-            if _hero_bid is not None and _hero_name:
-                try:
-                    _hero_dll = dat.civs[slot].units[_hero_bid].language_dll_name or -1
-                except (IndexError, TypeError, AttributeError):
-                    pass
-                # Read after _apply_hero_unit, so the tooltip quotes the cost the
-                # player will actually pay.
-                _hero_cost_str = uu_cost_text(dat, slot, _hero_bid)
+            # Hero name / tooltips: one helper for all three routes (build_all).
+            hero_lines = hero_string_lines(dat, slot, civ_def.get("hero_unit"))
 
             # Build civ selection screen description with bonuses + UT names.
             # The wizard writes the blurb to `tagline` and nothing writes
@@ -894,22 +880,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 string_lines[lang].append(
                     f'{name_sid + 109879} "{full_desc}"')
 
-                # Hero unit name + Castle train-button tooltip.
-                if _hero_dll > 0 and _hero_name:
-                    # The base hero's own game tooltip, renamed (cost icons,
-                    # upgrades, stats); plain text only if it has none.
-                    _hero_hover = rich_unit_tooltip(dat, _hero_bid, _hero_name, _hero_desc)
-                    if _hero_hover is None:
-                        _hero_hover = f"Create <b>{_hero_name}<b>"
-                        if _hero_desc:
-                            _hero_hover += f"\\n{_hero_desc}"
-                        if _hero_cost_str:
-                            _hero_hover += f"\\n{_hero_cost_str}"
-                    string_lines[lang].append(f'{_hero_dll} "{_hero_name}"')
-                    # +1000 is the short "Create X" label, as every vanilla unit's is.
-                    string_lines[lang].append(f'{_hero_dll + DLL_CREATION_OFFSET} "Create {_hero_name}"')
-                    string_lines[lang].append(f'{_hero_dll + 21000} "{_hero_hover}"')
-                    string_lines[lang].append(f'{_hero_dll + DLL_HELP_OFFSET} "{_hero_hover}"')
+                string_lines[lang].extend(hero_lines)
 
                 # Castle UT: language_dll_help (60xxx pool SID) drives the research-button
                 # hover tooltip — NOT name+21000, which is the unit-train-button slot.

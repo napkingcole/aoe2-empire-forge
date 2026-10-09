@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 
 from build_all import (
-    _kv_text,
+    _kv_text, hero_string_lines,
     ut_name_and_desc, ut_selection_text, ut_research_label,
     _build_combined_data_zip,
     _build_combined_ui_zip,
@@ -309,24 +309,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             except (IndexError, AttributeError):
                 pass
 
-    # Hero unit string IDs — resolved once, written inside the language loop below.
-    _hero_raw  = draft.get("hero_unit") or {}
-    _hero_bid  = _hero_raw.get("base_unit_id")
-    _hero_name = _kv_text((_hero_raw.get("name") or "").strip())
-    _hero_desc = _kv_text((_hero_raw.get("description") or "").strip())
-    _hero_dll  = -1
-    _hero_cost_str = ""
-    if _hero_bid is not None and _hero_name:
-        try:
-            _hero_dll = dat.civs[slot].units[_hero_bid].language_dll_name or -1
-        except (IndexError, TypeError, AttributeError):
-            pass
-        if _hero_dll <= 0:
-            print(f"       WARNING: hero unit {_hero_bid} has no language_dll_name"
-                  " — name/desc won't appear in tooltip", flush=True)
-        # Read after _apply_hero_unit, so the tooltip quotes the cost the player
-        # will actually pay.
-        _hero_cost_str = uu_cost_text(dat, slot, _hero_bid)
+    # Hero name / tooltips: one helper for all three routes (build_all).
+    hero_lines = hero_string_lines(dat, slot, draft.get("hero_unit"))
 
     for lang in LANGUAGES:
         # Civ name + click-to-play + description
@@ -334,32 +318,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         string_lines[lang].append(f'{name_sid + 80000} "Click to play as {alias_kv}."')
         string_lines[lang].append(f'{name_sid + 109879} "{full_desc}"')
 
-        # Hero unit name + Castle train-button tooltip.
-        # +1000  = language_dll_creation (bottom bar text on hover)
-        # +21000 = Castle floating hover tooltip (confirmed load-bearing for units)
-        # +100000 = language_dll_help (additional hover tooltip path)
-        if _hero_dll > 0 and _hero_name:
-            # AoE2 uses <b>text<b> (no slash) for bold.
-            # +1000 = language_dll_creation (bottom-bar text when cursor is on button)
-            # +21000 = Castle hover tooltip (floating panel with stats/cost/description)
-            # +100000 = language_dll_help (same hover panel, belt-and-suspenders)
-            # The base hero's own game tooltip, renamed (cost icons, upgrades,
-            # stats); plain text only if it has none.
-            _hero_hover = rich_unit_tooltip(dat, _hero_bid, _hero_name, _hero_desc)
-            if _hero_hover is None:
-                _hero_hover = f"Create <b>{_hero_name}<b>"
-                if _hero_desc:
-                    _hero_hover += f"\\n{_hero_desc}"
-                if _hero_cost_str:
-                    _hero_hover += f"\\n{_hero_cost_str}"
-            string_lines[lang].append(f'{_hero_dll} "{_hero_name}"')
-            # +1000 is the short "Create X" label, as every vanilla unit's is.
-            string_lines[lang].append(
-                f'{_hero_dll + DLL_CREATION_OFFSET} "Create {_hero_name}"')
-            string_lines[lang].append(
-                f'{_hero_dll + 21000} "{_hero_hover}"')
-            string_lines[lang].append(
-                f'{_hero_dll + DLL_HELP_OFFSET} "{_hero_hover}"')
+        string_lines[lang].extend(hero_lines)
 
         # UT name + tooltip strings
         for ut_sid, desc_sid, ut_help_sid, full_name, ut_desc_text in (
