@@ -229,7 +229,19 @@ ATTRS: dict[str, dict] = {
     # (Bulgarians, Lithuanians/Poles) — _free_tech_cmds writes exactly this.
     "free":          {"label": "free and instant", "ops": ("set",), "novalue": True,            "kinds": ("tech",)},
     "instant":       {"label": "instant research", "ops": ("set",), "novalue": True,            "kinds": ("tech",)},
+    # ── Civilization ── (#65)  Resource 32 "Bonus Population Cap": population
+    # on top of the lobby's limit — exactly what vanilla's "+10 population in
+    # Imperial Age" (tech 406) adds.  Flat and positive only: the lobby limit
+    # is a game setting no resource exposes, so a percentage would be a guess,
+    # and nothing in vanilla ever lowers resource 32.
+    "pop_cap":       {"label": "population limit", "ops": ("add",), "positive": True, "max": 1000,
+                      "kinds": ("civ",)},
 }
+
+# Civilization cards can wait for an age, as vanilla's "+10 population in
+# Imperial Age" does.  Absent = from the start.
+CIV_AGES = {101: "Feudal", 102: "Castle", 103: "Imperial"}
+_POP_CAP_RESOURCE = 32
 
 COST_RESOURCES = ("all", *_RES_COST)
 
@@ -456,9 +468,11 @@ def catalog() -> dict:
         "jobs":   [{"id": k, "label": j["label"], "work": j["work"], "icon": j["icon"]}
                    for k, j in JOBS.items()],
         "attrs":  [{"id": k, "label": a["label"], "ops": list(a["ops"]),
-                    "kinds": list(a["kinds"]), "novalue": bool(a.get("novalue"))}
+                    "kinds": list(a["kinds"]), "novalue": bool(a.get("novalue")),
+                    "positive": bool(a.get("positive"))}
                    for k, a in ATTRS.items()],
         "cost_resources": list(COST_RESOURCES),
+        "civ_ages": [{"id": k, "label": f"{v} Age"} for k, v in CIV_AGES.items()],
     }
 
 
@@ -494,6 +508,14 @@ def _norm_card(raw) -> dict | None:
         if t.get("id") not in JOBS:
             return None
         target = {"type": "job", "id": t["id"]}
+    elif ttype == "civ":
+        target = {"type": "civ", "id": "civ"}
+        try:
+            age = int(t.get("age"))
+        except (TypeError, ValueError):
+            age = None
+        if age in CIV_AGES:
+            target["age"] = age
     elif ttype == "unit":
         try:
             uid = int(t.get("id"))
@@ -546,6 +568,12 @@ def _norm_effect(raw) -> dict | None:
         return None
     if value == 0:
         return None
+    if spec.get("positive"):
+        if value < 0:
+            return None
+        value = float(min(round(value), spec.get("max", value)))
+        if value <= 0:
+            return None
     if op == "mul" and not spec.get("faster") and value <= -100:
         return None                      # x0 or negative stat — never intended
     if spec.get("faster") and value <= -100:
@@ -573,6 +601,8 @@ def target_kind(target: dict) -> str:
         return "job"
     if target["type"] == "tech":
         return "tech"
+    if target["type"] == "civ":
+        return "civ"
     return "building" if target.get("kind") == "building" else "unit"
 
 
@@ -583,6 +613,8 @@ def target_label(target: dict) -> str:
         return JOBS[target["id"]]["label"]
     if target["type"] == "tech":
         return target.get("name") or f"Tech {target['id']}"
+    if target["type"] == "civ":
+        return "Civilization"
     return target.get("name") or f"Unit {target['id']}"
 
 
@@ -621,8 +653,12 @@ def card_text(card: dict) -> str:
     """'Cavalry: +20% HP, +2 pierce armor' — or the player's own text."""
     if card.get("text"):
         return card["text"]
-    subject = target_label(card["target"])
     t = card["target"]
+    if t["type"] == "civ":
+        # The game's own wording: "+10 population in Imperial Age".
+        text = ", ".join(effect_text(e, t) for e in card["effects"])
+        return text + (f" in the {CIV_AGES[t['age']]} Age" if t.get("age") in CIV_AGES else "")
+    subject = target_label(card["target"])
     if t["type"] == "unit" and t.get("kind") != "building":
         if t.get("scope") != "up":
             subject += " line"
@@ -757,6 +793,9 @@ def tech_effect_commands(eff: dict, tech_ids: list[int], costs_of=None) -> list[
 
 def card_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
     """Every command one card writes, in card order.  See _selectors."""
+    if target_kind(card["target"]) == "civ":
+        return [EffectCommand(type=1, a=_POP_CAP_RESOURCE, b=1, c=-1, d=float(e["value"]))
+                for e in card["effects"] if e["attr"] == "pop_cap"]
     if target_kind(card["target"]) == "tech":
         tids = _tech_ids(card, resolve)
         costs_of = (lambda tid: resolve("tech_costs", tid)) if resolve else None

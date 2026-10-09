@@ -70,6 +70,7 @@ function _cbTargetKind(t) {
   if (t.type === "group") return _cbGroup(t.id)?.kind || "unit";
   if (t.type === "job") return "job";
   if (t.type === "tech") return "tech";
+  if (t.type === "civ") return "civ";
   return t.kind === "building" ? "building" : "unit";
 }
 
@@ -78,6 +79,7 @@ function _cbTargetLabel(t) {
   if (t.type === "group") return _cbGroup(t.id)?.label || t.id;
   if (t.type === "job") return _cbJob(t.id)?.label || t.id;
   if (t.type === "tech") return t.name || `Tech ${t.id}`;
+  if (t.type === "civ") return "Civilization";
   return t.name || `Unit ${t.id}`;
 }
 
@@ -118,6 +120,12 @@ function _cbEffectText(e, target) {
 
 function cbCardText(card) {
   if (card.text) return card.text;
+  if (card.target?.type === "civ") {
+    // The game's own wording: "+10 population in Imperial Age" (#65).
+    const age = (_cbCatalog?.civ_ages || []).find(a => a.id === card.target.age);
+    const parts = (card.effects || []).map(e => _cbEffectText(e, card.target)).filter(Boolean);
+    return parts.join(", ") + (age ? ` in the ${age.label}` : "");
+  }
   const subject = _cbSubject(card.target);
   const parts = (card.effects || []).map(e => _cbEffectText(e, card.target)).filter(Boolean);
   return parts.length ? `${subject}: ${parts.join(", ")}` : subject;
@@ -168,6 +176,7 @@ function _cbTabOf(t) {
   if (!t) return _cbTab;
   if (t.type === "job") return "villager";
   if (t.type === "tech") return "tech";
+  if (t.type === "civ") return "civ";
   if (t.type === "group") return _cbGroup(t.id)?.tab || "group";
   if (t.type === "unit" && t.id === _CB_FISHING_SHIP) return "villager";
   return t.kind === "building" ? "building" : "unit";
@@ -175,7 +184,7 @@ function _cbTabOf(t) {
 
 function _cbSameTarget(a, b) {
   return !!a && !!b && a.type === b.type && String(a.id) === String(b.id) && (a.kind || "") === (b.kind || "")
-      && (a.scope || "") === (b.scope || "");
+      && (a.scope || "") === (b.scope || "") && (a.age || "") === (b.age || "");
 }
 
 function _cbIcon(icon, label) {
@@ -200,6 +209,12 @@ function _cbTilesFor(tab) {
     return out;
   };
   if (tab === "group") return sectioned(c.groups.filter(g => g.tab === "group"));
+  if (tab === "civ") {
+    // Keep the age already chosen when the tile is clicked again.
+    const age = _cbWork?.target?.type === "civ" ? _cbWork.target.age : undefined;
+    return [{ target: { type: "civ", id: "civ", ...(age ? { age } : {}) },
+              label: "Whole civilization", icon: "fa-landmark" }];
+  }
   if (tab === "villager") {
     const all  = c.groups.find(g => g.id === "villagers");
     const ship = c.units.find(u => u.id === _CB_FISHING_SHIP);
@@ -292,6 +307,10 @@ function _cbRenderPicker() {
 
 function _cbTargetHint(t) {
   if (!t) return "";
+  if (t.type === "civ") {
+    return "Population limit is added on top of the lobby's limit (200, 500…). There is no percentage: "
+         + "the lobby limit is a game setting the mod can't read.";
+  }
   if (t.type === "group") {
     return {
       cavalry:       "Includes cavalry archers and mounted gunpowder, just like the game's definition.",
@@ -384,12 +403,29 @@ function _cbRenderEffects() {
       : "";
     return `<div class="cb-effect" data-idx="${i}">
       <select class="form-select form-select-sm cb-attr">${attrOpts}</select>
-      <input type="number" step="any" class="form-control form-control-sm cb-value" value="${e.value ?? ""}" placeholder="e.g. ${e.op === "add" ? 2 : 20}">
+      <input type="number" ${a?.positive ? 'min="1" step="1"' : 'step="any"'} class="form-control form-control-sm cb-value" value="${e.value ?? ""}" placeholder="e.g. ${a?.positive ? 10 : e.op === "add" ? 2 : 20}">
       ${opCtl}
       ${resCtl}
       <button type="button" class="btn btn-sm btn-link text-danger cb-effect-remove" title="Remove effect"><i class="fa-solid fa-xmark"></i></button>
     </div>`;
   }).join("");
+
+  // A Civilization card can wait for an age (#65), like vanilla's
+  // "+10 population in Imperial Age".
+  if (_cbWork.target?.type === "civ") {
+    const ages = [{ id: "", label: "the start (Dark Age)" }, ...(_cbCatalog.civ_ages || [])];
+    wrap.insertAdjacentHTML("beforeend", `<div class="cb-age-row d-flex align-items-center gap-2 mt-1 small">
+      <span class="text-muted">From</span>
+      <select class="form-select form-select-sm cb-age" style="max-width:14rem">${ages.map(a =>
+        `<option value="${a.id}"${String(a.id) === String(_cbWork.target.age || "") ? " selected" : ""}>${cbEsc(a.label)}</option>`).join("")}</select>
+    </div>`);
+    wrap.querySelector(".cb-age").addEventListener("change", ev => {
+      const v = parseInt(ev.target.value, 10);
+      if (isNaN(v)) delete _cbWork.target.age; else _cbWork.target.age = v;
+      _cbRenderPicker();
+      _cbUpdatePreview();
+    });
+  }
 
   wrap.querySelectorAll(".cb-effect").forEach(row => {
     const idx = parseInt(row.dataset.idx, 10);

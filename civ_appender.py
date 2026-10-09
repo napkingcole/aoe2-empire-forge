@@ -3530,8 +3530,12 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             print(f"  WARNING: {_msg}")
             warnings.append(_msg)
             continue
+        # A Civilization card may wait for an age (#65), like vanilla's
+        # "+10 population in Imperial Age"; everything else fires at the start.
+        age_req = card["target"].get("age", -1) if card["target"]["type"] == "civ" else -1
         for start in range(0, len(cmds), CHUNK):
-            _add_auto_fire_tech(dat, civ_index, cmds[start:start + CHUNK], name="C-Bonus, Custom")
+            _add_auto_fire_tech(dat, civ_index, cmds[start:start + CHUNK], age_req=age_req,
+                                name="C-Bonus, Custom")
         parts = -(-len(cmds) // CHUNK)
         print(f"       Custom bonus: {text} ({len(cmds)} cmds"
               + (f", split across {parts} techs)" if parts > 1 else ")"))
