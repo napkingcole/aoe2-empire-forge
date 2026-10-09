@@ -243,7 +243,17 @@ ATTRS: dict[str, dict] = {
     # and nothing in vanilla ever lowers resource 32.
     "pop_cap":       {"label": "population limit", "ops": ("add",), "positive": True, "max": 1000,
                       "kinds": ("civ",)},
+    # One-time resources, built the way vanilla's are (see civ_steps): at the
+    # start ("+100 stone", or the Chinese "-200 food" penalty) or on reaching
+    # an age ("+200 wood in age2").  A negative amount only at the start —
+    # vanilla never takes resources away on age-up.
+    "resources":     {"label": "resources", "ops": ("add",), "max": 10000, "kinds": ("civ",)},
 }
+
+CIV_RESOURCES = ("food", "wood", "stone", "gold", "each")
+_RES_INDEX = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
+_STARTING_RES = 91                     # 91-94 Starting Food/Wood/Stone/Gold
+_TC_SPAWN, _TC_EXISTS = 639, 307       # "Town Center Spawn", "Shadow TC Annex" (Nomad-safe)
 
 # Civilization cards can wait for an age, as vanilla's "+10 population in
 # Imperial Age" does.  Absent = from the start.
@@ -494,6 +504,7 @@ def catalog() -> dict:
                    for k, a in ATTRS.items()],
         "cost_resources": list(COST_RESOURCES),
         "civ_ages": [{"id": k, "label": f"{v} Age"} for k, v in CIV_AGES.items()],
+        "civ_resources": list(CIV_RESOURCES),
     }
 
 
@@ -563,6 +574,9 @@ def _norm_card(raw) -> dict | None:
     kind = target_kind(target)
     effects = [e for e in (_norm_effect(x) for x in (raw.get("effects") or []))
                if e and kind in ATTRS[e["attr"]]["kinds"]]
+    if target["type"] == "civ" and target.get("age"):
+        # Taking resources away on age-up has no vanilla precedent.
+        effects = [e for e in effects if not (e["attr"] == "resources" and e["value"] < 0)]
     if not effects:
         return None
     card = {"target": target, "effects": effects, "text": str(raw.get("text") or "").strip()[:160]}
@@ -605,6 +619,13 @@ def _norm_effect(raw) -> dict | None:
     if raw["attr"] in ("cost", "tech_cost"):
         res = raw.get("resource", "all")
         out["resource"] = res if res in COST_RESOURCES else "all"
+    if raw["attr"] == "resources":
+        res = raw.get("resource", "gold")
+        out["resource"] = res if res in CIV_RESOURCES else "gold"
+        cap = spec["max"]
+        out["value"] = int(max(-cap, min(cap, round(value))))
+        if out["value"] == 0:
+            return None
     return out
 
 
@@ -670,15 +691,68 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
     return f"{sign}{num} {label}"
 
 
+def _civ_effect_text(eff: dict, age) -> str:
+    """'+25 population limit in the Imperial Age', '+100 stone at the start',
+    '+200 wood on reaching the Castle Age' — the game's own phrasing."""
+    v = eff["value"]
+    num = f"{'+' if v > 0 else '-'}{_fmt_num(abs(v))}"
+    era = CIV_AGES.get(age)
+    if eff["attr"] == "resources":
+        what = "of each resource" if eff.get("resource") == "each" else eff.get("resource", "gold")
+        when = f"on reaching the {era} Age" if era else "at the start"
+        return f"{num} {what} {when}"
+    return f"{num} {ATTRS[eff['attr']]['label']}" + (f" in the {era} Age" if era else "")
+
+
+def civ_steps(card: dict) -> list[dict]:
+    """The techs a Civilization card builds: [{cmds, reqs, after}].
+
+    `reqs` are prerequisite tech ids; `after` is the index of an earlier step
+    whose tech this one also waits on.  Mirrors vanilla exactly:
+      population limit / age grants  one tech gated on the age (or nothing)
+      start, positive   Starting X (91-94) once a Town Center exists (639 +
+                        307, so a Nomad start is paid when the TC goes up),
+                        then the stockpile on a second tech after it —
+                        "C-Bonus, +50g" -> "Post-TC +50g"
+      start, negative   Starting X only, on 639 — the Chinese "-200f -50w"
+    """
+    age = card["target"].get("age")
+    gated: list = []
+    start_pos_start: list = []
+    start_pos_stock: list = []
+    start_neg: list = []
+    for e in card["effects"]:
+        if e["attr"] == "pop_cap":
+            gated.append(EffectCommand(type=1, a=_POP_CAP_RESOURCE, b=1, c=-1, d=float(e["value"])))
+        elif e["attr"] == "resources":
+            res = list(_RES_INDEX.values()) if e["resource"] == "each" else [_RES_INDEX[e["resource"]]]
+            for r in res:
+                d = float(e["value"])
+                if age:
+                    gated.append(EffectCommand(type=1, a=r, b=1, c=-1, d=d))
+                elif d > 0:
+                    start_pos_start.append(EffectCommand(type=1, a=_STARTING_RES + r, b=1, c=-1, d=d))
+                    start_pos_stock.append(EffectCommand(type=1, a=r, b=1, c=-1, d=d))
+                else:
+                    start_neg.append(EffectCommand(type=1, a=_STARTING_RES + r, b=1, c=-1, d=d))
+    steps: list[dict] = []
+    if gated:
+        steps.append({"cmds": gated, "reqs": [age] if age else [], "after": None})
+    if start_pos_start:
+        steps.append({"cmds": start_pos_start, "reqs": [_TC_SPAWN, _TC_EXISTS], "after": None})
+        steps.append({"cmds": start_pos_stock, "reqs": [], "after": len(steps) - 1})
+    if start_neg:
+        steps.append({"cmds": start_neg, "reqs": [_TC_SPAWN], "after": None})
+    return steps
+
+
 def card_text(card: dict) -> str:
     """'Cavalry: +20% HP, +2 pierce armor' — or the player's own text."""
     if card.get("text"):
         return card["text"]
     t = card["target"]
     if t["type"] == "civ":
-        # The game's own wording: "+10 population in Imperial Age".
-        text = ", ".join(effect_text(e, t) for e in card["effects"])
-        return text + (f" in the {CIV_AGES[t['age']]} Age" if t.get("age") in CIV_AGES else "")
+        return ", ".join(_civ_effect_text(e, t.get("age")) for e in card["effects"])
     subject = target_label(card["target"])
     if t["type"] == "unit" and t.get("kind") != "building":
         if t.get("scope") != "up":
@@ -815,8 +889,7 @@ def tech_effect_commands(eff: dict, tech_ids: list[int], costs_of=None) -> list[
 def card_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
     """Every command one card writes, in card order.  See _selectors."""
     if target_kind(card["target"]) == "civ":
-        return [EffectCommand(type=1, a=_POP_CAP_RESOURCE, b=1, c=-1, d=float(e["value"]))
-                for e in card["effects"] if e["attr"] == "pop_cap"]
+        return [c for step in civ_steps(card) for c in step["cmds"]]
     if target_kind(card["target"]) == "tech":
         tids = _tech_ids(card, resolve)
         costs_of = (lambda tid: resolve("tech_costs", tid)) if resolve else None

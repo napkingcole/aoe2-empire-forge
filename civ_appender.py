@@ -3329,8 +3329,13 @@ def _free_tech_cmds(tech_ids: list[int]) -> list[EffectCommand]:
 
 
 def _add_auto_fire_tech(dat: DatFile, civ_index: int, cmds: list[EffectCommand],
-                        age_req: int = -1, name: str = "C-Bonus") -> None:
-    """Append a civ-owned auto-fire tech+effect with given commands."""
+                        age_req: int = -1, name: str = "C-Bonus",
+                        reqs: tuple[int, ...] | None = None) -> int:
+    """Append a civ-owned auto-fire tech+effect with given commands; its id.
+
+    `reqs` replaces the single age gate with several prerequisites, all
+    required — vanilla's start-resource bonuses wait on 639 "Town Center
+    Spawn" and 307 "Shadow TC Annex", then a second tech on the first."""
     eff = Effect(name=name, effect_commands=cmds)
     dat.effects.append(eff)
     eff_id = len(dat.effects) - 1
@@ -3341,7 +3346,11 @@ def _add_auto_fire_tech(dat: DatFile, civ_index: int, cmds: list[EffectCommand],
     # all repeatable=1 — matches the same fix applied to the "next tier"
     # upgrade techs themselves in _add_upgrade_tier_tech.
     tech.repeatable = 1
+    if reqs:
+        tech.required_techs = tuple(list(reqs)[:6] + [-1] * (6 - min(len(reqs), 6)))
+        tech.required_tech_count = min(len(reqs), 6)
     dat.techs.append(tech)
+    return len(dat.techs) - 1
 
 
 _UT_EFFECT_CHUNK = 180
@@ -3554,12 +3563,20 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             print(f"  WARNING: {_msg}")
             warnings.append(_msg)
             continue
-        # A Civilization card may wait for an age (#65), like vanilla's
-        # "+10 population in Imperial Age"; everything else fires at the start.
-        age_req = card["target"].get("age", -1) if card["target"]["type"] == "civ" else -1
+        if card["target"]["type"] == "civ":
+            # Civilization cards build vanilla's own tech shapes (#65): an age
+            # gate, or start resources paid once a Town Center exists, the
+            # stockpile on a second tech after the first.  See civ_steps.
+            made: list[int] = []
+            for step in custom_bonus.civ_steps(card):
+                reqs = list(step["reqs"]) + ([made[step["after"]]] if step["after"] is not None else [])
+                made.append(_add_auto_fire_tech(dat, civ_index, step["cmds"], reqs=tuple(reqs),
+                                                name="C-Bonus, Custom"))
+            print(f"       Custom bonus: {text} ({len(cmds)} cmds, {len(made)} tech(s))")
+            applied += 1
+            continue
         for start in range(0, len(cmds), CHUNK):
-            _add_auto_fire_tech(dat, civ_index, cmds[start:start + CHUNK], age_req=age_req,
-                                name="C-Bonus, Custom")
+            _add_auto_fire_tech(dat, civ_index, cmds[start:start + CHUNK], name="C-Bonus, Custom")
         parts = -(-len(cmds) // CHUNK)
         print(f"       Custom bonus: {text} ({len(cmds)} cmds"
               + (f", split across {parts} techs)" if parts > 1 else ")"))

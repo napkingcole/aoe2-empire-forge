@@ -121,10 +121,18 @@ function _cbEffectText(e, target) {
 function cbCardText(card) {
   if (card.text) return card.text;
   if (card.target?.type === "civ") {
-    // The game's own wording: "+10 population in Imperial Age" (#65).
+    // Mirrors custom_bonus._civ_effect_text: "+25 population limit in the
+    // Imperial Age", "+100 stone at the start", "+200 wood on reaching the
+    // Castle Age" (#65).
     const age = (_cbCatalog?.civ_ages || []).find(a => a.id === card.target.age);
-    const parts = (card.effects || []).map(e => _cbEffectText(e, card.target)).filter(Boolean);
-    return parts.join(", ") + (age ? ` in the ${age.label}` : "");
+    return (card.effects || []).filter(e => e.value != null && !isNaN(e.value) && e.value !== 0).map(e => {
+      const num = `${e.value > 0 ? "+" : "-"}${_cbNum(Math.abs(e.value))}`;
+      if (e.attr === "resources") {
+        const what = e.resource === "each" ? "of each resource" : (e.resource || "gold");
+        return `${num} ${what} ${age ? `on reaching the ${age.label}` : "at the start"}`;
+      }
+      return `${num} ${_cbAttr(e.attr)?.label || e.attr}` + (age ? ` in the ${age.label}` : "");
+    }).join(", ");
   }
   const subject = _cbSubject(card.target);
   const parts = (card.effects || []).map(e => _cbEffectText(e, card.target)).filter(Boolean);
@@ -308,8 +316,10 @@ function _cbRenderPicker() {
 function _cbTargetHint(t) {
   if (!t) return "";
   if (t.type === "civ") {
-    return "Population limit is added on top of the lobby's limit (200, 500…). There is no percentage: "
-         + "the lobby limit is a game setting the mod can't read.";
+    return "Population limit is added on top of the lobby's limit (200, 500…); there is no percentage, "
+         + "since the lobby limit is a game setting the mod can't read. Resources are a one-time grant: "
+         + "at the start (paid once a Town Center stands, so Nomad works) or on reaching the chosen age. "
+         + "Only a start grant can be negative.";
   }
   if (t.type === "group") {
     return {
@@ -397,7 +407,10 @@ function _cbRenderEffects() {
       ? `<select class="form-select form-select-sm cb-op">${a.ops.map(op =>
           `<option value="${op}"${op === e.op ? " selected" : ""}>${unitLabel(op)}</option>`).join("")}</select>`
       : `<span class="cb-op-fixed small text-muted">${unitLabel(e.op)}</span>`;
-    const resCtl = _CB_COST.has(e.attr)
+    const resCtl = e.attr === "resources"
+      ? `<select class="form-select form-select-sm cb-res">${(_cbCatalog.civ_resources || []).map(r =>
+          `<option value="${r}"${r === (e.resource || "gold") ? " selected" : ""}>${r === "each" ? "each resource" : r}</option>`).join("")}</select>`
+      : _CB_COST.has(e.attr)
       ? `<select class="form-select form-select-sm cb-res">${_cbCatalog.cost_resources.map(r =>
           `<option value="${r}"${r === (e.resource || "all") ? " selected" : ""}>${r === "all" ? "all resources" : r}</option>`).join("")}</select>`
       : "";
@@ -434,7 +447,8 @@ function _cbRenderEffects() {
       e.attr = ev.target.value;
       const a = _cbAttr(e.attr);
       if (!a.ops.includes(e.op)) e.op = a.ops[0];
-      if (!_CB_COST.has(e.attr)) delete e.resource;
+      if (e.attr === "resources") e.resource = e.resource && e.resource !== "all" ? e.resource : "gold";
+      else if (!_CB_COST.has(e.attr)) delete e.resource;
       if (a.novalue) delete e.value;
       _cbRenderEffects();
     });
@@ -457,7 +471,8 @@ function _cbNewEffect() {
   const used  = new Set(_cbWork.effects.map(e => e.attr));
   const attrs = _cbAttrsFor(_cbWork.target);
   const a = attrs.find(x => !used.has(x.id)) || attrs[0];
-  return { attr: a.id, op: a.id === "hp" ? "mul" : a.ops[0], value: null };
+  return { attr: a.id, op: a.id === "hp" ? "mul" : a.ops[0], value: null,
+           ...(a.id === "resources" ? { resource: "gold" } : {}) };
 }
 
 function _cbUpdatePreview() {
