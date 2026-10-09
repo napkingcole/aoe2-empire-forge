@@ -19,10 +19,24 @@ async function cbLoadCatalog() {
   if (_cbCatalog) return _cbCatalog;
   try {
     _cbCatalog = await (await fetch("/api/builder/custom-bonus/catalog")).json();
+    if (_cbCatalog.allowed_pending) _cbRefreshAllowed(1);
   } catch (e) {
     console.warn("Could not load custom bonus catalog:", e);
   }
   return _cbCatalog;
+}
+
+// The per-target effect lists need the game DAT, which may still be loading on
+// a first visit; until they arrive every effect of the right kind is offered.
+function _cbRefreshAllowed(attempt) {
+  if (attempt > 10) return;
+  setTimeout(async () => {
+    try {
+      const c = await (await fetch("/api/builder/custom-bonus/catalog")).json();
+      if (c.allowed) _cbCatalog.allowed = c.allowed;
+      else _cbRefreshAllowed(attempt + 1);
+    } catch (e) { /* keep offering everything */ }
+  }, 3000);
 }
 
 async function cbLoadLibrary() {
@@ -107,8 +121,18 @@ function cbSameCard(a, b) {
 let _cbWork   = null;
 let _cbOnSave = null;
 
-function _cbAttrsFor(kind) {
-  return (_cbCatalog?.attrs || []).filter(a => a.kinds.includes(kind));
+// The effects a target can take: its kind's, narrowed to the ones that change
+// a stat some unit it reaches has (no garrison space on Villagers, no range on
+// a Champion).  Techs and the per-civ "Unique unit" group are not narrowed.
+function _cbAttrsFor(target) {
+  const kind = _cbTargetKind(target);
+  const all = (_cbCatalog?.attrs || []).filter(a => a.kinds.includes(kind));
+  const key = !target ? null
+    : target.type === "group" ? `group:${target.id}`
+    : target.type === "job"   ? `job:${target.id}`
+    : target.type === "unit"  ? `${kind}:${target.id}` : null;
+  const ok = key && _cbCatalog?.allowed?.[key];
+  return ok ? all.filter(a => ok.includes(a.id)) : all;
 }
 
 // ── Target picker: Group | Unit | Villager | Building tabs over icon tiles ──
@@ -274,7 +298,7 @@ function _cbSetTarget(target) {
   document.getElementById("cb-target-hint").textContent = _cbTargetHint(target);
   // Drop effects the new target can't take (movement speed on a building, HP on
   // a villager job) — the server enforces the same list.
-  const ok = new Set(_cbAttrsFor(_cbTargetKind(target)).map(a => a.id));
+  const ok = new Set(_cbAttrsFor(target).map(a => a.id));
   _cbWork.effects = _cbWork.effects.filter(e => ok.has(e.attr));
   if (!_cbWork.effects.length) _cbWork.effects.push(_cbNewEffect());
   _cbError("");
@@ -284,7 +308,12 @@ function _cbSetTarget(target) {
 
 function _cbRenderEffects() {
   const wrap  = document.getElementById("cb-effects");
-  const attrs = _cbAttrsFor(_cbTargetKind(_cbWork.target));
+  // A saved card keeps an effect the target no longer offers, so editing it
+  // never swaps that effect for another one silently.
+  const offered = _cbAttrsFor(_cbWork.target);
+  const kept = _cbWork.effects.map(e => e.attr)
+    .filter(id => !offered.some(a => a.id === id)).map(_cbAttr).filter(Boolean);
+  const attrs = [...offered, ...kept];
   wrap.innerHTML = _cbWork.effects.map((e, i) => {
     const a = _cbAttr(e.attr);
     const job = _cbWork.target?.type === "job" ? _cbJob(_cbWork.target.id) : null;
@@ -347,7 +376,7 @@ function _cbRenderEffects() {
 
 function _cbNewEffect() {
   const used  = new Set(_cbWork.effects.map(e => e.attr));
-  const attrs = _cbAttrsFor(_cbTargetKind(_cbWork.target));
+  const attrs = _cbAttrsFor(_cbWork.target);
   const a = attrs.find(x => !used.has(x.id)) || attrs[0];
   return { attr: a.id, op: a.id === "hp" ? "mul" : a.ops[0], value: null };
 }

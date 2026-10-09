@@ -270,6 +270,87 @@ def with_forms(unit_ids: set[int]) -> set[int]:
     return out
 
 
+# ── What each target can actually take ──────────────────────────────────────
+# ATTRS' `kinds` only says unit / building / job, so every unit was offered
+# every unit effect: garrison space on Villagers (a user spotted it), range on
+# a Champion, pierce attack on a Knight.  These effects change a stat the unit
+# must already have, so a target offers one only when some unit it reaches has
+# that stat in the DAT.  Effects not listed here (HP, armour, LOS, speed, cost,
+# regeneration, train/build speed) apply to anything of the right kind.
+#
+# carry / work rate: a task that moves a resource (resource_in/out set) is a
+# gatherer or trader — every villager job, Fishing Ship, Trade Cart and Cog —
+# and a Monk's heal task (action 105) is the other thing attribute 13 speeds up.
+_HEAL_ACTION = 105
+
+
+def _moves_resources(u) -> bool:
+    return bool(u.bird) and any(t.resource_in >= 0 or t.resource_out >= 0 for t in u.bird.tasks)
+
+
+def _attack(u, cls: int) -> bool:
+    return bool(u.type_50) and any(a.class_ == cls and a.amount > 0 for a in u.type_50.attacks)
+
+
+_CAPABLE = {
+    "garrison":      lambda u: (u.garrison_capacity or 0) > 0,
+    "range":         lambda u: bool(u.type_50) and u.type_50.max_range > 0,
+    "melee_attack":  lambda u: _attack(u, 4),
+    "pierce_attack": lambda u: _attack(u, 3),
+    "attack_speed":  lambda u: bool(u.type_50) and u.type_50.reload_time > 0
+                               and any(a.amount > 0 for a in u.type_50.attacks),
+    "carry":         _moves_resources,
+    "work_rate":     lambda u: _moves_resources(u) or (
+                         bool(u.bird) and any(t.action_type == _HEAL_ACTION for t in u.bird.tasks)),
+}
+
+
+def allowed_attrs(dat, entries: list[tuple[str, str, int]]) -> dict[str, list[str]]:
+    """target key -> the effect ids that do something for it.
+
+    `entries` is (key, kind, id) for the composer's individual units and
+    buildings ("unit:38", "building:68"); groups and villager jobs are added
+    here.  Membership is the catalog-time view, from the template civ: class
+    groups take every trainable unit (or building) of the class, "trained at"
+    groups what trains there, and "Unique unit" — resolved per civ at build
+    time — is left unfiltered."""
+    units = dat.civs[1].units
+
+    def real(uid):
+        return units[uid] if 0 <= uid < len(units) else None
+
+    trainable = [(i, u) for i, u in enumerate(units) if u is not None and u.creatable
+                 and any(l.unit_id > 0 for l in u.creatable.train_locations)]
+
+    def members(kind, g) -> set[int] | None:
+        if g.get("uu"):
+            return None
+        ids = set(with_forms(set(g.get("units", ())))) | set(g.get("buildings", ()))
+        classes = set(g.get("classes", ()))
+        if kind == "building":
+            ids |= {i for i, u in enumerate(units) if u is not None and u.class_ in classes
+                    and u.type == 80}
+        else:
+            ids |= {i for i, u in trainable if u.class_ in classes}
+        if "trained_at" in g:
+            ids |= {i for i, u in trainable
+                    if any(l.unit_id == g["trained_at"] for l in u.creatable.train_locations)}
+        return ids
+
+    def allowed(kind, ids) -> list[str]:
+        us = [u for u in map(real, ids) if u is not None] if ids is not None else None
+        return [k for k, a in ATTRS.items() if kind in a["kinds"]
+                and (k not in _CAPABLE or us is None or any(_CAPABLE[k](u) for u in us))]
+
+    out = {key: allowed(kind, with_forms({tid})) for key, kind, tid in entries}
+    for gid, g in GROUPS.items():
+        if g["kind"] in ("unit", "building"):
+            out[f"group:{gid}"] = allowed(g["kind"], members(g["kind"], g))
+    for jid, j in JOBS.items():
+        out[f"job:{jid}"] = allowed("job", set(j["units"]))
+    return out
+
+
 def catalog() -> dict:
     """What the wizard needs to draw the composer — groups and attributes."""
     return {

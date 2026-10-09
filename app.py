@@ -1620,7 +1620,36 @@ def api_builder_custom_bonus_catalog():
                       "icon": url_for("static", filename=rel) if (static / rel).exists() else ""})
     cat["techs"] = sorted(techs, key=lambda e: e["name"])
     cat["tech_categories"] = [{"id": k, "label": v} for k, v in _TECH_CATEGORIES.items()]
+
+    # Which effects each target can take, from the DAT's unit stats (garrison
+    # space only where something can garrison, range only on ranged units...).
+    # The DAT may still be loading on a first visit: then offer everything, as
+    # before, and say so — the composer asks again shortly.
+    dat_path = session.get("dat_path") or find_game_dat()
+    if dat_path and str(dat_path) in _DAT_OBJ_CACHE:
+        dat_path = str(dat_path)
+        if dat_path not in _CB_ALLOWED_CACHE:
+            entries = ([(f"unit:{u['id']}", "unit", u["id"]) for u in cat["units"]]
+                       + [(f"building:{b['id']}", "building", b["id"]) for b in cat["buildings"]])
+            _CB_ALLOWED_CACHE[dat_path] = custom_bonus.allowed_attrs(_get_dat(dat_path), entries)
+        cat["allowed"] = _CB_ALLOWED_CACHE[dat_path]
+    else:
+        cat["allowed_pending"] = True
+        if dat_path and str(dat_path) not in _DAT_LOADING:
+            dat_path = str(dat_path)
+            _DAT_LOADING.add(dat_path)
+
+            def _warm():
+                try:
+                    _get_dat(dat_path)
+                finally:
+                    _DAT_LOADING.discard(dat_path)
+            threading.Thread(target=_warm, daemon=True).start()
     return jsonify(cat)
+
+
+# dat_path -> custom_bonus.allowed_attrs result; the DAT never changes under a path.
+_CB_ALLOWED_CACHE: dict[str, dict] = {}
 
 
 # Training building -> picker chip.  Order matters: a unit trained in two places
