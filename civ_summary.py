@@ -222,11 +222,13 @@ def summarize(schema: dict, uu_catalog: list[dict], techtree: dict) -> dict:
 
 # ── Copy formats ──────────────────────────────────────────────────────────────
 
-def _unit_lines(u: dict, md: bool) -> list[str]:
+def _unit_lines(u: dict, md: bool, stats: bool = True) -> list[str]:
     b = (lambda s: f"**{s}**") if md else (lambda s: s)
     lines = [b(u["name"]) + (f" ({u['base_name']})" if u["base_name"] and u["base_name"] != u["name"] else "")]
     if u["description"]:
         lines.append(u["description"])
+    if not stats:                                      # "Show unit stats" off
+        return lines
     if u["stats"]:
         has_elite = any(r["elite"] is not None and r["elite"] != r["base"] for r in u["stats"])
         cells = [f"{r['label']} {_fmt(r['base'])}"
@@ -255,7 +257,7 @@ def _render(s: dict, md: bool) -> str:
     if s["civ_bonuses"]:
         out += ["", h("Civilization bonuses")] + [bullet + x for x in s["civ_bonuses"]]
     if s["unique_unit"]:
-        out += ["", h("Unique unit")] + _unit_lines(s["unique_unit"], md)
+        out += ["", h("Unique unit")] + _unit_lines(s["unique_unit"], md, s.get("show_unit_stats", True))
     if s["unique_techs"]:
         out += ["", h("Unique technologies")] + [
             f"{bullet}{t['age']}: {t['text']}" if t.get("age") else f"{bullet}{t['text']}"

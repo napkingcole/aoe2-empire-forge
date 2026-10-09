@@ -93,12 +93,17 @@
           <label class="form-check-label small" for="cv-opt-tree">Show tech tree</label>
         </div>
         <div class="form-check form-switch">
+          <input class="form-check-input cv-opt" type="checkbox" role="switch" id="cv-opt-stats" data-opt="show_unit_stats" checked>
+          <label class="form-check-label small" for="cv-opt-stats">Show unit stats</label>
+        </div>
+        <div class="form-check form-switch">
           <input class="form-check-input cv-opt" type="checkbox" role="switch" id="cv-opt-light" data-opt="light">
           <label class="form-check-label small" for="cv-opt-light">Printer-friendly (light)</label>
         </div>
       </div>
       <div class="form-text mt-2 mb-0">Click the description, bonuses, unique techs or team bonus on the card to edit them
-        before you share — edits go into the copies, images and PDF, but not back into the civ file.</div>
+        before you share — edits go into the copies, images and PDF.  <strong>Save civ with this description</strong>
+        keeps only the description; everything else in the civ file stays as it was.</div>
     </div>
 
     <div id="cv-actions" class="d-none d-flex flex-wrap gap-2 justify-content-center mb-2">
@@ -108,6 +113,9 @@
       <button type="button" class="btn btn-sm btn-outline-dark" id="cv-webp" title="Smaller file; a few apps and platforms can't open WebP">
         <i class="fa-regular fa-image me-1"></i>Save WebP</button>
       <button type="button" class="btn btn-sm btn-outline-dark" id="cv-print"><i class="fa-solid fa-print me-1"></i>Print / Save as PDF</button>
+      <button type="button" class="btn btn-sm btn-outline-dark" id="cv-save-civ"
+              title="Saves the civ file with the description from this card. Only the description changes — bonuses, techs and everything else stay exactly as they were.">
+        <i class="fa-solid fa-floppy-disk me-1"></i>Save civ with this description</button>
     </div>
     <div id="cv-status" class="text-center small mb-2" role="status" aria-live="polite"></div>
   </div>
@@ -124,7 +132,7 @@
 // edited lists, description, options — back to the same renderer.
 let _cv = null;
 const CV_OPTS_KEY = "ef_cv_opts";
-let _cvOpts = { show_description: true, show_tech_tree: true, light: false };
+let _cvOpts = { show_description: true, show_tech_tree: true, show_unit_stats: true, light: false };
 try { Object.assign(_cvOpts, JSON.parse(localStorage.getItem(CV_OPTS_KEY) || "{}")); } catch (e) { /* defaults */ }
 
 function cvEsc(s) {
@@ -146,6 +154,8 @@ function cvApplyOpts() {
   card.classList.toggle("cv-light", !!_cvOpts.light);
   document.getElementById("cv-desc").style.display = _cvOpts.show_description ? "" : "none";
   document.getElementById("cv-sec-tree").style.display = _cvOpts.show_tech_tree ? "" : "none";
+  const stats = document.getElementById("cv-uu-stats");
+  if (stats) stats.style.display = _cvOpts.show_unit_stats ? "" : "none";
 }
 
 function cvRender(s) {
@@ -164,7 +174,7 @@ function cvRender(s) {
     uu = `<div class="cv-unit">${u.icon ? `<img src="${cvEsc(u.icon)}" alt="">` : ""}<div>
       <div class="cv-unit-name">${cvEsc(u.name)}${u.base_name && u.base_name !== u.name ? ` <span class="cv-unit-base">(${cvEsc(u.base_name)})</span>` : ""}</div>
       ${u.description ? `<div class="cv-desc text-start mt-1">${cvEsc(u.description)}</div>` : ""}
-      ${stats}${meta}${u.stats.some(r => r.changed) ? `<div class="cv-meta"><span class="cv-changed">Gold</span> = changed from the original unit</div>` : ""}
+      <div id="cv-uu-stats">${stats}${meta}${u.stats.some(r => r.changed) ? `<div class="cv-meta"><span class="cv-changed">Gold</span> = changed from the original unit</div>` : ""}</div>
     </div></div>`;
   }
   const uts = s.unique_techs.length
@@ -203,6 +213,7 @@ function cvCurrentSummary() {
   s.description = (document.getElementById("cv-desc")?.innerText || "").trim();
   s.show_description = !!_cvOpts.show_description;
   s.show_tech_tree = !!_cvOpts.show_tech_tree;
+  s.show_unit_stats = !!_cvOpts.show_unit_stats;
   return s;
 }
 
@@ -291,6 +302,26 @@ document.getElementById("cv-copy-text").addEventListener("click", () => cvCopy("
 document.getElementById("cv-png").addEventListener("click", () => cvSaveImage("png"));
 document.getElementById("cv-webp").addEventListener("click", () => cvSaveImage("webp"));
 document.getElementById("cv-print").addEventListener("click", () => window.print());
+
+// The civ file with the card's description as its Share description — that one
+// field and nothing else.  Retyped bonus / tech lines are display text, not
+// data, so they are not saved.  A Builder draft or KM file is converted to an
+// Empire Forge file to be saved at all, and the message says so.
+document.getElementById("cv-save-civ").addEventListener("click", () => {
+  if (!_cv?.civ_file) return;
+  const civ = JSON.parse(JSON.stringify(_cv.civ_file));
+  const desc = (document.getElementById("cv-desc")?.innerText || "").trim();
+  if (desc) civ.share_description = desc; else delete civ.share_description;
+  const name = (civ.alias || _cv.summary.name || "civ").replace(/[^\w\- ]+/g, "").trim() || "civ";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(civ, null, 2) + "\n"], { type: "application/json" }));
+  a.download = `${name}.civbuilder.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  cvStatus(`Saved ${a.download} — only the description changed.`
+           + (_cv.converted ? " It's in Empire Forge format (the original wasn't)." : "")
+           + " Bonus and tech text you retyped on the card isn't saved.");
+});
 cvApplyOpts();
 
 // From the Builder's "View & share": the draft it stored for this page.

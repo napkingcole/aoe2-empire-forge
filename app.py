@@ -2163,9 +2163,13 @@ def api_civ_summary():
         summary = civ_summary.summarize(schema, _uu_catalog_entries(), techtree)
     except Exception as exc:                    # noqa: BLE001 — a bad file is the user's, not a 500
         return jsonify({"error": f"Couldn't read that civ: {exc}"}), 400
+    # The civ as a file, for "Save civ with this description": an Empire Forge
+    # file exactly as it came in; a Builder draft or KM file converted.
     return jsonify({"summary": summary,
                     "markdown": civ_summary.to_markdown(summary),
-                    "text": civ_summary.to_text(summary)})
+                    "text": civ_summary.to_text(summary),
+                    "civ_file": raw if is_empireforge(raw) else schema,
+                    "converted": not is_empireforge(raw)})
 
 
 @app.route("/api/civ/render", methods=["POST"])

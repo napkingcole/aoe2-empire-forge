@@ -137,6 +137,17 @@ check("retyped lists are what gets copied", "- Retyped bonus" in out["markdown"]
       out["markdown"][:200])
 check("hidden tech tree and description stay out", "Tech tree" not in out["markdown"]
       and "Raiders of the test suite" not in out["markdown"])
+check("Show unit stats off: no stats, cost or traits in the copy",
+      "Stats" not in c.post("/api/civ/render", json={"summary": dict(summ, show_unit_stats=False)}).get_json()["markdown"])
+
+print("\n=== Save civ with this description ===")
+ef = copy.deepcopy(CIV)
+d = c.post("/api/civ/summary", json={"civ": ef}).get_json()
+check("an Empire Forge file comes back exactly as sent, not converted",
+      d["civ_file"] == ef and d["converted"] is False)
+d = c.post("/api/civ/summary", json={"civ": to_draft(copy.deepcopy(CIV))}).get_json()
+check("a Builder draft comes back as an Empire Forge file, flagged converted",
+      d["converted"] is True and d["civ_file"].get("format") == FORMAT_KEY and d["civ_file"]["alias"] == "Testers")
 check("a bad render request is a 400", c.post("/api/civ/render", json={"summary": 3}).status_code == 400)
 check("no build route reads Share description",
       not any("share_description" in (ROOT / f).read_text(encoding="utf-8")
