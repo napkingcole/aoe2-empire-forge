@@ -222,6 +222,13 @@ ATTRS: dict[str, dict] = {
     "work_rate":     {"label": "work rate",        "ops": ("mul",),       "fields": [13],        "kinds": ("unit", "job")},
     "carry":         {"label": "carry capacity",   "ops": ("add",),       "fields": [14],        "kinds": ("unit", "job")},
     "garrison":      {"label": "garrison space",   "ops": ("add",),       "fields": [2],         "kinds": ("unit", "building")},
+    # Population a building supports (#64): attribute 21, the amount of its
+    # first resource storage — vanilla's "Houses +5 pop" and Chinese "Town
+    # Centers support 15 population".  Only means population when that slot is
+    # population, so it is written per building, never class-wide (a Farm's
+    # slot is its food); see POP_SPACE_SKIP_CLASSES and pop_space_ok.
+    "pop_space":     {"label": "population space", "ops": ("add",), "positive": True, "max": 200,
+                      "fields": [21], "per_building": True, "kinds": ("building",)},
     # ── Techs ── (EC_TECH_COST / EC_TECH_TIME; see tech_effect_commands)
     "tech_cost":     {"label": "cost",             "ops": ("mul", "add"),                        "kinds": ("tech",)},
     "research_speed":{"label": "research speed",   "ops": ("mul",), "faster": True,             "kinds": ("tech",)},
@@ -295,6 +302,19 @@ def with_forms(unit_ids: set[int]) -> set[int]:
 # and a Monk's heal task (action 105) is the other thing attribute 13 speeds up.
 _HEAL_ACTION = 105
 
+# Population space: walls, gates and palisades never get it, at the user's
+# call (#64) — every segment would become a house.  A building qualifies when
+# its first resource storage is population (type 4) or empty (-1; the build
+# turns it into a population slot).  Anything else stores something else
+# there: a Farm its food, an Outpost resource 508.
+POP_SPACE_SKIP_CLASSES = frozenset({27, 39})        # walls, gates
+_POP_STORAGE = 4
+
+
+def pop_space_ok(u) -> bool:
+    return (u is not None and u.type == 80 and u.class_ not in POP_SPACE_SKIP_CLASSES
+            and bool(u.resource_storages) and u.resource_storages[0].type in (_POP_STORAGE, -1))
+
 
 def _moves_resources(u) -> bool:
     return bool(u.bird) and any(t.resource_in >= 0 or t.resource_out >= 0 for t in u.bird.tasks)
@@ -312,6 +332,7 @@ _CAPABLE = {
     "attack_speed":  lambda u: bool(u.type_50) and u.type_50.reload_time > 0
                                and any(a.amount > 0 for a in u.type_50.attacks),
     "carry":         _moves_resources,
+    "pop_space":     pop_space_ok,
     "work_rate":     lambda u: _moves_resources(u) or (
                          bool(u.bird) and any(t.action_type == _HEAL_ACTION for t in u.bird.tasks)),
 }
@@ -806,7 +827,13 @@ def card_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
     sel = _selectors(card, line_of, resolve)
     cmds: list[EffectCommand] = []
     for eff in card["effects"]:
-        cmds.extend(effect_commands(eff, sel))
+        if ATTRS[eff["attr"]].get("per_building"):
+            # Class-wide would reach Farms and walls; the build expands the
+            # selectors to the buildings that qualify (and readies their slot).
+            ids = resolve("pop_space", sel) if resolve else sorted({a for a, _ in sel if a >= 0})
+            cmds.extend(effect_commands(eff, [(uid, -1) for uid in ids]))
+        else:
+            cmds.extend(effect_commands(eff, sel))
     return cmds
 
 

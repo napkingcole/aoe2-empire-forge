@@ -3456,6 +3456,28 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             ids = grown
         return {u for u in ids if u < n_units and units[u] is not None}
 
+    # Population space (#64): the buildings a card's selectors reach — class
+    # pairs expanded, since the effect is written per building — that can hold
+    # population.  An empty first storage slot (Market, Blacksmith, Monastery,
+    # University, Wonder) is turned into a population slot at 0 on this civ's
+    # own unit, so the +N lands as population and nothing else changes.
+    def pop_space_units(selectors) -> list[int]:
+        ids = {a for a, _ in selectors if a >= 0}
+        classes = {b for a, b in selectors if a < 0 and b >= 0}
+        ids |= {i for i, u in enumerate(units) if u is not None and u.type == 80 and u.class_ in classes}
+        out = []
+        for uid in sorted(ids):
+            u = units[uid] if uid < n_units else None
+            if not custom_bonus.pop_space_ok(u):
+                continue
+            first = u.resource_storages[0]
+            if first.type == -1:
+                u.resource_storages = (ResourceStorage(type=custom_bonus._POP_STORAGE,
+                                                       amount=0.0, flag=4),
+                                       *u.resource_storages[1:])
+            out.append(uid)
+        return out
+
     # Build-time answers the library can't know: what this civ trains at a
     # building, and which unit is its UU.  Both keep alternate forms.
     present = _civ_present_units(civ_def, dat, civ_index) | {u for u in uu_ids if u >= 0}
@@ -3463,6 +3485,8 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     def resolve(kind: str, arg) -> set[int]:
         if kind == "up":
             return up_of(arg)
+        if kind == "pop_space":
+            return pop_space_units(arg)
         if kind == "units":
             return {u for u in custom_bonus.with_forms(set(arg))
                     if u < n_units and units[u] is not None}
