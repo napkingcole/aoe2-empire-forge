@@ -131,6 +131,11 @@ function cbCardText(card) {
         const what = e.resource === "each" ? "of each resource" : (e.resource || "gold");
         return `${num} ${what} ${age ? `on reaching the ${age.label}` : "at the start"}`;
       }
+      if (e.attr === "convert_time") {
+        const n = Math.abs(e.value);
+        return `Monks convert ${_cbNum(n)} second${n !== 1 ? "s" : ""} ${e.value < 0 ? "faster" : "slower"}`
+             + (age ? ` from the ${age.label}` : "");
+      }
       return `${num} ${_cbAttr(e.attr)?.label || e.attr}` + (age ? ` in the ${age.label}` : "");
     }).join(", ");
   }
@@ -319,7 +324,9 @@ function _cbTargetHint(t) {
     return "Population limit is added on top of the lobby's limit (200, 500…); there is no percentage, "
          + "since the lobby limit is a game setting the mod can't read. Resources are a one-time grant: "
          + "at the start (paid once a Town Center stands, so Nomad works) or on reaching the chosen age. "
-         + "Only a start grant can be negative.";
+         + "Only a start grant can be negative. Monk conversion time is in monk-seconds: "
+         + "-1 makes your Monks convert faster (Inquisition); conversion resistance makes "
+         + "enemy Monks slower against your units (Faith gives +4).";
   }
   if (t.type === "group") {
     return {

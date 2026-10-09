@@ -3487,6 +3487,22 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             out.append(uid)
         return out
 
+    # Minimum range / blast radius (#67): every unit the card's selectors
+    # reach — class pairs expanded — that has the stat, with this civ's
+    # current value, so the card can write a clamped per-unit SET.
+    def unit_values(attr, selectors) -> list[tuple[int, float]]:
+        spec = custom_bonus.ATTRS[attr]
+        ok = custom_bonus._CAPABLE[attr]
+        ids = {a for a, _ in selectors if a >= 0}
+        classes = {b for a, b in selectors if a < 0 and b >= 0}
+        ids |= {i for i, u in enumerate(units) if u is not None and u.class_ in classes}
+        out = []
+        for uid in sorted(ids):
+            u = units[uid] if uid < n_units else None
+            if u is not None and u.type_50 and ok(u):
+                out.append((uid, float(getattr(u.type_50, spec["unit_field"]))))
+        return out
+
     # Build-time answers the library can't know: what this civ trains at a
     # building, and which unit is its UU.  Both keep alternate forms.
     present = _civ_present_units(civ_def, dat, civ_index) | {u for u in uu_ids if u >= 0}
@@ -3496,6 +3512,8 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             return up_of(arg)
         if kind == "pop_space":
             return pop_space_units(arg)
+        if kind == "unit_values":
+            return unit_values(*arg)
         if kind == "units":
             return {u for u in custom_bonus.with_forms(set(arg))
                     if u < n_units and units[u] is not None}

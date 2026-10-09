@@ -39,6 +39,7 @@ from genieutils.effect import EffectCommand
 
 _ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
+EC_SET       = 0
 EC_ADD       = 4
 EC_MULTIPLY  = 5
 EC_TECH_COST = 101    # a=tech, b=resource (0 food 1 wood 2 stone 3 gold, -1 all), c=mode, d
@@ -229,6 +230,17 @@ ATTRS: dict[str, dict] = {
     # slot is its food); see POP_SPACE_SKIP_CLASSES and pop_space_ok.
     "pop_space":     {"label": "population space", "ops": ("add",), "positive": True, "max": 200,
                       "fields": [21], "per_building": True, "kinds": ("building",)},
+    # #67.  Written per unit, only on units that have the stat, as ADDs so
+    # cards stack (vanilla adds blast radius: Logistica, Greek Fire, Warwolf);
+    # a reduction is clamped to the unit's own value — "-1 minimum range" on
+    # a Skirmisher (1) is -1, on an Archer (0) nothing.  "No minimum range" is
+    # Andean Sling's SET to 0.
+    "min_range":     {"label": "minimum range", "ops": ("add",), "max": 10, "unit_field": "min_range",
+                      "fields": [20], "kinds": ("unit", "building")},
+    "no_min_range":  {"label": "no minimum range", "ops": ("set",), "novalue": True, "unit_field": "min_range",
+                      "fields": [20], "kinds": ("unit", "building")},
+    "blast_radius":  {"label": "blast radius", "ops": ("add",), "max": 5, "unit_field": "blast_width",
+                      "fields": [22], "kinds": ("unit", "building")},
     # ── Techs ── (EC_TECH_COST / EC_TECH_TIME; see tech_effect_commands)
     "tech_cost":     {"label": "cost",             "ops": ("mul", "add"),                        "kinds": ("tech",)},
     "research_speed":{"label": "research speed",   "ops": ("mul",), "faster": True,             "kinds": ("tech",)},
@@ -248,6 +260,13 @@ ATTRS: dict[str, dict] = {
     # an age ("+200 wood in age2").  A negative amount only at the start —
     # vanilla never takes resources away on age-up.
     "resources":     {"label": "resources", "ops": ("add",), "max": 10000, "kinds": ("civ",)},
+    # Conversion (#67) is player-level.  Your Monks: resources 176/177, the
+    # monk-seconds before a conversion can happen / is forced — Inquisition
+    # takes 1 off both.  Your units resisting enemy Monks: 178/179 — Faith
+    # adds 4 to both.  Same amount on both, as those do.
+    "convert_time":  {"label": "monk conversion time", "ops": ("add",), "max": 10, "kinds": ("civ",)},
+    "convert_resist": {"label": "conversion resistance", "ops": ("add",), "positive": True, "max": 10,
+                       "kinds": ("civ",)},
 }
 
 CIV_RESOURCES = ("food", "wood", "stone", "gold", "each")
@@ -319,6 +338,12 @@ _HEAL_ACTION = 105
 # there: a Farm its food, an Outpost resource 508.
 POP_SPACE_SKIP_CLASSES = frozenset({27, 39})        # walls, gates
 _POP_STORAGE = 4
+_TARGETED_ONLY = 3                     # blast attack level: no splash
+
+
+def _splashes(u) -> bool:
+    """Has a blast attack — even at width 0 (Warwolf widens the Trebuchet's)."""
+    return bool(u.type_50) and (u.type_50.blast_attack_level & 3) != _TARGETED_ONLY
 
 
 def pop_space_ok(u) -> bool:
@@ -343,6 +368,9 @@ _CAPABLE = {
                                and any(a.amount > 0 for a in u.type_50.attacks),
     "carry":         _moves_resources,
     "pop_space":     pop_space_ok,
+    "min_range":     lambda u: bool(u.type_50) and u.type_50.min_range > 0,
+    "no_min_range":  lambda u: bool(u.type_50) and u.type_50.min_range > 0,
+    "blast_radius":  _splashes,
     "work_rate":     lambda u: _moves_resources(u) or (
                          bool(u.bird) and any(t.action_type == _HEAL_ACTION for t in u.bird.tasks)),
 }
@@ -619,6 +647,11 @@ def _norm_effect(raw) -> dict | None:
     if raw["attr"] in ("cost", "tech_cost"):
         res = raw.get("resource", "all")
         out["resource"] = res if res in COST_RESOURCES else "all"
+    if spec.get("max") and not spec.get("positive") and raw["attr"] != "resources":
+        value = max(-spec["max"], min(spec["max"], value))
+        if value == 0:
+            return None
+        out["value"] = int(value) if value == int(value) else value
     if raw["attr"] == "resources":
         res = raw.get("resource", "gold")
         out["resource"] = res if res in CIV_RESOURCES else "gold"
@@ -701,6 +734,10 @@ def _civ_effect_text(eff: dict, age) -> str:
         what = "of each resource" if eff.get("resource") == "each" else eff.get("resource", "gold")
         when = f"on reaching the {era} Age" if era else "at the start"
         return f"{num} {what} {when}"
+    if eff["attr"] == "convert_time":
+        n = abs(v)
+        text = f"Monks convert {_fmt_num(n)} second{'s' if n != 1 else ''} {'faster' if v < 0 else 'slower'}"
+        return text + (f" from the {era} Age" if era else "")
     return f"{num} {ATTRS[eff['attr']]['label']}" + (f" in the {era} Age" if era else "")
 
 
@@ -724,6 +761,9 @@ def civ_steps(card: dict) -> list[dict]:
     for e in card["effects"]:
         if e["attr"] == "pop_cap":
             gated.append(EffectCommand(type=1, a=_POP_CAP_RESOURCE, b=1, c=-1, d=float(e["value"])))
+        elif e["attr"] in ("convert_time", "convert_resist"):
+            for r in ((176, 177) if e["attr"] == "convert_time" else (178, 179)):
+                gated.append(EffectCommand(type=1, a=r, b=1, c=-1, d=float(e["value"])))
         elif e["attr"] == "resources":
             res = list(_RES_INDEX.values()) if e["resource"] == "each" else [_RES_INDEX[e["resource"]]]
             for r in res:
@@ -900,7 +940,22 @@ def card_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
     sel = _selectors(card, line_of, resolve)
     cmds: list[EffectCommand] = []
     for eff in card["effects"]:
-        if ATTRS[eff["attr"]].get("per_building"):
+        spec = ATTRS[eff["attr"]]
+        if spec.get("unit_field"):
+            # Per unit, only units that have the stat (see _CAPABLE).  An ADD,
+            # so cards and bonuses stack as vanilla's do; a reduction takes at
+            # most what the unit has, so it never goes below 0.  "No minimum
+            # range" is Andean Sling's SET to 0.  Without the build, nothing.
+            if resolve:
+                for uid, base in resolve("unit_values", (eff["attr"], sel)):
+                    if spec.get("novalue"):
+                        cmds.append(EffectCommand(type=EC_SET, a=uid, b=-1, c=spec["fields"][0], d=0.0))
+                        continue
+                    v = float(eff["value"])
+                    d = v if v > 0 else -min(-v, base)
+                    if d:
+                        cmds.append(EffectCommand(type=EC_ADD, a=uid, b=-1, c=spec["fields"][0], d=d))
+        elif ATTRS[eff["attr"]].get("per_building"):
             # Class-wide would reach Farms and walls; the build expands the
             # selectors to the buildings that qualify (and readies their slot).
             ids = resolve("pop_space", sel) if resolve else sorted({a for a, _ in sel if a >= 0})
