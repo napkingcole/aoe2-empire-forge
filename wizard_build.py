@@ -41,6 +41,7 @@ from build_civ import (
     uu_cost_text,
 )
 from civ_appender import (
+    patch_civilizations_list,
     apply_civ, assign_all_languages, get_civ_bonuses, get_team_bonuses,
     get_km_uu_index, _KM_UU_NAMES,
 )
@@ -232,6 +233,9 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             "uu_unit_id":         uu_info["unit_id"]  if uu_info else None,
             "uu_elite_id":        uu_info["elite_id"] if uu_info else None,
             "uu_upgrade_tech_id": civ_result.get("km_uu_elite_tech_id"),
+            # The civ's own UTs, for civilizations.json (patch_civilizations_list).
+            "castle_ut_tech_id": civ_result.get("castle_ut_tech_id"),
+            "imp_ut_tech_id":    civ_result.get("imp_ut_tech_id"),
             "uu_name_sid":        uu_info["dll_name"] if uu_info else None,
             "uu_desc_sid":        uu_info["dll_help"] if uu_info else None,
         }
@@ -563,27 +567,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         try:
             with open(base_civs_json, encoding="utf-8") as f:
                 civ_list = json.load(f).get("civilization_list", [])
-            for slot_idx, ov in civs_overrides.items():
-                if slot_idx >= len(civ_list):
-                    continue
-                entry = civ_list[slot_idx]
-                entry["name_string_id"] = ov["name_sid"]
-                if ov.get("icon_id") is not None:
-                    entry["unique_unit_image_paths"] = [
-                        f"/resources/uniticons/{ov['icon_id']:03d}_50730.png"
-                    ]
-                uu_unit_id = ov.get("uu_unit_id")
-                if uu_unit_id is not None:
-                    entry["unique_unit_id"] = uu_unit_id
-                    if ov.get("uu_elite_id") is not None:
-                        entry["elite_unique_unit_id"] = ov["uu_elite_id"]
-                    if ov.get("uu_upgrade_tech_id") is not None:
-                        entry["unique_unit_upgrade_id"] = ov["uu_upgrade_tech_id"]
-                    if ov.get("uu_name_sid") is not None:
-                        desc_sid_uu = ov.get("uu_desc_sid") or (ov["uu_name_sid"] + DLL_HELP_OFFSET)
-                        entry["unique_unit_string_ids"] = [
-                            {"name": ov["uu_name_sid"], "description": desc_sid_uu}
-                        ]
+            patch_civilizations_list(civ_list, civs_overrides)
             civs_json_bytes = json.dumps(
                 {"civilization_list": civ_list}, separators=(",", ":")
             ).encode("utf-8")

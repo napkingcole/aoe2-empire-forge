@@ -70,6 +70,7 @@ else
     run "KM import tree gaps"     "$PY" tests/test_km_import_gaps.py
     run "elephant bonuses"        "$PY" tests/test_elephant_bonuses.py
     run "monk voice gender"       "$PY" tests/test_monk_voice.py
+    run "replaced civ leftovers"  "$PY" tests/test_replaced_civ_leftovers.py
     run "dat_path fallback"       "$PY" tests/test_dat_path_fallback.py
     run "issues 38-44 batch"      "$PY" tests/test_issues_40_44.py
     run "custom bonus composer"   "$PY" tests/test_custom_bonus.py

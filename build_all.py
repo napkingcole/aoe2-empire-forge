@@ -35,7 +35,7 @@ from version import __version__ as _APP_VERSION
 from civ_schema import is_civbuilder_v1, is_empireforge, to_draft as _schema_to_draft
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
                            _refresh_uu_tooltips)
-from civ_appender import (apply_civ, assign_all_languages,
+from civ_appender import (apply_civ, assign_all_languages, patch_civilizations_list,
     DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET,
     get_civ_bonuses, get_team_bonuses, get_ut_entries, get_km_uu_index)
 from build_civ import (
@@ -606,6 +606,9 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
             "uu_unit_id":    uu_info["unit_id"]  if uu_info else None,
             "uu_elite_id":   uu_info["elite_id"] if uu_info else None,
             "uu_upgrade_tech_id": civ_result.get("km_uu_elite_tech_id"),
+            # The civ's own UTs, for civilizations.json (patch_civilizations_list).
+            "castle_ut_tech_id": civ_result.get("castle_ut_tech_id"),
+            "imp_ut_tech_id":    civ_result.get("imp_ut_tech_id"),
             "uu_name_sid":   uu_info["dll_name"] if uu_info else None,
             "uu_desc_sid":   uu_info["dll_help"] if uu_info else None,
         }
@@ -950,41 +953,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         try:
             with open(base_civs_json, encoding="utf-8") as f:
                 civ_list = json.load(f).get("civilization_list", [])
-            for slot_idx, ov in civs_overrides.items():
-                if slot_idx >= len(civ_list):
-                    continue
-                entry = civ_list[slot_idx]
-                entry["name_string_id"] = ov["name_sid"]
-                icon_id = ov.get("icon_id")
-                if icon_id is not None:
-                    entry["unique_unit_image_paths"] = [
-                        f"/resources/uniticons/{icon_id:03d}_50730.png"
-                    ]
-                # Retarget the civ-level UU metadata block (see civs_overrides
-                # assignment above for why this is necessary) so any in-game
-                # UI surface keyed off civilizations.json's own UU fields
-                # — not just the per-unit DAT strings — shows the custom UU.
-                uu_unit_id = ov.get("uu_unit_id")
-                if uu_unit_id is not None:
-                    entry["unique_unit_id"] = uu_unit_id
-                    if ov.get("uu_elite_id") is not None:
-                        entry["elite_unique_unit_id"] = ov["uu_elite_id"]
-                    if ov.get("uu_upgrade_tech_id") is not None:
-                        entry["unique_unit_upgrade_id"] = ov["uu_upgrade_tech_id"]
-                    if ov.get("uu_name_sid") is not None:
-                        name_sid_uu = ov["uu_name_sid"]
-                        # Prefer the EXPLICIT desc sid (always a real id —
-                        # for KM-custom UUs it's a CAMPAIGN_STRING_POOL id,
-                        # nothing to do with name_sid+offset). Fall back to
-                        # the +DLL_HELP_OFFSET computation only when desc_sid
-                        # is unavailable — true for vanilla UUs, where it
-                        # coincidentally still lands on a real vanilla id
-                        # (vanilla's own language_dll_help convention also
-                        # happens to be name+100000).
-                        desc_sid_uu = ov.get("uu_desc_sid") or (name_sid_uu + DLL_HELP_OFFSET)
-                        entry["unique_unit_string_ids"] = [
-                            {"name": name_sid_uu, "description": desc_sid_uu}
-                        ]
+            patch_civilizations_list(civ_list, civs_overrides)
             civs_json_bytes = json.dumps(
                 {"civilization_list": civ_list}, separators=(",", ":")
             ).encode("utf-8")

@@ -45,7 +45,7 @@ from build_civ import (
 )
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
                            _refresh_uu_tooltips)
-from civ_appender import (apply_civ, assign_all_languages, button_layout_preview,
+from civ_appender import (apply_civ, assign_all_languages, button_layout_preview, patch_civilizations_list,
                           _str_id, STRING_BASE, STRING_BLOCK_SIZE,
                           STR_CASTLE_UT, STR_IMPERIAL_UT,
                           DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET,
@@ -809,6 +809,9 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 "uu_unit_id":    uu_info["unit_id"]  if uu_info else None,
                 "uu_elite_id":   uu_info["elite_id"] if uu_info else None,
                 "uu_upgrade_tech_id": result.get("km_uu_elite_tech_id"),
+                # The civ's own UTs, for civilizations.json (patch_civilizations_list).
+                "castle_ut_tech_id": result.get("castle_ut_tech_id"),
+                "imp_ut_tech_id":    result.get("imp_ut_tech_id"),
                 "uu_name_sid":   uu_info["dll_name"] if uu_info else None,
                 "uu_desc_sid":   uu_info["dll_help"] if uu_info else None,
             }
@@ -1105,33 +1108,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             try:
                 with open(base_civs_json, encoding="utf-8") as f:
                     civ_list = json.load(f).get("civilization_list", [])
-                for slot_idx, ov in civs_overrides.items():
-                    if slot_idx >= len(civ_list):
-                        continue
-                    entry = civ_list[slot_idx]
-                    entry["name_string_id"] = ov["name_sid"]
-                    icon_id = ov.get("icon_id")
-                    if icon_id is not None:
-                        entry["unique_unit_image_paths"] = [
-                            f"/resources/uniticons/{icon_id:03d}_50730.png"
-                        ]
-                    uu_unit_id = ov.get("uu_unit_id")
-                    if uu_unit_id is not None:
-                        entry["unique_unit_id"] = uu_unit_id
-                        if ov.get("uu_elite_id") is not None:
-                            entry["elite_unique_unit_id"] = ov["uu_elite_id"]
-                        if ov.get("uu_upgrade_tech_id") is not None:
-                            entry["unique_unit_upgrade_id"] = ov["uu_upgrade_tech_id"]
-                        if ov.get("uu_name_sid") is not None:
-                            name_sid_uu = ov["uu_name_sid"]
-                            # See build_all.py's identical block — prefer the
-                            # explicit desc sid (real id for both vanilla and
-                            # KM-custom UUs); the +DLL_HELP_OFFSET fallback only
-                            # reliably works for the vanilla path.
-                            desc_sid_uu = ov.get("uu_desc_sid") or (name_sid_uu + DLL_HELP_OFFSET)
-                            entry["unique_unit_string_ids"] = [
-                                {"name": name_sid_uu, "description": desc_sid_uu}
-                            ]
+                patch_civilizations_list(civ_list, civs_overrides)
                 civs_json_bytes = json.dumps(
                     {"civilization_list": civ_list}, separators=(",", ":")
                 ).encode("utf-8")

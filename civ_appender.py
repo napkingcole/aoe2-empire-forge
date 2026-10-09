@@ -869,6 +869,60 @@ _FULL_TREE_PATH = Path(__file__).parent / "static" / "aoe2techtree" / "data" / "
 _editor_nodes_cache: dict[str, set[int]] | None = None
 
 
+def patch_civilizations_list(civ_list: list[dict], civs_overrides: dict) -> None:
+    """Point each replaced civ's civilizations.json entry at the new civ.
+
+    The entry is the game's own description of the civ, separate from the DAT,
+    and nothing else rewrites it: a replaced civ kept naming the original
+    civ's UU (Britons stayed on the Longbowman), unique techs and UU line.
+    Shared by all three build routes (app, build_all, wizard_build), which each
+    carried a copy of this until 2026-10-08.
+
+    `civs_overrides` is slot -> the dict each route builds: name_sid, icon_id,
+    uu_unit_id, uu_elite_id, uu_upgrade_tech_id, uu_name_sid, uu_desc_sid,
+    castle_ut_tech_id, imp_ut_tech_id.
+
+    unique_tech_id_1 is the Imperial UT and _2 the Castle UT, as in 49 of the
+    game's 60 entries.  unique_unit_line is an id space nothing local defines,
+    so it is copied from the vanilla civ whose UU this is (Teutonic Knight ->
+    the Teutons' -272) and left alone for a KM-custom UU, which has none.
+    """
+    # Read before any entry is rewritten, so a civ can take a line from a slot
+    # another civ in the same mod replaced.
+    line_of = {e.get("unique_unit_id"): e.get("unique_unit_line")
+               for e in civ_list if e.get("unique_unit_line") is not None}
+    for slot_idx, ov in civs_overrides.items():
+        if slot_idx >= len(civ_list):
+            continue
+        entry = civ_list[slot_idx]
+        entry["name_string_id"] = ov["name_sid"]
+        if ov.get("icon_id") is not None:
+            entry["unique_unit_image_paths"] = [
+                f"/resources/uniticons/{ov['icon_id']:03d}_50730.png"
+            ]
+        for field, key in (("unique_tech_id_1", "imp_ut_tech_id"),
+                           ("unique_tech_id_2", "castle_ut_tech_id")):
+            if ov.get(key) is not None:
+                entry[field] = ov[key]
+        uu_unit_id = ov.get("uu_unit_id")
+        if uu_unit_id is None:
+            continue
+        entry["unique_unit_id"] = uu_unit_id
+        if uu_unit_id in line_of:
+            entry["unique_unit_line"] = line_of[uu_unit_id]
+        if ov.get("uu_elite_id") is not None:
+            entry["elite_unique_unit_id"] = ov["uu_elite_id"]
+        if ov.get("uu_upgrade_tech_id") is not None:
+            entry["unique_unit_upgrade_id"] = ov["uu_upgrade_tech_id"]
+        if ov.get("uu_name_sid") is not None:
+            # The explicit desc sid is a real id for vanilla and KM-custom UUs
+            # alike; name + DLL_HELP_OFFSET only holds for vanilla ones.
+            desc_sid_uu = ov.get("uu_desc_sid") or (ov["uu_name_sid"] + DLL_HELP_OFFSET)
+            entry["unique_unit_string_ids"] = [
+                {"name": ov["uu_name_sid"], "description": desc_sid_uu}
+            ]
+
+
 def _team_revived_techs(dat: DatFile) -> set[int]:
     """Techs a team bonus re-enables by disabling the tech that disables them.
 

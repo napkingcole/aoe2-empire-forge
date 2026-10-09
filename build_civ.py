@@ -31,7 +31,8 @@ from dat_reader import find_game_dat, load_dat, dat_info
 from civ_appender import (apply_civ, _KM_UU_TECHS, _KM_UU_NAMES, get_km_uu_index,
                           get_civ_bonuses, get_team_bonuses,
                           UNSUPPORTED_UNIQUE_BUILDINGS, _apply_unit_replacements,
-                          _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS, _help_sid)
+                          _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS, _help_sid,
+                          _civ_present_units)
 import km_custom_uu
 
 # Languages KM ships string files for.
@@ -978,6 +979,13 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
     _castle_ut_name     = (civ_result or {}).get("castle_ut_name", "")
     _imp_ut_name        = (civ_result or {}).get("imp_ut_name", "")
 
+    # The units the civ really has.  Another civ's unique unit can sit in the
+    # tree (the editor offers them; Ionians, #66, ticked a dozen), and the
+    # build ignores it — but the node used to stay lit, so replacing Goths
+    # with such a tree left the Huskarl showing in F2.
+    _present = (_civ_present_units(civ_def, dat, slot)
+                if dat is not None and slot is not None else None)
+
     def patch_nodes(nodes: list) -> int:
         changed = 0
         for node in nodes:
@@ -1045,6 +1053,8 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                 # bonus-enabled units (e.g. Caravel via bonus 69) may not appear
                 # in tree[0] but are still available; include them here.
                 ok = node_id in unit_ids or node_id in _bonus_enabled_units
+                if ok and node_type == "UniqueUnit" and _present is not None:
+                    ok = node_id in _present
             current = node.get("Node Status", "")
             if not ok:
                 if current != STATUS_OFF:
