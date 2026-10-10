@@ -6717,6 +6717,32 @@ def _src_civ_uu_ids(dat: DatFile, civ_idx: int) -> tuple[set[int], set[int]]:
     return base_ids, elite_ids
 
 
+KEEP_UNIT, DONJON_UNIT = 235, 1665
+
+
+def _donjon_like_keep(cmds: list) -> list:
+    """The Donjon gets whatever stat change a tech gives the Keep.
+
+    Bonus cards reach it through the tower class (52), but the vanilla techs a
+    unique tech is copied from name the towers one by one — Yasama, Eupseong,
+    Great Wall, Stronghold, Detinets list Watch Tower, Guard Tower and Keep and
+    stop there (reported: the Donjon missed tower UTs, 2026-10-10).  The Donjon
+    is the Castle Age arrow tower, the Keep's counterpart, so each SET / ADD /
+    MULTIPLY on the Keep is copied onto it, unless the tech already writes that
+    attribute for the Donjon (Svan Towers does).  Bombard-only effects never
+    touch the Keep, so they stay off it.
+    """
+    stat = (EC_SET, EC_ADD, EC_MULTIPLY)
+    has = {(ec.type, int(ec.c)) for ec in cmds if ec.type in stat and int(ec.a) == DONJON_UNIT}
+    out = []
+    for ec in cmds:
+        if ec.type in stat and int(ec.a) == KEEP_UNIT and (ec.type, int(ec.c)) not in has:
+            twin = deepcopy(ec)
+            twin.a = DONJON_UNIT
+            out.append(twin)
+    return out
+
+
 def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                           lookup: dict[int, int]) -> tuple[list, list, list]:
     """Collect effect commands for a UT's bonus entries.
@@ -6795,6 +6821,7 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                               f"base={sorted(src_base_uu_ids)} elite={sorted(src_elite_uu_ids)}"
                               f" → will substitute with dest civ's UU")
 
+        entry_start = len(cmds)
         for ec in all_cmds:
             a = int(ec.a)
             if ec.type == EC_ENABLE:
@@ -6822,6 +6849,7 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                     pending_elite_uu_subs.extend(scaled)
                     continue
             cmds.extend(scaled)
+        cmds.extend(_donjon_like_keep(cmds[entry_start:]))
         # Howdah reaches every elephant, not just the two lines DE wrote.
         if tech_id in _ELEPHANT_EXTENSIONS:
             cmds.extend(_elephant_extension_cmds(dat, tech_id, multiplier))
