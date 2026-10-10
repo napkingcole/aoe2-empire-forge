@@ -363,26 +363,50 @@ _KM_UU_NAMES: dict[int, str] = {
 # what the player sees — 775 is 'MONKY' (the Missionary), 1137 is 'TIGER' (an
 # elephant slot), 1572 is 'MERCHANT'.  A warning naming 'MONKY' sends the user
 # hunting for a unit that does not exist under that name, so log messages
-# resolve the real name through unit.language_dll_name against the shipped
+# resolve the real name through unit.language_dll_name against the game's
 # vanilla string table, and keep the id and codename alongside it.
+#
+# The player's own copy comes first, so names follow their patch; ours is the
+# fallback.  The custom bonus picker names every unit, building and tech from
+# this table too — the exe once shipped without our copy, and the picker came
+# up with six units, the ones whose names are hard-coded.
 _VANILLA_STRINGS_PATH = Path(__file__).parent / "vanilla" / "key-value" / "key-value-strings-utf8.txt"
 _STRING_LINE_RE = re.compile(r'^\s*(\d+)\s+"(.*)"\s*$')
 _vanilla_strings: dict[int, str] | None = None
+_vanilla_strings_key: Path | None = None    # dat_reader.last_loaded it was read for
+
+
+def _strings_source() -> Path:
+    """The key-value file _string_table reads: the loaded game's, else ours."""
+    import dat_reader
+    dat = dat_reader.last_loaded or dat_reader.find_game_dat()
+    return dat_reader.find_game_strings(dat) or _VANILLA_STRINGS_PATH
 
 
 def _string_table() -> dict[int, str]:
-    """id -> English display string, from the shipped vanilla key-value file."""
-    global _vanilla_strings
-    if _vanilla_strings is None:
+    """id -> English display string, from the game's key-value file or ours.
+
+    Re-read when a different DAT has been loaded since, so the strings belong
+    to the game being built."""
+    global _vanilla_strings, _vanilla_strings_key
+    import dat_reader
+    if _vanilla_strings is None or dat_reader.last_loaded != _vanilla_strings_key:
+        _vanilla_strings_key = dat_reader.last_loaded
         table: dict[int, str] = {}
-        try:
-            with open(_VANILLA_STRINGS_PATH, encoding="utf-8") as fh:
-                for line in fh:
-                    m = _STRING_LINE_RE.match(line)
-                    if m:
-                        table[int(m.group(1))] = m.group(2)
-        except OSError:
-            pass          # log prettiness is never worth failing a build over
+        for path in dict.fromkeys((_strings_source(), _VANILLA_STRINGS_PATH)):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    for line in fh:
+                        m = _STRING_LINE_RE.match(line)
+                        if m:
+                            table[int(m.group(1))] = m.group(2)
+            except OSError:
+                continue  # log prettiness is never worth failing a build over
+            if table:
+                break
+        if not table:
+            print("[strings] WARNING: no key-value strings found — unit, building "
+                  "and tech names will be missing", flush=True)
         _vanilla_strings = table
     return _vanilla_strings
 

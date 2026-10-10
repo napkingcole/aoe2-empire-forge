@@ -84,16 +84,39 @@ def load_civ_era_exclusions(dat_path: str | Path) -> set[str] | None:
         return None
 
 
+def find_game_strings(dat_path: str | Path | None) -> Path | None:
+    """The game's English key-value strings for this DAT, or None.
+
+    The DAT is `<game>/resources/_common/dat/empires2_x2_p1.dat` on Steam and
+    Xbox alike, so the game root is three folders above its folder — the same
+    walk voice_source.find_wwise_dir makes.  English whatever the player's
+    language: every name in the UI and the build logs is English."""
+    if not dat_path:
+        return None
+    parents = Path(dat_path).resolve().parents
+    if len(parents) <= 3:
+        return None
+    p = parents[3] / "resources" / "en" / "strings" / "key-value" / "key-value-strings-utf8.txt"
+    return p if p.is_file() else None
+
+
+# The DAT most recently loaded — the game whose strings name its units.
+last_loaded: Path | None = None
+
+
 def load_dat(path: str | Path) -> DatFile:
     """Parse and return a DatFile from the given path.
 
     Civ units are parsed lazily (see dat_lazy) — ~1-2s instead of ~18s once a
     DAT has been seen.  The saved bytes are identical either way."""
+    global last_loaded
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"DAT file not found: {path}")
     import dat_lazy
-    return dat_lazy.parse(path)
+    dat = dat_lazy.parse(path)
+    last_loaded = path
+    return dat
 
 
 def dat_info(dat: DatFile) -> dict:
