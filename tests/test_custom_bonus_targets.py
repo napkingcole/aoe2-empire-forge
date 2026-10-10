@@ -76,6 +76,19 @@ check("the per-civ Unique unit group is not narrowed", allowed["group:unique_uni
 check("every offered effect is one its kind allows",
       all(set(v) <= {k for k, a in cb.ATTRS.items() if a["kinds"]} for v in allowed.values()))
 
+print("\n=== Farms and Monasteries groups (2026-10-10) ===")
+fm = cb.allowed_attrs(dat, [("building:50", "building", 50), ("building:276", "building", 276)])
+check("a Farms and Fish Traps group covers Farm, Fish Trap, Rice Farm and Pasture",
+      {50, 199, 1187, 1889} <= set(cb.GROUPS["farms"]["buildings"]))
+check("...but not the Pasture's animals (class 49 holds the Argali and Ibex)",
+      not {1899, 1900} & set(cb.GROUPS["farms"]["buildings"]))
+check("farms are never offered population space or blast radius",
+      not {"pop_space", "blast_radius"} & set(fm["group:farms"] + fm["building:50"]), fm["group:farms"])
+check("a Monasteries group covers the Monastery and the Fortified Church",
+      {104, 1806} == set(cb.GROUPS["churches"]["buildings"]))
+check("a Wonder (no attack) is not offered blast radius",
+      "blast_radius" not in fm["building:276"], fm["building:276"])
+
 print("\n=== the catalog endpoint ===")
 with contextlib.redirect_stdout(io.StringIO()):
     import app as A

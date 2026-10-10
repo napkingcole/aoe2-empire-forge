@@ -111,6 +111,13 @@ GROUPS: dict[str, dict] = {
                         # "C-Bonus, Dropsites +35 food, +10 stone", plus the
                         # Town Center, Dock and the mobile Mule Cart.
                         "buildings": _DROP_OFF},
+    # Farms and churches had only single tiles (a player asked, 2026-10-10).
+    # Listed, not class 49: that class also holds the Pasture's Argali and Ibex
+    # and the farm drop/stack helpers, which a farm bonus must not touch.
+    "farms":           {"label": "Farms and Fish Traps", "kind": "building", "tab": "building", "section": "", "icon": "farm.png",
+                        "buildings": [50, 199, 1187, 1889, 1893, 1897]},   # Farm, Fish Trap, Rice Farm, Pasture x3
+    "churches":        {"label": "Monasteries",     "kind": "building", "tab": "building", "section": "", "icon": "monastery.png",
+                        "buildings": [104, 1806]},                         # Monastery, Fortified Church
     "military_buildings": {"label": "Military buildings", "kind": "building", "tab": "building", "section": "", "icon": "fa-flag",
                         # "C-Bonus, Military Buildings +55f"
                         "buildings": [12, 87, 101, 49, 45]},
@@ -336,14 +343,21 @@ _HEAL_ACTION = 105
 # its first resource storage is population (type 4) or empty (-1; the build
 # turns it into a population slot).  Anything else stores something else
 # there: a Farm its food, an Outpost resource 508.
-POP_SPACE_SKIP_CLASSES = frozenset({27, 39})        # walls, gates
+# Farms (class 49) never either: their first slot is food, and the one that
+# looked empty is the Pasture's construction stage.
+POP_SPACE_SKIP_CLASSES = frozenset({27, 39, 49})    # walls, gates, farms
 _POP_STORAGE = 4
 _TARGETED_ONLY = 3                     # blast attack level: no splash
 
 
 def _splashes(u) -> bool:
-    """Has a blast attack — even at width 0 (Warwolf widens the Trebuchet's)."""
-    return bool(u.type_50) and (u.type_50.blast_attack_level & 3) != _TARGETED_ONLY
+    """Has a blast attack — even at width 0 (Warwolf widens the Trebuchet's).
+
+    Only on something that attacks: a building with no attack keeps the default
+    blast level, which read as a blast attack, so every Farm, Monastery and
+    Wonder was offered a blast radius that could never do anything."""
+    return (bool(u.type_50) and (u.type_50.blast_attack_level & 3) != _TARGETED_ONLY
+            and any(a.amount > 0 for a in u.type_50.attacks))
 
 
 def pop_space_ok(u) -> bool:
