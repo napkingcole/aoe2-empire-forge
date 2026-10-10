@@ -5649,6 +5649,51 @@ def _restore_elite_upgrade_location(dat: DatFile, tech_id: int, civ_index: int) 
             break
 
 
+def _own_renamed_uu_strings(dat: DatFile, civ_index: int, civ_def: dict,
+                            uu_id: int, elite_id: int, elite_tech_id: int) -> None:
+    """Give a renamed or re-described VANILLA unique unit string ids of its own.
+
+    A vanilla UU's strings are the game's, shared with the civ that really owns
+    it, so writing the new name over them renamed that civ's unit too — a
+    Ghulam renamed "Qurchi" was Qurchi for the Hindustanis as well, while the
+    Elite upgrade (its own vanilla ids, which nothing wrote) still said "Elite
+    Ghulam" (a Discord user's Safavids, 2026-10-10).
+
+    This civ's copies of the unit, the elite unit and its private elite-upgrade
+    tech move to the civ's KM-UU pool slots, exactly as a KM-custom UU's do (a
+    civ has one or the other, never both).  The elite tech shares the elite
+    unit's ids, as km_custom_uu's does.  The routes write text to whatever ids
+    _resolve_uu_info reads here, and always write the name once the unit owns
+    pool ids (uu_owns_strings) — a pool id with nothing written shows campaign
+    dialogue.  An unchanged vanilla UU keeps the game's strings and tooltip.
+    """
+    uu = civ_def.get("unique_unit")
+    uu = uu if isinstance(uu, dict) else {}
+    if not ((uu.get("name") or "").strip() or (uu.get("description") or "").strip()):
+        return
+    pool_base = civ_index * KM_UU_POOL_SLOTS_PER_CIV
+    units = dat.civs[civ_index].units
+    for uid, sid in ((uu_id, _campaign_sid(pool_base + 0)),
+                     (elite_id, _campaign_sid(pool_base + 1))):
+        if 0 <= uid < len(units) and units[uid] is not None:
+            # For logs and warnings (unit_label): the name the routes will write.
+            old = _display_name(units[uid].language_dll_name, units[uid].name)
+            new = (uu.get("name") or "").strip()
+            _OWN_STRING_NAMES[sid] = (new if uid == uu_id else f"Elite {new}") if new else old
+            units[uid].language_dll_name = sid
+            units[uid].language_dll_creation = _creation_sid(sid)
+            units[uid].language_dll_help = _help_sid(sid)
+    if 0 <= elite_tech_id < len(dat.techs) and dat.techs[elite_tech_id].civ == civ_index:
+        sid = _campaign_sid(pool_base + 1)
+        tech = dat.techs[elite_tech_id]
+        tech.language_dll_name = sid
+        tech.language_dll_description = _creation_sid(sid)
+        tech.language_dll_help = _help_sid(sid)
+        tech.language_dll_tech_tree = -1
+    print(f"       KM UU (vanilla, renamed): units {uu_id}/{elite_id} and elite tech "
+          f"{elite_tech_id} use pool string ids from {_campaign_sid(pool_base)}")
+
+
 def _apply_km_uu(dat: DatFile, civ_index: int, km_uu_index: int) -> tuple[int, int]:
     """Allocate make-avail + elite upgrade techs for a vanilla KM UU index.
 
@@ -6248,6 +6293,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                     krepost_tl.unit_id = km_custom_uu.BUILDING_KREPOST
                     cre.train_locations.append(krepost_tl)
             print(f"       KM UU {km_uu_index} (vanilla): added Krepost train location to units {uu_id}, {elite_uu_id}")
+        _own_renamed_uu_strings(dat, civ_index, civ_def, uu_id, elite_uu_id, km_uu_elite_tech_id)
     elif km_uu_is_custom:
         # Pool-based allocation (see CAMPAIGN_STRING_POOL docstring) for the
         # two "name" ids; desc/help ids are DERIVED via _help_sid (name+

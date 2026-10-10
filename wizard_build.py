@@ -33,7 +33,7 @@ from build_civ import (
     _canonical_techtree_id,
     civ_name_sid,
     civ_roster,
-    _resolve_uu_info, keeps_vanilla_hover, rich_unit_tooltip, renamed_uu_tooltip,
+    _resolve_uu_info, keeps_vanilla_hover, rich_unit_tooltip, renamed_uu_tooltip, uu_owns_strings,
     _patch_per_civ_techtree,
     _find_adjacent_json,
     _find_civ_techtrees_folder,
@@ -398,8 +398,11 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             # resolved name that no longer matches KM's table — which is how a
             # custom preset reads. Without the second half the unit kept its
             # original DAT name in game while the wizard showed the new one.
+            # A renamed vanilla UU owns pool ids (_own_renamed_uu_strings):
+            # always name it, or its pool id shows campaign text.
+            _owns = bool(uu_info.get("vanilla") and uu_owns_strings(dll))
             _is_renamed = bool(uu_override_name) or (
-                uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display))
+                uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)) or _owns
             if _is_renamed:
                 # In-game overrides: base name, create button text, castle hover tooltip, help.
                 # language_dll_help points to dll+100000; the game reads that for hover content.
@@ -440,7 +443,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             _elite_hover = renamed_uu_tooltip(dat, slot, uu_info, (uu_info or {}).get("elite_id"),
                                               uu_elite_name, uu_override_desc or "", _elite_hover)
             _put(uu_elite_dll + 10000, uu_elite_name)
-            if uu_override_name:
+            if uu_override_name or (uu_info and uu_info.get("vanilla")
+                                    and uu_owns_strings(uu_elite_dll)):
                 _put(uu_elite_dll, uu_elite_name)
                 _put(uu_elite_dll + DLL_CREATION_OFFSET, f"Create {uu_elite_name}")
                 _put(uu_elite_dll + 21000, _elite_hover)

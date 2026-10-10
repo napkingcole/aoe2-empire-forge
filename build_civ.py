@@ -166,6 +166,18 @@ def renamed_uu_tooltip(dat, slot: int, uu_info: dict | None, unit_id, name: str,
     return plain
 
 
+def uu_owns_strings(dll) -> bool:
+    """True when a UU's name id is one of our pool ids, not the game's.
+
+    KM-custom UUs always own theirs; a renamed vanilla UU does since
+    civ_appender._own_renamed_uu_strings.  A pool id holds campaign text until
+    we write over it, so a writer must always write the name for such a unit,
+    even when the player only changed the description.
+    """
+    from civ_appender import _CAMPAIGN_POOL_SET
+    return dll in _CAMPAIGN_POOL_SET
+
+
 def uu_cost_text(dat, slot: int, unit_id) -> str:
     """'Costs: 65W 30G' for a unit in this civ's slot, or '' if unavailable.
 

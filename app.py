@@ -42,7 +42,7 @@ from build_civ import (
     _patch_per_civ_techtree, _canonical_techtree_id,
     civ_name_sid, civ_roster,
     _resolve_uu_info, _find_adjacent_json, uu_cost_text, keeps_vanilla_hover, rich_unit_tooltip,
-    renamed_uu_tooltip,
+    renamed_uu_tooltip, uu_owns_strings,
 )
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
                            _refresh_uu_tooltips)
@@ -977,8 +977,11 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 if uu_info:
                     uu_dll = uu_info["dll_name"]
                     _ext_sid_taken = (uu_dll + 21000) in _owned_sids
+                    # A renamed vanilla UU owns pool ids (_own_renamed_uu_strings):
+                    # always name it, or its pool id shows campaign text.
                     is_renamed = bool(uu_override_name) or (
-                        uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display))
+                        uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)
+                    ) or bool(uu_info.get("vanilla") and uu_owns_strings(uu_dll))
                     if is_renamed:
                         _put(uu_dll, uu_display)
                         _put(uu_dll + DLL_CREATION_OFFSET, f"Create {uu_display}")

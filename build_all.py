@@ -45,7 +45,7 @@ from build_civ import (
     _find_civ_techtrees_folder,
     _patch_per_civ_techtree,
     _canonical_techtree_id, _resolve_uu_info, uu_cost_text, keeps_vanilla_hover, renamed_uu_tooltip,
-    civ_name_sid, civ_roster, rich_unit_tooltip,
+    civ_name_sid, civ_roster, rich_unit_tooltip, uu_owns_strings,
 )
 from civ_appender import _KM_UU_NAMES
 
@@ -905,11 +905,11 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 # +1000 is the Castle "Create <Unit>" button label (language_dll_creation).
                 # Only write for renamed UUs to avoid unnecessarily overwriting vanilla strings
                 # that other civs' units may share.
-                is_renamed = uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)
+                # A renamed vanilla UU owns pool ids now (_own_renamed_uu_strings),
+                # so these writes no longer reach the civ that really has the unit.
+                is_renamed = (uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)
+                              or (uu_info.get("vanilla") and uu_owns_strings(uu_dll)))
                 if is_renamed:
-                    # Base string ID: unit name in selection panel. Writing here affects
-                    # any vanilla civ that shares this unit (e.g. Mongols opponents for
-                    # Mangudai). Acceptable trade-off; proper fix needs unit cloning.
                     _put(uu_dll, uu_display)
                     _put(uu_dll + DLL_CREATION_OFFSET, f"Create {uu_display}")
                 _put(uu_dll + 10000, uu_display)
