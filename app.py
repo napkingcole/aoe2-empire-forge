@@ -201,6 +201,9 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.6.1": [
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Custom bonus targets missing in the Windows app.</strong> The Units tab listed only a handful of units with just two filter buttons, and the Buildings and Techs tabs were empty: the app was missing the file it reads unit, building and tech names from. It now reads them from your own game files, and keeps its own copy as a backup",
+    ],
     "2.6.0": [
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>View Civ.</strong> Show off a civ on one page, laid out like an in-game card: bonuses, unique unit with its stats, unique techs, team bonus, hero and tech tree. Copy it as Markdown or text, save it as PNG, WebP or PDF, or print it. Retype the text on the card before sharing, and save the civ with the new description. <em>Thanks to darius_the_russian_cat</em>",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Custom bonuses for unit lines.</strong> Target a whole line (\"Militia line: +2 attack\") or a unit and everything it upgrades into (\"Long Swordsman and up: +20 HP\"). Lines are grouped by building on the Units tab. <em>Thanks to rattatatouille</em>",
