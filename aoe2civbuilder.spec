@@ -25,6 +25,9 @@ a = Analysis(
         ('CivTechTrees', 'CivTechTrees'),
         ('uniticons', 'uniticons'),
         ('vanilla/aoe2techtree_strings', 'vanilla/aoe2techtree_strings'),
+        # Display names for units, buildings and techs.  The player's own copy
+        # is read first (dat_reader.find_game_strings); this is the fallback.
+        ('vanilla/key-value/key-value-strings-utf8.txt', 'vanilla/key-value'),
         ('bonus_catalog_raw.json', '.'),
         ('bonus_names.json', '.'),
         ('team_bonus_names.json', '.'),
