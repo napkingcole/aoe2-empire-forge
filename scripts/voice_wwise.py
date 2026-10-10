@@ -78,8 +78,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import voice_source  # noqa: E402
+
 MAP_PATH = ROOT / "voice_wwise_map.json"
-VOICE_DIR = ROOT / "voice_files"
+VOICE_DIR = ROOT / "ignore" / "voice_files"   # local archive; builds use voice_source
 
 CIV_SWITCH_GROUP = 1977672554
 CALIBRATION_CIV = 1                    # Britons: covered by the spreadsheet
@@ -105,21 +107,7 @@ def natural(s: str) -> list:
 
 def media_index(wwise_dir: Path) -> dict[int, tuple[Path, int, int]]:
     """media id -> (package, absolute offset, size) for every embedded clip."""
-    out: dict[int, tuple[Path, int, int]] = {}
-    for pck in sorted(wwise_dir.rglob("*.pck")):
-        with open(pck, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
-            i = m.find(b"BKHD")
-            while i != -1:
-                j = i + 8 + struct.unpack_from("<I", m, i + 4)[0]
-                if m[j:j + 4] == b"DIDX":
-                    size = struct.unpack_from("<I", m, j + 4)[0]
-                    data = j + 8 + size
-                    if m[data:data + 4] == b"DATA":
-                        for k in range(size // 12):
-                            mid, off, sz = struct.unpack_from("<III", m, j + 8 + k * 12)
-                            out.setdefault(mid, (pck, data + 8 + off, sz))
-                i = m.find(b"BKHD", i + 4)
-    return out
+    return voice_source.media_index(sorted(wwise_dir.rglob("*.pck")))
 
 
 def split_banks(pck: Path, out_dir: Path) -> list[Path]:
@@ -315,7 +303,7 @@ def extract(wwise_dir: Path, names: list[str], overwrite: bool, fill: bool = Fal
         out = VOICE_DIR / str(entry["value"])
         have = {p.stem.lower() for p in out.glob("*.wem")} if out.is_dir() else set()
         if have and not (overwrite or fill):
-            print(f"  {name}: voice_files/{entry['value']} exists — skipped "
+            print(f"  {name}: ignore/voice_files/{entry['value']} exists — skipped "
                   "(--overwrite to replace, --fill to add what it lacks)")
             continue
         missing = [s for s, mid in entry["files"].items() if mid not in bank]
@@ -337,7 +325,7 @@ def extract(wwise_dir: Path, names: list[str], overwrite: bool, fill: bool = Fal
         for stale in out.glob("*.wem"):         # a rebuilt map may rename files
             stale.unlink()
         write(out, entry["files"])
-        print(f"  {name}: {len(entry['files'])} files -> voice_files/{entry['value']}")
+        print(f"  {name}: {len(entry['files'])} files -> ignore/voice_files/{entry['value']}")
     return status
 
 
@@ -346,7 +334,7 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    ex = sub.add_parser("extract", help="write voice_files/<value>/ from the game")
+    ex = sub.add_parser("extract", help="write ignore/voice_files/<value>/ from the game")
     ex.add_argument("--wwise", required=True, type=Path, help="the game's resources/_common/wwise")
     grp = ex.add_mutually_exclusive_group(required=True)
     grp.add_argument("--civ", action="append", help="civ name (repeatable)")

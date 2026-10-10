@@ -54,6 +54,12 @@
           </div>
           <div class="form-text">Shown on the civ selection screen as "A <em>X</em> Civilization".</div>
         </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold" for="civ-share-desc">Share Description <span class="fw-normal text-muted small">(optional)</span></label>
+          <textarea id="civ-share-desc" class="form-control" rows="2" maxlength="400"
+                    placeholder="A short pitch for your civ — e.g. &quot;Horse lords of the steppe who never stop raiding.&quot;"></textarea>
+          <div class="form-text">Only for the <a href="{{ url_for('civ_view') }}" target="_blank">View Civ</a> card you share. <strong>Not used in game.</strong></div>
+        </div>
       </div>
 
       {# ── Appearance scene ──────────────────────────────────────────────────
@@ -357,6 +363,7 @@
           <select id="uu-filter-type" class="form-select">
             <option value="all">All units</option>
             <option value="vanilla">Vanilla only</option>
+            <option value="chronicles">Chronicles only</option>
             <option value="custom">Custom only</option>
           </select>
         </div>
@@ -503,6 +510,22 @@
           {% endfor %}
         </div>
         <div class="uo-def" id="uo-cost-def"></div>
+
+        {# ── Elite upgrade cost (#68) ─────────────────────────────────────────── #}
+        <hr class="my-2" style="border-color:oklch(from var(--body-bg) calc(l + 0.12) c h);">
+        <div class="small fw-semibold mb-2" style="color:var(--accent-2);">
+          <i class="fa-solid fa-angles-up me-1"></i>Elite Upgrade
+        </div>
+        <div class="row g-2 mb-1">
+          {% for res_id, label, color in [("food","Food","#c97c2f"),("wood","Wood","#7aab4a"),("stone","Stone","#8a9ba8"),("gold","Gold","#d4a017"),("time","Research","var(--accent-3)")] %}
+          <div class="col-6 col-md">
+            <label class="form-label mb-1" style="font-size:.72rem; font-weight:600; color:{{ color }};">{{ label }}{% if res_id == "time" %} (s){% endif %}</label>
+            <input type="text" id="uo-eu-{{ res_id }}" class="form-control form-control-sm uo-input"
+                   pattern="[0-9]*" inputmode="numeric" placeholder="—" autocomplete="off">
+          </div>
+          {% endfor %}
+        </div>
+        <div class="uo-def" id="uo-eu-def"></div>
 
       </div>
     </div>
@@ -914,6 +937,13 @@
 
 {# Step 9 — Review #}
 <div class="wizard-panel d-none" id="panel-9">
+
+  {# Show off the civ (#57): opens the share page on this draft. #}
+  <div class="d-flex justify-content-end mb-2">
+    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-view-share">
+      <i class="fa-solid fa-share-nodes me-1"></i>View &amp; share
+    </button>
+  </div>
 
   {# Summary sections (populated by JS) #}
   <div id="review-content" class="mb-3">

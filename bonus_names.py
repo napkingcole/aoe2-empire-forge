@@ -62,6 +62,10 @@ DEPRECATED_BONUSES: dict[int, int | None] = {
     # catalog, which had already stopped offering it on an updated DAT; this
     # retires it everywhere, including for players still on the old one.
     297: None,
+    # Chronicles Castle units, moved to the Unique Unit step (2026-10-10, the
+    # user's call): they train at the Castle in the UU slot, so the UU picker
+    # is their home (_KM_UU_TECHS 97-102).  Civs that carry a card still build.
+    447: None, 448: None, 449: None, 450: None, 452: None, 453: None,
 }
 
 

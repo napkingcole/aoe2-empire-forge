@@ -197,6 +197,27 @@ out_flags = (back.get("unique_unit") or {}).get("advanced_flags") or {}
 check("from_draft never writes ignore_armor back out",
       "ignore_armor" not in out_flags, f"flags={out_flags}")
 
+# ── 4. Charge Attack is the Comitatenses charge ──────────────────────────────
+# It wrote charge_type 2 — undocumented and used by no vanilla unit — while its
+# help text cited the Comitatenses, which use type 1.  The precedent is read
+# from the DAT rather than hardcoded, so a DE change shows up here.
+comit = next(t for t in dat.techs if t.name == "Comitatenses")
+want = {int(c.c): c.d for c in dat.effects[comit.effect_id].effect_commands
+        if c.type == 0 and int(c.c) in (61, 62)}
+check("Comitatenses sets a charge event and type", set(want) == {61, 62}, f"{want}")
+draft = civ_def([], {"charge_pool": 5, "charge_rate": 0.25})
+for uid, elite, label in ((46, 557, "Janissary (ranged)"), (25, 554, "Teutonic Knight (melee)")):
+    with contextlib.redirect_stdout(io.StringIO()):
+        _apply_uu_overrides(dat, 8, {"unit_id": uid, "elite_id": elite}, draft)
+    for u in (uid, elite):
+        cr = dat.civs[8].units[u].creatable
+        check(f"{label} {u}: charge event/type match Comitatenses",
+              (cr.charge_event, cr.charge_type) == (want[61], want[62]),
+              f"got {(cr.charge_event, cr.charge_type)}, want {(want[61], want[62])}")
+        check(f"{label} {u}: pool and rate as entered",
+              (cr.max_charge, cr.recharge_rate) == (5.0, 0.25),
+              f"got {(cr.max_charge, cr.recharge_rate)}")
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

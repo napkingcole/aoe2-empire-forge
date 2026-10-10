@@ -8,11 +8,12 @@
 
 A civ's voice needs two things, and only one of them is code: the DAT SoundItem
 remap (`assign_all_languages`) and the physical .wem files, which
-`_build_combined_ui_zip` copies out of `voice_files/<value>/` into the UI mod at
+`_build_combined_ui_zip` writes into the UI mod at
 `resources/_common/drs/sounds/`.  Without the files the engine falls back to
 Wwise bank routing and the civ speaks with its slot's original voice.
 
-`voice_files/` is a byte-identical copy of KrakenMeister's
+`voice_files/` (now `ignore/voice_files/`, a local-only
+archive since 2026-10-06; builds read the player's banks via voice_source.py) is a byte-identical copy of KrakenMeister's
 `public/vanillaFiles/voiceFiles/` — 43 folders, values 0-42.  Nothing was ever
 extracted here, which is why every civ added since his snapshot (Armenians,
 Georgians, the Chinese DLC four, the South American three, and now the Viking
@@ -97,7 +98,7 @@ sys.path.insert(0, str(ROOT))
 from dat_reader import find_game_dat, load_dat            # noqa: E402
 from build_civ import civ_roster                          # noqa: E402
 
-VOICE_DIR = ROOT / "voice_files"
+VOICE_DIR = ROOT / "ignore" / "voice_files"
 
 
 def civ_sound_names(dat) -> dict[int, set[str]]:

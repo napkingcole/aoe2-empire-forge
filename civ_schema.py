@@ -37,6 +37,16 @@ _FORMAT_KEY_V1 = "civbuilder_v1"
 #     so the unit dealt the engine minimum of 1 damage to everything.
 RETIRED_UU_FLAGS = frozenset({"ignore_armor"})
 
+# Civ bonus cards withdrawn because they cannot do what they say.  Filtered in
+# civ_appender.get_civ_bonuses, the accessor every build path, the in-game
+# description and the View Civ page read through, so an old civ or a KM import
+# that carries one still loads but no longer claims it.
+#   333 "Siege Towers can fire arrows" — withdrawn 2026-10-09 (issue #69).  KM's
+#     card only ADDS attack; the Siege Tower has no range, projectile, reload or
+#     attack at all, so nothing ever fired (reported in-game).  Making it shoot
+#     means building a ranged attack from scratch — not done, so not offered.
+RETIRED_CIV_BONUSES = frozenset({333})
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -93,6 +103,9 @@ def to_draft(schema: dict) -> dict:
         uu["overrides"] = overrides
     if adv_flags:
         uu["advanced_flags"] = adv_flags
+    elite_up = norm_elite_upgrade(raw_uu.get("elite_upgrade"))
+    if elite_up:
+        uu["elite_upgrade"] = elite_up
 
     # ── UTs ──────────────────────────────────────────────────────────────────
     def _ut(raw: dict | None) -> dict:
@@ -148,6 +161,8 @@ def to_draft(schema: dict) -> dict:
         "alias":       s.get("alias",       "Custom Civ"),
         "tagline":     s.get("tagline",      ""),
         "description": s.get("description", ""),
+        # View Civ only (#57); no build route reads it.
+        "share_description": s.get("share_description", ""),
 
         # Appearance
         "architecture": s.get("architecture", 2),
@@ -243,6 +258,9 @@ def from_draft(draft: dict) -> dict:
         "overrides":   {k: v for k, v in overrides.items()  if v is not None},
         "advanced_flags": {k: v for k, v in adv_flags.items() if v is not None},
     }
+    elite_up = norm_elite_upgrade(uu_raw.get("elite_upgrade"))
+    if elite_up:
+        uu_out["elite_upgrade"] = elite_up
 
     schema: dict = {
         "format":         FORMAT_KEY,
@@ -252,6 +270,7 @@ def from_draft(draft: dict) -> dict:
         "alias":       draft.get("alias",       ""),
         "tagline":     draft.get("tagline",      ""),
         "description": draft.get("description", ""),
+        "share_description": (draft.get("share_description") or "").strip(),
 
         "architecture": draft.get("architecture", 2),
         "language":     draft.get("language",     0),
@@ -290,6 +309,28 @@ def from_draft(draft: dict) -> dict:
 
 # ── Format detection ──────────────────────────────────────────────────────────
 
+def norm_elite_upgrade(raw) -> dict | None:
+    """The Elite UU upgrade's custom cost and research time, or None if unset.
+
+    {"cost": {"food", "wood", "stone", "gold"}, "time": seconds}.  Zero means
+    "keep the game's", exactly as for the UT cost (civ_overrides.
+    _set_tech_cost_time), so an all-zero entry is dropped rather than saved.
+    Issue #68.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    def num(v):
+        try:
+            return max(0, int(float(v or 0)))
+        except (TypeError, ValueError):
+            return 0
+    cost = raw.get("cost") if isinstance(raw.get("cost"), dict) else {}
+    out = {"cost": {r: num(cost.get(r)) for r in ("food", "wood", "stone", "gold")},
+           "time": num(raw.get("time"))}
+    return out if out["time"] or any(out["cost"].values()) else None
+
+
 def is_empireforge(data: dict) -> bool:
     """Return True for any Empire Forge format (current v2 or legacy v1)."""
     fmt = data.get("format", "")
@@ -314,6 +355,11 @@ def is_km_format(data: dict) -> bool:
 #   906 Fishing Lines — added after KM; Gillnets (65) now requires it.
 # Carvel Hull / Clinker Construction (907-910) are a per-civ naval choice, and
 # Cranequins (1452) only touches the Mounted Crossbowman, which KM cannot pick.
+#
+# The build no longer needs this: civ_appender._apply_tree_wiring keeps the
+# unticked prerequisites of every ticked node, for any format (2026-10-08).
+# It remains for app.py's KM import, so the editor shows the imported tree
+# as the build will make it.
 KM_IMPLIED_TECHS: dict[int, tuple[str, int]] = {
     35:  ("units", 442),
     906: ("techs", 65),

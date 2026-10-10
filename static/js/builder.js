@@ -264,6 +264,13 @@ document.getElementById("civ-tagline").addEventListener("input", e => {
   saveDraft();
 });
 
+// Share description (#57): only the View Civ card reads it — never the build.
+document.getElementById("civ-share-desc")?.addEventListener("input", e => {
+  const v = e.target.value.trim();
+  if (v) draft.share_description = v; else delete draft.share_description;
+  saveDraft();
+});
+
 document.getElementById("voice-select").addEventListener("change", e => {
   draft.language = parseInt(e.target.value, 10);
   saveDraft();
@@ -735,6 +742,19 @@ function _costStr(cost) {
 function _reviewRow(label, value) {
   return `<tr><td class="text-muted small pe-3" style="white-space:nowrap;width:1%">${label}</td><td class="small">${value}</td></tr>`;
 }
+
+// "View & share" (#57): the share page reads the draft from localStorage —
+// a new tab doesn't inherit this one's sessionStorage reliably.
+document.addEventListener("click", e => {
+  if (!e.target.closest("#btn-view-share")) return;
+  try {
+    localStorage.setItem("ef_share_civ", JSON.stringify(draft));
+  } catch (err) {
+    alert("Couldn't hand the civ to the share page (browser storage is blocked). Save the civ and open the file there instead.");
+    return;
+  }
+  window.open("/civ/view?from=builder", "_blank");
+});
 
 function populateReview() {
   const el = document.getElementById("review-content");
@@ -3191,7 +3211,7 @@ function _getUUPopup() {
 
 function _buildUUPopupHTML(unit) {
   const s = unit.stats;
-  const badge = unit.vanilla ? "Vanilla" : "Custom";
+  const badge = unit.chronicles ? "Chronicles" : unit.vanilla ? "Vanilla" : "Custom";
 
   // Stats not loaded yet — show a loading indicator if we're still fetching
   if (!s) {
@@ -3290,8 +3310,9 @@ function renderUUGrid() {
   }
 
   let items = _uuCatalog;
-  if (typeFilter === "vanilla") items = items.filter(u => u.vanilla);
-  if (typeFilter === "custom")  items = items.filter(u => !u.vanilla);
+  if (typeFilter === "vanilla")    items = items.filter(u => u.vanilla && !u.chronicles);
+  if (typeFilter === "chronicles") items = items.filter(u => u.chronicles);
+  if (typeFilter === "custom")     items = items.filter(u => !u.vanilla);
   if (query) items = items.filter(u => u.name.toLowerCase().includes(query));
 
   if (!items.length) {
@@ -3302,7 +3323,9 @@ function renderUUGrid() {
   const selectedIdx = draft.unique_unit?.km_idx;
   grid.innerHTML = items.map(u => {
     const iconSrc = u.icon || UU_PLACEHOLDER;
-    const badge   = u.vanilla
+    const badge   = u.chronicles
+      ? `<span class="uu-badge uu-badge-chronicles" title="Chronicles unit">Ch</span>`
+      : u.vanilla
       ? `<span class="uu-badge uu-badge-vanilla">V</span>`
       : `<span class="uu-badge uu-badge-custom">C</span>`;
     const sel = u.km_idx === selectedIdx ? " selected" : "";
@@ -3349,6 +3372,7 @@ function selectUU(kmIdx) {
   if (prevIdx != null && prevIdx !== kmIdx) {
     delete draft.unique_unit.overrides;
     delete draft.unique_unit.advanced_flags;
+    delete draft.unique_unit.elite_upgrade;
   }
   draft.unique_unit.km_idx = kmIdx;
   saveDraft();
@@ -3362,7 +3386,7 @@ function selectUU(kmIdx) {
   iconEl.onerror = () => { iconEl.src = UU_PLACEHOLDER; };
   document.getElementById("uu-selected-name").textContent = unit.name;
   document.getElementById("uu-selected-type").textContent =
-    unit.vanilla ? "Vanilla base unit" : "Custom base unit";
+    unit.chronicles ? "Chronicles unit" : unit.vanilla ? "Vanilla base unit" : "Custom base unit";
 
   document.getElementById("uu-name-override").value = draft.unique_unit.name       || "";
   document.getElementById("uu-description").value   = draft.unique_unit.description || "";
@@ -3432,6 +3456,17 @@ function populateUUOverrides(unit) {
   const costDef = document.getElementById("uo-cost-def");
   if (costDef) costDef.textContent = costStr ? `Default: ${costStr}` : "";
 
+  // Elite upgrade default: the game's research for a vanilla UU; a KM-custom
+  // UU's upgrade is built with the mod, so there is no number to show yet.
+  const eu = unit.elite_upgrade;
+  const euDef = document.getElementById("uo-eu-def");
+  if (euDef) {
+    const parts = eu ? Object.entries(eu.cost || {}).map(([r, n]) => `${n} ${r}`) : [];
+    if (eu?.time) parts.push(`${eu.time}s`);
+    euDef.textContent = parts.length ? `Default: ${parts.join(", ")}. Blank or 0 keeps the game's.`
+                                     : "Blank or 0 keeps the default.";
+  }
+
   // Restore saved values (or clear if switching units)
   const saved = draft.unique_unit?.overrides || {};
   for (const row of _UO_ROWS) {
@@ -3444,7 +3479,30 @@ function populateUUOverrides(unit) {
     const el = document.getElementById(`uo-cost-${r}`);
     if (el) el.value = saved[`cost_${r}`] ?? "";
   }
+  const savedEu = draft.unique_unit?.elite_upgrade || {};
+  for (const r of _UO_EU) {
+    const el = document.getElementById(`uo-eu-${r}`);
+    if (el) el.value = (r === "time" ? savedEu.time : savedEu.cost?.[r]) || "";
+  }
 
+  _uoUpdateBadge();
+}
+
+// Elite upgrade cost and research time (#68): unique_unit.elite_upgrade =
+// {cost: {food, wood, stone, gold}, time}.  0 / blank keeps the game's value,
+// as for the UT cost; civ_schema.norm_elite_upgrade drops an all-zero entry.
+const _UO_EU = ["food", "wood", "stone", "gold", "time"];
+
+function _uoSaveEliteUpgrade(r, rawVal) {
+  if (!draft.unique_unit) return;
+  let val = rawVal === "" ? 0 : Math.max(0, Math.floor(Number(rawVal)));
+  if (isNaN(val)) val = 0;
+  const eu = draft.unique_unit.elite_upgrade
+          || (draft.unique_unit.elite_upgrade = { cost: {}, time: 0 });
+  if (r === "time") eu.time = val;
+  else { eu.cost = eu.cost || {}; eu.cost[r] = val; }
+  if (!eu.time && !Object.values(eu.cost || {}).some(Boolean)) delete draft.unique_unit.elite_upgrade;
+  saveDraft();
   _uoUpdateBadge();
 }
 
@@ -3458,6 +3516,11 @@ function clearUUOverrides() {
   }
   for (const r of _UO_COSTS) {
     const el = document.getElementById(`uo-cost-${r}`);
+    if (el) el.value = "";
+  }
+  if (draft.unique_unit) { delete draft.unique_unit.elite_upgrade; saveDraft(); }
+  for (const r of _UO_EU) {
+    const el = document.getElementById(`uo-eu-${r}`);
     if (el) el.value = "";
   }
   _uoUpdateBadge();
@@ -3498,7 +3561,8 @@ function _uoSave(key, rawVal) {
 function _uoUpdateBadge() {
   const badge = document.getElementById("uo-badge");
   if (!badge) return;
-  const n = Object.keys(draft.unique_unit?.overrides || {}).length;
+  const n = Object.keys(draft.unique_unit?.overrides || {}).length
+          + (draft.unique_unit?.elite_upgrade ? 1 : 0);
   if (n > 0) { badge.textContent = `${n} override${n > 1 ? "s" : ""}`; badge.classList.remove("d-none"); }
   else        { badge.classList.add("d-none"); }
 }
@@ -3513,6 +3577,10 @@ function _wireUUOverrides() {
   for (const r of _UO_COSTS) {
     document.getElementById(`uo-cost-${r}`)
       ?.addEventListener("input", e => _uoSave(`cost_${r}`, e.target.value));
+  }
+  for (const r of _UO_EU) {
+    document.getElementById(`uo-eu-${r}`)
+      ?.addEventListener("input", e => _uoSaveEliteUpgrade(r, e.target.value));
   }
   document.getElementById("btn-clear-overrides")
     ?.addEventListener("click", clearUUOverrides);
@@ -4023,6 +4091,8 @@ async function init() {
     // Restore text fields
     if (draft.alias)   document.getElementById("civ-name").value    = draft.alias;
     if (draft.tagline) document.getElementById("civ-tagline").value  = draft.tagline;
+    const shareDesc = document.getElementById("civ-share-desc");
+    if (shareDesc) shareDesc.value = draft.share_description || "";
 
     // Restore emblem preview
     if (draft.emblem) renderEmblemPreview(draft.emblem);

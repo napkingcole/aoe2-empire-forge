@@ -13,10 +13,10 @@ from genieutils.civ import Civ
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import Tech, ResearchLocation, ResearchResourceCost
 from genieutils.unit import TrainLocation, ResourceCost, ResourceStorage
+from civ_schema import RETIRED_CIV_BONUSES
 
 from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list, team_bonus_ec_list
 import km_custom_uu
-from civ_schema import is_km_format, km_implied_techs
 
 # ── EffectCommand types ───────────────────────────────────────────────────────
 EC_SET       = 0
@@ -228,7 +228,22 @@ _KM_UU_TECHS: dict[int, tuple[int, int]] = {
     94: (1461, 1462), # Hearth Troop (Saxons)
     95: (1471, 1472), # Jarl (Varangians)
     96: (1481, 1482), # Jomsviking (Danes)
+    # Chronicles Castle units (2026-10-10).  Their make-avail techs are
+    # civ-gated on the standard Castle Age and the elite upgrades on the
+    # standard Imperial Age, like the Viking Sagas set.  They were unlock cards
+    # (447-450, 452, 453); as unique units they train at the Castle in the UU
+    # slot.  Their names live in the Chronicles string table, so apply_civ
+    # names them through _name_chronicles_units (_CHRONICLES_UU_CARDS).
+    97:  (1114, 1115), # Immortal (Achaemenids)
+    98:  (1124, 1125), # Strategos (Athenians)
+    99:  (1134, 1135), # Hippeus (Athenians)
+    100: (1288, 1289), # Companion Cavalry (Macedonians)
+    101: (1300, 1301), # Rhomphaia Warrior (Thracians)
+    102: (1325, 1326), # Pattiyodha Longbowman (Puru)
 }
+
+# Chronicles UU index -> the unlock card whose spec names the unit's forms.
+_CHRONICLES_UU_CARDS: dict[int, int] = {97: 447, 98: 448, 99: 449, 100: 450, 101: 452, 102: 453}
 
 # Display names for KM UU indices. Vanilla indices (0-38, 78-87) are creatable
 # units in our pipeline. KM-custom indices (39-77, 88+) are not creatable here,
@@ -334,6 +349,13 @@ _KM_UU_NAMES: dict[int, str] = {
     94: "Hearth Troop",
     95: "Jarl",
     96: "Jomsviking",
+    # Chronicles (Castle units)
+    97:  "Immortal",
+    98:  "Strategos",
+    99:  "Hippeus",
+    100: "Companion Cavalry",
+    101: "Rhomphaia Warrior",
+    102: "Pattiyodha Longbowman",
 }
 
 # ── Display names for build-log messages ─────────────────────────────────────
@@ -870,6 +892,82 @@ _FULL_TREE_PATH = Path(__file__).parent / "static" / "aoe2techtree" / "data" / "
 _editor_nodes_cache: dict[str, set[int]] | None = None
 
 
+def patch_civilizations_list(civ_list: list[dict], civs_overrides: dict) -> None:
+    """Point each replaced civ's civilizations.json entry at the new civ.
+
+    The entry is the game's own description of the civ, separate from the DAT,
+    and nothing else rewrites it: a replaced civ kept naming the original
+    civ's UU (Britons stayed on the Longbowman), unique techs and UU line.
+    Shared by all three build routes (app, build_all, wizard_build), which each
+    carried a copy of this until 2026-10-08.
+
+    `civs_overrides` is slot -> the dict each route builds: name_sid, icon_id,
+    uu_unit_id, uu_elite_id, uu_upgrade_tech_id, uu_name_sid, uu_desc_sid,
+    castle_ut_tech_id, imp_ut_tech_id.
+
+    unique_tech_id_1 is the Imperial UT and _2 the Castle UT, as in 49 of the
+    game's 60 entries.  unique_unit_line is an id space nothing local defines,
+    so it is copied from the vanilla civ whose UU this is (Teutonic Knight ->
+    the Teutons' -272) and left alone for a KM-custom UU, which has none.
+    """
+    # Read before any entry is rewritten, so a civ can take a line from a slot
+    # another civ in the same mod replaced.
+    line_of = {e.get("unique_unit_id"): e.get("unique_unit_line")
+               for e in civ_list if e.get("unique_unit_line") is not None}
+    for slot_idx, ov in civs_overrides.items():
+        if slot_idx >= len(civ_list):
+            continue
+        entry = civ_list[slot_idx]
+        entry["name_string_id"] = ov["name_sid"]
+        if ov.get("icon_id") is not None:
+            entry["unique_unit_image_paths"] = [
+                f"/resources/uniticons/{ov['icon_id']:03d}_50730.png"
+            ]
+        for field, key in (("unique_tech_id_1", "imp_ut_tech_id"),
+                           ("unique_tech_id_2", "castle_ut_tech_id")):
+            if ov.get(key) is not None:
+                entry[field] = ov[key]
+        uu_unit_id = ov.get("uu_unit_id")
+        if uu_unit_id is None:
+            continue
+        entry["unique_unit_id"] = uu_unit_id
+        if uu_unit_id in line_of:
+            entry["unique_unit_line"] = line_of[uu_unit_id]
+        if ov.get("uu_elite_id") is not None:
+            entry["elite_unique_unit_id"] = ov["uu_elite_id"]
+        if ov.get("uu_upgrade_tech_id") is not None:
+            entry["unique_unit_upgrade_id"] = ov["uu_upgrade_tech_id"]
+        if ov.get("uu_name_sid") is not None:
+            # The explicit desc sid is a real id for vanilla and KM-custom UUs
+            # alike; name + DLL_HELP_OFFSET only holds for vanilla ones.
+            desc_sid_uu = ov.get("uu_desc_sid") or (ov["uu_name_sid"] + DLL_HELP_OFFSET)
+            entry["unique_unit_string_ids"] = [
+                {"name": ov["uu_name_sid"], "description": desc_sid_uu}
+            ]
+
+
+def _team_revived_techs(dat: DatFile) -> set[int]:
+    """Techs a team bonus re-enables by disabling the tech that disables them.
+
+    The shape is team effect -> type=102 on a "disabler" tech -> type=102 in the
+    disabler's own effect; the last ids are the answer.  Today that is only
+    Imperial Skirmisher 655 (Vietnamese team bonus 653 -> 656), read from the
+    DAT so the next bonus built this way is covered without a code change.
+    """
+    out: set[int] = set()
+    for civ in dat.civs:
+        if not 0 <= civ.team_bonus_id < len(dat.effects):
+            continue
+        for ec in dat.effects[civ.team_bonus_id].effect_commands:
+            tid = int(ec.d)
+            if ec.type != 102 or not 0 <= tid < len(dat.techs):
+                continue
+            eid = dat.techs[tid].effect_id
+            if 0 <= eid < len(dat.effects):
+                out |= {int(c.d) for c in dat.effects[eid].effect_commands if c.type == 102}
+    return out
+
+
 def _editor_nodes() -> dict[str, set[int]]:
     """Return {'techs','units','buildings'} — the ids FULL.json draws as nodes."""
     global _editor_nodes_cache
@@ -1028,9 +1126,6 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     if not tree_units and not tree_buildings and not tree_techs:
         return
 
-    if is_km_format(civ_def):
-        tree_techs |= km_implied_techs(tree_units, tree_techs)
-
     # Unique buildings we cannot grant are dropped rather than half-honoured:
     # the DAT refuses them anyway, and leaving them in only lit the node up in
     # the F2 viewer (issue #31).  Say so, since the tree editor let them through.
@@ -1162,6 +1257,16 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     nodes = _editor_nodes()
     all_disableable |= (nodes["techs"] - _PROTECTED_TECHS)
 
+    # ── Step 1c: ...but never a tech some team bonus brings back.
+    #
+    # Imperial Skirmisher 655 is off for everyone by the game's own means: tech
+    # 656 auto-fires after Elite Skirmisher and disables it, and the Vietnamese
+    # team bonus disables 656 so the team keeps it.  655 reached the pool only
+    # because the Turks — who have no Skirmishers — disable it, and from there
+    # the sweep wrote it into every civ without the unit, where no team bonus
+    # can undo it: allies of a civ with the card never got the upgrade (#62).
+    all_disableable -= _team_revived_techs(dat)
+
     # ── Step 2: Build reverse maps from effect inspection of each disableable tech.
     # enable_map:  unit/building_id → [tech_ids that make it available via EC_ENABLE b=1]
     # upgrade_map: new_unit_id      → [tech_ids that upgrade to it via EC_UPGRADE]
@@ -1232,6 +1337,82 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     for tech_id in tree_techs:
         if tech_id in ec8_info:
             ec8_to_add.add(tech_id)
+
+    # ── Step 3b': Keep the prerequisites of everything the civ keeps.
+    #
+    # A ticked node can depend on an unticked one, and disabling the prerequisite
+    # silently strands it: tech 35 (the Dock's Galleon research) has no effect of
+    # its own, but 911 — the War Galley -> Galleon upgrade, which is not an editor
+    # node — requires it, as do Fast Fire Ship 246, Carrack 904 and Dragon Ship
+    # 1010.  The editor hangs the Galleon off the War Galley, never off 35, so a
+    # civ saved with the unit and without 35 got a Galleon it could never reach
+    # (and Gillnets 65 without Fishing Lines 906 the same way).  Decided
+    # 2026-10-08: a ticked unit or tech wins over its unticked prerequisite.
+    #
+    # Roots are the ticked techs plus every tech that makes a tree unit available
+    # or upgrades to one, whether or not it is an editor node.  Only editor-node
+    # prerequisites are re-kept — those are the ones a player can untick.  A
+    # root that needs a non-node tech staying disabled is dead and contributes
+    # nothing: Chronicles' own Champion upgrade 1174 sits behind shadow tech
+    # 1138, and following it would switch on Chronicles techs for every civ
+    # with Champions.  required_tech_count is "k of the listed n": Gillnets 65
+    # lists (Castle Age, 912, 906) and needs two, where 912 "Gillnets
+    # requirement" itself needs 906 — so 906 is required in practice.  When a
+    # requirement is met by what is already live it is left alone; otherwise
+    # every reachable prerequisite is followed.
+    _producers: dict[int, set[int]] = {}
+    for _tid, _t in enumerate(dat.techs):
+        if _t.civ not in (-1, civ_index) or not 0 <= _t.effect_id < len(dat.effects):
+            continue
+        for _c in dat.effects[_t.effect_id].effect_commands:
+            _out = int(_c.b) if _c.type == 3 else int(_c.a) if _is_enable(_c) else None
+            if _out is not None:
+                _producers.setdefault(_out, set()).add(_tid)
+
+    def _reqs(tid):
+        """(listed prerequisites, how many of them are needed)."""
+        t = dat.techs[tid]
+        reqs = [r for r in t.required_techs if 0 <= r < len(dat.techs)]
+        return reqs, min(t.required_tech_count, len(reqs))
+
+    def _memo(test):
+        cache: dict[int, bool] = {}
+
+        def run(tid):
+            if tid not in cache:
+                cache[tid] = False               # a cycle satisfies nothing
+                reqs, need = _reqs(tid)
+                cache[tid] = test(tid) and sum(map(run, reqs)) >= need
+            return cache[tid]
+        return run
+
+    _off = lambda t: t in all_disableable and t not in keep_enabled      # noqa: E731
+    # free: fires as things stand.  reachable: fires once node prereqs are kept.
+    _free      = _memo(lambda t: not _off(t))
+    _reachable = _memo(lambda t: not (_off(t) and t not in nodes["techs"]))
+
+    _roots = {t for t in tree_techs if 0 <= t < len(dat.techs)}
+    for _uid in tree_units | tree_buildings:
+        _roots |= {t for t in _producers.get(_uid, ()) if not _off(t)}
+    _prereq_kept: dict[int, int] = {}            # kept tech -> the tech needing it
+    _seen: set[int] = set()
+    _stack = [t for t in _roots if _reachable(t)]
+    while _stack:
+        _tid = _stack.pop()
+        _reqs_of, _need = _reqs(_tid)
+        if sum(map(_free, _reqs_of)) >= _need:
+            continue
+        for _r in _reqs_of:
+            if _r in _seen or not _reachable(_r):
+                continue
+            _seen.add(_r)
+            _stack.append(_r)
+            if _off(_r) and _r not in _PROTECTED_TECHS:
+                _prereq_kept[_r] = _tid
+    keep_enabled |= set(_prereq_kept)
+    if _prereq_kept:
+        print(f"       Kept {len(_prereq_kept)} unticked prerequisite(s) of ticked "
+              f"nodes: " + ", ".join(f"{r} (for {w})" for r, w in sorted(_prereq_kept.items())))
 
     # ── Step 3c: Mutual exclusions and bonus-driven keep-alive.
     # Armored Elephants replace the ram-line for Indian civs — disable rams when present.
@@ -1511,19 +1692,38 @@ def _runtime_train_locations(dat: DatFile, civ_index: int) -> dict[tuple[int, in
     civ with Marauders and Battle Elephants clashes on Stable 4 only in-game —
     this makes those slots visible to the resolver.  Only techs the civ owns
     (its UT and bonus copies) count.
+
+    MULTIPLY attr 158 is the other verb: it *inserts* an entry (32767 = at the
+    tail) and selects it, so the attr 42 that follows names a building for an
+    entry the DAT list does not have.  Mapuche's "Spearman and Skirmisher lines
+    train at Settlements" (bonus 371) is built that way; read as a select, its
+    Settlement landed on entry 0 — the Barracks and Archery Range — and the
+    resolver moved the Barracks Spearman to page 2 to clear a Settlement clash
+    that never exists (issue #61).  Inserted entries are left out: the
+    resolver can only move entries the DAT holds.  Vanilla inserts only at the
+    tail; an insert mid-list would also shift the entries after it.
     """
+    units = dat.civs[civ_index].units
     out: dict[tuple[int, int], int] = {}
     for tech in dat.techs:
         if tech.civ != civ_index or not (0 <= tech.effect_id < len(dat.effects)):
             continue
         entry: dict[int, int] = {}
         for ec in dat.effects[tech.effect_id].effect_commands:
-            if ec.type != EC_SET or ec.a < 0:
+            if ec.a < 0 or int(ec.c) not in (42, 158):
                 continue
-            if int(ec.c) == 158:
-                entry[int(ec.a)] = int(ec.d)
-            elif int(ec.c) == 42 and ec.d >= 0:
-                out[(int(ec.a), entry.get(int(ec.a), 0))] = int(ec.d)
+            uid = int(ec.a)
+            if int(ec.c) == 158 and ec.type == EC_MULTIPLY:
+                entry[uid] = -1                     # a new entry, not in the DAT
+            elif ec.type != EC_SET:
+                continue
+            elif int(ec.c) == 158:
+                entry[uid] = int(ec.d)
+            elif ec.d >= 0 and entry.get(uid, 0) >= 0:
+                u = units[uid] if 0 <= uid < len(units) else None
+                n = len(u.creatable.train_locations) if u is not None and u.creatable else 0
+                if entry.get(uid, 0) < n:
+                    out[(uid, entry.get(uid, 0))] = int(ec.d)
     return out
 
 
@@ -2633,7 +2833,10 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
           "names": {2388: "Pattiyodha Longbowman", 2389: "Elite Pattiyodha Longbowman"}},
     454: {"name": "Sannāhya",          "techs": (1327, 1328), "units": (2390, 2391),
           "chronicles": True, "elite_tech": (1328, "Elite Sannāhya"),
-          "names": {2390: "Sannāhya", 2391: "Elite Sannāhya"}},
+          "names": {2390: "Sannāhya", 2391: "Elite Sannāhya"},
+          # The Chronicles unit ships at 300/400 HP; the user's call (2026-10-10)
+          # is the Battle Elephant's 250/300 for normal games.
+          "hp": {2390: 250, 2391: 300}},
     # These two are GLOBAL techs (civ=-1) gated on Chronicles-only prerequisites,
     # so _allocate_tech would hand back the original untouched.  "rebuild" makes
     # civ-owned copies with standard prerequisites instead: {tech: requires},
@@ -2817,8 +3020,12 @@ def _name_chronicles_units(dat: DatFile, civ_index: int, spec: dict, seen: dict,
 # and use a civ-owned auto-fire tech instead, which is what bonus 404 needs.
 _MINING_CAMP_TECHS = [55, 182, 278, 279]   # Gold/Gold Shaft/Stone/Stone Shaft Mining
 
-# Elephant unit IDs
-_ELEPHANT_UNITS = [239, 558, 873, 875, 1120, 1122, 1132, 1134, 1744, 1746, 1180]
+# Elephant unit IDs — every trainable unit carrying elephant armour class 5,
+# base and elite, plus our Royal Battle Elephant (1180, bonus 309).  The
+# Sannahya (2390/2391, Chronicles, unlocked by card 454) was missing until
+# 2026-10-08.  Campaign heroes on class 5 are left out.
+_ELEPHANT_UNITS = [239, 558, 873, 875, 1120, 1122, 1132, 1134, 1744, 1746, 1180,
+                   2390, 2391]
 
 # Farmer unit IDs and their work-rate multipliers (from KM source)
 _FARMER_WORK_RATES = [(214, 1.23), (259, 1.23), (50, 1.15), (1187, 1.15)]
@@ -3148,8 +3355,13 @@ def _free_tech_cmds(tech_ids: list[int]) -> list[EffectCommand]:
 
 
 def _add_auto_fire_tech(dat: DatFile, civ_index: int, cmds: list[EffectCommand],
-                        age_req: int = -1, name: str = "C-Bonus") -> None:
-    """Append a civ-owned auto-fire tech+effect with given commands."""
+                        age_req: int = -1, name: str = "C-Bonus",
+                        reqs: tuple[int, ...] | None = None) -> int:
+    """Append a civ-owned auto-fire tech+effect with given commands; its id.
+
+    `reqs` replaces the single age gate with several prerequisites, all
+    required — vanilla's start-resource bonuses wait on 639 "Town Center
+    Spawn" and 307 "Shadow TC Annex", then a second tech on the first."""
     eff = Effect(name=name, effect_commands=cmds)
     dat.effects.append(eff)
     eff_id = len(dat.effects) - 1
@@ -3160,7 +3372,11 @@ def _add_auto_fire_tech(dat: DatFile, civ_index: int, cmds: list[EffectCommand],
     # all repeatable=1 — matches the same fix applied to the "next tier"
     # upgrade techs themselves in _add_upgrade_tier_tech.
     tech.repeatable = 1
+    if reqs:
+        tech.required_techs = tuple(list(reqs)[:6] + [-1] * (6 - min(len(reqs), 6)))
+        tech.required_tech_count = min(len(reqs), 6)
     dat.techs.append(tech)
+    return len(dat.techs) - 1
 
 
 _UT_EFFECT_CHUNK = 180
@@ -3261,11 +3477,69 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             ids = grown
         return {u for u in ids if u < n_units and units[u] is not None}
 
+    # "Long Swordsman and up" (#63): the unit, its alternate forms, and every
+    # unit its upgrades lead to — never the ones before it.
+    forward = custom_bonus.upgrade_edges(dat)
+
+    def up_of(uid: int) -> set[int]:
+        ids: set[int] = {uid}
+        while True:
+            grown = custom_bonus.with_forms(
+                set().union(*(custom_bonus.upgrades_after(forward, u) for u in ids)))
+            if grown == ids:
+                break
+            ids = grown
+        return {u for u in ids if u < n_units and units[u] is not None}
+
+    # Population space (#64): the buildings a card's selectors reach — class
+    # pairs expanded, since the effect is written per building — that can hold
+    # population.  An empty first storage slot (Market, Blacksmith, Monastery,
+    # University, Wonder) is turned into a population slot at 0 on this civ's
+    # own unit, so the +N lands as population and nothing else changes.
+    def pop_space_units(selectors) -> list[int]:
+        ids = {a for a, _ in selectors if a >= 0}
+        classes = {b for a, b in selectors if a < 0 and b >= 0}
+        ids |= {i for i, u in enumerate(units) if u is not None and u.type == 80 and u.class_ in classes}
+        out = []
+        for uid in sorted(ids):
+            u = units[uid] if uid < n_units else None
+            if not custom_bonus.pop_space_ok(u):
+                continue
+            first = u.resource_storages[0]
+            if first.type == -1:
+                u.resource_storages = (ResourceStorage(type=custom_bonus._POP_STORAGE,
+                                                       amount=0.0, flag=4),
+                                       *u.resource_storages[1:])
+            out.append(uid)
+        return out
+
+    # Minimum range / blast radius (#67): every unit the card's selectors
+    # reach — class pairs expanded — that has the stat, with this civ's
+    # current value, so the card can write a clamped per-unit SET.
+    def unit_values(attr, selectors) -> list[tuple[int, float]]:
+        spec = custom_bonus.ATTRS[attr]
+        ok = custom_bonus._CAPABLE[attr]
+        ids = {a for a, _ in selectors if a >= 0}
+        classes = {b for a, b in selectors if a < 0 and b >= 0}
+        ids |= {i for i, u in enumerate(units) if u is not None and u.class_ in classes}
+        out = []
+        for uid in sorted(ids):
+            u = units[uid] if uid < n_units else None
+            if u is not None and u.type_50 and ok(u):
+                out.append((uid, float(getattr(u.type_50, spec["unit_field"]))))
+        return out
+
     # Build-time answers the library can't know: what this civ trains at a
     # building, and which unit is its UU.  Both keep alternate forms.
     present = _civ_present_units(civ_def, dat, civ_index) | {u for u in uu_ids if u >= 0}
 
     def resolve(kind: str, arg) -> set[int]:
+        if kind == "up":
+            return up_of(arg)
+        if kind == "pop_space":
+            return pop_space_units(arg)
+        if kind == "unit_values":
+            return unit_values(*arg)
         if kind == "units":
             return {u for u in custom_bonus.with_forms(set(arg))
                     if u < n_units and units[u] is not None}
@@ -3332,6 +3606,18 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                 _msg = f"Custom bonus \"{text}\" targets nothing this civ or game version has — skipped."
             print(f"  WARNING: {_msg}")
             warnings.append(_msg)
+            continue
+        if card["target"]["type"] == "civ":
+            # Civilization cards build vanilla's own tech shapes (#65): an age
+            # gate, or start resources paid once a Town Center exists, the
+            # stockpile on a second tech after the first.  See civ_steps.
+            made: list[int] = []
+            for step in custom_bonus.civ_steps(card):
+                reqs = list(step["reqs"]) + ([made[step["after"]]] if step["after"] is not None else [])
+                made.append(_add_auto_fire_tech(dat, civ_index, step["cmds"], reqs=tuple(reqs),
+                                                name="C-Bonus, Custom"))
+            print(f"       Custom bonus: {text} ({len(cmds)} cmds, {len(made)} tech(s))")
+            applied += 1
             continue
         for start in range(0, len(cmds), CHUNK):
             _add_auto_fire_tech(dat, civ_index, cmds[start:start + CHUNK], name="C-Bonus, Custom")
@@ -3548,6 +3834,9 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
 
     if bonus_id in _UNLOCK_UNIT_BONUSES:
         spec = _UNLOCK_UNIT_BONUSES[bonus_id]
+        if _CHRONICLES_UU_CARDS.get(get_km_uu_index(civ_def or {})) == bonus_id:
+            print(f"       {spec['name']}: already this civ's unique unit — card skipped")
+            return True
         seen: dict = {}
         allocated = [
             new_tid
@@ -3560,6 +3849,10 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             return True
         print(f"       {spec['name']} unlocked: {len(allocated)} techs allocated "
               f"{spec['techs']}→{tuple(allocated)}")
+        for uid, hp in spec.get("hp", {}).items():
+            unit = dat.civs[civ_index].units[uid]
+            if unit is not None:
+                unit.hit_points = hp
         if spec.get("names"):
             _name_chronicles_units(dat, civ_index, spec, seen,
                                    extra_strings, extra_unit_strings)
@@ -4644,6 +4937,9 @@ def get_civ_bonuses(civ_def: dict) -> list:
         # derivation back into civ_def — making it sticky across tree changes,
         # which is the exact staleness this design exists to avoid.
         entries = list(raw[0]) if isinstance(raw[0], list) else []
+    # Withdrawn cards (civ_schema.RETIRED_CIV_BONUSES) drop out here, on every path.
+    entries = [e for e in entries
+               if not (isinstance(e, (list, tuple)) and e and e[0] in RETIRED_CIV_BONUSES)]
 
     units = _tree_unit_ids(civ_def)
     if units:
@@ -4820,6 +5116,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             # effectiveness, the buildings need commands vanilla never wrote.
             if bonus_id == _DROPOFF_DISCOUNT_BONUS:
                 _apply_dropoff_discount(dat, civ_index, multiplier)
+            _apply_elephant_extensions(dat, civ_index, tech_ids, multiplier)
             continue
 
         ec_entries = civ_bonus_ec_list(bonus_id)
@@ -5015,6 +5312,58 @@ def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> No
     _add_auto_fire_tech(dat, civ_index, cmds,
                         name="C-Bonus, -25% drop-off buildings")
     print(f"       Drop-off buildings: {len(cmds)} discounted to {factor:.4f}")
+
+
+# Elephant bonuses that DE wrote for one line.  The cards say elephant units
+# (or melee elephant units), and the user chose all of them (issue #60,
+# 2026-10-08), so each vanilla template tech below is extended to the rest of
+# its set: its per-unit commands are copied onto every unit it leaves out.
+#   640  card 303  +1/+1 armour          Battle Elephant only (Khmer)
+#   672  card 79   +10% speed            Battle Elephant only, card says melee
+#   662  card 83   -25% cost, Castle     Battle Elephant only
+#   663  card 83   -35% cost, Imperial   Battle Elephant only
+#   846  card 292  bonus-damage and conversion resistance — every vanilla
+#                  elephant, not our Royal Battle Elephant or the Sannahya
+#   626  Howdah    +1/+1 armour          Battle and War Elephant (Burmese UT)
+# Civ cards get a civ-owned auto-fire tech gated like the template (the
+# half-catalog pattern bonus 312 uses); Howdah's commands join the UT itself.
+_MELEE_ELEPHANT_UNITS = [239, 558, 1132, 1134, 1180, 1744, 1746, 2390, 2391]
+_ELEPHANT_EXTENSIONS: dict[int, list[int]] = {
+    640: _ELEPHANT_UNITS, 672: _MELEE_ELEPHANT_UNITS, 662: _ELEPHANT_UNITS,
+    663: _ELEPHANT_UNITS, 846: _ELEPHANT_UNITS, 626: _ELEPHANT_UNITS,
+}
+
+
+def _elephant_extension_cmds(dat: DatFile, template_tid: int,
+                             multiplier: int) -> list[EffectCommand]:
+    """The template's per-unit commands, copied onto the elephants it misses.
+
+    Every template here gives each of its units the same commands, so the
+    first covered unit in the set is the pattern.  Scaled like the copy of the
+    template itself, so a x2 card is x2 on every line."""
+    units = _ELEPHANT_EXTENSIONS[template_tid]
+    by_unit: dict[int, list] = defaultdict(list)
+    for c in dat.effects[dat.techs[template_tid].effect_id].effect_commands:
+        if c.type in (EC_SET, EC_ADD, EC_MULTIPLY) and c.a >= 0:
+            by_unit[int(c.a)].append(c)
+    pattern = next((by_unit[u] for u in units if u in by_unit), [])
+    return [scaled
+            for uid in units if uid not in by_unit
+            for c in pattern
+            for scaled in _scale_ec_cmds(
+                EffectCommand(type=c.type, a=uid, b=c.b, c=c.c, d=c.d), multiplier)]
+
+
+def _apply_elephant_extensions(dat: DatFile, civ_index: int, techs, multiplier: int) -> None:
+    """Civ cards: one auto-fire tech per extended template, same age gate."""
+    for tid in techs:
+        if tid not in _ELEPHANT_EXTENSIONS:
+            continue
+        cmds = _elephant_extension_cmds(dat, tid, multiplier)
+        age = next((r for r in dat.techs[tid].required_techs if r in (101, 102, 103)), -1)
+        _add_auto_fire_tech(dat, civ_index, cmds, age_req=age,
+                            name=f"C-Bonus, all elephants ({tid})")
+        print(f"       Elephants: tech {tid} extended with {len(cmds)} commands")
 
 
 # Bonus 105 — "Economic upgrades cost -33% food and available one age earlier".
@@ -5332,6 +5681,51 @@ def _restore_elite_upgrade_location(dat: DatFile, tech_id: int, civ_index: int) 
             break
 
 
+def _own_renamed_uu_strings(dat: DatFile, civ_index: int, civ_def: dict,
+                            uu_id: int, elite_id: int, elite_tech_id: int) -> None:
+    """Give a renamed or re-described VANILLA unique unit string ids of its own.
+
+    A vanilla UU's strings are the game's, shared with the civ that really owns
+    it, so writing the new name over them renamed that civ's unit too — a
+    Ghulam renamed "Qurchi" was Qurchi for the Hindustanis as well, while the
+    Elite upgrade (its own vanilla ids, which nothing wrote) still said "Elite
+    Ghulam" (a Discord user's Safavids, 2026-10-10).
+
+    This civ's copies of the unit, the elite unit and its private elite-upgrade
+    tech move to the civ's KM-UU pool slots, exactly as a KM-custom UU's do (a
+    civ has one or the other, never both).  The elite tech shares the elite
+    unit's ids, as km_custom_uu's does.  The routes write text to whatever ids
+    _resolve_uu_info reads here, and always write the name once the unit owns
+    pool ids (uu_owns_strings) — a pool id with nothing written shows campaign
+    dialogue.  An unchanged vanilla UU keeps the game's strings and tooltip.
+    """
+    uu = civ_def.get("unique_unit")
+    uu = uu if isinstance(uu, dict) else {}
+    if not ((uu.get("name") or "").strip() or (uu.get("description") or "").strip()):
+        return
+    pool_base = civ_index * KM_UU_POOL_SLOTS_PER_CIV
+    units = dat.civs[civ_index].units
+    for uid, sid in ((uu_id, _campaign_sid(pool_base + 0)),
+                     (elite_id, _campaign_sid(pool_base + 1))):
+        if 0 <= uid < len(units) and units[uid] is not None:
+            # For logs and warnings (unit_label): the name the routes will write.
+            old = _display_name(units[uid].language_dll_name, units[uid].name)
+            new = (uu.get("name") or "").strip()
+            _OWN_STRING_NAMES[sid] = (new if uid == uu_id else f"Elite {new}") if new else old
+            units[uid].language_dll_name = sid
+            units[uid].language_dll_creation = _creation_sid(sid)
+            units[uid].language_dll_help = _help_sid(sid)
+    if 0 <= elite_tech_id < len(dat.techs) and dat.techs[elite_tech_id].civ == civ_index:
+        sid = _campaign_sid(pool_base + 1)
+        tech = dat.techs[elite_tech_id]
+        tech.language_dll_name = sid
+        tech.language_dll_description = _creation_sid(sid)
+        tech.language_dll_help = _help_sid(sid)
+        tech.language_dll_tech_tree = -1
+    print(f"       KM UU (vanilla, renamed): units {uu_id}/{elite_id} and elite tech "
+          f"{elite_tech_id} use pool string ids from {_campaign_sid(pool_base)}")
+
+
 def _apply_km_uu(dat: DatFile, civ_index: int, km_uu_index: int) -> tuple[int, int]:
     """Allocate make-avail + elite upgrade techs for a vanilla KM UU index.
 
@@ -5495,6 +5889,61 @@ def _copy_architecture(src_civ, dst_civ) -> None:
                 dst.undead_graphic   = src.undead_graphic
 
     dst_civ.icon_set = src_civ.icon_set
+
+
+# A civ's Monk voice has one gender, the voice civ's: the 13 civs whose vanilla
+# Monk is a woman (Vikings, Incas, Mapuche, ...) select with priestess sound
+# 597, and their Monk lines (423/424, which our voices are extracted onto) are
+# female recordings; every other civ's are male.  Neither has the other gender.
+# So a skin of the other gender — a female Monk speaking British, a male one
+# speaking Mapuche (#58) — takes the villager lines of its own gender in the
+# same language instead, as vanilla does for Jadwiga, a female missionary hero
+# voiced with the female villager sound (435).  The Monk carrying a relic (286)
+# speaks too; 134 is silent.  User's design, 2026-10-08.
+_PRIESTESS_SELECT = 597
+_MONK_VOICE_UNITS = (125, 286)
+_VILLAGER_BY_GENDER = {False: 83, True: 293}       # male / female Villager
+
+
+def _female_monk_civs(dat: DatFile) -> set[int]:
+    """DAT civ indices whose vanilla Monk is a woman, read once per DatFile.
+
+    Cached on the DatFile on the first build, before any slot is overwritten:
+    build_all reuses one DAT for several civs, and a slot an earlier civ
+    replaced is a Britons clone with a male Monk (quirk 10's lesson)."""
+    cached = getattr(dat, "_ef_female_monk_civs", None)
+    if cached is None:
+        cached = {i for i, c in enumerate(dat.civs)
+                  if len(c.units) > 125 and c.units[125] is not None
+                  and c.units[125].selection_sound == _PRIESTESS_SELECT}
+        dat._ef_female_monk_civs = cached
+    return cached
+
+
+def _match_monk_voice(dat: DatFile, dst_civ, skin_idx: int | None,
+                      voice_idx: int | None) -> None:
+    """Give a Monk skin whose gender the voice civ lacks the villager lines of
+    its own gender.  Indices are vanilla civs; genders come from the cache."""
+    if skin_idx is None or voice_idx is None:
+        return
+    female = _female_monk_civs(dat)
+    skin_f, voice_f = skin_idx in female, voice_idx in female
+    if skin_f == voice_f:
+        return
+    src = dst_civ.units[_VILLAGER_BY_GENDER[skin_f]]
+    for uid in _MONK_VOICE_UNITS:
+        u = dst_civ.units[uid]
+        if u is None:
+            continue
+        u.selection_sound          = src.selection_sound
+        u.wwise_selection_sound_id = src.wwise_selection_sound_id
+        if u.bird is not None and src.bird is not None:
+            for f in ("attack_sound", "move_sound", "wwise_attack_sound_id",
+                      "wwise_move_sound_id"):
+                setattr(u.bird, f, getattr(src.bird, f))
+    g = "female" if skin_f else "male"
+    print(f"       Monk voice: {g} skin, {'female' if voice_f else 'male'} voice-civ "
+          f"Monks — using the {g} villager lines")
 
 
 def _copy_monk_skin(src_civ, dst_civ) -> None:
@@ -5724,6 +6173,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     monk_src_civ = (dat.civs[monk_src]
                     if isinstance(monk_src, int) and 0 < monk_src < len(dat.civs)
                     else None)
+    # Read the vanilla Monk genders before this slot is overwritten (cached).
+    _female_monk_civs(dat)
+    _voice_idx = int(civ_def.get("language", 0) or 0) + 1
 
     if overwrite:
         dat.civs[civ_index] = new_civ
@@ -5749,6 +6201,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             print(f"       Monk skin: from DAT civ {monk_src} ({monk_src_civ.name!r})")
         else:
             print(f"       Monk skin: architecture default ({_monk_from.name!r})")
+        _match_monk_voice(dat, dat.civs[civ_index],
+                          monk_src if monk_src_civ is not None else arch_src, _voice_idx)
 
     # Starting scout: the deepcopy base (civ 1) starts with a Scout Cavalry, so
     # leaving this unset keeps vanilla behaviour.
@@ -5827,6 +6281,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     km_uu_make_avail_tech_id: int = -1
     km_uu_elite_tech_id:      int = -1
     km_uu_custom_unit_strings: list[dict] = []
+    km_uu_extra_tech_strings: list[dict] = []
     # Krepost-presence signal applies to both vanilla and custom KM UU paths:
     # bonus 93 ("Can build Krepost") maps to tech 695, which is deepcopied
     # per-civ by _apply_bonuses below.  tree[1] membership is a secondary
@@ -5871,6 +6326,16 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                     krepost_tl.unit_id = km_custom_uu.BUILDING_KREPOST
                     cre.train_locations.append(krepost_tl)
             print(f"       KM UU {km_uu_index} (vanilla): added Krepost train location to units {uu_id}, {elite_uu_id}")
+        if km_uu_index in _CHRONICLES_UU_CARDS:
+            # The Chronicles string table may not load in a normal match, so the
+            # unit, its alternate forms and its elite upgrade get our own
+            # strings — exactly what the unlock card does.
+            _ma, _el = _KM_UU_TECHS[km_uu_index]
+            _name_chronicles_units(
+                dat, civ_index, _UNLOCK_UNIT_BONUSES[_CHRONICLES_UU_CARDS[km_uu_index]],
+                {_ma: km_uu_make_avail_tech_id, _el: km_uu_elite_tech_id},
+                km_uu_extra_tech_strings, km_uu_custom_unit_strings)
+        _own_renamed_uu_strings(dat, civ_index, civ_def, uu_id, elite_uu_id, km_uu_elite_tech_id)
     elif km_uu_is_custom:
         # Pool-based allocation (see CAMPAIGN_STRING_POOL docstring) for the
         # two "name" ids; desc/help ids are DERIVED via _help_sid (name+
@@ -6025,6 +6490,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         _retarget_relic_attack_to_uu(dat, civ_index, bonus_results.get("bonus_tech_map", {}),
                                      uu_id, elite_uu_id)
     bonus_results["extra_unit_strings"].extend(km_uu_custom_unit_strings)
+    bonus_results.setdefault("extra_tech_strings", []).extend(km_uu_extra_tech_strings)
 
     # 7a. Player-composed bonus cards — one auto-fire tech each.
     bonus_results["custom_applied"] = _apply_custom_bonuses(
@@ -6294,6 +6760,32 @@ def _src_civ_uu_ids(dat: DatFile, civ_idx: int) -> tuple[set[int], set[int]]:
     return base_ids, elite_ids
 
 
+KEEP_UNIT, DONJON_UNIT = 235, 1665
+
+
+def _donjon_like_keep(cmds: list) -> list:
+    """The Donjon gets whatever stat change a tech gives the Keep.
+
+    Bonus cards reach it through the tower class (52), but the vanilla techs a
+    unique tech is copied from name the towers one by one — Yasama, Eupseong,
+    Great Wall, Stronghold, Detinets list Watch Tower, Guard Tower and Keep and
+    stop there (reported: the Donjon missed tower UTs, 2026-10-10).  The Donjon
+    is the Castle Age arrow tower, the Keep's counterpart, so each SET / ADD /
+    MULTIPLY on the Keep is copied onto it, unless the tech already writes that
+    attribute for the Donjon (Svan Towers does).  Bombard-only effects never
+    touch the Keep, so they stay off it.
+    """
+    stat = (EC_SET, EC_ADD, EC_MULTIPLY)
+    has = {(ec.type, int(ec.c)) for ec in cmds if ec.type in stat and int(ec.a) == DONJON_UNIT}
+    out = []
+    for ec in cmds:
+        if ec.type in stat and int(ec.a) == KEEP_UNIT and (ec.type, int(ec.c)) not in has:
+            twin = deepcopy(ec)
+            twin.a = DONJON_UNIT
+            out.append(twin)
+    return out
+
+
 def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                           lookup: dict[int, int]) -> tuple[list, list, list]:
     """Collect effect commands for a UT's bonus entries.
@@ -6372,6 +6864,7 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                               f"base={sorted(src_base_uu_ids)} elite={sorted(src_elite_uu_ids)}"
                               f" → will substitute with dest civ's UU")
 
+        entry_start = len(cmds)
         for ec in all_cmds:
             a = int(ec.a)
             if ec.type == EC_ENABLE:
@@ -6399,6 +6892,10 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                     pending_elite_uu_subs.extend(scaled)
                     continue
             cmds.extend(scaled)
+        cmds.extend(_donjon_like_keep(cmds[entry_start:]))
+        # Howdah reaches every elephant, not just the two lines DE wrote.
+        if tech_id in _ELEPHANT_EXTENSIONS:
+            cmds.extend(_elephant_extension_cmds(dat, tech_id, multiplier))
     return cmds, pending_elite_uu_subs, pending_base_uu_subs
 
 

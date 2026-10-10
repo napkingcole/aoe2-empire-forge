@@ -31,7 +31,8 @@ from dat_reader import find_game_dat, load_dat, dat_info
 from civ_appender import (apply_civ, _KM_UU_TECHS, _KM_UU_NAMES, get_km_uu_index,
                           get_civ_bonuses, get_team_bonuses,
                           UNSUPPORTED_UNIQUE_BUILDINGS, _apply_unit_replacements,
-                          _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS, _help_sid)
+                          _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS, _help_sid,
+                          _civ_present_units)
 import km_custom_uu
 
 # Languages KM ships string files for.
@@ -163,6 +164,18 @@ def renamed_uu_tooltip(dat, slot: int, uu_info: dict | None, unit_id, name: str,
             and uu_cost_text(dat, slot, unit_id) == uu_cost_text(dat, 0, unit_id)):
         return rich_unit_tooltip(dat, unit_id, name, desc) or plain
     return plain
+
+
+def uu_owns_strings(dll) -> bool:
+    """True when a UU's name id is one of our pool ids, not the game's.
+
+    KM-custom UUs always own theirs; a renamed vanilla UU does since
+    civ_appender._own_renamed_uu_strings.  A pool id holds campaign text until
+    we write over it, so a writer must always write the name for such a unit,
+    even when the player only changed the description.
+    """
+    from civ_appender import _CAMPAIGN_POOL_SET
+    return dll in _CAMPAIGN_POOL_SET
 
 
 def uu_cost_text(dat, slot: int, unit_id) -> str:
@@ -978,6 +991,13 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
     _castle_ut_name     = (civ_result or {}).get("castle_ut_name", "")
     _imp_ut_name        = (civ_result or {}).get("imp_ut_name", "")
 
+    # The units the civ really has.  Another civ's unique unit can sit in the
+    # tree (the editor offers them; Ionians, #66, ticked a dozen), and the
+    # build ignores it — but the node used to stay lit, so replacing Goths
+    # with such a tree left the Huskarl showing in F2.
+    _present = (_civ_present_units(civ_def, dat, slot)
+                if dat is not None and slot is not None else None)
+
     def patch_nodes(nodes: list) -> int:
         changed = 0
         for node in nodes:
@@ -1045,6 +1065,8 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                 # bonus-enabled units (e.g. Caravel via bonus 69) may not appear
                 # in tree[0] but are still available; include them here.
                 ok = node_id in unit_ids or node_id in _bonus_enabled_units
+                if ok and node_type == "UniqueUnit" and _present is not None:
+                    ok = node_id in _present
             current = node.get("Node Status", "")
             if not ok:
                 if current != STATUS_OFF:

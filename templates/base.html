@@ -27,6 +27,7 @@
     <div class="d-flex gap-3 align-items-center small">
       <a href="{{ url_for('builder_landing') }}" class="nav-link">Build Civ</a>
       <a href="{{ url_for('builder_custom_bonuses') }}" class="nav-link">Custom Bonuses</a>
+      <a href="{{ url_for('civ_view') }}" class="nav-link">View Civ</a>
       <a href="{{ url_for('build_mod') }}" class="nav-link">Build Mod</a>
       <a href="{{ url_for('how_it_works') }}" class="nav-link">How It Works</a>
       <a href="{{ url_for('why') }}" class="nav-link">Why</a>
@@ -49,7 +50,7 @@
 
 {% if '-' in app_version %}
 <div class="alert alert-warning alert-dismissible fade show mb-0 rounded-0 py-2 text-center small" role="alert" style="border-left:none;border-right:none;border-radius:0!important;">
-  <strong>Heads-Up</strong> — Empire Forge v{{ app_version }} is an early preview. Expect rough edges and report issues on <a href="https://discord.gg/cQ5x7bfxDB" target="_blank" rel="noopener" class="alert-link">Discord</a>.
+  <strong>Heads-Up</strong> — Empire Forge v{{ app_version }} is an early preview. Expect rough edges and report issues on <a href="https://discord.gg/CEXf9R6XJ" target="_blank" rel="noopener" class="alert-link">Discord</a>.
   <button type="button" class="btn-close btn-sm py-2" data-bs-dismiss="alert" aria-label="Close"></button>
 </div>
 {% endif %}
@@ -79,7 +80,10 @@
 
 <footer class="text-center text-secondary small py-4">
   <h6 class="text-secondary mb-2">Contact Me</h6>
-  <a href="https://discord.gg/cQ5x7bfxDB" class="text-secondary me-3" target="_blank">
+  <a href="https://empireforge.app" target="_blank" rel="noopener" class="text-secondary me-3">
+    <i class="fa-solid fa-globe"></i> empireforge.app
+  </a>
+  <a href="https://discord.gg/CEXf9R6XJ" class="text-secondary me-3" target="_blank">
     <i class="fa-brands fa-discord"></i> Empire Forge Discord Server</a>
   <a href="https://discord.com/users/napkingcole84" target="_blank" rel="noopener" class="text-secondary me-3">
     <i class="fa-brands fa-discord"></i> My Discord
@@ -87,8 +91,12 @@
   <a href="mailto:aoenapkingcole@gmail.com" class="text-secondary me-3">
     <i class="fa-solid fa-envelope"></i> aoenapkingcole@gmail.com
   </a>
-  <a href="https://github.com/napkingcole/aoe2-empire-forge" target="_blank" rel="noopener" class="text-secondary">
+  <a href="https://github.com/napkingcole/aoe2-empire-forge" target="_blank" rel="noopener" class="text-secondary me-3">
     <i class="fa-brands fa-github"></i> GitHub
+  </a>
+  {# Same tip jar as the website's footer and Download page (_config.yml donate_url). #}
+  <a href="https://ko-fi.com/napkingcole" target="_blank" rel="noopener" class="text-secondary">
+    <i class="fa-solid fa-mug-hot"></i> Buy me a coffee
   </a>
 </footer>
 
@@ -98,7 +106,7 @@
 <!-- What's New modal — fires once per version via localStorage -->
 {% if latest_changes %}
 <div class="modal fade" id="changelogModal" tabindex="-1" aria-labelledby="changelogModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title fw-bold" id="changelogModalLabel">

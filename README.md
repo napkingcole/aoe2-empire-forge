@@ -4,11 +4,13 @@
 
 **Design custom civilizations for Age of Empires II: Definitive Edition and generate playable mods — no modding experience required!**
 
+**Website:** [empireforge.app](https://empireforge.app) — download, guides, FAQ and changelog.
+
 Empire Forge is a standalone civ builder. Name a civilization, pick its architecture, spoken language, build out its tech tree, choose bonuses, design a unique unit and unique technologies — then combine it with other civs into a ready-to-install AoE2:DE mod.
 
 It runs entirely on your own computer: launching it starts a small local server and opens your browser, and every build reads your actual installed game files fresh, rather than making assumptions about the game's data file that break the moment a new DLC is released.
 
-> **Heads up:** Most bonuses and tech tree configurations are fully supported; a small number of exotic effects aren't implemented yet and are skipped rather than failing the build — see the in-app Known Limitations page for the current list. Found a bug? Report it on [Discord](https://discord.gg/cQ5x7bfxDB) or [GitHub Issues](https://github.com/napkingcole/aoe2-empire-forge/issues).
+> **Heads up:** Most bonuses and tech tree configurations are fully supported; a small number of exotic effects aren't implemented yet and are skipped rather than failing the build — see the in-app Known Limitations page for the current list. Found a bug? Report it on [Discord](https://discord.gg/CEXf9R6XJ) or [GitHub Issues](https://github.com/napkingcole/aoe2-empire-forge/issues).
 
 ## Screenshots
 
@@ -46,7 +48,7 @@ Grab the latest release from the [Releases page](https://github.com/napkingcole/
 
 1. **Build a Civ.** Step through the wizard — Identity, Bonuses, Team Bonus, Tech Tree, Unique Unit, Castle UT, Imperial UT, Heroes, Review — or use **Convert KM Civ** to bring in an existing [KrakenMeister](https://krakenmeister.com/civbuilder) civ JSON and keep editing it from there. Save your civ as a `.civbuilder.json` file.
 2. **Build a Mod.** Upload one or more saved civ files, point at your `empires2_x2_p1.dat` (auto-detected), assign each civ to the vanilla civ slot it should replace, and build. You get a `.zip` with two mod folders (`-data` and `-ui`) in a few seconds.
-3. **Install.** Unzip both into your AoE2:DE `mods/local/` folder, make sure the UI mod is enabled in the in-game mod manager, and select your mod as the data mod when starting a skirmish. Both mods must be active together, or your civs will play correctly but show vanilla names and icons.
+3. **Install.** Unzip both into your AoE2:DE `mods/local/` folder, make sure the UI mod is enabled in the in-game mod manager, and select your mod as the data mod when starting a skirmish. Both mods must be active together, or your civs will play correctly but show vanilla names and icons. The reverse also happens: if the civ selection screen shows your bonuses but the game plays the original civ (its buildings, voices, tech tree and unique unit), the data mod isn't selected for that game. Choose it in the lobby's Data Mod dropdown; in multiplayer the host picks it.
 
 The in-app **How It Works** and **Known Limitations** pages have the full walkthrough and the current list of unsupported bonus effects.
 
@@ -61,8 +63,9 @@ Short version: KrakenMeister's builder became stale once more and more DLCs were
 
 ## Questions / feedback
 
+- Website: [empireforge.app](https://empireforge.app) (FAQ and support)
 - Email: [aoenapkingcole@gmail.com](mailto:aoenapkingcole@gmail.com)
-- Discord Server: [server](https://discord.gg/cQ5x7bfxDB)
+- Discord Server: [server](https://discord.gg/CEXf9R6XJ)
 - Discord: `napkingcole84` ([profile](https://discord.com/users/napkingcole84))
 
 ## License

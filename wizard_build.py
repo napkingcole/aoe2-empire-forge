@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 
 from build_all import (
-    _kv_text,
+    _kv_text, hero_string_lines,
     ut_name_and_desc, ut_selection_text, ut_research_label,
     _build_combined_data_zip,
     _build_combined_ui_zip,
@@ -33,7 +33,7 @@ from build_civ import (
     _canonical_techtree_id,
     civ_name_sid,
     civ_roster,
-    _resolve_uu_info, keeps_vanilla_hover, rich_unit_tooltip, renamed_uu_tooltip,
+    _resolve_uu_info, keeps_vanilla_hover, rich_unit_tooltip, renamed_uu_tooltip, uu_owns_strings,
     _patch_per_civ_techtree,
     _find_adjacent_json,
     _find_civ_techtrees_folder,
@@ -41,6 +41,7 @@ from build_civ import (
     uu_cost_text,
 )
 from civ_appender import (
+    patch_civilizations_list,
     apply_civ, assign_all_languages, get_civ_bonuses, get_team_bonuses,
     get_km_uu_index, _KM_UU_NAMES,
 )
@@ -120,6 +121,12 @@ def _draft_to_civ_def(draft: dict) -> dict:
     # in the TT effect, making the hero immediately trainable from Castle Age.
     # Instead, _apply_hero_unit creates an Imperial Age auto-fire tech (full_tech_mode=1)
     # that fires EC_ENABLE(hero_id, 1) only when Imperial Age is reached.
+    #
+    # It still has to reach apply_civ: civ_appender._place_hero moves it to its
+    # own Castle button and the button planner counts it.  Without this key the
+    # wizard route left the hero on its vanilla button — the Trebuchet's.
+    if draft.get("hero_unit"):
+        civ_def["hero_unit"] = draft["hero_unit"]
 
     # Emblem: wizard stores a data-URI under draft.emblem;
     # _decode_flag expects it under civ_def["customFlagData"].
@@ -226,6 +233,9 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             "uu_unit_id":         uu_info["unit_id"]  if uu_info else None,
             "uu_elite_id":        uu_info["elite_id"] if uu_info else None,
             "uu_upgrade_tech_id": civ_result.get("km_uu_elite_tech_id"),
+            # The civ's own UTs, for civilizations.json (patch_civilizations_list).
+            "castle_ut_tech_id": civ_result.get("castle_ut_tech_id"),
+            "imp_ut_tech_id":    civ_result.get("imp_ut_tech_id"),
             "uu_name_sid":        uu_info["dll_name"] if uu_info else None,
             "uu_desc_sid":        uu_info["dll_help"] if uu_info else None,
         }
@@ -299,24 +309,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             except (IndexError, AttributeError):
                 pass
 
-    # Hero unit string IDs — resolved once, written inside the language loop below.
-    _hero_raw  = draft.get("hero_unit") or {}
-    _hero_bid  = _hero_raw.get("base_unit_id")
-    _hero_name = _kv_text((_hero_raw.get("name") or "").strip())
-    _hero_desc = _kv_text((_hero_raw.get("description") or "").strip())
-    _hero_dll  = -1
-    _hero_cost_str = ""
-    if _hero_bid is not None and _hero_name:
-        try:
-            _hero_dll = dat.civs[slot].units[_hero_bid].language_dll_name or -1
-        except (IndexError, TypeError, AttributeError):
-            pass
-        if _hero_dll <= 0:
-            print(f"       WARNING: hero unit {_hero_bid} has no language_dll_name"
-                  " — name/desc won't appear in tooltip", flush=True)
-        # Read after _apply_hero_unit, so the tooltip quotes the cost the player
-        # will actually pay.
-        _hero_cost_str = uu_cost_text(dat, slot, _hero_bid)
+    # Hero name / tooltips: one helper for all three routes (build_all).
+    hero_lines = hero_string_lines(dat, slot, draft.get("hero_unit"))
 
     for lang in LANGUAGES:
         # Civ name + click-to-play + description
@@ -324,32 +318,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         string_lines[lang].append(f'{name_sid + 80000} "Click to play as {alias_kv}."')
         string_lines[lang].append(f'{name_sid + 109879} "{full_desc}"')
 
-        # Hero unit name + Castle train-button tooltip.
-        # +1000  = language_dll_creation (bottom bar text on hover)
-        # +21000 = Castle floating hover tooltip (confirmed load-bearing for units)
-        # +100000 = language_dll_help (additional hover tooltip path)
-        if _hero_dll > 0 and _hero_name:
-            # AoE2 uses <b>text<b> (no slash) for bold.
-            # +1000 = language_dll_creation (bottom-bar text when cursor is on button)
-            # +21000 = Castle hover tooltip (floating panel with stats/cost/description)
-            # +100000 = language_dll_help (same hover panel, belt-and-suspenders)
-            # The base hero's own game tooltip, renamed (cost icons, upgrades,
-            # stats); plain text only if it has none.
-            _hero_hover = rich_unit_tooltip(dat, _hero_bid, _hero_name, _hero_desc)
-            if _hero_hover is None:
-                _hero_hover = f"Create <b>{_hero_name}<b>"
-                if _hero_desc:
-                    _hero_hover += f"\\n{_hero_desc}"
-                if _hero_cost_str:
-                    _hero_hover += f"\\n{_hero_cost_str}"
-            string_lines[lang].append(f'{_hero_dll} "{_hero_name}"')
-            # +1000 is the short "Create X" label, as every vanilla unit's is.
-            string_lines[lang].append(
-                f'{_hero_dll + DLL_CREATION_OFFSET} "Create {_hero_name}"')
-            string_lines[lang].append(
-                f'{_hero_dll + 21000} "{_hero_hover}"')
-            string_lines[lang].append(
-                f'{_hero_dll + DLL_HELP_OFFSET} "{_hero_hover}"')
+        string_lines[lang].extend(hero_lines)
 
         # UT name + tooltip strings
         for ut_sid, desc_sid, ut_help_sid, full_name, ut_desc_text in (
@@ -429,8 +398,11 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             # resolved name that no longer matches KM's table — which is how a
             # custom preset reads. Without the second half the unit kept its
             # original DAT name in game while the wizard showed the new one.
+            # A renamed vanilla UU owns pool ids (_own_renamed_uu_strings):
+            # always name it, or its pool id shows campaign text.
+            _owns = bool(uu_info.get("vanilla") and uu_owns_strings(dll))
             _is_renamed = bool(uu_override_name) or (
-                uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display))
+                uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)) or _owns
             if _is_renamed:
                 # In-game overrides: base name, create button text, castle hover tooltip, help.
                 # language_dll_help points to dll+100000; the game reads that for hover content.
@@ -471,7 +443,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             _elite_hover = renamed_uu_tooltip(dat, slot, uu_info, (uu_info or {}).get("elite_id"),
                                               uu_elite_name, uu_override_desc or "", _elite_hover)
             _put(uu_elite_dll + 10000, uu_elite_name)
-            if uu_override_name:
+            if uu_override_name or (uu_info and uu_info.get("vanilla")
+                                    and uu_owns_strings(uu_elite_dll)):
                 _put(uu_elite_dll, uu_elite_name)
                 _put(uu_elite_dll + DLL_CREATION_OFFSET, f"Create {uu_elite_name}")
                 _put(uu_elite_dll + 21000, _elite_hover)
@@ -557,27 +530,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         try:
             with open(base_civs_json, encoding="utf-8") as f:
                 civ_list = json.load(f).get("civilization_list", [])
-            for slot_idx, ov in civs_overrides.items():
-                if slot_idx >= len(civ_list):
-                    continue
-                entry = civ_list[slot_idx]
-                entry["name_string_id"] = ov["name_sid"]
-                if ov.get("icon_id") is not None:
-                    entry["unique_unit_image_paths"] = [
-                        f"/resources/uniticons/{ov['icon_id']:03d}_50730.png"
-                    ]
-                uu_unit_id = ov.get("uu_unit_id")
-                if uu_unit_id is not None:
-                    entry["unique_unit_id"] = uu_unit_id
-                    if ov.get("uu_elite_id") is not None:
-                        entry["elite_unique_unit_id"] = ov["uu_elite_id"]
-                    if ov.get("uu_upgrade_tech_id") is not None:
-                        entry["unique_unit_upgrade_id"] = ov["uu_upgrade_tech_id"]
-                    if ov.get("uu_name_sid") is not None:
-                        desc_sid_uu = ov.get("uu_desc_sid") or (ov["uu_name_sid"] + DLL_HELP_OFFSET)
-                        entry["unique_unit_string_ids"] = [
-                            {"name": ov["uu_name_sid"], "description": desc_sid_uu}
-                        ]
+            patch_civilizations_list(civ_list, civs_overrides)
             civs_json_bytes = json.dumps(
                 {"civilization_list": civ_list}, separators=(",", ":")
             ).encode("utf-8")
@@ -591,7 +544,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     )
     ui_zip = _build_combined_ui_zip(
         ai_stubs, button_pngs, combined_strings,
-        mod_name=mod_name, lang_values={lang_val},
+        mod_name=mod_name, lang_values={lang_val}, dat_path=dat_path,
     )
 
     buf = io.BytesIO()

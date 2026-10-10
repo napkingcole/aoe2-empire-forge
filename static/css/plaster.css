@@ -1375,6 +1375,11 @@ img.card-main-image {
   color: #000;
   border: 1px solid oklch(from #d0e00e l c h / 0.5);
 }
+.uu-badge-chronicles {
+  background: var(--cat-chronicles);
+  color: #fff;
+  border: 1px solid oklch(from #6f4177 l c h / 0.5);
+}
 .uu-card .uu-badge {
   position: absolute;
   top: 3px;
@@ -1978,6 +1983,12 @@ img.card-main-image {
   letter-spacing: .14em; text-align: center; text-transform: uppercase;
   box-shadow: 0 1px 3px rgba(44, 26, 10, 0.35);
   pointer-events: none;
+}
+/* Homepage strip card (Custom Bonuses): the --new look, laid out in a row. */
+.builder-option-strip .builder-option-icon { font-size: 2rem; line-height: 1; }
+.builder-option-strip .card-body { padding-right: 4.5rem !important; }   /* clear the ribbon */
+@media (max-width: 576px) {
+  .builder-option-strip .card-body { flex-direction: column; text-align: center !important; padding-right: 1.5rem !important; }
 }
 .bonus-card[data-cat="chronicles"] .card-who {
   padding-right: 15px;

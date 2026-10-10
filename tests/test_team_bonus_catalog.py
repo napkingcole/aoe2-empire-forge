@@ -358,6 +358,34 @@ if dat_path is not None:
         check(f"tech {tid} is released by the right mechanism for this DAT "
               f"({why})", ok_cmd)
 
+# Team bonus 35 works by disabling 656, the tech that switches Imperial
+# Skirmisher 655 off after Elite Skirmisher.  The tree sweep used to write its
+# own type=102 for 655 into every civ without the unit (the Turks' disable put
+# it in the pool), and an ally's team effect cannot undo that (#62).
+if dat_path is not None:
+    import contextlib
+    import io
+    from civ_appender import apply_civ, _team_revived_techs
+    from civ_schema import FORMAT_KEY
+    print("\n=== a team bonus's re-enabled tech is not tree-disabled (#62) ===")
+    check("Imperial Skirmisher 655 is read as team-revived", 655 in _team_revived_techs(dat))
+
+    def probe(alias, team):
+        return {"format": FORMAT_KEY, "alias": alias, "architecture": 2, "language": 0,
+                "bonuses": [], "team_bonuses": team,
+                "tree": {"units": [83, 13, 74, 4, 24, 7, 6], "buildings": [12, 87, 109, 70],
+                         "techs": [101, 102, 103, 98, 100]}}
+    with contextlib.redirect_stdout(io.StringIO()):
+        apply_civ(dat, probe("Owner", [{"id": 35, "multiplier": 1}]), target_slot=5)
+        apply_civ(dat, probe("Ally", []), target_slot=6)
+    team = dat.effects[dat.civs[5].team_bonus_id].effect_commands
+    check("owner's team effect disables 656",
+          any(c.type == 102 and int(c.d) == 656 for c in team))
+    for slot, who in ((5, "owner"), (6, "ally")):
+        tt = dat.effects[dat.civs[slot].tech_tree_id].effect_commands
+        check(f"{who}'s tree does not disable 655",
+              not any(c.type == 102 and int(c.d) == 655 for c in tt))
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

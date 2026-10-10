@@ -399,7 +399,7 @@ This is exactly KM's `assignLanguages()` algorithm (`civOffset=100`, `civbuilder
 
 The engine resolves the SoundItem `filename` (e.g. `jvmb.wav`) and looks for a matching `.wem` file at `resources/_common/drs/sounds/jvmb.wem` inside the UI mod zip. Without the file, it falls back to Wwise audio bank routing, which plays the slot's vanilla civ's voices (typically Aztec for a new slot).
 
-**Source:** `voice_files/<lang_val>/` in the project root — 43 folders (0–42, one per KM language index), ~58 .wem files each. Pre-extracted from the game by KM's build server. `_build_combined_ui_zip` in `build_all.py` takes `lang_values: set[int]` and writes the matching .wems into the UI zip.
+**Source:** the player's own game install. `voice_source.py` reads every clip `voice_wwise_map.json` names out of `<game>/wwise/Base.pck` at build time (no game audio ships with the app since 2026-10-06). `_build_combined_ui_zip` in `build_all.py` takes `lang_values: set[int]` and `dat_path`, and writes the extracted .wems into the UI zip. The old KM-derived `voice_files/` is kept, untracked, at `ignore/voice_files/`.
 
 **KM language index → civ voice prefix mapping (confirmed):**
 

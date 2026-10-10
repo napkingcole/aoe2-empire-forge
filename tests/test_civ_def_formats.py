@@ -250,5 +250,28 @@ for label, civ_def in (("wizard", copy.deepcopy(WIZARD)), ("km", copy.deepcopy(K
           got.count([UNLOCK_BID, 1]) == 1, f"{got!r}")
 
 
+# Withdrawn cards (civ_schema.RETIRED_CIV_BONUSES) drop out in the accessor
+# every reader goes through — #69: "Siege Towers can fire arrows" (333) never
+# made a tower fire, so a civ or KM import carrying it must stop claiming it.
+print("\n=== Withdrawn bonus cards are dropped on read ===")
+for label, civ in (("wizard", {"bonuses": [{"id": 333, "multiplier": 1}, {"id": 4, "multiplier": 1}]}),
+                   ("km", {"bonuses": [[[333, 1], [4, 1]], [], [], [], []], "tree": [[], [], []]})):
+    got = [list(e) for e in get_civ_bonuses(civ)]
+    check(f"{label}: 333 dropped, 4 kept", got == [[4, 1]], f"{got}")
+
+
+# apply_civ reads the hero from civ_def (civ_appender._place_hero puts it on its
+# own Castle button; the button planner counts it).  The wizard route builds
+# civ_def from the draft, and once dropped the key: its heroes kept their
+# vanilla Castle button, the Trebuchet's, while uploads of the same file did not.
+print("\n=== Wizard conversion keeps what apply_civ reads ===")
+from wizard_build import _draft_to_civ_def  # noqa: E402
+_hero = {"base_unit_id": 1966, "name": "Palintonon"}
+check("hero_unit survives _draft_to_civ_def",
+      _draft_to_civ_def({"alias": "X", "hero_unit": _hero}).get("hero_unit") == _hero)
+check("no hero → no hero_unit key",
+      "hero_unit" not in _draft_to_civ_def({"alias": "X"}))
+
+
 print("\nAll checks passed." if not failures else f"\n{failures} check(s) failed.")
 sys.exit(1 if failures else 0)

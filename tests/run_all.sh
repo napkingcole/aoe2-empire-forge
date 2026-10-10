@@ -42,6 +42,7 @@ run "button pages"                "$PY" tests/test_button_pages.py
 run "UT cost override"            "$PY" tests/test_ut_cost_override.py
 run "multiplier scaling"          "$PY" tests/test_multiplier_scaling.py
 run "explicit file encodings"     "$PY" tests/test_explicit_encoding.py
+run "voices from the player's banks" "$PY" tests/test_voice_source.py
 run "armour class vs card text"  "$PY" tests/test_armor_class_text.py
 run "relic bonus reaches the UU"  "$PY" tests/test_relic_bonus_uu.py
 run "chronicles bonus cards"      "$PY" tests/test_chronicles_bonuses.py
@@ -62,11 +63,24 @@ if [ "${SKIP_SMOKE:-0}" = "1" ]; then
 else
     run "lazy DAT loading"     "$PY" tests/test_lazy_dat.py
     run "vanilla UU tooltips"  "$PY" tests/test_uu_vanilla_hover.py
+    run "renamed vanilla UU is this civ's only" "$PY" tests/test_renamed_vanilla_uu.py
+    run "Donjon gets tower bonuses"  "$PY" tests/test_donjon_towers.py
+    run "Chronicles unique units"   "$PY" tests/test_chronicles_uu.py
     run "build smoke (python)" "$PY" tests/test_build_smoke.py
     run "civ with no UU (python)" "$PY" tests/test_no_uu_civ.py
     run "unlock unit bonuses"     "$PY" tests/test_unlock_unit_bonuses.py
     run "shared prereq bonuses"   "$PY" tests/test_shared_prereq_bonuses.py
     run "KM import tree gaps"     "$PY" tests/test_km_import_gaps.py
+    run "elephant bonuses"        "$PY" tests/test_elephant_bonuses.py
+    run "monk voice gender"       "$PY" tests/test_monk_voice.py
+    run "replaced civ leftovers"  "$PY" tests/test_replaced_civ_leftovers.py
+    run "custom bonus targets"    "$PY" tests/test_custom_bonus_targets.py
+    run "elite upgrade cost"      "$PY" tests/test_elite_upgrade_cost.py
+    run "unit line targets"       "$PY" tests/test_unit_line_targets.py
+    run "population limit bonus"  "$PY" tests/test_pop_cap_bonus.py
+    run "population space bonus"  "$PY" tests/test_pop_space_bonus.py
+    run "range, blast, conversion" "$PY" tests/test_range_blast_conversion.py
+    run "civ share summary"       "$PY" tests/test_civ_summary.py
     run "dat_path fallback"       "$PY" tests/test_dat_path_fallback.py
     run "issues 38-44 batch"      "$PY" tests/test_issues_40_44.py
     run "custom bonus composer"   "$PY" tests/test_custom_bonus.py

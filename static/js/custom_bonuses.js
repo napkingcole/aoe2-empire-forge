@@ -19,10 +19,30 @@ async function cbLoadCatalog() {
   if (_cbCatalog) return _cbCatalog;
   try {
     _cbCatalog = await (await fetch("/api/builder/custom-bonus/catalog")).json();
+    if (_cbCatalog.allowed_pending) _cbRefreshAllowed(1);
   } catch (e) {
     console.warn("Could not load custom bonus catalog:", e);
   }
   return _cbCatalog;
+}
+
+// The per-target effect lists, the unit-line tiles and the "top" flags need the
+// game DAT, which may still be loading on a first visit; until they arrive
+// every effect of the right kind is offered and only single units are listed.
+function _cbRefreshAllowed(attempt) {
+  if (attempt > 10) return;
+  setTimeout(async () => {
+    try {
+      const c = await (await fetch("/api/builder/custom-bonus/catalog")).json();
+      if (!c.allowed) return _cbRefreshAllowed(attempt + 1);
+      // Everything that needed the DAT: effect lists, line tiles, top flags.
+      _cbCatalog.allowed = c.allowed;
+      _cbCatalog.lines = c.lines;
+      _cbCatalog.units = c.units;
+      delete _cbCatalog.allowed_pending;
+      if (_cbWork) { _cbRenderPicker(); _cbRenderEffects(); }
+    } catch (e) { /* keep offering everything */ }
+  }, 3000);
 }
 
 async function cbLoadLibrary() {
@@ -50,6 +70,7 @@ function _cbTargetKind(t) {
   if (t.type === "group") return _cbGroup(t.id)?.kind || "unit";
   if (t.type === "job") return "job";
   if (t.type === "tech") return "tech";
+  if (t.type === "civ") return "civ";
   return t.kind === "building" ? "building" : "unit";
 }
 
@@ -58,7 +79,19 @@ function _cbTargetLabel(t) {
   if (t.type === "group") return _cbGroup(t.id)?.label || t.id;
   if (t.type === "job") return _cbJob(t.id)?.label || t.id;
   if (t.type === "tech") return t.name || `Tech ${t.id}`;
+  if (t.type === "civ") return "Civilization";
   return t.name || `Unit ${t.id}`;
+}
+
+// What a card is about, as its text says it (mirrors custom_bonus.card_text):
+// a unit with no scope is its whole line ("Militia line" — every card before
+// #63 meant this); scope "up" is the unit and its upgrades ("Long Swordsman
+// and up"), or just the unit when nothing comes after it ("Champion").
+function _cbSubject(t) {
+  const label = _cbTargetLabel(t);
+  if (t?.type !== "unit" || t.kind === "building") return label;
+  if (t.scope !== "up") return `${label} line`;
+  return t.top ? label : `${label} and up`;
 }
 
 function _cbNum(v) { return Number.isInteger(v) ? String(v) : String(+v.toFixed(3)); }
@@ -87,8 +120,26 @@ function _cbEffectText(e, target) {
 
 function cbCardText(card) {
   if (card.text) return card.text;
-  let subject = _cbTargetLabel(card.target);
-  if (card.target?.type === "unit" && card.target.kind !== "building") subject += " line";
+  if (card.target?.type === "civ") {
+    // Mirrors custom_bonus._civ_effect_text: "+25 population limit in the
+    // Imperial Age", "+100 stone at the start", "+200 wood on reaching the
+    // Castle Age" (#65).
+    const age = (_cbCatalog?.civ_ages || []).find(a => a.id === card.target.age);
+    return (card.effects || []).filter(e => e.value != null && !isNaN(e.value) && e.value !== 0).map(e => {
+      const num = `${e.value > 0 ? "+" : "-"}${_cbNum(Math.abs(e.value))}`;
+      if (e.attr === "resources") {
+        const what = e.resource === "each" ? "of each resource" : (e.resource || "gold");
+        return `${num} ${what} ${age ? `on reaching the ${age.label}` : "at the start"}`;
+      }
+      if (e.attr === "convert_time") {
+        const n = Math.abs(e.value);
+        return `Monks convert ${_cbNum(n)} second${n !== 1 ? "s" : ""} ${e.value < 0 ? "faster" : "slower"}`
+             + (age ? ` from the ${age.label}` : "");
+      }
+      return `${num} ${_cbAttr(e.attr)?.label || e.attr}` + (age ? ` in the ${age.label}` : "");
+    }).join(", ");
+  }
+  const subject = _cbSubject(card.target);
   const parts = (card.effects || []).map(e => _cbEffectText(e, card.target)).filter(Boolean);
   return parts.length ? `${subject}: ${parts.join(", ")}` : subject;
 }
@@ -107,8 +158,21 @@ function cbSameCard(a, b) {
 let _cbWork   = null;
 let _cbOnSave = null;
 
-function _cbAttrsFor(kind) {
-  return (_cbCatalog?.attrs || []).filter(a => a.kinds.includes(kind));
+// The effects a target can take: its kind's, narrowed to the ones that change
+// a stat some unit it reaches has (no garrison space on Villagers, no range on
+// a Champion).  Techs and the per-civ "Unique unit" group are not narrowed.
+function _cbAttrsFor(target) {
+  const kind = _cbTargetKind(target);
+  const all = (_cbCatalog?.attrs || []).filter(a => a.kinds.includes(kind));
+  const key = !target ? null
+    : target.type === "group" ? `group:${target.id}`
+    : target.type === "job"   ? `job:${target.id}`
+    : target.type !== "unit"  ? null
+    : kind === "building"      ? `building:${target.id}`
+    : target.scope === "up"    ? `unit:${target.id}`
+    : _cbCatalog?.allowed?.[`line:${target.id}`] ? `line:${target.id}` : `unit:${target.id}`;
+  const ok = key && _cbCatalog?.allowed?.[key];
+  return ok ? all.filter(a => ok.includes(a.id)) : all;
 }
 
 // ── Target picker: Group | Unit | Villager | Building tabs over icon tiles ──
@@ -125,13 +189,15 @@ function _cbTabOf(t) {
   if (!t) return _cbTab;
   if (t.type === "job") return "villager";
   if (t.type === "tech") return "tech";
+  if (t.type === "civ") return "civ";
   if (t.type === "group") return _cbGroup(t.id)?.tab || "group";
   if (t.type === "unit" && t.id === _CB_FISHING_SHIP) return "villager";
   return t.kind === "building" ? "building" : "unit";
 }
 
 function _cbSameTarget(a, b) {
-  return !!a && !!b && a.type === b.type && String(a.id) === String(b.id) && (a.kind || "") === (b.kind || "");
+  return !!a && !!b && a.type === b.type && String(a.id) === String(b.id) && (a.kind || "") === (b.kind || "")
+      && (a.scope || "") === (b.scope || "") && (a.age || "") === (b.age || "");
 }
 
 function _cbIcon(icon, label) {
@@ -156,6 +222,12 @@ function _cbTilesFor(tab) {
     return out;
   };
   if (tab === "group") return sectioned(c.groups.filter(g => g.tab === "group"));
+  if (tab === "civ") {
+    // Keep the age already chosen when the tile is clicked again.
+    const age = _cbWork?.target?.type === "civ" ? _cbWork.target.age : undefined;
+    return [{ target: { type: "civ", id: "civ", ...(age ? { age } : {}) },
+              label: "Whole civilization", icon: "fa-landmark" }];
+  }
   if (tab === "villager") {
     const all  = c.groups.find(g => g.id === "villagers");
     const ship = c.units.find(u => u.id === _CB_FISHING_SHIP);
@@ -176,20 +248,37 @@ function _cbTilesFor(tab) {
     .filter(x => !_cbCategory || x.category === _cbCategory)
     .map(x => ({ target: x.kind === "tech"
                    ? { type: "tech", id: x.id, name: x.name }
-                   : { type: "unit", id: x.id, name: x.name, kind: x.kind },
+                   : x.kind === "unit"
+                     // A single unit is "this unit and up" (#63); whole lines
+                     // are the line tiles below.
+                     ? { type: "unit", id: x.id, name: x.name, kind: "unit", scope: "up",
+                         ...(x.top ? { top: true } : {}) }
+                     : { type: "unit", id: x.id, name: x.name, kind: x.kind },
                  label: x.name, icon: x.icon }));
-  if (!groups.length) return pool;
-  const listHeading = { unit: "Units", building: "Individual buildings", tech: "Individual techs" }[tab];
+  // Unit lines, by building (#63): the whole line, alternates included.
+  const lineTiles = [];
+  if (tab === "unit") {
+    let last = null;
+    for (const ln of (c.lines || []).filter(l => (hit(l.name) || l.members.some(hit))
+                                              && (!_cbCategory || l.category === _cbCategory))) {
+      if (ln.building_name !== last) { lineTiles.push({ heading: `${ln.building_name} lines` }); last = ln.building_name; }
+      lineTiles.push({ target: { type: "unit", id: ln.id, name: ln.name.replace(/ line$/, ""), kind: "unit" },
+                       label: ln.name, icon: ln.icon });
+    }
+  }
+  if (!groups.length && !lineTiles.length) return pool;
+  const listHeading = { unit: "Single units (and their upgrades)", building: "Individual buildings", tech: "Individual techs" }[tab];
   // The Tech tab's groups carry their own sections (Ages, Researched at, ...).
-  const head = tab === "tech" ? sectioned(groups) : [{ heading: tab === "unit" ? "Special" : "Groups" }, ...groups.map(groupTile)];
-  return [...head, ...(pool.length ? [{ heading: listHeading }, ...pool] : [])];
+  const head = tab === "tech" ? sectioned(groups)
+             : groups.length ? [{ heading: tab === "unit" ? "Special" : "Groups" }, ...groups.map(groupTile)] : [];
+  return [...head, ...lineTiles, ...(pool.length ? [{ heading: listHeading }, ...pool] : [])];
 }
 
 function _cbRenderPicker() {
   // The choice stays visible while browsing another tab.
   const chosen = document.getElementById("cb-target-chosen");
   chosen.innerHTML = _cbWork.target
-    ? `<i class="fa-solid fa-check me-1"></i>${cbEsc(_cbTargetLabel(_cbWork.target))}`
+    ? `<i class="fa-solid fa-check me-1"></i>${cbEsc(_cbSubject(_cbWork.target))}`
     : `<span class="text-muted fw-normal">— pick one below</span>`;
   document.querySelectorAll(".cb-tab").forEach(b => {
     const on = b.dataset.tab === _cbTab;
@@ -231,6 +320,14 @@ function _cbRenderPicker() {
 
 function _cbTargetHint(t) {
   if (!t) return "";
+  if (t.type === "civ") {
+    return "Population limit is added on top of the lobby's limit (200, 500…); there is no percentage, "
+         + "since the lobby limit is a game setting the mod can't read. Resources are a one-time grant: "
+         + "at the start (paid once a Town Center stands, so Nomad works) or on reaching the chosen age. "
+         + "Only a start grant can be negative. Monk conversion time is in monk-seconds: "
+         + "-1 makes your Monks convert faster (Inquisition); conversion resistance makes "
+         + "enemy Monks slower against your units (Faith gives +4).";
+  }
   if (t.type === "group") {
     return {
       cavalry:       "Includes cavalry archers and mounted gunpowder, just like the game's definition.",
@@ -266,7 +363,13 @@ function _cbTargetHint(t) {
       ? "Applies to every Dock, including the Malay Harbor it upgrades into."
       : "Applies to every age version of this building.";
   }
-  return "Applies to the whole upgrade line and any alternate forms — e.g. Knight also covers Cavalier and Paladin.";
+  if (t.scope === "up") {
+    return t.top ? "Applies to this unit (and its alternate forms) — nothing upgrades from it."
+                 : "Applies to this unit and every upgrade after it, not the ones before — e.g. Long Swordsman covers Two-Handed Swordsman, Champion and Legionary, but not Militia.";
+  }
+  const line = (_cbCatalog?.lines || []).find(l => String(l.id) === String(t.id));
+  return line ? `Covers ${line.members.join(", ")} — whichever this civ has.`
+              : "Applies to the whole upgrade line and any alternate forms — e.g. Knight also covers Cavalier and Paladin.";
 }
 
 function _cbSetTarget(target) {
@@ -274,7 +377,7 @@ function _cbSetTarget(target) {
   document.getElementById("cb-target-hint").textContent = _cbTargetHint(target);
   // Drop effects the new target can't take (movement speed on a building, HP on
   // a villager job) — the server enforces the same list.
-  const ok = new Set(_cbAttrsFor(_cbTargetKind(target)).map(a => a.id));
+  const ok = new Set(_cbAttrsFor(target).map(a => a.id));
   _cbWork.effects = _cbWork.effects.filter(e => ok.has(e.attr));
   if (!_cbWork.effects.length) _cbWork.effects.push(_cbNewEffect());
   _cbError("");
@@ -284,7 +387,12 @@ function _cbSetTarget(target) {
 
 function _cbRenderEffects() {
   const wrap  = document.getElementById("cb-effects");
-  const attrs = _cbAttrsFor(_cbTargetKind(_cbWork.target));
+  // A saved card keeps an effect the target no longer offers, so editing it
+  // never swaps that effect for another one silently.
+  const offered = _cbAttrsFor(_cbWork.target);
+  const kept = _cbWork.effects.map(e => e.attr)
+    .filter(id => !offered.some(a => a.id === id)).map(_cbAttr).filter(Boolean);
+  const attrs = [...offered, ...kept];
   wrap.innerHTML = _cbWork.effects.map((e, i) => {
     const a = _cbAttr(e.attr);
     const job = _cbWork.target?.type === "job" ? _cbJob(_cbWork.target.id) : null;
@@ -306,18 +414,38 @@ function _cbRenderEffects() {
       ? `<select class="form-select form-select-sm cb-op">${a.ops.map(op =>
           `<option value="${op}"${op === e.op ? " selected" : ""}>${unitLabel(op)}</option>`).join("")}</select>`
       : `<span class="cb-op-fixed small text-muted">${unitLabel(e.op)}</span>`;
-    const resCtl = _CB_COST.has(e.attr)
+    const resCtl = e.attr === "resources"
+      ? `<select class="form-select form-select-sm cb-res">${(_cbCatalog.civ_resources || []).map(r =>
+          `<option value="${r}"${r === (e.resource || "gold") ? " selected" : ""}>${r === "each" ? "each resource" : r}</option>`).join("")}</select>`
+      : _CB_COST.has(e.attr)
       ? `<select class="form-select form-select-sm cb-res">${_cbCatalog.cost_resources.map(r =>
           `<option value="${r}"${r === (e.resource || "all") ? " selected" : ""}>${r === "all" ? "all resources" : r}</option>`).join("")}</select>`
       : "";
     return `<div class="cb-effect" data-idx="${i}">
       <select class="form-select form-select-sm cb-attr">${attrOpts}</select>
-      <input type="number" step="any" class="form-control form-control-sm cb-value" value="${e.value ?? ""}" placeholder="e.g. ${e.op === "add" ? 2 : 20}">
+      <input type="number" ${a?.positive ? 'min="1" step="1"' : 'step="any"'} class="form-control form-control-sm cb-value" value="${e.value ?? ""}" placeholder="e.g. ${a?.positive ? 10 : e.op === "add" ? 2 : 20}">
       ${opCtl}
       ${resCtl}
       <button type="button" class="btn btn-sm btn-link text-danger cb-effect-remove" title="Remove effect"><i class="fa-solid fa-xmark"></i></button>
     </div>`;
   }).join("");
+
+  // A Civilization card can wait for an age (#65), like vanilla's
+  // "+10 population in Imperial Age".
+  if (_cbWork.target?.type === "civ") {
+    const ages = [{ id: "", label: "the start (Dark Age)" }, ...(_cbCatalog.civ_ages || [])];
+    wrap.insertAdjacentHTML("beforeend", `<div class="cb-age-row d-flex align-items-center gap-2 mt-1 small">
+      <span class="text-muted">From</span>
+      <select class="form-select form-select-sm cb-age" style="max-width:14rem">${ages.map(a =>
+        `<option value="${a.id}"${String(a.id) === String(_cbWork.target.age || "") ? " selected" : ""}>${cbEsc(a.label)}</option>`).join("")}</select>
+    </div>`);
+    wrap.querySelector(".cb-age").addEventListener("change", ev => {
+      const v = parseInt(ev.target.value, 10);
+      if (isNaN(v)) delete _cbWork.target.age; else _cbWork.target.age = v;
+      _cbRenderPicker();
+      _cbUpdatePreview();
+    });
+  }
 
   wrap.querySelectorAll(".cb-effect").forEach(row => {
     const idx = parseInt(row.dataset.idx, 10);
@@ -326,7 +454,8 @@ function _cbRenderEffects() {
       e.attr = ev.target.value;
       const a = _cbAttr(e.attr);
       if (!a.ops.includes(e.op)) e.op = a.ops[0];
-      if (!_CB_COST.has(e.attr)) delete e.resource;
+      if (e.attr === "resources") e.resource = e.resource && e.resource !== "all" ? e.resource : "gold";
+      else if (!_CB_COST.has(e.attr)) delete e.resource;
       if (a.novalue) delete e.value;
       _cbRenderEffects();
     });
@@ -347,9 +476,10 @@ function _cbRenderEffects() {
 
 function _cbNewEffect() {
   const used  = new Set(_cbWork.effects.map(e => e.attr));
-  const attrs = _cbAttrsFor(_cbTargetKind(_cbWork.target));
+  const attrs = _cbAttrsFor(_cbWork.target);
   const a = attrs.find(x => !used.has(x.id)) || attrs[0];
-  return { attr: a.id, op: a.id === "hp" ? "mul" : a.ops[0], value: null };
+  return { attr: a.id, op: a.id === "hp" ? "mul" : a.ops[0], value: null,
+           ...(a.id === "resources" ? { resource: "gold" } : {}) };
 }
 
 function _cbUpdatePreview() {

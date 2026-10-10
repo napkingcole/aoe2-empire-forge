@@ -39,6 +39,7 @@ from genieutils.effect import EffectCommand
 
 _ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
+EC_SET       = 0
 EC_ADD       = 4
 EC_MULTIPLY  = 5
 EC_TECH_COST = 101    # a=tech, b=resource (0 food 1 wood 2 stone 3 gold, -1 all), c=mode, d
@@ -110,6 +111,13 @@ GROUPS: dict[str, dict] = {
                         # "C-Bonus, Dropsites +35 food, +10 stone", plus the
                         # Town Center, Dock and the mobile Mule Cart.
                         "buildings": _DROP_OFF},
+    # Farms and churches had only single tiles (a player asked, 2026-10-10).
+    # Listed, not class 49: that class also holds the Pasture's Argali and Ibex
+    # and the farm drop/stack helpers, which a farm bonus must not touch.
+    "farms":           {"label": "Farms and Fish Traps", "kind": "building", "tab": "building", "section": "", "icon": "farm.png",
+                        "buildings": [50, 199, 1187, 1889, 1893, 1897]},   # Farm, Fish Trap, Rice Farm, Pasture x3
+    "churches":        {"label": "Monasteries",     "kind": "building", "tab": "building", "section": "", "icon": "monastery.png",
+                        "buildings": [104, 1806]},                         # Monastery, Fortified Church
     "military_buildings": {"label": "Military buildings", "kind": "building", "tab": "building", "section": "", "icon": "fa-flag",
                         # "C-Bonus, Military Buildings +55f"
                         "buildings": [12, 87, 101, 49, 45]},
@@ -222,6 +230,24 @@ ATTRS: dict[str, dict] = {
     "work_rate":     {"label": "work rate",        "ops": ("mul",),       "fields": [13],        "kinds": ("unit", "job")},
     "carry":         {"label": "carry capacity",   "ops": ("add",),       "fields": [14],        "kinds": ("unit", "job")},
     "garrison":      {"label": "garrison space",   "ops": ("add",),       "fields": [2],         "kinds": ("unit", "building")},
+    # Population a building supports (#64): attribute 21, the amount of its
+    # first resource storage — vanilla's "Houses +5 pop" and Chinese "Town
+    # Centers support 15 population".  Only means population when that slot is
+    # population, so it is written per building, never class-wide (a Farm's
+    # slot is its food); see POP_SPACE_SKIP_CLASSES and pop_space_ok.
+    "pop_space":     {"label": "population space", "ops": ("add",), "positive": True, "max": 200,
+                      "fields": [21], "per_building": True, "kinds": ("building",)},
+    # #67.  Written per unit, only on units that have the stat, as ADDs so
+    # cards stack (vanilla adds blast radius: Logistica, Greek Fire, Warwolf);
+    # a reduction is clamped to the unit's own value — "-1 minimum range" on
+    # a Skirmisher (1) is -1, on an Archer (0) nothing.  "No minimum range" is
+    # Andean Sling's SET to 0.
+    "min_range":     {"label": "minimum range", "ops": ("add",), "max": 10, "unit_field": "min_range",
+                      "fields": [20], "kinds": ("unit", "building")},
+    "no_min_range":  {"label": "no minimum range", "ops": ("set",), "novalue": True, "unit_field": "min_range",
+                      "fields": [20], "kinds": ("unit", "building")},
+    "blast_radius":  {"label": "blast radius", "ops": ("add",), "max": 5, "unit_field": "blast_width",
+                      "fields": [22], "kinds": ("unit", "building")},
     # ── Techs ── (EC_TECH_COST / EC_TECH_TIME; see tech_effect_commands)
     "tech_cost":     {"label": "cost",             "ops": ("mul", "add"),                        "kinds": ("tech",)},
     "research_speed":{"label": "research speed",   "ops": ("mul",), "faster": True,             "kinds": ("tech",)},
@@ -229,7 +255,36 @@ ATTRS: dict[str, dict] = {
     # (Bulgarians, Lithuanians/Poles) — _free_tech_cmds writes exactly this.
     "free":          {"label": "free and instant", "ops": ("set",), "novalue": True,            "kinds": ("tech",)},
     "instant":       {"label": "instant research", "ops": ("set",), "novalue": True,            "kinds": ("tech",)},
+    # ── Civilization ── (#65)  Resource 32 "Bonus Population Cap": population
+    # on top of the lobby's limit — exactly what vanilla's "+10 population in
+    # Imperial Age" (tech 406) adds.  Flat and positive only: the lobby limit
+    # is a game setting no resource exposes, so a percentage would be a guess,
+    # and nothing in vanilla ever lowers resource 32.
+    "pop_cap":       {"label": "population limit", "ops": ("add",), "positive": True, "max": 1000,
+                      "kinds": ("civ",)},
+    # One-time resources, built the way vanilla's are (see civ_steps): at the
+    # start ("+100 stone", or the Chinese "-200 food" penalty) or on reaching
+    # an age ("+200 wood in age2").  A negative amount only at the start —
+    # vanilla never takes resources away on age-up.
+    "resources":     {"label": "resources", "ops": ("add",), "max": 10000, "kinds": ("civ",)},
+    # Conversion (#67) is player-level.  Your Monks: resources 176/177, the
+    # monk-seconds before a conversion can happen / is forced — Inquisition
+    # takes 1 off both.  Your units resisting enemy Monks: 178/179 — Faith
+    # adds 4 to both.  Same amount on both, as those do.
+    "convert_time":  {"label": "monk conversion time", "ops": ("add",), "max": 10, "kinds": ("civ",)},
+    "convert_resist": {"label": "conversion resistance", "ops": ("add",), "positive": True, "max": 10,
+                       "kinds": ("civ",)},
 }
+
+CIV_RESOURCES = ("food", "wood", "stone", "gold", "each")
+_RES_INDEX = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
+_STARTING_RES = 91                     # 91-94 Starting Food/Wood/Stone/Gold
+_TC_SPAWN, _TC_EXISTS = 639, 307       # "Town Center Spawn", "Shadow TC Annex" (Nomad-safe)
+
+# Civilization cards can wait for an age, as vanilla's "+10 population in
+# Imperial Age" does.  Absent = from the start.
+CIV_AGES = {101: "Feudal", 102: "Castle", 103: "Imperial"}
+_POP_CAP_RESOURCE = 32
 
 COST_RESOURCES = ("all", *_RES_COST)
 
@@ -270,6 +325,220 @@ def with_forms(unit_ids: set[int]) -> set[int]:
     return out
 
 
+# ── What each target can actually take ──────────────────────────────────────
+# ATTRS' `kinds` only says unit / building / job, so every unit was offered
+# every unit effect: garrison space on Villagers (a user spotted it), range on
+# a Champion, pierce attack on a Knight.  These effects change a stat the unit
+# must already have, so a target offers one only when some unit it reaches has
+# that stat in the DAT.  Effects not listed here (HP, armour, LOS, speed, cost,
+# regeneration, train/build speed) apply to anything of the right kind.
+#
+# carry / work rate: a task that moves a resource (resource_in/out set) is a
+# gatherer or trader — every villager job, Fishing Ship, Trade Cart and Cog —
+# and a Monk's heal task (action 105) is the other thing attribute 13 speeds up.
+_HEAL_ACTION = 105
+
+# Population space: walls, gates and palisades never get it, at the user's
+# call (#64) — every segment would become a house.  A building qualifies when
+# its first resource storage is population (type 4) or empty (-1; the build
+# turns it into a population slot).  Anything else stores something else
+# there: a Farm its food, an Outpost resource 508.
+# Farms (class 49) never either: their first slot is food, and the one that
+# looked empty is the Pasture's construction stage.
+POP_SPACE_SKIP_CLASSES = frozenset({27, 39, 49})    # walls, gates, farms
+_POP_STORAGE = 4
+_TARGETED_ONLY = 3                     # blast attack level: no splash
+
+
+# The Fortified Church reaches a custom civ only by UPGRADING the Monastery
+# (card 316), and a +5 blast card on it never showed on a built church in game
+# (2026-10-10) while the Castle's did.  Not offered until that is understood.
+_NO_BLAST_UNITS = frozenset({1806})
+
+
+def _splashes(u) -> bool:
+    """Has a blast attack — even at width 0 (Warwolf widens the Trebuchet's).
+
+    Only on something that attacks: a building with no attack keeps the default
+    blast level, which read as a blast attack, so every Farm, Monastery and
+    Wonder was offered a blast radius that could never do anything."""
+    return (bool(u.type_50) and (u.type_50.blast_attack_level & 3) != _TARGETED_ONLY
+            and any(a.amount > 0 for a in u.type_50.attacks)
+            and getattr(u, "id", -1) not in _NO_BLAST_UNITS)
+
+
+def pop_space_ok(u) -> bool:
+    return (u is not None and u.type == 80 and u.class_ not in POP_SPACE_SKIP_CLASSES
+            and bool(u.resource_storages) and u.resource_storages[0].type in (_POP_STORAGE, -1))
+
+
+def _moves_resources(u) -> bool:
+    return bool(u.bird) and any(t.resource_in >= 0 or t.resource_out >= 0 for t in u.bird.tasks)
+
+
+def _attack(u, cls: int) -> bool:
+    return bool(u.type_50) and any(a.class_ == cls and a.amount > 0 for a in u.type_50.attacks)
+
+
+_CAPABLE = {
+    "garrison":      lambda u: (u.garrison_capacity or 0) > 0,
+    "range":         lambda u: bool(u.type_50) and u.type_50.max_range > 0,
+    "melee_attack":  lambda u: _attack(u, 4),
+    "pierce_attack": lambda u: _attack(u, 3),
+    "attack_speed":  lambda u: bool(u.type_50) and u.type_50.reload_time > 0
+                               and any(a.amount > 0 for a in u.type_50.attacks),
+    "carry":         _moves_resources,
+    "pop_space":     pop_space_ok,
+    "min_range":     lambda u: bool(u.type_50) and u.type_50.min_range > 0,
+    "no_min_range":  lambda u: bool(u.type_50) and u.type_50.min_range > 0,
+    "blast_radius":  _splashes,
+    "work_rate":     lambda u: _moves_resources(u) or (
+                         bool(u.bird) and any(t.action_type == _HEAL_ACTION for t in u.bird.tasks)),
+}
+
+
+def allowed_attrs(dat, entries: list[tuple[str, str, int]]) -> dict[str, list[str]]:
+    """target key -> the effect ids that do something for it.
+
+    `entries` is (key, kind, id or ids) for the composer's individual units,
+    buildings and lines ("unit:38", "building:68", "line:74"); groups and
+    villager jobs are added
+    here.  Membership is the catalog-time view, from the template civ: class
+    groups take every trainable unit (or building) of the class, "trained at"
+    groups what trains there, and "Unique unit" — resolved per civ at build
+    time — is left unfiltered."""
+    units = dat.civs[1].units
+
+    def real(uid):
+        return units[uid] if 0 <= uid < len(units) else None
+
+    trainable = [(i, u) for i, u in enumerate(units) if u is not None and u.creatable
+                 and any(l.unit_id > 0 for l in u.creatable.train_locations)]
+
+    def members(kind, g) -> set[int] | None:
+        if g.get("uu"):
+            return None
+        ids = set(with_forms(set(g.get("units", ())))) | set(g.get("buildings", ()))
+        classes = set(g.get("classes", ()))
+        if kind == "building":
+            ids |= {i for i, u in enumerate(units) if u is not None and u.class_ in classes
+                    and u.type == 80}
+        else:
+            ids |= {i for i, u in trainable if u.class_ in classes}
+        if "trained_at" in g:
+            ids |= {i for i, u in trainable
+                    if any(l.unit_id == g["trained_at"] for l in u.creatable.train_locations)}
+        return ids
+
+    def allowed(kind, ids) -> list[str]:
+        us = [u for u in map(real, ids) if u is not None] if ids is not None else None
+        return [k for k, a in ATTRS.items() if kind in a["kinds"]
+                and (k not in _CAPABLE or us is None or any(_CAPABLE[k](u) for u in us))]
+
+    out = {key: allowed(kind, with_forms(set(tid) if isinstance(tid, (set, frozenset, list, tuple))
+                                         else {tid}))
+           for key, kind, tid in entries}
+    for gid, g in GROUPS.items():
+        if g["kind"] in ("unit", "building"):
+            out[f"group:{gid}"] = allowed(g["kind"], members(g["kind"], g))
+    for jid, j in JOBS.items():
+        out[f"job:{jid}"] = allowed("job", set(j["units"]))
+    return out
+
+
+# ── Unit lines (#63) ─────────────────────────────────────────────────────────
+# The composer's line tiles, per military building.  A line is everything an
+# EC_UPGRADE chain connects — alternates included, so the Militia line reaches
+# the Legionary and the Knight line the Savar — and it is named after its base:
+# a member trained there that nothing upgrades into (lowest id on a tie, so
+# Camel Rider rather than Camel Scout).  Only lines of two or more: a lone unit
+# is already its own tile in the unit list.
+LINE_BUILDINGS = ((12, "Barracks"), (87, "Archery Range"), (101, "Stable"),
+                  (49, "Siege Workshop"), (45, "Dock"))
+# Presentation only: the base the graph finds -> the unit the line is called
+# after.  The Gurjaras' Camel Scout upgrades into the Camel Rider, so it is the
+# graph's base, but the line is the Camel Rider line.
+LINE_NAMED_AFTER = {1755: 329}
+
+
+def upgrade_edges(dat) -> dict[int, set[int]]:
+    """unit -> the units an EC_UPGRADE turns it into (directed)."""
+    fwd: dict[int, set[int]] = {}
+    for tech in dat.techs:
+        if 0 <= tech.effect_id < len(dat.effects):
+            for ec in dat.effects[tech.effect_id].effect_commands:
+                if ec.type == 3 and ec.a >= 0 and ec.b >= 0:
+                    fwd.setdefault(int(ec.a), set()).add(int(ec.b))
+    return fwd
+
+
+def upgrades_after(fwd: dict[int, set[int]], uid: int) -> set[int]:
+    """uid and every unit its upgrades lead to — "and up"."""
+    seen, stack = {uid}, [uid]
+    while stack:
+        for nxt in fwd.get(stack.pop(), ()):
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return seen
+
+
+def unit_lines(dat, pickable: set[int]) -> list[dict]:
+    """[{building, building_name, base, members}] for the composer's line tiles.
+
+    `pickable` is the unit ids the composer offers, which keeps campaign-only
+    units out of the lines and their names."""
+    fwd = upgrade_edges(dat)
+    both: dict[int, set[int]] = {}
+    for a, bs in fwd.items():
+        for b in bs:
+            both.setdefault(a, set()).add(b)
+            both.setdefault(b, set()).add(a)
+    has_pred = {b for bs in fwd.values() for b in bs}
+    units = dat.civs[1].units
+    out, seen = [], set()
+    for bid, bname in LINE_BUILDINGS:
+        here = sorted(i for i, u in enumerate(units) if u is not None and u.creatable
+                      and i in pickable
+                      and any(l.unit_id == bid for l in u.creatable.train_locations))
+        for uid in here:
+            if uid in seen:
+                continue
+            line, stack = {uid}, [uid]
+            while stack:
+                for nxt in both.get(stack.pop(), ()):
+                    if nxt not in line:
+                        line.add(nxt)
+                        stack.append(nxt)
+            seen |= line
+            members = sorted(line & pickable)
+            if len(members) < 2:
+                continue
+            bases = [u for u in members if u in here and u not in has_pred] or [uid]
+            base = min(bases)
+            out.append({"building": bid, "building_name": bname,
+                        "base": LINE_NAMED_AFTER.get(base, base),
+                        "members": _chain_order(members, fwd)})
+    return out
+
+
+def _chain_order(members: list[int], fwd: dict[int, set[int]]) -> list[int]:
+    """Members in upgrade order (Galley, War Galley, Galleon); ties by id."""
+    inside = set(members)
+    preds = {m: {a for a in inside if m in fwd.get(a, ())} for m in inside}
+    out, ready = [], sorted(m for m in inside if not preds[m])
+    while ready:
+        m = ready.pop(0)
+        out.append(m)
+        for n in sorted(fwd.get(m, ())):
+            if n in preds and m in preds[n]:
+                preds[n].discard(m)
+                if not preds[n] and n not in out and n not in ready:
+                    ready.append(n)
+        ready.sort()
+    return out + sorted(inside - set(out))             # a cycle, never seen: still listed
+
+
 def catalog() -> dict:
     """What the wizard needs to draw the composer — groups and attributes."""
     return {
@@ -279,9 +548,12 @@ def catalog() -> dict:
         "jobs":   [{"id": k, "label": j["label"], "work": j["work"], "icon": j["icon"]}
                    for k, j in JOBS.items()],
         "attrs":  [{"id": k, "label": a["label"], "ops": list(a["ops"]),
-                    "kinds": list(a["kinds"]), "novalue": bool(a.get("novalue"))}
+                    "kinds": list(a["kinds"]), "novalue": bool(a.get("novalue")),
+                    "positive": bool(a.get("positive"))}
                    for k, a in ATTRS.items()],
         "cost_resources": list(COST_RESOURCES),
+        "civ_ages": [{"id": k, "label": f"{v} Age"} for k, v in CIV_AGES.items()],
+        "civ_resources": list(CIV_RESOURCES),
     }
 
 
@@ -317,6 +589,14 @@ def _norm_card(raw) -> dict | None:
         if t.get("id") not in JOBS:
             return None
         target = {"type": "job", "id": t["id"]}
+    elif ttype == "civ":
+        target = {"type": "civ", "id": "civ"}
+        try:
+            age = int(t.get("age"))
+        except (TypeError, ValueError):
+            age = None
+        if age in CIV_AGES:
+            target["age"] = age
     elif ttype == "unit":
         try:
             uid = int(t.get("id"))
@@ -326,6 +606,15 @@ def _norm_card(raw) -> dict | None:
             return None
         target = {"type": "unit", "id": uid, "name": str(t.get("name") or ""),
                   "kind": "building" if t.get("kind") == "building" else "unit"}
+        # scope (units only): absent = the whole upgrade line, alternates
+        # included — what every card meant before #63, so saved cards keep it.
+        # "up" = this unit and the upgrades after it ("Long Swordsman and up":
+        # Two-Handed, Champion, Legionary — not Militia).  `top` marks a unit
+        # nothing upgrades from, whose "and up" is just itself.
+        if target["kind"] == "unit" and t.get("scope") == "up":
+            target["scope"] = "up"
+            if t.get("top"):
+                target["top"] = True
     else:
         return None
 
@@ -334,6 +623,9 @@ def _norm_card(raw) -> dict | None:
     kind = target_kind(target)
     effects = [e for e in (_norm_effect(x) for x in (raw.get("effects") or []))
                if e and kind in ATTRS[e["attr"]]["kinds"]]
+    if target["type"] == "civ" and target.get("age"):
+        # Taking resources away on age-up has no vanilla precedent.
+        effects = [e for e in effects if not (e["attr"] == "resources" and e["value"] < 0)]
     if not effects:
         return None
     card = {"target": target, "effects": effects, "text": str(raw.get("text") or "").strip()[:160]}
@@ -360,6 +652,12 @@ def _norm_effect(raw) -> dict | None:
         return None
     if value == 0:
         return None
+    if spec.get("positive"):
+        if value < 0:
+            return None
+        value = float(min(round(value), spec.get("max", value)))
+        if value <= 0:
+            return None
     if op == "mul" and not spec.get("faster") and value <= -100:
         return None                      # x0 or negative stat — never intended
     if spec.get("faster") and value <= -100:
@@ -370,6 +668,18 @@ def _norm_effect(raw) -> dict | None:
     if raw["attr"] in ("cost", "tech_cost"):
         res = raw.get("resource", "all")
         out["resource"] = res if res in COST_RESOURCES else "all"
+    if spec.get("max") and not spec.get("positive") and raw["attr"] != "resources":
+        value = max(-spec["max"], min(spec["max"], value))
+        if value == 0:
+            return None
+        out["value"] = int(value) if value == int(value) else value
+    if raw["attr"] == "resources":
+        res = raw.get("resource", "gold")
+        out["resource"] = res if res in CIV_RESOURCES else "gold"
+        cap = spec["max"]
+        out["value"] = int(max(-cap, min(cap, round(value))))
+        if out["value"] == 0:
+            return None
     return out
 
 
@@ -387,6 +697,8 @@ def target_kind(target: dict) -> str:
         return "job"
     if target["type"] == "tech":
         return "tech"
+    if target["type"] == "civ":
+        return "civ"
     return "building" if target.get("kind") == "building" else "unit"
 
 
@@ -397,6 +709,8 @@ def target_label(target: dict) -> str:
         return JOBS[target["id"]]["label"]
     if target["type"] == "tech":
         return target.get("name") or f"Tech {target['id']}"
+    if target["type"] == "civ":
+        return "Civilization"
     return target.get("name") or f"Unit {target['id']}"
 
 
@@ -431,13 +745,81 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
     return f"{sign}{num} {label}"
 
 
+def _civ_effect_text(eff: dict, age) -> str:
+    """'+25 population limit in the Imperial Age', '+100 stone at the start',
+    '+200 wood on reaching the Castle Age' — the game's own phrasing."""
+    v = eff["value"]
+    num = f"{'+' if v > 0 else '-'}{_fmt_num(abs(v))}"
+    era = CIV_AGES.get(age)
+    if eff["attr"] == "resources":
+        what = "of each resource" if eff.get("resource") == "each" else eff.get("resource", "gold")
+        when = f"on reaching the {era} Age" if era else "at the start"
+        return f"{num} {what} {when}"
+    if eff["attr"] == "convert_time":
+        n = abs(v)
+        text = f"Monks convert {_fmt_num(n)} second{'s' if n != 1 else ''} {'faster' if v < 0 else 'slower'}"
+        return text + (f" from the {era} Age" if era else "")
+    return f"{num} {ATTRS[eff['attr']]['label']}" + (f" in the {era} Age" if era else "")
+
+
+def civ_steps(card: dict) -> list[dict]:
+    """The techs a Civilization card builds: [{cmds, reqs, after}].
+
+    `reqs` are prerequisite tech ids; `after` is the index of an earlier step
+    whose tech this one also waits on.  Mirrors vanilla exactly:
+      population limit / age grants  one tech gated on the age (or nothing)
+      start, positive   Starting X (91-94) once a Town Center exists (639 +
+                        307, so a Nomad start is paid when the TC goes up),
+                        then the stockpile on a second tech after it —
+                        "C-Bonus, +50g" -> "Post-TC +50g"
+      start, negative   Starting X only, on 639 — the Chinese "-200f -50w"
+    """
+    age = card["target"].get("age")
+    gated: list = []
+    start_pos_start: list = []
+    start_pos_stock: list = []
+    start_neg: list = []
+    for e in card["effects"]:
+        if e["attr"] == "pop_cap":
+            gated.append(EffectCommand(type=1, a=_POP_CAP_RESOURCE, b=1, c=-1, d=float(e["value"])))
+        elif e["attr"] in ("convert_time", "convert_resist"):
+            for r in ((176, 177) if e["attr"] == "convert_time" else (178, 179)):
+                gated.append(EffectCommand(type=1, a=r, b=1, c=-1, d=float(e["value"])))
+        elif e["attr"] == "resources":
+            res = list(_RES_INDEX.values()) if e["resource"] == "each" else [_RES_INDEX[e["resource"]]]
+            for r in res:
+                d = float(e["value"])
+                if age:
+                    gated.append(EffectCommand(type=1, a=r, b=1, c=-1, d=d))
+                elif d > 0:
+                    start_pos_start.append(EffectCommand(type=1, a=_STARTING_RES + r, b=1, c=-1, d=d))
+                    start_pos_stock.append(EffectCommand(type=1, a=r, b=1, c=-1, d=d))
+                else:
+                    start_neg.append(EffectCommand(type=1, a=_STARTING_RES + r, b=1, c=-1, d=d))
+    steps: list[dict] = []
+    if gated:
+        steps.append({"cmds": gated, "reqs": [age] if age else [], "after": None})
+    if start_pos_start:
+        steps.append({"cmds": start_pos_start, "reqs": [_TC_SPAWN, _TC_EXISTS], "after": None})
+        steps.append({"cmds": start_pos_stock, "reqs": [], "after": len(steps) - 1})
+    if start_neg:
+        steps.append({"cmds": start_neg, "reqs": [_TC_SPAWN], "after": None})
+    return steps
+
+
 def card_text(card: dict) -> str:
     """'Cavalry: +20% HP, +2 pierce armor' — or the player's own text."""
     if card.get("text"):
         return card["text"]
+    t = card["target"]
+    if t["type"] == "civ":
+        return ", ".join(_civ_effect_text(e, t.get("age")) for e in card["effects"])
     subject = target_label(card["target"])
-    if card["target"]["type"] == "unit" and card["target"].get("kind") != "building":
-        subject += " line"
+    if t["type"] == "unit" and t.get("kind") != "building":
+        if t.get("scope") != "up":
+            subject += " line"
+        elif not t.get("top"):
+            subject += " and up"
     return f"{subject}: " + ", ".join(effect_text(e, card["target"]) for e in card["effects"])
 
 
@@ -456,7 +838,11 @@ def _selectors(card: dict, line_of, resolve=None) -> list[tuple[int, int]]:
         # The exact pair, never an upgrade line — jobs don't upgrade.
         return [(uid, -1) for uid in JOBS[t["id"]]["units"]]
     if t["type"] != "group":
-        return [(uid, -1) for uid in sorted(line_of(t["id"]))]
+        if t.get("scope") == "up":
+            ids = resolve("up", t["id"]) if resolve else with_forms({t["id"]})
+        else:
+            ids = line_of(t["id"])
+        return [(uid, -1) for uid in sorted(ids)]
 
     g = GROUPS[t["id"]]
     pairs = [(-1, cls) for cls in g.get("classes", ())]
@@ -563,6 +949,8 @@ def tech_effect_commands(eff: dict, tech_ids: list[int], costs_of=None) -> list[
 
 def card_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
     """Every command one card writes, in card order.  See _selectors."""
+    if target_kind(card["target"]) == "civ":
+        return [c for step in civ_steps(card) for c in step["cmds"]]
     if target_kind(card["target"]) == "tech":
         tids = _tech_ids(card, resolve)
         costs_of = (lambda tid: resolve("tech_costs", tid)) if resolve else None
@@ -573,7 +961,28 @@ def card_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
     sel = _selectors(card, line_of, resolve)
     cmds: list[EffectCommand] = []
     for eff in card["effects"]:
-        cmds.extend(effect_commands(eff, sel))
+        spec = ATTRS[eff["attr"]]
+        if spec.get("unit_field"):
+            # Per unit, only units that have the stat (see _CAPABLE).  An ADD,
+            # so cards and bonuses stack as vanilla's do; a reduction takes at
+            # most what the unit has, so it never goes below 0.  "No minimum
+            # range" is Andean Sling's SET to 0.  Without the build, nothing.
+            if resolve:
+                for uid, base in resolve("unit_values", (eff["attr"], sel)):
+                    if spec.get("novalue"):
+                        cmds.append(EffectCommand(type=EC_SET, a=uid, b=-1, c=spec["fields"][0], d=0.0))
+                        continue
+                    v = float(eff["value"])
+                    d = v if v > 0 else -min(-v, base)
+                    if d:
+                        cmds.append(EffectCommand(type=EC_ADD, a=uid, b=-1, c=spec["fields"][0], d=d))
+        elif ATTRS[eff["attr"]].get("per_building"):
+            # Class-wide would reach Farms and walls; the build expands the
+            # selectors to the buildings that qualify (and readies their slot).
+            ids = resolve("pop_space", sel) if resolve else sorted({a for a, _ in sel if a >= 0})
+            cmds.extend(effect_commands(eff, [(uid, -1) for uid in ids]))
+        else:
+            cmds.extend(effect_commands(eff, sel))
     return cmds
 
 

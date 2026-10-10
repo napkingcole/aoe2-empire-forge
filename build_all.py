@@ -9,7 +9,7 @@ Usage:
 
 Config format (see wololo_warlords_config.json for example):
     {
-      "mod_name": "Wololo Warlords",
+      "mod_name": "My Civs",
       "prefix":   "wololo_warlords",     // output zip prefix (optional)
       "civs": [
         { "json": "my_civs/foo.json", "replace": "celts" },
@@ -30,11 +30,12 @@ from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
 import custom_bonus
+from voice_source import voice_clips
 from version import __version__ as _APP_VERSION
 from civ_schema import is_civbuilder_v1, is_empireforge, to_draft as _schema_to_draft
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
                            _refresh_uu_tooltips)
-from civ_appender import (apply_civ, assign_all_languages,
+from civ_appender import (apply_civ, assign_all_languages, patch_civilizations_list,
     DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET,
     get_civ_bonuses, get_team_bonuses, get_ut_entries, get_km_uu_index)
 from build_civ import (
@@ -44,7 +45,7 @@ from build_civ import (
     _find_civ_techtrees_folder,
     _patch_per_civ_techtree,
     _canonical_techtree_id, _resolve_uu_info, uu_cost_text, keeps_vanilla_hover, renamed_uu_tooltip,
-    civ_name_sid, civ_roster,
+    civ_name_sid, civ_roster, rich_unit_tooltip, uu_owns_strings,
 )
 from civ_appender import _KM_UU_NAMES
 
@@ -217,6 +218,44 @@ def _kv_text(text: str) -> str:
     return re.sub(r'(?<!\\)"', r'\\"', text)
 
 
+def hero_string_lines(dat, slot: int, hero_raw: dict | None) -> list[str]:
+    """Key-value lines naming the civ's hero: name, "Create X", both tooltips.
+
+    _apply_hero_unit points a NAMED hero at pool string ids (existing campaign
+    strings — "an id we did not write shows campaign text"), so every route
+    must write these or the hero shows whatever sits there: the CLI route
+    never did, and a QA hero showed "Prithviraj" in the Castle and "Scots" on
+    the field (2026-10-09).  One helper for all three routes (app, wizard,
+    build_all).  Call after _apply_hero_unit, so the tooltip quotes the cost the
+    player will actually pay.  [] when the hero has no name — it then keeps its
+    vanilla strings, which is what _apply_hero_unit leaves it on.
+    """
+    hero_raw = hero_raw if isinstance(hero_raw, dict) else {}
+    bid = hero_raw.get("base_unit_id")
+    name = _kv_text((hero_raw.get("name") or "").strip())
+    desc = _kv_text((hero_raw.get("description") or "").strip())
+    if bid is None or not name:
+        return []
+    try:
+        dll = dat.civs[slot].units[bid].language_dll_name or -1
+    except (IndexError, TypeError, AttributeError):
+        dll = -1
+    if dll <= 0:
+        print(f"       WARNING: hero unit {bid} has no language_dll_name — its name can't be written")
+        return []
+    # The base hero's own game tooltip, renamed (cost icons, upgrades, stats);
+    # plain text only if it has none.
+    hover = rich_unit_tooltip(dat, bid, name, desc)
+    if hover is None:
+        cost = uu_cost_text(dat, slot, bid)
+        hover = f"Create <b>{name}<b>" + (f"\\n{desc}" if desc else "") + (f"\\n{cost}" if cost else "")
+    return [f'{dll} "{name}"',
+            # +1000 is the short "Create X" label, as every vanilla unit's is.
+            f'{dll + DLL_CREATION_OFFSET} "Create {name}"',
+            f'{dll + 21000} "{hover}"',
+            f'{dll + DLL_HELP_OFFSET} "{hover}"']
+
+
 def ut_name_and_desc(name: str, desc: str) -> tuple[str, str]:
     """(name, description) for a unique tech.
 
@@ -355,11 +394,52 @@ def _build_combined_data_zip(dat,
     return buf.getvalue()
 
 
+_KV_ENTRY = re.compile(r'^(\d+)\s+"(.*)"\s*$', re.S)
+
+
+def sanitize_kv_strings(content: str) -> tuple[str, list[int]]:
+    """The last line of defence for a key-value strings file: every entry `ID "text"`.
+
+    Each route escapes player text with _kv_text where it builds a line, but a
+    field that slips past (a multi-line UU description did, and the game then
+    ignored the civ's name too — the Safavids civ, 2026-10-10) breaks the file.
+    Here a line that doesn't start a new entry is taken as the previous entry's
+    text, rejoined with a literal \\n, and a quote inside the text is escaped.
+    Returns the content and the ids it had to repair, so the build log can name
+    the straggler instead of hiding it.
+    """
+    entries: list[str] = []
+    repaired: set[int] = set()
+    for raw in content.split("\n"):
+        if not raw.strip():
+            continue
+        if re.match(r'^\d+\s+"', raw) or not entries:
+            entries.append(raw)
+        else:
+            entries[-1] += "\\n" + raw
+            m = re.match(r"^(\d+)", entries[-1])
+            if m:
+                repaired.add(int(m.group(1)))
+    out = []
+    for e in entries:
+        m = _KV_ENTRY.match(e)
+        if not m:
+            out.append(e)
+            continue
+        sid, text = m.groups()
+        fixed = _kv_text(text)
+        if fixed != text:
+            repaired.add(int(sid))
+        out.append(f'{sid} "{fixed}"')
+    return "\n".join(out) + ("\n" if content.endswith("\n") else ""), sorted(repaired)
+
+
 def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                             button_pngs: dict[str, bytes],
                             combined_strings: dict[str, str],
                             mod_name: str = "Custom Civs",
-                            lang_values: set[int] | None = None) -> bytes:
+                            lang_values: set[int] | None = None,
+                            dat_path: str | Path | None = None) -> bytes:
     """Package all UI assets for every civ into one ui zip."""
     info_json = json.dumps(
         {"Title": f"{mod_name} (UI)", "CacheStatus": 0, "Description": "", "Author": "",
@@ -373,20 +453,10 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
         zf.writestr("info.json", info_json)
         for path, data in ai_stubs.items():
             zf.writestr(path, data)
-        aiconfig_path = Path(__file__).parent / "aiconfig.json"
-        if aiconfig_path.exists():
-            zf.writestr("resources/_common/ai/aiconfig.json",
-                        aiconfig_path.read_bytes())
-        ai_stubs_folder = Path(__file__).parent / "ai_stubs"
-        if ai_stubs_folder.exists():
-            written_paths = set(ai_stubs.keys())
-            for stub_file in sorted(ai_stubs_folder.iterdir()):
-                if stub_file.suffix not in (".ai", ".per"):
-                    continue
-                dest = f"resources/_common/ai/{stub_file.name}"
-                if dest in written_paths:
-                    continue
-                zf.writestr(dest, stub_file.read_bytes())
+        # Only the mod's own civs get an AI entry (ai_stubs, one per civ).  Every
+        # mod used to also ship a repo folder of stubs and a Krakenmeister
+        # aiconfig.json, both left over from the Unhinged Empires mod, so its
+        # civs ("Golden Bois", ...) showed in every player's AI list.
         for fname, png in button_pngs.items():
             zf.writestr(
                 f"resources/_common/wpfg/resources/civ_techtree/{fname}", png)
@@ -406,6 +476,10 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                     icon_file.read_bytes(),
                 )
         for lang, content in combined_strings.items():
+            content, repaired = sanitize_kv_strings(content)
+            if repaired and lang == "en":
+                print(f"  WARNING: repaired unescaped text in string id(s) {repaired} — "
+                      "a newline or quote in a civ's text reached the strings file raw")
             zf.writestr(
                 f"resources/{lang}/strings/key-value/"
                 f"key-value-modded-strings-utf8.txt",
@@ -415,27 +489,21 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
             # Voices need BOTH the DAT SoundItem remap (assign_all_languages)
             # and the physical .wem files here — the remap alone leaves the
             # engine falling back to Wwise routing, i.e. the replaced slot's
-            # original voice (confirmed in-game 2026-09-25).  The spec bundles
-            # voice_files/, but a value with no folder still copies nothing —
-            # say so rather than shipping a civ that ignores the chosen voice.
-            voice_root = Path(__file__).parent / "voice_files"
+            # original voice (confirmed in-game 2026-09-25).  The files come
+            # from the player's own Wwise banks (voice_source); a voice that
+            # can't be extracted copies nothing — say so rather than shipping
+            # a civ that silently ignores the chosen voice.
+            clips, missing, wwise = voice_clips(set(lang_values), dat_path)
             wem_count = 0
-            missing: list[int] = []
-            for lang_val in lang_values:
-                lang_dir = voice_root / str(lang_val)
-                if lang_dir.is_dir():
-                    for wem in sorted(lang_dir.iterdir()):
-                        if wem.suffix == ".wem":
-                            zf.writestr(
-                                f"resources/_common/drs/sounds/{wem.name}",
-                                wem.read_bytes(),
-                            )
-                            wem_count += 1
-                else:
-                    missing.append(lang_val)
+            for lang_val in sorted(clips):
+                for stem, data in sorted(clips[lang_val].items()):
+                    zf.writestr(f"resources/_common/drs/sounds/{stem}.wem", data)
+                    wem_count += 1
             if missing:
-                print(f"  WARNING: no voice files found for language value(s) "
-                      f"{sorted(missing)} — looked in {voice_root}")
+                where = (f"in {wwise}" if wwise else
+                         "— the game's wwise folder was not found next to the DAT")
+                print(f"  WARNING: could not extract voice files for language "
+                      f"value(s) {missing} {where}")
                 print("           Those civs will use the replaced slot's original "
                       "voice in-game, not the chosen one.")
             if wem_count:
@@ -590,6 +658,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         _apply_uu_overrides(dat, slot, uu_info, civ_def)
         _refresh_uu_tooltips(dat, slot, civ_result)
         _apply_hero_unit(dat, slot, civ_def)
+        hero_lines = hero_string_lines(dat, slot, civ_def.get("hero_unit"))
         civs_overrides[slot] = {
             "name_sid": name_sid,
             "icon_id": uu_info["icon_id"] if uu_info else None,
@@ -610,6 +679,9 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
             "uu_unit_id":    uu_info["unit_id"]  if uu_info else None,
             "uu_elite_id":   uu_info["elite_id"] if uu_info else None,
             "uu_upgrade_tech_id": civ_result.get("km_uu_elite_tech_id"),
+            # The civ's own UTs, for civilizations.json (patch_civilizations_list).
+            "castle_ut_tech_id": civ_result.get("castle_ut_tech_id"),
+            "imp_ut_tech_id":    civ_result.get("imp_ut_tech_id"),
             "uu_name_sid":   uu_info["dll_name"] if uu_info else None,
             "uu_desc_sid":   uu_info["dll_help"] if uu_info else None,
         }
@@ -621,8 +693,10 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # Empire Forge file to a draft, so this function sees both civ_def
         # shapes and the KM slot only exists in one of them.
         _km_uu_idx = get_km_uu_index(civ_def)
-        uu_display = (uu_info["name"] if uu_info
-                      else _KM_UU_NAMES.get(_km_uu_idx, "Unique Unit"))
+        # Escaped once here: every use below is a strings line (the comparison
+        # with _KM_UU_NAMES is unaffected, since those names need no escaping).
+        uu_display = _kv_text(uu_info["name"] if uu_info
+                              else _KM_UU_NAMES.get(_km_uu_idx, "Unique Unit"))
         # Also look up the elite unit's dll_name for string writes.
         uu_elite_dll: int | None = None
         uu_elite_name: str | None = None
@@ -641,7 +715,10 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # `description`, so prefer tagline and keep description as the KM-import
         # fallback. This matches _draft_to_civ_def, which maps tagline ->
         # civ_def["description"]. One key, chosen in normalize(), is the fix.
-        description = civ_def.get("tagline") or civ_def.get("description", "")
+        # Player text goes into `ID "text"` lines: a newline or quote in it breaks
+        # the file (the wizard route already escaped these; this one did not).
+        description = _kv_text(civ_def.get("tagline") or civ_def.get("description", "") or "")
+        alias_kv = _kv_text(alias)
         civ_bonuses        = get_civ_bonuses(civ_def)
         team_bonus_entries = get_team_bonuses(civ_def)
 
@@ -650,7 +727,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # No trailing space before any other \n. No trailing \n before closing ".
         # Example: `civilization\n\n• Bonus 1\n• Bonus 2\n\n<b>Unique Unit:<b> \nUU
         # name\n\n<b>Unique Techs:<b> \n• UT 1\n• UT 2\n\n<b>Team Bonus:<b> \nTB"`.
-        desc_parts = [f'{description} civilization' if description else f'{alias} civilization']
+        desc_parts = [f'{description} civilization' if description else f'{alias_kv} civilization']
         desc_parts.append("\\n\\n")
         bullet_lines = []
         for entry in civ_bonuses:
@@ -706,9 +783,10 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # Strings: one line per civ per language (all langs get same English text).
         # Description string ID follows KM's offset: 120150 - 10271 = 109879 above name_sid.
         for lang in LANGUAGES:
-            string_lines[lang].append(f'{name_sid} "{alias}"')
+            string_lines[lang].append(f'{name_sid} "{alias_kv}"')
+            string_lines[lang].extend(hero_lines)
             string_lines[lang].append(
-                f'{name_sid + 80000} "Click to play as {alias}."')
+                f'{name_sid + 80000} "Click to play as {alias_kv}."')
             string_lines[lang].append(
                 f'{name_sid + 109879} "{full_desc}"')
             # name_sid/desc_sid are two SEPARATE real existing-id pool slots
@@ -827,11 +905,11 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                 # +1000 is the Castle "Create <Unit>" button label (language_dll_creation).
                 # Only write for renamed UUs to avoid unnecessarily overwriting vanilla strings
                 # that other civs' units may share.
-                is_renamed = uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)
+                # A renamed vanilla UU owns pool ids now (_own_renamed_uu_strings),
+                # so these writes no longer reach the civ that really has the unit.
+                is_renamed = (uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)
+                              or (uu_info.get("vanilla") and uu_owns_strings(uu_dll)))
                 if is_renamed:
-                    # Base string ID: unit name in selection panel. Writing here affects
-                    # any vanilla civ that shares this unit (e.g. Mongols opponents for
-                    # Mangudai). Acceptable trade-off; proper fix needs unit cloning.
                     _put(uu_dll, uu_display)
                     _put(uu_dll + DLL_CREATION_OFFSET, f"Create {uu_display}")
                 _put(uu_dll + 10000, uu_display)
@@ -954,41 +1032,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         try:
             with open(base_civs_json, encoding="utf-8") as f:
                 civ_list = json.load(f).get("civilization_list", [])
-            for slot_idx, ov in civs_overrides.items():
-                if slot_idx >= len(civ_list):
-                    continue
-                entry = civ_list[slot_idx]
-                entry["name_string_id"] = ov["name_sid"]
-                icon_id = ov.get("icon_id")
-                if icon_id is not None:
-                    entry["unique_unit_image_paths"] = [
-                        f"/resources/uniticons/{icon_id:03d}_50730.png"
-                    ]
-                # Retarget the civ-level UU metadata block (see civs_overrides
-                # assignment above for why this is necessary) so any in-game
-                # UI surface keyed off civilizations.json's own UU fields
-                # — not just the per-unit DAT strings — shows the custom UU.
-                uu_unit_id = ov.get("uu_unit_id")
-                if uu_unit_id is not None:
-                    entry["unique_unit_id"] = uu_unit_id
-                    if ov.get("uu_elite_id") is not None:
-                        entry["elite_unique_unit_id"] = ov["uu_elite_id"]
-                    if ov.get("uu_upgrade_tech_id") is not None:
-                        entry["unique_unit_upgrade_id"] = ov["uu_upgrade_tech_id"]
-                    if ov.get("uu_name_sid") is not None:
-                        name_sid_uu = ov["uu_name_sid"]
-                        # Prefer the EXPLICIT desc sid (always a real id —
-                        # for KM-custom UUs it's a CAMPAIGN_STRING_POOL id,
-                        # nothing to do with name_sid+offset). Fall back to
-                        # the +DLL_HELP_OFFSET computation only when desc_sid
-                        # is unavailable — true for vanilla UUs, where it
-                        # coincidentally still lands on a real vanilla id
-                        # (vanilla's own language_dll_help convention also
-                        # happens to be name+100000).
-                        desc_sid_uu = ov.get("uu_desc_sid") or (name_sid_uu + DLL_HELP_OFFSET)
-                        entry["unique_unit_string_ids"] = [
-                            {"name": name_sid_uu, "description": desc_sid_uu}
-                        ]
+            patch_civilizations_list(civ_list, civs_overrides)
             civs_json_bytes = json.dumps(
                 {"civilization_list": civ_list}, separators=(",", ":")
             ).encode("utf-8")
@@ -1005,7 +1049,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                                          civs_json_bytes=civs_json_bytes)
     unique_lang_values = {lang_val for _, lang_val in lang_assignments}
     ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings, mod_name=mod_name,
-                                      lang_values=unique_lang_values)
+                                      lang_values=unique_lang_values, dat_path=dat_path)
 
     with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as outer:
         outer.writestr(f"{prefix}-data.zip", data_zip)

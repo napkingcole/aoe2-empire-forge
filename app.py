@@ -29,10 +29,12 @@ from flask import (Flask, flash, jsonify, redirect, render_template,
 
 from bonus_names import bonus_name, skip_reason
 import custom_bonus
+from voice_source import voice_values
 from build_all import (_build_combined_data_zip, _build_combined_ui_zip,
                        _ut_name, _ut_bonus_id, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS,
-                       _kv_text, ut_name_and_desc, ut_selection_text, ut_research_label)
+                       _kv_text, ut_name_and_desc, ut_selection_text, ut_research_label,
+                       hero_string_lines)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
@@ -40,11 +42,11 @@ from build_civ import (
     _patch_per_civ_techtree, _canonical_techtree_id,
     civ_name_sid, civ_roster,
     _resolve_uu_info, _find_adjacent_json, uu_cost_text, keeps_vanilla_hover, rich_unit_tooltip,
-    renamed_uu_tooltip,
+    renamed_uu_tooltip, uu_owns_strings,
 )
 from civ_overrides import (_apply_uu_overrides, _apply_hero_unit, _override_ut_costs,
                            _refresh_uu_tooltips)
-from civ_appender import (apply_civ, assign_all_languages, button_layout_preview,
+from civ_appender import (apply_civ, assign_all_languages, button_layout_preview, patch_civilizations_list,
                           _str_id, STRING_BASE, STRING_BLOCK_SIZE,
                           STR_CASTLE_UT, STR_IMPERIAL_UT,
                           DLL_CREATION_OFFSET, DLL_HELP_OFFSET, DLL_TECH_TREE_OFFSET,
@@ -80,12 +82,15 @@ _UU_STATS_CACHE: dict[str, dict] = {}
 # Bump this when _UU_TRAITS changes so stale disk caches are automatically invalidated.
 _UU_STATS_DISK_VERSION = 3  # bumped: fixed cost fallback + amount-mode cost parsing
 
-_CACHE_DIR = Path(__file__).parent / ".cache"
+def _cache_dir() -> Path:
+    """Per-user, so it survives restarts: next to the code it lands in the
+    one-file exe's temp folder (wiped every launch) or a read-only MSIX install."""
+    return custom_bonus.data_dir() / "cache"
 
 
 def _uu_stats_cache_path(dat_path: str) -> Path:
     h = hashlib.md5(dat_path.encode()).hexdigest()[:10]
-    return _CACHE_DIR / f"uu_stats_{h}.json"
+    return _cache_dir() / f"uu_stats_{h}.json"
 
 
 def _uu_table_fingerprint() -> str:
@@ -126,7 +131,7 @@ def _load_uu_stats_disk(dat_path: str) -> dict | None:
 def _save_uu_stats_disk(dat_path: str, stats: dict) -> None:
     """Write stats to disk so future app restarts skip the slow parse."""
     try:
-        _CACHE_DIR.mkdir(exist_ok=True)
+        _cache_dir().mkdir(parents=True, exist_ok=True)
         payload: dict = {
             "_v":     _UU_STATS_DISK_VERSION,
             "_tbl":   _uu_table_fingerprint(),
@@ -196,6 +201,32 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.6.0": [
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>View Civ.</strong> Show off a civ on one page, laid out like an in-game card: bonuses, unique unit with its stats, unique techs, team bonus, hero and tech tree. Copy it as Markdown or text, save it as PNG, WebP or PDF, or print it. Retype the text on the card before sharing, and save the civ with the new description. <em>Thanks to darius_the_russian_cat</em>",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Custom bonuses for unit lines.</strong> Target a whole line (\"Militia line: +2 attack\") or a unit and everything it upgrades into (\"Long Swordsman and up: +20 HP\"). Lines are grouped by building on the Units tab. <em>Thanks to rattatatouille</em>",
+        "<strong class=\"color-accent-2\">NEW:</strong> A <strong>Civilization</strong> tab for custom bonuses: raise the population limit from a chosen age, or give one-time resources at the start or on reaching an age (\"+100 stone at the start\", \"+200 wood on reaching the Castle Age\"). <em>Thanks to vindy</em>",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Population space on buildings</strong> (\"Barracks: +10 population space\"). <em>Thanks to vindy</em>",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Minimum range, blast radius and conversion</strong> as custom bonus effects: Mangonels that fire closer, Scorpions with no minimum range, wider siege splash, faster Monk conversions and harder-to-convert units. <em>Thanks to varamir</em>",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Farms and Monasteries</strong> as custom bonus targets: one card for every farm type (Farms, Fish Traps, Rice Farms, Pastures), or for Monasteries and Fortified Churches",
+        "<strong class=\"color-accent-2\">NEW:</strong> A custom <strong>Elite upgrade cost and research time</strong> for your unique unit. <em>Thanks to iquit</em>",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Your civ's name not showing.</strong> A unique unit description written over several lines broke the mod's text file, so the game showed the replaced civ's name everywhere. Line breaks and quotes in any of your civ's text are now handled. <em>Thanks to Patient</em>",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Renaming a game unique unit renames it for your civ only.</strong> A renamed unit (say, the Ghulam) used to be renamed for the civ it came from as well, and its Elite upgrade kept the old name. <em>Thanks to Patient</em>",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Chronicles unique units.</strong> The Immortal, Strategos, Hippeus, Companion Cavalry, Rhomphaia Warrior and Pattiyodha Longbowman can now be your civ's unique unit, trained at the Castle. Find them under <em>Chronicles</em> in the Unique Unit step. Their unlock cards are retired; civs that already have one keep it",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>The Donjon gets tower unique techs.</strong> Unique techs that boost towers (Yasama, Eupseong, Great Wall, Stronghold, Detinets) now boost the Donjon too",
+        "<strong class=\"color-accent-2\">CHANGED:</strong> The <strong>Sannāhya</strong> has the Battle Elephant's HP: 250, Elite 300",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Custom unique tech research times never reached the game.</strong> Every custom UT researched in the game's default time. Fixed",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Elephant bonuses reach every elephant.</strong> \"+1/+1 armor\", \"+10% speed\", the elephant discount, bonus-damage resistance and Howdah only reached Battle Elephants. They now reach War Elephants, Elephant Archers, Armored Elephants and the Sannāhya too (Elephant Archers don't get the speed bonus). <em>Thanks to rattatatouille</em>",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Monks speak with a voice that matches their look.</strong> A female Monk skin (South American, Norse) with a male Monk voice, or the other way round, now uses the same language's villager lines of the matching voice. <em>Thanks to rattatatouille</em>",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>The Imperial Skirmisher team bonus</strong> gives allies the upgrade again. <em>Thanks to rattatatouille</em>",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>\"Spearmen and Skirmishers train at Settlements\"</strong> no longer moves the Barracks Spearman to a second page. <em>Thanks to rattatatouille</em>",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>A replaced civ no longer shows through.</strong> The civ selection list and the in-game tech tree (F2) showed the original civ's unique techs and unique unit line, and could show another civ's unique unit. <em>Thanks to maruviel</em>",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Charge Attack</strong> on a unique unit now uses the game's own charge (the Comitatenses'), and works for ranged units too",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Heroes picked in the Builder train from Castle button 4 again, so the Trebuchet keeps its own; a tech tree that unticks a tech the Galleon or Gillnets needs no longer leaves them unresearchable",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> The custom bonus maker only offers effects a target can use, so no more garrison space on Villagers or range on a Champion",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> The Mapuche team bonus card says <strong>+2 line of sight</strong>, as the game does, not attack range. <em>Thanks to darius_the_russian_cat</em>",
+        "<strong class=\"color-accent-2\">CHANGED:</strong> <strong>\"Siege Towers can fire arrows\" is withdrawn.</strong> A Siege Tower has no ranged attack, so the bonus never did anything. Civs that had it still load, without it. <em>Thanks to Agent Forest</em>",
+        "<strong class=\"color-accent-2\">CHANGED:</strong> The Windows app reads unit voices from your own game files instead of carrying a copy, so the download is about 30 MB smaller",
+    ],
     "2.5.1": [
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Civ bonuses not showing in the Windows app.</strong> 2.5.0 added a unit name with an accented letter (Sannāhya), and the Windows app read the bonus list in the wrong text encoding, so the whole bonus screen came up empty. Fixed — and names with accents no longer show garbled characters on Windows",
     ],
@@ -792,8 +823,10 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
 
             # uu_info was already resolved inside the log context above.
             uu_info = uu_info_resolved
-            uu_override_name = ((civ_def.get("unique_unit") or {}).get("name") or "").strip()
-            uu_override_desc = ((civ_def.get("unique_unit") or {}).get("description") or "").strip()
+            # _kv_text: a description typed over several lines split its strings
+            # line, and the game dropped the civ's name with it (Safavids, 2026-10-10).
+            uu_override_name = _kv_text(((civ_def.get("unique_unit") or {}).get("name") or "").strip())
+            uu_override_desc = _kv_text(((civ_def.get("unique_unit") or {}).get("description") or "").strip())
             # See build_all.py's identical block for why civilizations.json's own
             # UU metadata block (unique_unit_id/elite_unique_unit_id/
             # unique_unit_string_ids/unique_unit_upgrade_id) needs explicit
@@ -805,6 +838,9 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 "uu_unit_id":    uu_info["unit_id"]  if uu_info else None,
                 "uu_elite_id":   uu_info["elite_id"] if uu_info else None,
                 "uu_upgrade_tech_id": result.get("km_uu_elite_tech_id"),
+                # The civ's own UTs, for civilizations.json (patch_civilizations_list).
+                "castle_ut_tech_id": result.get("castle_ut_tech_id"),
+                "imp_ut_tech_id":    result.get("imp_ut_tech_id"),
                 "uu_name_sid":   uu_info["dll_name"] if uu_info else None,
                 "uu_desc_sid":   uu_info["dll_help"] if uu_info else None,
             }
@@ -821,23 +857,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                     except (IndexError, AttributeError):
                         pass
 
-            # Hero unit string IDs — read after _apply_hero_unit has set language_dll_name.
-            _hero_raw  = (civ_def.get("hero_unit") or {})
-            _hero_bid  = _hero_raw.get("base_unit_id")
-            # Escaped for the key-value file, as the wizard route always did — a
-            # quote in a hero's name used to end the string early on this route.
-            _hero_name = _kv_text((_hero_raw.get("name") or "").strip())
-            _hero_desc = _kv_text((_hero_raw.get("description") or "").strip())
-            _hero_dll  = -1
-            _hero_cost_str = ""
-            if _hero_bid is not None and _hero_name:
-                try:
-                    _hero_dll = dat.civs[slot].units[_hero_bid].language_dll_name or -1
-                except (IndexError, TypeError, AttributeError):
-                    pass
-                # Read after _apply_hero_unit, so the tooltip quotes the cost the
-                # player will actually pay.
-                _hero_cost_str = uu_cost_text(dat, slot, _hero_bid)
+            # Hero name / tooltips: one helper for all three routes (build_all).
+            hero_lines = hero_string_lines(dat, slot, civ_def.get("hero_unit"))
 
             # Build civ selection screen description with bonuses + UT names.
             # The wizard writes the blurb to `tagline` and nothing writes
@@ -845,10 +866,13 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             # this door used to fall back to "<Alias> civilization" while the
             # wizard door showed the real tagline. KM imports are the reverse,
             # which is why both keys are read. One key, in normalize().
-            description   = civ_def.get("tagline") or civ_def.get("description", "")
+            # Player text goes into `ID "text"` lines: a newline or quote in it breaks
+            # the file (the wizard route already escaped these; this one did not).
+            description   = _kv_text(civ_def.get("tagline") or civ_def.get("description", "") or "")
+            alias_kv      = _kv_text(alias)
             civ_bonuses        = _bonuses_raw_normalized
             team_bonus_entries = _team_bonuses_raw_normalized
-            desc_parts = [f'{description} civilization' if description else f'{alias} civilization']
+            desc_parts = [f'{description} civilization' if description else f'{alias_kv} civilization']
             desc_parts.append(" \\n\\n")
             for entry in civ_bonuses:
                 if not isinstance(entry, list):
@@ -881,28 +905,13 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             full_desc = "".join(desc_parts)
 
             for lang in LANGUAGES:
-                string_lines[lang].append(f'{name_sid} "{alias}"')
+                string_lines[lang].append(f'{name_sid} "{alias_kv}"')
                 string_lines[lang].append(
-                    f'{name_sid + 80000} "Click to play as {alias}."')
+                    f'{name_sid + 80000} "Click to play as {alias_kv}."')
                 string_lines[lang].append(
                     f'{name_sid + 109879} "{full_desc}"')
 
-                # Hero unit name + Castle train-button tooltip.
-                if _hero_dll > 0 and _hero_name:
-                    # The base hero's own game tooltip, renamed (cost icons,
-                    # upgrades, stats); plain text only if it has none.
-                    _hero_hover = rich_unit_tooltip(dat, _hero_bid, _hero_name, _hero_desc)
-                    if _hero_hover is None:
-                        _hero_hover = f"Create <b>{_hero_name}<b>"
-                        if _hero_desc:
-                            _hero_hover += f"\\n{_hero_desc}"
-                        if _hero_cost_str:
-                            _hero_hover += f"\\n{_hero_cost_str}"
-                    string_lines[lang].append(f'{_hero_dll} "{_hero_name}"')
-                    # +1000 is the short "Create X" label, as every vanilla unit's is.
-                    string_lines[lang].append(f'{_hero_dll + DLL_CREATION_OFFSET} "Create {_hero_name}"')
-                    string_lines[lang].append(f'{_hero_dll + 21000} "{_hero_hover}"')
-                    string_lines[lang].append(f'{_hero_dll + DLL_HELP_OFFSET} "{_hero_hover}"')
+                string_lines[lang].extend(hero_lines)
 
                 # Castle UT: language_dll_help (60xxx pool SID) drives the research-button
                 # hover tooltip — NOT name+21000, which is the unit-train-button slot.
@@ -994,8 +1003,11 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 if uu_info:
                     uu_dll = uu_info["dll_name"]
                     _ext_sid_taken = (uu_dll + 21000) in _owned_sids
+                    # A renamed vanilla UU owns pool ids (_own_renamed_uu_strings):
+                    # always name it, or its pool id shows campaign text.
                     is_renamed = bool(uu_override_name) or (
-                        uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display))
+                        uu_display != _KM_UU_NAMES.get(get_km_uu_index(civ_def), uu_display)
+                    ) or bool(uu_info.get("vanilla") and uu_owns_strings(uu_dll))
                     if is_renamed:
                         _put(uu_dll, uu_display)
                         _put(uu_dll + DLL_CREATION_OFFSET, f"Create {uu_display}")
@@ -1101,33 +1113,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             try:
                 with open(base_civs_json, encoding="utf-8") as f:
                     civ_list = json.load(f).get("civilization_list", [])
-                for slot_idx, ov in civs_overrides.items():
-                    if slot_idx >= len(civ_list):
-                        continue
-                    entry = civ_list[slot_idx]
-                    entry["name_string_id"] = ov["name_sid"]
-                    icon_id = ov.get("icon_id")
-                    if icon_id is not None:
-                        entry["unique_unit_image_paths"] = [
-                            f"/resources/uniticons/{icon_id:03d}_50730.png"
-                        ]
-                    uu_unit_id = ov.get("uu_unit_id")
-                    if uu_unit_id is not None:
-                        entry["unique_unit_id"] = uu_unit_id
-                        if ov.get("uu_elite_id") is not None:
-                            entry["elite_unique_unit_id"] = ov["uu_elite_id"]
-                        if ov.get("uu_upgrade_tech_id") is not None:
-                            entry["unique_unit_upgrade_id"] = ov["uu_upgrade_tech_id"]
-                        if ov.get("uu_name_sid") is not None:
-                            name_sid_uu = ov["uu_name_sid"]
-                            # See build_all.py's identical block — prefer the
-                            # explicit desc sid (real id for both vanilla and
-                            # KM-custom UUs); the +DLL_HELP_OFFSET fallback only
-                            # reliably works for the vanilla path.
-                            desc_sid_uu = ov.get("uu_desc_sid") or (name_sid_uu + DLL_HELP_OFFSET)
-                            entry["unique_unit_string_ids"] = [
-                                {"name": name_sid_uu, "description": desc_sid_uu}
-                            ]
+                patch_civilizations_list(civ_list, civs_overrides)
                 civs_json_bytes = json.dumps(
                     {"civilization_list": civ_list}, separators=(",", ":")
                 ).encode("utf-8")
@@ -1152,7 +1138,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                                                 civs_json_bytes=civs_json_bytes)
             ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings,
                                               mod_name=mod_name,
-                                              lang_values=unique_lang_values)
+                                              lang_values=unique_lang_values,
+                                              dat_path=dat_path)
 
         out_path = sd / f"{prefix}.zip"
         with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as outer:
@@ -1405,14 +1392,14 @@ def api_builder_meta():
                 monk_options.append(_o)
         except Exception:                                        # noqa: BLE001
             arch_options, monk_options = _ARCH_OPTIONS, MONK_SKIN_OPTIONS
-    # Driven by which voice_files/<value>/ folders actually exist, not a fixed
-    # count.  build_all bundles those .wem files into the mod, so offering a
-    # voice we have no folder for would silently ship a civ with no audio.
-    # Drop a new folder in and the option appears.
+    # Driven by voice_wwise_map.json, not a fixed count: the build extracts
+    # those clips from the player's own Wwise banks, so offering a voice the
+    # map can't name would silently ship a civ with no audio.  A rebuilt map
+    # adds the option by itself.
     voice_options = sorted([
         {"value": i - 1, "label": c.get("name", "")}
         for i, c in enumerate(roster)
-        if i > 0 and (i - 1) in _available_voice_values() and c.get("name")
+        if i > 0 and (i - 1) in voice_values() and c.get("name")
     ], key=lambda x: x["label"])
     # bonus_id → unit_ids, so the wizard can derive the "Unlock ..." bonuses
     # from the tech tree without keeping its own copy of the table.
@@ -1457,31 +1444,6 @@ _scene_names_cache: dict | None = None
 # Kingdoms / Dynasties of China civs: he has Shu/Wu/Wei at 45-47 and
 # Jurchens/Khitans at 48-49, where the live DAT has Shu=48 … Khitans=52.
 # Without this remap, choosing Shu would silently render a Jurchen castle.
-_VOICE_FILES_DIR = Path(__file__).parent / "voice_files"
-
-
-# The 43 languages KM extracted (values 0-42).  Used as a floor when the
-# voice_files/ tree isn't present at all.
-_VOICE_FALLBACK_VALUES = frozenset(range(43))
-
-
-def _available_voice_values() -> set[int]:
-    """Voice values with a voice_files/<value>/ folder holding at least one .wem.
-
-    The spec bundles voice_files/, so the scan works in the packaged exe too.
-    The historical 0-42 fallback only covers a checkout without the (gitignored)
-    folder, where scanning alone would render the Voice dropdown empty.
-    """
-    out: set[int] = set()
-    try:
-        for d in _VOICE_FILES_DIR.iterdir():
-            if d.is_dir() and d.name.isdigit() and any(d.glob("*.wem")):
-                out.add(int(d.name))
-    except OSError:
-        pass
-    return out or set(_VOICE_FALLBACK_VALUES)
-
-
 _SCENE_ART_OVERRIDES = {48: 45, 49: 46, 50: 47, 51: 48, 52: 49}
 
 # Which art indices actually exist is read off disk rather than hardcoded to
@@ -1663,7 +1625,62 @@ def api_builder_custom_bonus_catalog():
                       "icon": url_for("static", filename=rel) if (static / rel).exists() else ""})
     cat["techs"] = sorted(techs, key=lambda e: e["name"])
     cat["tech_categories"] = [{"id": k, "label": v} for k, v in _TECH_CATEGORIES.items()]
+
+    # Which effects each target can take, from the DAT's unit stats (garrison
+    # space only where something can garrison, range only on ranged units...).
+    # The DAT may still be loading on a first visit: then offer everything, as
+    # before, and say so — the composer asks again shortly.
+    dat_path = session.get("dat_path") or find_game_dat()
+    if dat_path and str(dat_path) in _DAT_OBJ_CACHE:
+        dat_path = str(dat_path)
+        if dat_path not in _CB_ALLOWED_CACHE:
+            _CB_ALLOWED_CACHE[dat_path] = _custom_bonus_dat_parts(_get_dat(dat_path), cat)
+        parts = _CB_ALLOWED_CACHE[dat_path]
+        cat["allowed"] = parts["allowed"]
+        cat["lines"] = parts["lines"]
+        for u in cat["units"]:
+            u["top"] = u["id"] in parts["tops"]
+    else:
+        cat["allowed_pending"] = True
+        if dat_path and str(dat_path) not in _DAT_LOADING:
+            dat_path = str(dat_path)
+            _DAT_LOADING.add(dat_path)
+
+            def _warm():
+                try:
+                    _get_dat(dat_path)
+                finally:
+                    _DAT_LOADING.discard(dat_path)
+            threading.Thread(target=_warm, daemon=True).start()
     return jsonify(cat)
+
+
+# dat_path -> _custom_bonus_dat_parts result; the DAT never changes under a path.
+_CB_ALLOWED_CACHE: dict[str, dict] = {}
+
+
+def _custom_bonus_dat_parts(dat, cat: dict) -> dict:
+    """The composer's DAT-derived parts: effects per target, unit lines, tops.
+
+    A single-unit pick means "this unit and up" (#63), so its effects are
+    judged on that chain; a line tile on the whole line.  `tops` are units
+    nothing upgrades from — their "and up" is just themselves."""
+    names = {u["id"]: u["name"] for u in cat["units"]}
+    icons = {u["id"]: u["icon"] for u in cat["units"]}
+    fwd = custom_bonus.upgrade_edges(dat)
+    lines = custom_bonus.unit_lines(dat, set(names))
+    entries = ([(f"unit:{uid}", "unit", custom_bonus.upgrades_after(fwd, uid)) for uid in names]
+               + [(f"building:{b['id']}", "building", b["id"]) for b in cat["buildings"]]
+               + [(f"line:{ln['base']}", "unit", ln["members"]) for ln in lines])
+    return {
+        "allowed": custom_bonus.allowed_attrs(dat, entries),
+        "lines": [{"id": ln["base"], "name": f"{names[ln['base']]} line",
+                   "building": ln["building"], "building_name": ln["building_name"],
+                   "category": _CATEGORY_OF_BUILDING.get(ln["building"], "other"),
+                   "icon": icons.get(ln["base"], ""),
+                   "members": [names[m] for m in ln["members"]]} for ln in lines],
+        "tops": {uid for uid in names if not (fwd.get(uid, set()) - {uid})},
+    }
 
 
 # Training building -> picker chip.  Order matters: a unit trained in two places
@@ -2120,8 +2137,74 @@ def api_builder_prewarm():
     return jsonify({"status": "warming"})
 
 
+@app.route("/civ/view")
+def civ_view():
+    """Show off a civ (#57): an in-game-style card, Markdown / text to copy,
+    and a print layout.  The civ comes from the Builder (localStorage) or a
+    dropped .civbuilder.json; the page posts it to /api/civ/summary."""
+    return render_template("civ_view.html")
+
+
+@app.route("/api/civ/summary", methods=["POST"])
+def api_civ_summary():
+    import civ_summary
+    from civ_schema import from_draft, is_empireforge, is_km_format
+    raw = (request.get_json(silent=True) or {}).get("civ")
+    if not isinstance(raw, dict) or not raw:
+        return jsonify({"error": "No civ given."}), 400
+    try:
+        # A Builder draft has no `format` either, so is_km_format would take it
+        # for a KM file: tell them apart first (drafts carry _draftVer, and
+        # their bonuses are dicts where KM's are nested lists).
+        bonuses = raw.get("bonuses") or []
+        is_draft = "_draftVer" in raw or (bonuses and isinstance(bonuses[0], dict))
+        if is_empireforge(raw):
+            schema = raw
+        elif is_draft or not is_km_format(raw):
+            schema = from_draft(raw)
+        else:
+            schema = from_draft(_km_to_draft(raw))
+        techtree = json.loads(_FULL_TREE_FILE.read_text(encoding="utf-8"))
+        summary = civ_summary.summarize(schema, _uu_catalog_entries(), techtree)
+    except Exception as exc:                    # noqa: BLE001 — a bad file is the user's, not a 500
+        return jsonify({"error": f"Couldn't read that civ: {exc}"}), 400
+    # The civ as a file, for "Save civ with this description": an Empire Forge
+    # file exactly as it came in; a Builder draft or KM file converted.
+    return jsonify({"summary": summary,
+                    "markdown": civ_summary.to_markdown(summary),
+                    "text": civ_summary.to_text(summary),
+                    "civ_file": raw if is_empireforge(raw) else schema,
+                    "converted": not is_empireforge(raw)})
+
+
+@app.route("/api/civ/render", methods=["POST"])
+def api_civ_render():
+    """Markdown and plain text for a summary the player edited on the card
+    (contenteditable lists, description, show/hide options) — the same
+    renderer as /api/civ/summary, so edits reach the copies."""
+    import civ_summary
+    summary = (request.get_json(silent=True) or {}).get("summary")
+    if not isinstance(summary, dict) or not summary.get("name"):
+        return jsonify({"error": "No summary given."}), 400
+    try:
+        return jsonify({"markdown": civ_summary.to_markdown(summary), "text": civ_summary.to_text(summary)})
+    except (KeyError, TypeError, AttributeError) as exc:
+        return jsonify({"error": f"Couldn't render that summary: {exc}"}), 400
+
+
+_FULL_TREE_FILE = Path(__file__).parent / "static" / "aoe2techtree" / "data" / "trees" / "FULL.json"
+
+
 @app.route("/api/builder/uu/catalog")
 def api_builder_uu_catalog():
+    return jsonify(_uu_catalog_entries())
+
+
+def _uu_catalog_entries() -> list[dict]:
+    """The UU picker's entries: km_idx, name, icon, stats, training cost.
+
+    Shared by the picker endpoint and the civ share page (#57), so a unit
+    looks the same in both."""
     import civ_appender as ca
     import km_custom_uu as kcu
 
@@ -2240,9 +2323,20 @@ def api_builder_uu_catalog():
     # they are built from a base unit, not from a DAT tech.
     missing_in_dat: set[int] = set()
     derived_icons: dict[int, str] = {}
+    elite_upgrades: dict[int, dict] = {}     # km_idx -> the game's Elite upgrade cost/time (#68)
     if dat_path:
         try:
             _d = _get_dat(dat_path)
+            _res = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+            for i, (_mk, _el) in ca._KM_UU_TECHS.items():
+                if 0 <= _el < len(_d.techs):
+                    _t = _d.techs[_el]
+                    elite_upgrades[i] = {
+                        "cost": {_res[c.type]: c.amount for c in _t.resource_costs
+                                 if c.type in _res and c.amount > 0},
+                        "time": next((loc.research_time for loc in _t.research_locations
+                                      if loc.location_id >= 0), None),
+                    }
 
             def _tech_live(tech_id: int) -> bool:
                 if tech_id >= len(_d.techs):
@@ -2302,12 +2396,16 @@ def api_builder_uu_catalog():
             "km_idx":        km_idx,
             "name":          name,
             "vanilla":       is_vanilla,
+            # A Chronicles Castle unit (Immortal, Strategos, ...): built like a
+            # vanilla UU, shown under its own filter and badge.
+            "chronicles":    km_idx in ca._CHRONICLES_UU_CARDS,
             "icon":          f"/resources/uniticons/{icon_file}" if icon_file else None,
             "stats":         entry_stats,
             "training_cost": entry_stats["cost"] if entry_stats else None,
+            "elite_upgrade": elite_upgrades.get(km_idx),
         })
     catalog.sort(key=lambda x: x["name"])
-    return jsonify(catalog)
+    return catalog
 
 
 def _split_ut_label(label: str) -> tuple[str, str]:
@@ -2718,9 +2816,27 @@ if __name__ == "__main__":
 
     werkzeug.serving.BaseWSGIServer.log_startup = _quiet_log_startup
 
+    def _free_port(preferred: int = 8080) -> int:
+        """8080, or any free port when something else holds it.
+
+        Probed with a plain socket: Werkzeug's own server sets SO_REUSEADDR,
+        which on Windows can bind over a port another program is using.
+        """
+        import socket
+        for port in (preferred, 0):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind(("127.0.0.1", port))
+                    return s.getsockname()[1]
+                except OSError:
+                    continue
+        return preferred
+
+    port = _free_port()
+
     def _open_browser():
-        webbrowser.open("http://127.0.0.1:8080")
+        webbrowser.open(f"http://127.0.0.1:{port}")
 
     threading.Timer(1.0, _open_browser).start()
     threading.Thread(target=_run_update_check, daemon=True).start()
-    app.run(debug=False, port=8080, threaded=True)
+    app.run(debug=False, port=port, threaded=True)
