@@ -16,7 +16,7 @@
   "QA1_Relic Horde.json": "ba4138a1d9c1a21c43106e33772ff61b2bc21e29dcf49715150e84907440a487",
   "QA2_Gunline.json": "c7e71f2a530b7dd94daeafe6f175ef54875ab71b0ee78e4e68215c93a406071b",
   "QA3_Chronicles.json": "a5a18c35ce0ced1c87b1f9955a14f601894e72e7c1add5b3d2c564290f1166cd",
-  "QA4_Chronicles Units.json": "a4a88d98a11b587834e2be3d834fc7e18183c18d1ea735a9d9bfbe2a9f4424bb",
+  "QA4_Chronicles Units.json": "02c6e5cc20720990ad6a71109125d0adef152f652f17c98bf9dbd1702b1f22e1",
   "QA5_Strategos.json": "9a820e3c5a8c3993d07c7228961c3ff5fdbbbaaec7aa06a75fc69efea6189f73",
   "QA6_Hippeus.json": "cba6ba1cf5cd9a856d52e151d99b3e43a53f3958ecc02169ff9e58722cc2d154",
   "QA7_Companions.json": "95e0bd6b8443abd2d63ac24d839c43973cc82ec4655e3269171bee351ed9e1db",
@@ -26,6 +26,6 @@
   "probe_sheep.civbuilder.json": "b723067e1c80aaa7e33f6242da49f19d64f024bcdcb793e55e4c806d520192b1",
   "probe_tcfood.civbuilder.json": "c09a4738df9cb11f379afb38412ab70c9f5445562aaa21f403348ff012bcb2e4",
   "probe_tree.civbuilder.json": "9330f0c6606b45d765c3565e8c464518591506379fe94bf235bb28871427a2b1",
-  "super_civ.civbuilder.json": "3ab02ddcac051f6586726192cad36f8730e76901d1ddae8dd412abe6fd30ff4c",
+  "super_civ.civbuilder.json": "2695d53ae90445d6c5f89cf271c63354c77d2f987ab1e905a8902bed41d38d61",
   "uberdudes.civbuilder.json": "516cc22c9969436693193f7ca7c13d612b92a9ace0be34162f1d058a32303ff5"
 }
