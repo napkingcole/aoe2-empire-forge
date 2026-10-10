@@ -3211,7 +3211,7 @@ function _getUUPopup() {
 
 function _buildUUPopupHTML(unit) {
   const s = unit.stats;
-  const badge = unit.vanilla ? "Vanilla" : "Custom";
+  const badge = unit.chronicles ? "Chronicles" : unit.vanilla ? "Vanilla" : "Custom";
 
   // Stats not loaded yet — show a loading indicator if we're still fetching
   if (!s) {
@@ -3310,8 +3310,9 @@ function renderUUGrid() {
   }
 
   let items = _uuCatalog;
-  if (typeFilter === "vanilla") items = items.filter(u => u.vanilla);
-  if (typeFilter === "custom")  items = items.filter(u => !u.vanilla);
+  if (typeFilter === "vanilla")    items = items.filter(u => u.vanilla && !u.chronicles);
+  if (typeFilter === "chronicles") items = items.filter(u => u.chronicles);
+  if (typeFilter === "custom")     items = items.filter(u => !u.vanilla);
   if (query) items = items.filter(u => u.name.toLowerCase().includes(query));
 
   if (!items.length) {
@@ -3322,7 +3323,9 @@ function renderUUGrid() {
   const selectedIdx = draft.unique_unit?.km_idx;
   grid.innerHTML = items.map(u => {
     const iconSrc = u.icon || UU_PLACEHOLDER;
-    const badge   = u.vanilla
+    const badge   = u.chronicles
+      ? `<span class="uu-badge uu-badge-chronicles" title="Chronicles unit">Ch</span>`
+      : u.vanilla
       ? `<span class="uu-badge uu-badge-vanilla">V</span>`
       : `<span class="uu-badge uu-badge-custom">C</span>`;
     const sel = u.km_idx === selectedIdx ? " selected" : "";
@@ -3383,7 +3386,7 @@ function selectUU(kmIdx) {
   iconEl.onerror = () => { iconEl.src = UU_PLACEHOLDER; };
   document.getElementById("uu-selected-name").textContent = unit.name;
   document.getElementById("uu-selected-type").textContent =
-    unit.vanilla ? "Vanilla base unit" : "Custom base unit";
+    unit.chronicles ? "Chronicles unit" : unit.vanilla ? "Vanilla base unit" : "Custom base unit";
 
   document.getElementById("uu-name-override").value = draft.unique_unit.name       || "";
   document.getElementById("uu-description").value   = draft.unique_unit.description || "";

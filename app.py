@@ -2370,6 +2370,9 @@ def _uu_catalog_entries() -> list[dict]:
             "km_idx":        km_idx,
             "name":          name,
             "vanilla":       is_vanilla,
+            # A Chronicles Castle unit (Immortal, Strategos, ...): built like a
+            # vanilla UU, shown under its own filter and badge.
+            "chronicles":    km_idx in ca._CHRONICLES_UU_CARDS,
             "icon":          f"/resources/uniticons/{icon_file}" if icon_file else None,
             "stats":         entry_stats,
             "training_cost": entry_stats["cost"] if entry_stats else None,

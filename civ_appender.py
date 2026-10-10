@@ -228,7 +228,22 @@ _KM_UU_TECHS: dict[int, tuple[int, int]] = {
     94: (1461, 1462), # Hearth Troop (Saxons)
     95: (1471, 1472), # Jarl (Varangians)
     96: (1481, 1482), # Jomsviking (Danes)
+    # Chronicles Castle units (2026-10-10).  Their make-avail techs are
+    # civ-gated on the standard Castle Age and the elite upgrades on the
+    # standard Imperial Age, like the Viking Sagas set.  They were unlock cards
+    # (447-450, 452, 453); as unique units they train at the Castle in the UU
+    # slot.  Their names live in the Chronicles string table, so apply_civ
+    # names them through _name_chronicles_units (_CHRONICLES_UU_CARDS).
+    97:  (1114, 1115), # Immortal (Achaemenids)
+    98:  (1124, 1125), # Strategos (Athenians)
+    99:  (1134, 1135), # Hippeus (Athenians)
+    100: (1288, 1289), # Companion Cavalry (Macedonians)
+    101: (1300, 1301), # Rhomphaia Warrior (Thracians)
+    102: (1325, 1326), # Pattiyodha Longbowman (Puru)
 }
+
+# Chronicles UU index -> the unlock card whose spec names the unit's forms.
+_CHRONICLES_UU_CARDS: dict[int, int] = {97: 447, 98: 448, 99: 449, 100: 450, 101: 452, 102: 453}
 
 # Display names for KM UU indices. Vanilla indices (0-38, 78-87) are creatable
 # units in our pipeline. KM-custom indices (39-77, 88+) are not creatable here,
@@ -334,6 +349,13 @@ _KM_UU_NAMES: dict[int, str] = {
     94: "Hearth Troop",
     95: "Jarl",
     96: "Jomsviking",
+    # Chronicles (Castle units)
+    97:  "Immortal",
+    98:  "Strategos",
+    99:  "Hippeus",
+    100: "Companion Cavalry",
+    101: "Rhomphaia Warrior",
+    102: "Pattiyodha Longbowman",
 }
 
 # ── Display names for build-log messages ─────────────────────────────────────
@@ -3809,6 +3831,9 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
 
     if bonus_id in _UNLOCK_UNIT_BONUSES:
         spec = _UNLOCK_UNIT_BONUSES[bonus_id]
+        if _CHRONICLES_UU_CARDS.get(get_km_uu_index(civ_def or {})) == bonus_id:
+            print(f"       {spec['name']}: already this civ's unique unit — card skipped")
+            return True
         seen: dict = {}
         allocated = [
             new_tid
@@ -6249,6 +6274,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     km_uu_make_avail_tech_id: int = -1
     km_uu_elite_tech_id:      int = -1
     km_uu_custom_unit_strings: list[dict] = []
+    km_uu_extra_tech_strings: list[dict] = []
     # Krepost-presence signal applies to both vanilla and custom KM UU paths:
     # bonus 93 ("Can build Krepost") maps to tech 695, which is deepcopied
     # per-civ by _apply_bonuses below.  tree[1] membership is a secondary
@@ -6293,6 +6319,15 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                     krepost_tl.unit_id = km_custom_uu.BUILDING_KREPOST
                     cre.train_locations.append(krepost_tl)
             print(f"       KM UU {km_uu_index} (vanilla): added Krepost train location to units {uu_id}, {elite_uu_id}")
+        if km_uu_index in _CHRONICLES_UU_CARDS:
+            # The Chronicles string table may not load in a normal match, so the
+            # unit, its alternate forms and its elite upgrade get our own
+            # strings — exactly what the unlock card does.
+            _ma, _el = _KM_UU_TECHS[km_uu_index]
+            _name_chronicles_units(
+                dat, civ_index, _UNLOCK_UNIT_BONUSES[_CHRONICLES_UU_CARDS[km_uu_index]],
+                {_ma: km_uu_make_avail_tech_id, _el: km_uu_elite_tech_id},
+                km_uu_extra_tech_strings, km_uu_custom_unit_strings)
         _own_renamed_uu_strings(dat, civ_index, civ_def, uu_id, elite_uu_id, km_uu_elite_tech_id)
     elif km_uu_is_custom:
         # Pool-based allocation (see CAMPAIGN_STRING_POOL docstring) for the
@@ -6448,6 +6483,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         _retarget_relic_attack_to_uu(dat, civ_index, bonus_results.get("bonus_tech_map", {}),
                                      uu_id, elite_uu_id)
     bonus_results["extra_unit_strings"].extend(km_uu_custom_unit_strings)
+    bonus_results.setdefault("extra_tech_strings", []).extend(km_uu_extra_tech_strings)
 
     # 7a. Player-composed bonus cards — one auto-fire tech each.
     bonus_results["custom_applied"] = _apply_custom_bonuses(
