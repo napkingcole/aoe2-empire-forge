@@ -86,6 +86,10 @@ check("farms are never offered population space or blast radius",
       not {"pop_space", "blast_radius"} & set(fm["group:farms"] + fm["building:50"]), fm["group:farms"])
 check("a Monasteries group covers the Monastery and the Fortified Church",
       {104, 1806} == set(cb.GROUPS["churches"]["buildings"]))
+fc = cb.allowed_attrs(dat, [("building:1806", "building", 1806), ("building:82", "building", 82)])
+check("the Fortified Church is not offered blast radius (it did not show in game); the Castle is",
+      "blast_radius" not in fc["building:1806"] + fc["group:churches"]
+      and "blast_radius" in fc["building:82"])
 check("a Wonder (no attack) is not offered blast radius",
       "blast_radius" not in fm["building:276"], fm["building:276"])
 

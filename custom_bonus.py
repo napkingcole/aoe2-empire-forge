@@ -350,6 +350,12 @@ _POP_STORAGE = 4
 _TARGETED_ONLY = 3                     # blast attack level: no splash
 
 
+# The Fortified Church reaches a custom civ only by UPGRADING the Monastery
+# (card 316), and a +5 blast card on it never showed on a built church in game
+# (2026-10-10) while the Castle's did.  Not offered until that is understood.
+_NO_BLAST_UNITS = frozenset({1806})
+
+
 def _splashes(u) -> bool:
     """Has a blast attack — even at width 0 (Warwolf widens the Trebuchet's).
 
@@ -357,7 +363,8 @@ def _splashes(u) -> bool:
     blast level, which read as a blast attack, so every Farm, Monastery and
     Wonder was offered a blast radius that could never do anything."""
     return (bool(u.type_50) and (u.type_50.blast_attack_level & 3) != _TARGETED_ONLY
-            and any(a.amount > 0 for a in u.type_50.attacks))
+            and any(a.amount > 0 for a in u.type_50.attacks)
+            and getattr(u, "id", -1) not in _NO_BLAST_UNITS)
 
 
 def pop_space_ok(u) -> bool:
