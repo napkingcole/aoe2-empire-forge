@@ -2833,7 +2833,10 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
           "names": {2388: "Pattiyodha Longbowman", 2389: "Elite Pattiyodha Longbowman"}},
     454: {"name": "Sannāhya",          "techs": (1327, 1328), "units": (2390, 2391),
           "chronicles": True, "elite_tech": (1328, "Elite Sannāhya"),
-          "names": {2390: "Sannāhya", 2391: "Elite Sannāhya"}},
+          "names": {2390: "Sannāhya", 2391: "Elite Sannāhya"},
+          # The Chronicles unit ships at 300/400 HP; the user's call (2026-10-10)
+          # is the Battle Elephant's 250/300 for normal games.
+          "hp": {2390: 250, 2391: 300}},
     # These two are GLOBAL techs (civ=-1) gated on Chronicles-only prerequisites,
     # so _allocate_tech would hand back the original untouched.  "rebuild" makes
     # civ-owned copies with standard prerequisites instead: {tech: requires},
@@ -3846,6 +3849,10 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             return True
         print(f"       {spec['name']} unlocked: {len(allocated)} techs allocated "
               f"{spec['techs']}→{tuple(allocated)}")
+        for uid, hp in spec.get("hp", {}).items():
+            unit = dat.civs[civ_index].units[uid]
+            if unit is not None:
+                unit.hit_points = hp
         if spec.get("names"):
             _name_chronicles_units(dat, civ_index, spec, seen,
                                    extra_strings, extra_unit_strings)

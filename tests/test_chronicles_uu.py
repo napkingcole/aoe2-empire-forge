@@ -136,6 +136,12 @@ u = dat.civs[1].units[_UNLOCK_UNIT_BONUSES[450]["units"][0]]
 check("a renamed Companion Cavalry is named 'Royal Guard'",
       s.get(u.language_dll_name) == "Royal Guard", s.get(u.language_dll_name))
 
+# The Sannahya card (Stable, stays a card): Battle Elephant HP, the user's call
+dat, s = build(civ(0, bonuses=(454,)))
+check("the Sannāhya has 250 HP and the Elite 300 (it ships at 300/400)",
+      (dat.civs[1].units[2390].hit_points, dat.civs[1].units[2391].hit_points) == (250, 300),
+      (dat.civs[1].units[2390].hit_points, dat.civs[1].units[2391].hit_points))
+
 print()
 if failures:
     print(f"{failures} check(s) FAILED")
