@@ -797,8 +797,10 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
 
             # uu_info was already resolved inside the log context above.
             uu_info = uu_info_resolved
-            uu_override_name = ((civ_def.get("unique_unit") or {}).get("name") or "").strip()
-            uu_override_desc = ((civ_def.get("unique_unit") or {}).get("description") or "").strip()
+            # _kv_text: a description typed over several lines split its strings
+            # line, and the game dropped the civ's name with it (Safavids, 2026-10-10).
+            uu_override_name = _kv_text(((civ_def.get("unique_unit") or {}).get("name") or "").strip())
+            uu_override_desc = _kv_text(((civ_def.get("unique_unit") or {}).get("description") or "").strip())
             # See build_all.py's identical block for why civilizations.json's own
             # UU metadata block (unique_unit_id/elite_unique_unit_id/
             # unique_unit_string_ids/unique_unit_upgrade_id) needs explicit
@@ -838,10 +840,13 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             # this door used to fall back to "<Alias> civilization" while the
             # wizard door showed the real tagline. KM imports are the reverse,
             # which is why both keys are read. One key, in normalize().
-            description   = civ_def.get("tagline") or civ_def.get("description", "")
+            # Player text goes into `ID "text"` lines: a newline or quote in it breaks
+            # the file (the wizard route already escaped these; this one did not).
+            description   = _kv_text(civ_def.get("tagline") or civ_def.get("description", "") or "")
+            alias_kv      = _kv_text(alias)
             civ_bonuses        = _bonuses_raw_normalized
             team_bonus_entries = _team_bonuses_raw_normalized
-            desc_parts = [f'{description} civilization' if description else f'{alias} civilization']
+            desc_parts = [f'{description} civilization' if description else f'{alias_kv} civilization']
             desc_parts.append(" \\n\\n")
             for entry in civ_bonuses:
                 if not isinstance(entry, list):
@@ -874,9 +879,9 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             full_desc = "".join(desc_parts)
 
             for lang in LANGUAGES:
-                string_lines[lang].append(f'{name_sid} "{alias}"')
+                string_lines[lang].append(f'{name_sid} "{alias_kv}"')
                 string_lines[lang].append(
-                    f'{name_sid + 80000} "Click to play as {alias}."')
+                    f'{name_sid + 80000} "Click to play as {alias_kv}."')
                 string_lines[lang].append(
                     f'{name_sid + 109879} "{full_desc}"')
 

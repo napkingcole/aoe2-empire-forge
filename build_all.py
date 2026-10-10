@@ -394,6 +394,46 @@ def _build_combined_data_zip(dat,
     return buf.getvalue()
 
 
+_KV_ENTRY = re.compile(r'^(\d+)\s+"(.*)"\s*$', re.S)
+
+
+def sanitize_kv_strings(content: str) -> tuple[str, list[int]]:
+    """The last line of defence for a key-value strings file: every entry `ID "text"`.
+
+    Each route escapes player text with _kv_text where it builds a line, but a
+    field that slips past (a multi-line UU description did, and the game then
+    ignored the civ's name too — the Safavids civ, 2026-10-10) breaks the file.
+    Here a line that doesn't start a new entry is taken as the previous entry's
+    text, rejoined with a literal \\n, and a quote inside the text is escaped.
+    Returns the content and the ids it had to repair, so the build log can name
+    the straggler instead of hiding it.
+    """
+    entries: list[str] = []
+    repaired: set[int] = set()
+    for raw in content.split("\n"):
+        if not raw.strip():
+            continue
+        if re.match(r'^\d+\s+"', raw) or not entries:
+            entries.append(raw)
+        else:
+            entries[-1] += "\\n" + raw
+            m = re.match(r"^(\d+)", entries[-1])
+            if m:
+                repaired.add(int(m.group(1)))
+    out = []
+    for e in entries:
+        m = _KV_ENTRY.match(e)
+        if not m:
+            out.append(e)
+            continue
+        sid, text = m.groups()
+        fixed = _kv_text(text)
+        if fixed != text:
+            repaired.add(int(sid))
+        out.append(f'{sid} "{fixed}"')
+    return "\n".join(out) + ("\n" if content.endswith("\n") else ""), sorted(repaired)
+
+
 def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                             button_pngs: dict[str, bytes],
                             combined_strings: dict[str, str],
@@ -446,6 +486,10 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                     icon_file.read_bytes(),
                 )
         for lang, content in combined_strings.items():
+            content, repaired = sanitize_kv_strings(content)
+            if repaired and lang == "en":
+                print(f"  WARNING: repaired unescaped text in string id(s) {repaired} — "
+                      "a newline or quote in a civ's text reached the strings file raw")
             zf.writestr(
                 f"resources/{lang}/strings/key-value/"
                 f"key-value-modded-strings-utf8.txt",
@@ -659,8 +703,10 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # Empire Forge file to a draft, so this function sees both civ_def
         # shapes and the KM slot only exists in one of them.
         _km_uu_idx = get_km_uu_index(civ_def)
-        uu_display = (uu_info["name"] if uu_info
-                      else _KM_UU_NAMES.get(_km_uu_idx, "Unique Unit"))
+        # Escaped once here: every use below is a strings line (the comparison
+        # with _KM_UU_NAMES is unaffected, since those names need no escaping).
+        uu_display = _kv_text(uu_info["name"] if uu_info
+                              else _KM_UU_NAMES.get(_km_uu_idx, "Unique Unit"))
         # Also look up the elite unit's dll_name for string writes.
         uu_elite_dll: int | None = None
         uu_elite_name: str | None = None
@@ -679,7 +725,10 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # `description`, so prefer tagline and keep description as the KM-import
         # fallback. This matches _draft_to_civ_def, which maps tagline ->
         # civ_def["description"]. One key, chosen in normalize(), is the fix.
-        description = civ_def.get("tagline") or civ_def.get("description", "")
+        # Player text goes into `ID "text"` lines: a newline or quote in it breaks
+        # the file (the wizard route already escaped these; this one did not).
+        description = _kv_text(civ_def.get("tagline") or civ_def.get("description", "") or "")
+        alias_kv = _kv_text(alias)
         civ_bonuses        = get_civ_bonuses(civ_def)
         team_bonus_entries = get_team_bonuses(civ_def)
 
@@ -688,7 +737,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # No trailing space before any other \n. No trailing \n before closing ".
         # Example: `civilization\n\n• Bonus 1\n• Bonus 2\n\n<b>Unique Unit:<b> \nUU
         # name\n\n<b>Unique Techs:<b> \n• UT 1\n• UT 2\n\n<b>Team Bonus:<b> \nTB"`.
-        desc_parts = [f'{description} civilization' if description else f'{alias} civilization']
+        desc_parts = [f'{description} civilization' if description else f'{alias_kv} civilization']
         desc_parts.append("\\n\\n")
         bullet_lines = []
         for entry in civ_bonuses:
@@ -744,10 +793,10 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # Strings: one line per civ per language (all langs get same English text).
         # Description string ID follows KM's offset: 120150 - 10271 = 109879 above name_sid.
         for lang in LANGUAGES:
-            string_lines[lang].append(f'{name_sid} "{alias}"')
+            string_lines[lang].append(f'{name_sid} "{alias_kv}"')
             string_lines[lang].extend(hero_lines)
             string_lines[lang].append(
-                f'{name_sid + 80000} "Click to play as {alias}."')
+                f'{name_sid + 80000} "Click to play as {alias_kv}."')
             string_lines[lang].append(
                 f'{name_sid + 109879} "{full_desc}"')
             # name_sid/desc_sid are two SEPARATE real existing-id pool slots

@@ -63,15 +63,40 @@ if dat_path is None:
 
 import build_all                                           # noqa: E402
 
+# Every route's strings pass through build_all.sanitize_kv_strings, which repairs
+# raw newlines and quotes.  Record what it repairs: a route test must still fail
+# when a route forgot _kv_text, or the safety net would hide the straggler.
+_REPAIRED: list[int] = []
+_real_sanitize = build_all.sanitize_kv_strings
+
+
+def _recording_sanitize(content):
+    out, repaired = _real_sanitize(content)
+    _REPAIRED.extend(repaired)
+    return out, repaired
+
+
+build_all.sanitize_kv_strings = _recording_sanitize
+
+
+def nothing_repaired(route: str) -> None:
+    check(f"[{route}] the route escaped every player text itself (safety net idle)",
+          not _REPAIRED, sorted(set(_REPAIRED))[:5])
+    _REPAIRED.clear()
+
 CIV = {
     "format": "empireforge_v2", "schema_version": 2,
-    "alias": "Route Probe", "tagline": "", "description": "",
+    "alias": 'Route "Probe"', "tagline": "Two\nlines", "description": "",
+    "share_description": "Shared\ntext",
     "architecture": 1, "language": 0, "wonder_model": -1, "castle_model": -1,
     "emblem": "", "monk_skin": None, "second_uu": None,
     # A named hero: its strings are pool ids, so a route that doesn't write them
     # shows campaign text — the CLI route did ("Prithviraj" / "Scots", 2026-10-09).
-    "hero_unit": {"base_unit_id": 1966, "name": "Probe Hero", "description": "Leads the probe"},
-    "unique_unit": {"km_idx": 0, "vanilla_id": None, "name": None, "description": None,
+    "hero_unit": {"base_unit_id": 1966, "name": "Probe Hero", "description": "Leads\nthe probe"},
+    # A UU description typed over several lines: a real newline written raw splits
+    # its strings line, and the web route did (the Safavids civ, 2026-10-10).
+    "unique_unit": {"km_idx": 0, "vanilla_id": None, "name": "Probe Unit",
+                    "description": "HP 70 (80)\nAT 16 (18)",
                     "overrides": {}, "advanced_flags": {}},
     "bonuses": [], "team_bonuses": [],
     "custom_bonuses": [{"target": {"type": "group", "id": "cavalry"},
@@ -102,17 +127,29 @@ with tempfile.TemporaryDirectory() as tmp:
               if n.endswith("key-value-modded-strings-utf8.txt") and "/en/" in n)
     lines = uz.read(sp).decode("utf-8").splitlines()
     texts = [m.group(1) for ln in lines if (m := re.match(r'^\d+\s+"(.*)"$', ln.strip()))]
+    bl_lines = lines
 
 
 
-def strings_of(zip_path: Path) -> list[str]:
+def raw_lines_of(zip_path: Path) -> list[str]:
     outer = zipfile.ZipFile(zip_path)
     ui = next(n for n in outer.namelist() if n.endswith("-ui.zip"))
     uz = zipfile.ZipFile(io.BytesIO(outer.read(ui)))
     sp = next(n for n in uz.namelist()
               if n.endswith("key-value-modded-strings-utf8.txt") and "/en/" in n)
-    return [m.group(1) for ln in uz.read(sp).decode("utf-8").splitlines()
+    return uz.read(sp).decode("utf-8").splitlines()
+
+
+def strings_of(zip_path: Path) -> list[str]:
+    return [m.group(1) for ln in raw_lines_of(zip_path)
             if (m := re.match(r'^\d+\s+"(.*)"$', ln.strip()))]
+
+
+def well_formed(route: str, lines: list[str]) -> None:
+    """Every line is `ID "text"`: a stray line means user text broke the file."""
+    bad = [ln for ln in lines if ln.strip() and not re.match(r'^\d+\s+".*"$', ln.strip())]
+    check(f"[{route}] every strings line is ID \"text\" (multi-line UU description escaped)",
+          not bad, bad[:3])
 
 
 def route_checks(route: str, texts: list[str]) -> None:
@@ -132,6 +169,8 @@ def route_checks(route: str, texts: list[str]) -> None:
 
 
 route_checks("build_all", texts)
+well_formed("build_all", bl_lines)
+nothing_repaired("build_all")
 
 # ── The web Build Mod page (app._run_build_job) — a third copy of the writer ──
 # Fixing the two above left this one listing bare names; reported in-game.
@@ -150,6 +189,8 @@ with tempfile.TemporaryDirectory() as tmp:
     zips = list(sd.glob("*.zip"))
     if zips:
         route_checks("web", strings_of(zips[0]))
+        well_formed("web", raw_lines_of(zips[0]))
+    nothing_repaired("web")
 
 # ── The Builder's Build button (wizard_build.build_wizard_mod) ────────────────
 from civ_schema import to_draft                            # noqa: E402
@@ -159,8 +200,41 @@ with tempfile.TemporaryDirectory() as tmp:
         zbytes = build_wizard_mod(to_draft(json.loads(json.dumps(CIV))), str(dat_path), "Britons")
     (Path(tmp) / "w.zip").write_bytes(zbytes)
     wiz = strings_of(Path(tmp) / "w.zip")
+    well_formed("wizard", raw_lines_of(Path(tmp) / "w.zip"))
+    nothing_repaired("wizard")
     check("[wizard] the hero's name and 'Create' label are written",
           "Probe Hero" in wiz and "Create Probe Hero" in wiz, [t for t in wiz if "Hero" in t][:4])
+
+# ── Every free-text field, hostile: a newline and a quote in each, all routes ──
+# The sweep the Safavids bug asked for: any field a route writes without
+# _kv_text shows up as a repair, whichever route and whichever field it is.
+NASTY = json.loads(json.dumps(CIV))
+_t = 'x "q"\ny'
+NASTY.update(alias="Nasty " + _t, tagline=_t, description=_t)
+NASTY["unique_unit"].update(name="UU " + _t, description=_t)
+for k in ("castle_ut", "imperial_ut"):
+    NASTY[k].update(name=k + " " + _t, description=_t)
+NASTY["hero_unit"].update(name="Hero " + _t, description=_t)
+_REPAIRED.clear()
+with tempfile.TemporaryDirectory() as tmp:
+    tmp = Path(tmp)
+    (tmp / "probe.json").write_text(json.dumps(NASTY), encoding="utf-8")
+    (tmp / "cfg.json").write_text(json.dumps(
+        {"mod_name": "Nasty", "civs": [{"json": str(tmp / "probe.json"), "replace": "Britons"}]}), encoding="utf-8")
+    with contextlib.redirect_stdout(io.StringIO()):
+        build_all.build_mod(tmp / "cfg.json", dat_path, tmp / "out.zip")
+    nothing_repaired("build_all, every text field")
+    webapp._BUILD_JOBS["nasty"] = {"lines": [], "done": False, "error": None}
+    with contextlib.redirect_stdout(io.StringIO()):
+        webapp._run_build_job("nasty", tmp, str(dat_path),
+                              {"probe.json": {"filename": "probe.json", "name": "Nasty"}},
+                              ["probe.json"], {"probe.json": "Britons"}, "Nasty")
+    check("[web, every text field] the build job finished without error",
+          not webapp._BUILD_JOBS["nasty"].get("error"), webapp._BUILD_JOBS["nasty"].get("error"))
+    nothing_repaired("web, every text field")
+    with contextlib.redirect_stdout(io.StringIO()):
+        build_wizard_mod(to_draft(json.loads(json.dumps(NASTY))), str(dat_path), "Britons")
+    nothing_repaired("wizard, every text field")
 
 print()
 if failures:
