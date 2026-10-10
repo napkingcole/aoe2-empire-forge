@@ -24,13 +24,11 @@ a = Analysis(
         ('static', 'static'),
         ('CivTechTrees', 'CivTechTrees'),
         ('uniticons', 'uniticons'),
-        ('ai_stubs', 'ai_stubs'),
         ('vanilla/aoe2techtree_strings', 'vanilla/aoe2techtree_strings'),
         ('bonus_catalog_raw.json', '.'),
         ('bonus_names.json', '.'),
         ('team_bonus_names.json', '.'),
         ('civilizations.json', '.'),
-        ('aiconfig.json', '.'),
         ('futuravailableunits.json', '.'),
         # Names every unit-voice clip in the game's Wwise banks.  The clips
         # themselves are read from the PLAYER's install at build time

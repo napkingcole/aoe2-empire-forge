@@ -128,6 +128,7 @@ with tempfile.TemporaryDirectory() as tmp:
     lines = uz.read(sp).decode("utf-8").splitlines()
     texts = [m.group(1) for ln in lines if (m := re.match(r'^\d+\s+"(.*)"$', ln.strip()))]
     bl_lines = lines
+    ai_files = [n for n in uz.namelist() if n.startswith("resources/_common/ai/")]
 
 
 
@@ -171,6 +172,10 @@ def route_checks(route: str, texts: list[str]) -> None:
 route_checks("build_all", texts)
 well_formed("build_all", bl_lines)
 nothing_repaired("build_all")
+# Only this mod's civ gets an AI entry — mods once shipped a whole folder of
+# stubs and an aiconfig.json from the Unhinged Empires mod ("Golden Bois", ...).
+check("[build_all] the UI mod carries AI files for its own civ only",
+      ai_files and all("Route" in n for n in ai_files), ai_files[:5])
 
 # ── The web Build Mod page (app._run_build_job) — a third copy of the writer ──
 # Fixing the two above left this one listing bare names; reported in-game.

@@ -9,7 +9,7 @@ Usage:
 
 Config format (see wololo_warlords_config.json for example):
     {
-      "mod_name": "Wololo Warlords",
+      "mod_name": "My Civs",
       "prefix":   "wololo_warlords",     // output zip prefix (optional)
       "civs": [
         { "json": "my_civs/foo.json", "replace": "celts" },
@@ -453,20 +453,10 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
         zf.writestr("info.json", info_json)
         for path, data in ai_stubs.items():
             zf.writestr(path, data)
-        aiconfig_path = Path(__file__).parent / "aiconfig.json"
-        if aiconfig_path.exists():
-            zf.writestr("resources/_common/ai/aiconfig.json",
-                        aiconfig_path.read_bytes())
-        ai_stubs_folder = Path(__file__).parent / "ai_stubs"
-        if ai_stubs_folder.exists():
-            written_paths = set(ai_stubs.keys())
-            for stub_file in sorted(ai_stubs_folder.iterdir()):
-                if stub_file.suffix not in (".ai", ".per"):
-                    continue
-                dest = f"resources/_common/ai/{stub_file.name}"
-                if dest in written_paths:
-                    continue
-                zf.writestr(dest, stub_file.read_bytes())
+        # Only the mod's own civs get an AI entry (ai_stubs, one per civ).  Every
+        # mod used to also ship a repo folder of stubs and a Krakenmeister
+        # aiconfig.json, both left over from the Unhinged Empires mod, so its
+        # civs ("Golden Bois", ...) showed in every player's AI list.
         for fname, png in button_pngs.items():
             zf.writestr(
                 f"resources/_common/wpfg/resources/civ_techtree/{fname}", png)
