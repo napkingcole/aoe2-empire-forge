@@ -5846,8 +5846,10 @@ _EARLY_ECO_BONUS = 105
 _EARLY_ECO_SHIM_TECHS = (
     758,  # Feudal-tier eco techs   (Wheelbarrow, Gold/Stone Mining, Horse Collar,
           #                          Double-Bit Axe, Fishing Lines)
-    760,  # Imperial-tier           (Crop Rotation)
+    759,  # Castle-tier             (Caravan)
+    760,  # Imperial-tier           (Guilds)
     761,  # Heavy Plow
+    766,  # Crop Rotation           (issue #80: missing, so it stayed Imperial)
     762,  # Bow Saw
     763,  # Hand Cart
     764,  # Gold Shaft Mining
