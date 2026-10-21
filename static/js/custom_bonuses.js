@@ -189,7 +189,7 @@ function _cbEffectText(e, target) {
   const vals = _cbVals(e).filter(v => v && !isNaN(v));
   if (!a || !vals.length) return "";
   const v = vals.at(-1);                               // faster/slower follows where it ends up
-  const pct = e.op === "mul" || e.attr === "cost" ? "%" : "";
+  const pct = e.op === "mul" || e.attr === "cost" || a.pct ? "%" : "";
   const signed = u => vals.map(x => `${x > 0 ? "+" : "-"}${_cbNum(Math.abs(x))}${u}`).join("/");
   const bare   = u => vals.map(x => `${_cbNum(Math.abs(x))}${u}`).join("/");
   let text;
@@ -287,7 +287,7 @@ const _CB_COST_ATTRS   = new Set(["cost", "tech_cost", "free"]);
 const _CB_SPEED_ATTRS  = new Set(["speed", "attack_speed", "train_speed", "build_speed",
                                   "research_speed", "work_rate", "instant"]);
 const _CB_COMBAT_ATTRS = new Set(["hp", "melee_armor", "pierce_armor", "melee_attack", "pierce_attack",
-                                  "range", "los", "min_range", "no_min_range", "blast_radius", "regen"]);
+                                  "range", "los", "min_range", "no_min_range", "blast_radius", "accuracy", "regen"]);
 const _CB_DOCK = 45;
 
 function _cbUnitEntry(id) { return (_cbCatalog?.units || []).find(u => u.id === id); }
@@ -369,7 +369,7 @@ function _cbHeadline(e, target) {
     return { heading: signed(pct), stat: res === "all" ? "cost" : `${res} cost` };
   }
   const label = e.attr === "work_rate" && target?.type === "job" ? (_cbJob(target.id)?.work || a.label) : a.label;
-  return { heading: signed(e.op === "mul" ? "%" : ""), stat: label };
+  return { heading: signed(e.op === "mul" || a.pct ? "%" : ""), stat: label };
 }
 
 // The card's "when" line: the age it waits for and/or the building — "" for a
