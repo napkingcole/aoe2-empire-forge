@@ -1949,7 +1949,8 @@ function _wireBonusGridEvents(grid, toggleFn, getDraftEntry) {
 
 let _bonusCatalog      = [];   // [{id, label}]
 let _teamCatalog       = [];
-let _utOverrides       = { castle: {}, imperial: {} };
+let _retiredCards      = { civ: {}, team: {} };  // {id: {label, successor}}, not offered
+let _utOverrides      = { castle: {}, imperial: {} };
 let _utCards           = { castle: {}, imperial: {} };  // {tier: {id: {icon, category}}}
 let _bonusCardNodes    = new Map();  // id → DOM element
 let _teamCardNodes     = new Map();  // id → DOM element
@@ -2027,6 +2028,7 @@ async function loadBonusCatalog() {
     const data = await catalogRes.json();
     _bonusCatalog = data.civ;
     _teamCatalog  = data.team;
+    _retiredCards = data.retired || { civ: {}, team: {} };
     _cardOverrides = {
       ...await cardsRes.json(),
       ...await teamCardsRes.json(),
@@ -2224,6 +2226,44 @@ function _wireGridEvents(container, nodeMap, toggleFn, getDraftEntry, parseId) {
   });
 }
 
+// Cards an older civ still carries that the picker no longer offers (issue
+// #78): withdrawn, superseded, or inert on this DAT.  The grid is drawn from
+// the catalog, so without this they were invisible but stayed in the file.
+// Superseded ones still build, so nothing is removed until the player says so.
+function _renderRetiredNotice(grid, key, catalog, isDerived, rerender) {
+  if (!catalog.length) return;           // catalog failed to load: everything would look retired
+  // Not offered, or offered but hidden by its card override (the server lists both).
+  const known = key === 'bonuses' ? _retiredCards.civ : _retiredCards.team;
+  const offered = new Set(catalog.map(c => c.id));
+  const retired = (draft[key] || []).filter(b =>
+    !isDerived(b.id) && (!offered.has(b.id) || String(b.id) in known));
+  if (!retired.length) return;
+  const remove = ids => {
+    draft[key] = (draft[key] || []).filter(b => !ids.includes(b.id));
+    saveDraft();
+    rerender();
+  };
+  const box = document.createElement('div');
+  box.className = 'alert alert-warning py-2 small mb-3 retired-cards';
+  box.innerHTML = `<div class="mb-1"><i class="fa-solid fa-box-archive"></i>
+    This civ carries ${retired.length === 1 ? 'a card' : `${retired.length} cards`}
+    Empire Forge no longer offers. Click one to remove it.
+    <button type="button" class="btn btn-sm btn-link p-0 ms-1 align-baseline retired-all">Remove all</button></div>`;
+  for (const b of retired) {
+    const r = known[String(b.id)] || {};
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'btn btn-sm btn-outline-secondary me-1 mb-1';
+    chip.innerHTML = `${_esc(r.label || `Bonus #${b.id}`)} <i class="fa-solid fa-xmark"></i>`;
+    chip.title = r.successor === 'the tech tree' ? 'Now chosen in the tech tree'
+               : r.successor ? `Replaced by: ${r.successor}` : 'No longer offered';
+    chip.addEventListener('click', () => remove([b.id]));
+    box.appendChild(chip);
+  }
+  box.querySelector('.retired-all').addEventListener('click', () => remove(retired.map(b => b.id)));
+  grid.prepend(box);
+}
+
 function _buildGridSkeleton(grid) {
   grid.innerHTML = '';
   const selSection   = document.createElement('div');
@@ -2259,6 +2299,7 @@ function renderBonusGrid() {
   _wireGridEvents(grid, _bonusCardNodes, toggleCivBonus,
     id => (draft.bonuses || []).find(b => b.id === id),
     idStr => parseInt(idStr, 10));
+  _renderRetiredNotice(grid, 'bonuses', _bonusCatalog, _isUnlockBonus, renderBonusGrid);
 
   emptyMsg.style.display = anyVisible ? 'none' : '';
   _updateBonusDivider(selSection, divider);
@@ -2666,6 +2707,7 @@ function renderTeamBonusGrid() {
   _wireGridEvents(grid, _teamCardNodes, toggleTeamBonus,
     id => (draft.team_bonuses || []).find(b => b.id === id),
     idStr => parseInt(idStr.replace(/^T/, ''), 10));
+  _renderRetiredNotice(grid, 'team_bonuses', _teamCatalog, () => false, renderTeamBonusGrid);
 
   emptyMsg.style.display = anyVisible ? 'none' : '';
   _updateBonusDivider(selSection, divider);

@@ -1894,7 +1894,31 @@ def api_builder_bonuses_catalog():
         for k, v in sorted(team_names.items(), key=lambda x: int(x[0]))
         if int(k) not in unsupported_team_ids
     ]
-    return jsonify({"civ": civ_bonuses, "team": team_bonuses})
+    # Everything hidden above, named, so the wizard can show an older civ the
+    # cards it still carries and let the player remove them (issue #78) —
+    # otherwise they are invisible in the grid but still in the file.
+    # A card can also stay in the catalog but be hidden by its card override
+    # (bonus_cards.json); its note says where the choice went, if anywhere.
+    with open(Path(__file__).parent / "static/data/bonus_cards.json", encoding="utf-8") as f:
+        cards = json.load(f)
+
+    def _successor(k: str) -> str | None:
+        if (sup := DEPRECATED_BONUSES.get(int(k))) is not None:
+            return names.get(str(sup))
+        note = (cards.get(k) or {}).get("_note", "")
+        if m := re.search(r"Superseded by bonus (\d+)", note):
+            return names.get(m.group(1))
+        return "the tech tree" if "tech tree" in note else None
+
+    card_hidden = {int(k) for k, v in cards.items()
+                   if isinstance(v, dict) and (v.get("hidden") or v.get("type") == "hidden")}
+    retired = {
+        "civ": {k: {"label": v, "successor": _successor(k)}
+                for k, v in names.items() if int(k) in hidden_ids | card_hidden},
+        "team": {k: {"label": v} for k, v in team_names.items()
+                 if int(k) in unsupported_team_ids},
+    }
+    return jsonify({"civ": civ_bonuses, "team": team_bonuses, "retired": retired})
 
 
 def _unit_stats_block(u) -> dict:

@@ -76,6 +76,7 @@ else
     run "UT enable not misread as UU" "$PY" tests/test_ut_enable_misread.py
     run "Ambuscade: UU at the Archery Range" "$PY" tests/test_ambuscade.py
     run "bonus 105: every eco upgrade one age earlier" "$PY" tests/test_early_eco_shims.py
+    run "retired cards are listed for removal (#78)" "$PY" tests/test_retired_cards.py
     run "Thracian bonuses 458/459"  "$PY" tests/test_thracian_bonuses.py
     run "KM import tree gaps"     "$PY" tests/test_km_import_gaps.py
     run "elephant bonuses"        "$PY" tests/test_elephant_bonuses.py
