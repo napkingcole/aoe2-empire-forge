@@ -126,6 +126,8 @@ _UNIQUE_CASTLE_STRINGS = [
     "Clerical Recruitment (Monks +1 conversion range; train +33% faster)",
     "Vendel Legacy (Knight-line deals trample damage)",
     "Hamask (Infantry deal more damage as they lose HP)",
+    # Ours (issue #81): Marauders pointed at the Archery Range.
+    "Ambuscade (create Unique Unit at Archery Ranges)",
 ]
 
 _UNIQUE_IMP_STRINGS = [

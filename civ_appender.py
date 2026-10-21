@@ -6915,19 +6915,23 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     #     UU_SUBSTITUTION_TYPES / _build_ut_effect_cmds) now that this civ's
     #     own elite UU id is fully resolved across all 3 possible paths above.
 
-    # hot_key_id for button 4 (R key) in each target building.
+    # (button, hot_key_id) the UU takes in each target building.
     # Verified against vanilla units: Huskarl → Barracks 16748, Tarkan → Stable 16741.
-    _ANARCHY_SLOT_HOTKEYS: dict[int, int] = {
-        12:  16748,   # Barracks btn4 (R)
-        101: 16741,   # Stable btn4 (R)
+    # Archery Range 4 is the Hand Cannoneer's, so Ambuscade uses 10 (G), empty
+    # for every civ; 16176 is grid position 10's hotkey (see _grid_hotkeys).
+    _ANARCHY_SLOTS: dict[int, tuple[int, int]] = {
+        12:  (4, 16748),    # Barracks btn4 (R)
+        101: (4, 16741),    # Stable btn4 (R)
+        87:  (10, 16176),   # Archery Range btn10 (G)
     }
 
     def _ensure_anarchy_train_slot(uid: int, target_building: int = 12) -> None:
-        """Add a (-1, button=4) train_location to the civ's unit copy so the
-        unit appears at button 4 (R key) at whatever building attribute 42
-        points to after Anarchy/Marauders fires.  Without this slot the engine
-        falls back to button 1, overwriting the militia/cavalry line button.
-        target_building is the EC_SET c=42 d value (e.g. 12=Barracks, 101=Stable)."""
+        """Add a (-1, button) train_location to the civ's unit copy so the unit
+        appears at its _ANARCHY_SLOTS button at whatever building attribute 42
+        points to after Anarchy/Marauders/Ambuscade fires.  Without this slot
+        the engine falls back to button 1, overwriting the militia/cavalry line
+        button.  target_building is the EC_SET c=42 d value (e.g. 12=Barracks,
+        101=Stable, 87=Archery Range)."""
         if uid < 0 or uid >= len(dat.civs[civ_index].units):
             return
         u = dat.civs[civ_index].units[uid]
@@ -6937,10 +6941,10 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         tls = getattr(cre, 'train_locations', [])
         if not tls or any(tl.unit_id == -1 for tl in tls):
             return  # already has dynamic slot or no train_locations
-        hot_key = _ANARCHY_SLOT_HOTKEYS.get(target_building, 16748)
+        button, hot_key = _ANARCHY_SLOTS.get(target_building, (4, 16748))
         dyn = deepcopy(tls[0])
         dyn.unit_id    = -1
-        dyn.button_id  = 4
+        dyn.button_id  = button
         dyn.hot_key_id = hot_key
         # Insert at index 1 so the -1 placeholder sits right after the Castle
         # slot (matching Huskarl/Tarkan's vanilla layout). EC_SET c=42 only
@@ -7181,6 +7185,18 @@ _KM_CASTLE_UT_TECHS: dict[int, int] = {
     65: 1491,   # Clerical Recruitment (Saxons)
     66: 1473,   # Vendel Legacy (Varangians)
     67: 1484,   # Hamask (Danes) — resource 33, EffectFunction 30
+    # Ours, not DE's: Ambuscade, "create Unique Unit at Archery Ranges" (issue
+    # #81).  No vanilla tech does this, so it is Marauders with the building
+    # rewritten — see _UT_SOURCE_REWRITES.
+    68: 483,
+}
+
+# Presets that copy a vanilla tech but write a different value into one of its
+# EC_SET attributes: (tier, preset) -> {attribute: new d}.  Ambuscade is
+# Marauders pointed at the Archery Range (attr 42 = the train location's
+# building) instead of the Stable.
+_UT_SOURCE_REWRITES: dict[tuple[str, int], dict[int, float]] = {
+    ("castle", 68): {42: 87.0},
 }
 
 _KM_IMP_UT_TECHS: dict[int, int] = {
@@ -7368,6 +7384,14 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         if eid < 0 or eid >= len(dat.effects):
             continue
         all_cmds = dat.effects[eid].effect_commands
+        rewrite = _UT_SOURCE_REWRITES.get((tier, int(bonus_id)))
+        if rewrite:
+            # Copies: the commands below are appended as-is, and the originals
+            # still belong to the vanilla tech.
+            all_cmds = [deepcopy(ec) for ec in all_cmds]
+            for ec in all_cmds:
+                if ec.type == EC_SET and int(ec.c) in rewrite:
+                    ec.d = rewrite[int(ec.c)]
 
         # For civ-specific techs (e.g. Anarchy, Marauders) that contain an
         # EC_ENABLE(b=1) command targeting their own UU: identify the source
