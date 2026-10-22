@@ -85,6 +85,18 @@ if find_unit_icon(dat_path, units[432].icon_id) is None:
     print("  skip  this DAT is not inside a game install (no widgetui icons)")
 else:
     check("every hero's icon is in the game", not missing, missing[:8])
+    # The alpha channel is the player-colour mask, not transparency: Bohemond's
+    # helmet and tabard came out as holes.  Opaque, with the mask painted blue.
+    import numpy as np                                            # noqa: E402
+    from PIL import Image                                         # noqa: E402
+    import game_art                                               # noqa: E402
+    src = find_unit_icon(dat_path, units[1681].icon_id)
+    mask = np.asarray(Image.open(src).convert("RGBA"))[..., 3] < 128
+    out = np.asarray(game_art.icon_rgb(src), dtype=int)
+    check("icons are opaque RGB", game_art.icon_rgb(src).mode == "RGB")
+    check("Bohemond's player-colour areas are blue",
+          mask.any() and (out[mask][:, 2] > out[mask][:, 0] + 40).mean() > 0.9,
+          f"{mask.sum()} masked pixels")
 
 print("\nPASS" if not failures else f"\n{failures} FAILED")
 sys.exit(1 if failures else 0)

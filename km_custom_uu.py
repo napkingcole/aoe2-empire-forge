@@ -712,13 +712,23 @@ SCENARIO_UUS: dict[int, tuple[str, int, int | None]] = {
 # median over its 65 unique units is ~1,500 resources and 45 s.
 SCENARIO_ELITE_TECH = {"cost": (800, 0, 0, 700), "time": 45}
 
+# Costs where the game's own won't do (the user's call, 2026-10-22): the Cobra
+# Car's is population only, the Bandit's 300 food for a Militia-like unit.
+#   index: (food, wood, stone, gold), for both tiers
+SCENARIO_COSTS: dict[int, tuple[int, int, int, int]] = {
+    110: (100, 0, 0, 0),     # Bandit
+    115: (200, 0, 0, 200),   # Cobra Car — "very powerful"
+}
+
 for _idx, (_name, _base, _elite) in SCENARIO_UUS.items():
+    _cost = SCENARIO_COSTS.get(_idx)
     PRESETS[_idx] = {
         "name": _name, "base_unit_id": _base, "elite_unit_id": _elite,
         "mode": "scenario", "elite_tech": SCENARIO_ELITE_TECH,
         # Everything below is KM's hand-tuning, which a scenario unit has none
         # of: the unit's own values stand.
-        "unit_cost": None, "post_cost": [], "unit_train_time": (None, None),
+        "unit_cost": {"mode": "full", "uu": _cost, "elite": _cost} if _cost else None,
+        "post_cost": [], "unit_train_time": (None, None),
         "hp": (None, None), "speed": (None, None),
         "attacks": (None, None), "armors": (None, None),
         "displayed_attack": (None, None), "displayed_melee_armor": (None, None),
@@ -907,17 +917,18 @@ def _apply_unit_cost(unit, cost_spec: dict | None, tier: str) -> None:
     rc = unit.creatable.resource_costs
     if cost_spec["mode"] == "full":
         food, wood, stone, gold = cost_spec[tier]
-        slot = 0
-        for res_type, amount in zip(RES_SLOTS, (food, wood, stone, gold)):
-            if amount > 0:
-                rc[slot].type = res_type
-                rc[slot].amount = amount
-                rc[slot].flag = 1
-                slot += 1
-        for i in range(slot, 3):
-            rc[i].type = -1
-            rc[i].amount = 0
-            rc[i].flag = 0
+        # A unit has exactly 3 cost slots, and one is usually population (type
+        # 4, flag 0) — CLAUDE.md quirk 14.  This used to blank every slot after
+        # the resources it wrote, so the 28 presets with a full cost (Gendarme,
+        # Hetaireia, …) trained for no population.  Keep the non-spendable
+        # entries; spendables fill the slots that are left.
+        keep = [(c.type, c.amount, c.flag) for c in rc if c.type >= 0 and c.type not in RES_SLOTS]
+        spend = [(t, a, 1) for t, a in zip(RES_SLOTS, (food, wood, stone, gold)) if a > 0]
+        entries = (spend[:3 - len(keep)] + keep + [(-1, 0, 0)] * 3)[:3]
+        for slot, (res_type, amount, flag) in enumerate(entries):
+            rc[slot].type = res_type
+            rc[slot].amount = amount
+            rc[slot].flag = flag
     elif cost_spec["mode"] == "amount":
         for slot_idx, amount in cost_spec[tier]:
             rc[slot_idx].amount = amount
@@ -926,16 +937,26 @@ def _apply_unit_cost(unit, cost_spec: dict | None, tier: str) -> None:
 def _apply_post_cost(uu_unit, elite_unit, post_cost: list) -> None:
     for tier, slot, type_, amount, flag in post_cost:
         unit = uu_unit if tier == "uu" else elite_unit
-        rc = unit.creatable.resource_costs[slot]
+        costs = unit.creatable.resource_costs
+        # KM's slot numbers assumed population was gone (see _apply_unit_cost);
+        # never overwrite it — take the next empty slot, or skip.
+        if costs[slot].type >= 0 and costs[slot].type not in RES_SLOTS:
+            slot = next((i for i, c in enumerate(costs) if c.type < 0), None)
+            if slot is None:
+                continue
+        rc = costs[slot]
         rc.type, rc.amount, rc.flag = type_, amount, flag
 
 
 def _apply_preset_stats(uu_unit, elite_unit, preset: dict) -> None:
     if preset["mode"] == "scenario":
         # The UU is the game's unit as it stands; the Elite is the game's own
-        # (cloned in append_km_custom_uu) or generated.
+        # (cloned in append_km_custom_uu) or generated.  A SCENARIO_COSTS cost
+        # replaces the game's on both.
         if preset.get("elite_unit_id") is None:
             scenario_elite(elite_unit)
+        _apply_unit_cost(uu_unit, preset["unit_cost"], "uu")
+        _apply_unit_cost(elite_unit, preset["unit_cost"], "elite")
         return
     hp = preset["hp"]
     if hp[0] is not None:

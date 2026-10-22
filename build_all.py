@@ -494,7 +494,7 @@ def _game_icon_pngs(icon_ids: set[int], dat_path) -> dict[str, bytes]:
     """{file name: PNG} for each icon id that has no PNG yet — not in our
     uniticons/ and not in the game's own wpfg folder — made from the game's
     DDS for it.  Ids the game has no picture for are skipped."""
-    from PIL import Image
+    import game_art
     from dat_reader import find_unit_icon
     if not icon_ids or not dat_path:
         return {}
@@ -509,7 +509,9 @@ def _game_icon_pngs(icon_ids: set[int], dat_path) -> dict[str, bytes]:
         if src is None:
             continue
         buf = io.BytesIO()
-        Image.open(src).convert("RGBA").save(buf, "PNG", optimize=True)
+        # Opaque, like the game's own PNGs: the DDS alpha is the player-colour
+        # mask, painted Player 1 Blue (game_art.icon_rgb).
+        game_art.icon_rgb(src).save(buf, "PNG", optimize=True)
         out[name] = buf.getvalue()
     return out
 

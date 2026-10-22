@@ -1424,6 +1424,11 @@ img.card-main-image {
   color: #000;
   border: 1px solid oklch(from #d0e00e l c h / 0.5);
 }
+.uu-badge-scenario {
+  background: #2e7d5b;
+  color: #fff;
+  border: 1px solid oklch(from #2e7d5b l c h / 0.5);
+}
 .uu-badge-chronicles {
   background: var(--cat-chronicles);
   color: #fff;

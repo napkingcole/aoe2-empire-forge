@@ -3394,7 +3394,7 @@ function _getUUPopup() {
 
 function _buildUUPopupHTML(unit) {
   const s = unit.stats;
-  const badge = unit.chronicles ? "Chronicles" : unit.vanilla ? "Vanilla" : "Custom";
+  const badge = unit.chronicles ? "Chronicles" : unit.scenario ? "Scenario" : unit.vanilla ? "Vanilla" : "Custom";
 
   // Stats not loaded yet — show a loading indicator if we're still fetching
   if (!s) {
@@ -3495,7 +3495,8 @@ function renderUUGrid() {
   let items = _uuCatalog;
   if (typeFilter === "vanilla")    items = items.filter(u => u.vanilla && !u.chronicles);
   if (typeFilter === "chronicles") items = items.filter(u => u.chronicles);
-  if (typeFilter === "custom")     items = items.filter(u => !u.vanilla);
+  if (typeFilter === "scenario")   items = items.filter(u => u.scenario);
+  if (typeFilter === "custom")     items = items.filter(u => !u.vanilla && !u.scenario);
   if (query) items = items.filter(u => u.name.toLowerCase().includes(query));
 
   if (!items.length) {
@@ -3508,6 +3509,8 @@ function renderUUGrid() {
     const iconSrc = u.icon || UU_PLACEHOLDER;
     const badge   = u.chronicles
       ? `<span class="uu-badge uu-badge-chronicles" title="Chronicles unit">Ch</span>`
+      : u.scenario
+      ? `<span class="uu-badge uu-badge-scenario" title="Scenario unit">S</span>`
       : u.vanilla
       ? `<span class="uu-badge uu-badge-vanilla">V</span>`
       : `<span class="uu-badge uu-badge-custom">C</span>`;

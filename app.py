@@ -79,7 +79,7 @@ _DAT_COSTS_CACHE: dict[str, dict] = {}
 _UU_STATS_CACHE: dict[str, dict] = {}
 
 # Bump this when _UU_TRAITS changes so stale disk caches are automatically invalidated.
-_UU_STATS_DISK_VERSION = 4  # bumped: scenario units (km_custom_uu.SCENARIO_UUS)
+_UU_STATS_DISK_VERSION = 5  # bumped: scenario units' own costs (SCENARIO_COSTS)
 
 def _cache_dir() -> Path:
     """Per-user, so it survives restarts: next to the code it lands in the
@@ -2027,10 +2027,9 @@ def _build_all_uu_stats(dat_path: str) -> dict[int, dict]:
             try:
                 from copy import deepcopy
                 units = dat.civs[0].units
-                bu = units[p["base_unit_id"]]
+                bu = deepcopy(units[p["base_unit_id"]])
                 eu = deepcopy(units[p.get("elite_unit_id") or p["base_unit_id"]])
-                if p.get("elite_unit_id") is None:
-                    kcu.scenario_elite(eu)
+                kcu._apply_preset_stats(bu, eu, p)     # the build's own step
                 cost = " ".join(f"{int(c.amount)}{RES[c.type]}" for c in bu.creatable.resource_costs
                                 if c.type in RES and c.amount > 0)
                 out[km_idx] = {
@@ -2568,7 +2567,7 @@ def api_unit_icon(unit_id: int):
     Nothing is bundled: the picture is the one the game shows on the unit's
     button (its `icon_id`), so a DLC unit has one the day it ships.  404 when
     the game or the icon isn't found; the page falls back to its placeholder."""
-    from PIL import Image
+    import game_art
     from dat_reader import find_unit_icon
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path:
@@ -2578,14 +2577,16 @@ def api_unit_icon(unit_id: int):
         return ("", 404)
     icon_id = units[unit_id].icon_id
     game = hashlib.md5(str(Path(dat_path).resolve()).encode()).hexdigest()[:10]
-    cached = _cache_dir() / "icons" / game / f"{icon_id}.webp"
+    # Folder renamed whenever the conversion changes, so old copies are not served.
+    cached = _cache_dir() / "icons-blue" / game / f"{icon_id}.webp"
     if not cached.exists():
         src = find_unit_icon(dat_path, icon_id)
         if src is None:
             return ("", 404)
         cached.parent.mkdir(parents=True, exist_ok=True)
         tmp = cached.with_suffix(".tmp")
-        Image.open(src).convert("RGBA").save(tmp, "WEBP", quality=85)
+        # The alpha channel is the player-colour mask: painted Player 1 Blue.
+        game_art.icon_rgb(src).save(tmp, "WEBP", quality=85)
         tmp.replace(cached)
     return send_file(cached, mimetype="image/webp", max_age=86400)
 
