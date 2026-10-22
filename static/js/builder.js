@@ -1099,9 +1099,10 @@ let _previewModal = null;
 let _groundRaf = null;
 
 // Scroll the grass under a walking unit at its real speed, opposite to where it
-// faces (south-west, so the ground slides up-right).  One tile is ~54 px on
-// screen at standard sprite scale; the window shows sprites at 1.5x their own.
-const _TILE_PX = 54, _NORMAL_SPEED = 1.7;
+// faces (south-west, so the ground slides up-right).  One tile is ~46 px on
+// screen at standard sprite scale (54 was the first guess; the user tuned it
+// 15% slower by eye, 2026-10-22); the window shows sprites at 1.5x their own.
+const _TILE_PX = 46, _NORMAL_SPEED = 1.7;
 function _stopGround() {
   if (_groundRaf) cancelAnimationFrame(_groundRaf);
   _groundRaf = null;
