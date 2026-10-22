@@ -356,6 +356,8 @@ _KM_UU_NAMES: dict[int, str] = {
     100: "Companion Cavalry",
     101: "Rhomphaia Warrior",
     102: "Pattiyodha Longbowman",
+    # Scenario units, 103-117: km_custom_uu.SCENARIO_UUS names them.
+    **{i: name for i, (name, _base, _elite) in km_custom_uu.SCENARIO_UUS.items()},
 }
 
 # ── Display names for build-log messages ─────────────────────────────────────

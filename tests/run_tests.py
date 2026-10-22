@@ -78,6 +78,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("age-shift cards 221/247",         "test_age_shift_cards.py",      "build"),
     ("UT enable not misread as UU",     "test_ut_enable_misread.py",    "build"),
     ("Ambuscade: UU at the Archery Range", "test_ambuscade.py",         "build"),
+    ("scenario units as UUs",           "test_scenario_uus.py",         "build"),
     ("bonus 105: every eco upgrade one age earlier", "test_early_eco_shims.py", "build"),
     ("retired cards are listed for removal (#78)", "test_retired_cards.py", "build"),
     ("Thracian bonuses 458/459",        "test_thracian_bonuses.py",     "build"),

@@ -79,7 +79,7 @@ _DAT_COSTS_CACHE: dict[str, dict] = {}
 _UU_STATS_CACHE: dict[str, dict] = {}
 
 # Bump this when _UU_TRAITS changes so stale disk caches are automatically invalidated.
-_UU_STATS_DISK_VERSION = 3  # bumped: fixed cost fallback + amount-mode cost parsing
+_UU_STATS_DISK_VERSION = 4  # bumped: scenario units (km_custom_uu.SCENARIO_UUS)
 
 def _cache_dir() -> Path:
     """Per-user, so it survives restarts: next to the code it lands in the
@@ -1140,7 +1140,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings,
                                               mod_name=mod_name,
                                               lang_values=unique_lang_values,
-                                              dat_path=dat_path)
+                                              dat_path=dat_path,
+                                              icon_ids={ov.get("icon_id") for ov in civs_overrides.values()})
 
         out_path = sd / f"{prefix}.zip"
         with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as outer:
@@ -2020,6 +2021,28 @@ def _build_all_uu_stats(dat_path: str) -> dict[int, dict]:
 
     # ── Custom units (PRESETS) ───────────────────────────────────────────────
     for km_idx, p in presets.items():
+        if p.get("mode") == "scenario":
+            # Built the way the mod builds them, then read — so the popup
+            # can't disagree with the game (km_custom_uu.scenario_elite).
+            try:
+                from copy import deepcopy
+                units = dat.civs[0].units
+                bu = units[p["base_unit_id"]]
+                eu = deepcopy(units[p.get("elite_unit_id") or p["base_unit_id"]])
+                if p.get("elite_unit_id") is None:
+                    kcu.scenario_elite(eu)
+                cost = " ".join(f"{int(c.amount)}{RES[c.type]}" for c in bu.creatable.resource_costs
+                                if c.type in RES and c.amount > 0)
+                out[km_idx] = {
+                    "base":   _unit_stats_block(bu),
+                    "elite":  _unit_stats_block(eu),
+                    "ranged": bool(bu.type_50.max_range > 1),
+                    "traits": _UU_TRAITS.get(km_idx, []),
+                    "cost":   cost or None,
+                }
+            except Exception as e:                               # noqa: BLE001
+                print(f"  WARNING: no stats for scenario unit {km_idx}: {e}", flush=True)
+            continue
         try:
             base_uid = p.get("base_unit_id")
             bu = dat.civs[0].units[base_uid] if base_uid is not None else None
@@ -2447,10 +2470,17 @@ def _uu_catalog_entries() -> list[dict]:
             # A Chronicles Castle unit (Immortal, Strategos, ...): built like a
             # vanilla UU, shown under its own filter and badge.
             "chronicles":    km_idx in ca._CHRONICLES_UU_CARDS,
-            "icon":          f"/resources/uniticons/{icon_file}" if icon_file else None,
+            # A scenario unit's icon is the game's own, read from the player's
+            # install (/api/unit-icon) — nothing for it is bundled.
+            "icon":          (f"/api/unit-icon/{kcu.SCENARIO_UUS[km_idx][1]}" if km_idx in kcu.SCENARIO_UUS
+                              else f"/resources/uniticons/{icon_file}" if icon_file else None),
+            "scenario":      km_idx in kcu.SCENARIO_UUS,
             "stats":         entry_stats,
             "training_cost": entry_stats["cost"] if entry_stats else None,
-            "elite_upgrade": elite_upgrades.get(km_idx),
+            "elite_upgrade": elite_upgrades.get(km_idx) or (
+                {"cost": {r: v for r, v in zip(("food", "wood", "stone", "gold"),
+                                               kcu.SCENARIO_ELITE_TECH["cost"]) if v},
+                 "time": kcu.SCENARIO_ELITE_TECH["time"]} if km_idx in kcu.SCENARIO_UUS else None),
         })
     catalog.sort(key=lambda x: x["name"])
     return catalog

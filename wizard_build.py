@@ -533,6 +533,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     ui_zip = _build_combined_ui_zip(
         ai_stubs, button_pngs, combined_strings,
         mod_name=mod_name, lang_values={lang_val}, dat_path=dat_path,
+        icon_ids={ov.get("icon_id") for ov in civs_overrides.values()},
     )
 
     buf = io.BytesIO()

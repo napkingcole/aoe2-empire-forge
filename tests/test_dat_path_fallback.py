@@ -408,9 +408,20 @@ check("no team bonus whose effect is missing or empty here is offered",
 print("\n=== UU picker icons are derived, and never point at a missing file ===")
 # An icon entry naming a PNG that is not there renders as a broken image; None
 # renders as no image, which is what an un-illustrated unit should look like.
+# Two kinds: a bundled PNG in uniticons/, or (scenario units) the game's own
+# icon served by /api/unit-icon/<unit id>, which must then exist in the game.
+from dat_reader import find_unit_icon                            # noqa: E402
 _icon_dir = ROOT / "uniticons"
-broken = [(u["km_idx"], u["icon"]) for u in uu
-          if u["icon"] and not (_icon_dir / Path(u["icon"]).name).exists()]
+
+
+def _icon_missing(icon: str) -> bool:
+    if icon.startswith("/api/unit-icon/"):
+        unit = _probe_dat.civs[0].units[int(icon.rsplit("/", 1)[1].split("?")[0])]
+        return find_unit_icon(dat_path, unit.icon_id) is None
+    return not (_icon_dir / Path(icon).name).exists()
+
+
+broken = [(u["km_idx"], u["icon"]) for u in uu if u["icon"] and _icon_missing(u["icon"])]
 check("no offered UU points at a missing icon file", not broken,
       f"broken: {broken[:6]}")
 check("...and the ones that do have art still show it",

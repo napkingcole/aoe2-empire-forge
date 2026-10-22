@@ -490,13 +490,43 @@ def _is_blank_png(data: bytes) -> bool:
         return False
 
 
+def _game_icon_pngs(icon_ids: set[int], dat_path) -> dict[str, bytes]:
+    """{file name: PNG} for each icon id that has no PNG yet — not in our
+    uniticons/ and not in the game's own wpfg folder — made from the game's
+    DDS for it.  Ids the game has no picture for are skipped."""
+    from PIL import Image
+    from dat_reader import find_unit_icon
+    if not icon_ids or not dat_path:
+        return {}
+    parents = Path(dat_path).resolve().parents
+    wpfg = parents[3] / "resources/_common/wpfg/resources/uniticons" if len(parents) > 3 else None
+    out: dict[str, bytes] = {}
+    for icon_id in sorted(i for i in icon_ids if i is not None and i >= 0):
+        name = f"{icon_id:03d}_50730.png"
+        if (Path(__file__).parent / "uniticons" / name).exists() or (wpfg and (wpfg / name).exists()):
+            continue
+        src = find_unit_icon(dat_path, icon_id)
+        if src is None:
+            continue
+        buf = io.BytesIO()
+        Image.open(src).convert("RGBA").save(buf, "PNG", optimize=True)
+        out[name] = buf.getvalue()
+    return out
+
+
 def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                             button_pngs: dict[str, bytes],
                             combined_strings: dict[str, str],
                             mod_name: str = "Custom Civs",
                             lang_values: set[int] | None = None,
-                            dat_path: str | Path | None = None) -> bytes:
-    """Package all UI assets for every civ into one ui zip."""
+                            dat_path: str | Path | None = None,
+                            icon_ids: set[int] | None = None) -> bytes:
+    """Package all UI assets for every civ into one ui zip.
+
+    icon_ids: the civs' unique-unit icons (civilizations.json points the civ
+    picker at uniticons/{id:03}_50730.png).  One neither we nor the game ship as
+    a PNG — a scenario unit's — is converted from the player's own game icon
+    (dat_reader.find_unit_icon), or the picker draws a blank box."""
     info_json = json.dumps(
         {"Title": f"{mod_name} (UI)", "CacheStatus": 0, "Description": "", "Author": "",
          "builder_version": _APP_VERSION},
@@ -537,6 +567,8 @@ def _build_combined_ui_zip(ai_stubs: dict[str, bytes],
                     f"resources/_common/wpfg/resources/uniticons/{icon_file.name}",
                     data,
                 )
+        for png_name, data in _game_icon_pngs(icon_ids or set(), dat_path).items():
+            zf.writestr(f"resources/_common/wpfg/resources/uniticons/{png_name}", data)
         for lang, content in combined_strings.items():
             content, repaired = sanitize_kv_strings(content)
             if repaired and lang == "en":
@@ -1086,7 +1118,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
                                          dat_jsons=dat_jsons)
     unique_lang_values = {lang_val for _, lang_val in lang_assignments}
     ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings, mod_name=mod_name,
-                                      lang_values=unique_lang_values, dat_path=dat_path)
+                                      lang_values=unique_lang_values, dat_path=dat_path,
+                                      icon_ids={ov.get("icon_id") for ov in civs_overrides.values()})
 
     with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as outer:
         outer.writestr(f"{prefix}-data.zip", data_zip)
