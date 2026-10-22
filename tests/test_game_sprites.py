@@ -79,6 +79,23 @@ try:
 except ValueError:
     check("...ValueError for an empty file", True)
 
+print("\n=== blocks kept from the previous frame, when the box moves ===")
+# Frame 0 draws one solid block at (4,0)-(8,4).  Frame 1's box starts 4 px
+# left, at (0,0)-(8,4), sets flag 0x80 and SKIPS both blocks: its second block
+# is frame 0's, at the same canvas spot.  Honouring 0x80 only for an unchanged
+# box left kept blocks transparent — square holes that looped (2026-10-22).
+red = rgb565(255, 0, 0)
+solid = struct.pack("<HHI", red, 0, 0)
+f0 = struct.pack("<HHHHBBH", 8, 4, 0, 0, 0x01, 0, 0) + layer(
+    struct.pack("<HHHHBB", 4, 0, 8, 4, 0, 0) + struct.pack("<H", 1) + bytes([0, 1]) + solid)
+f1 = struct.pack("<HHHHBBH", 8, 4, 0, 0, 0x01, 0, 1) + layer(
+    struct.pack("<HHHHBB", 0, 0, 8, 4, 0x80, 0) + struct.pack("<H", 1) + bytes([2, 0]))
+two = b"SLDX" + struct.pack("<HHHH", 4, 2, 0, 16) + b"\0" * 4 + f0 + f1
+img1, _ = gs.render_frame(two, 1)
+check("the kept block comes through at its canvas position", (img1[:, 4:8, 3] == 255).all()
+      and (img1[:, 4:8, 0] > 200).all(), str(img1[0, 4].tolist()))
+check("...and the new box's other block stays empty", (img1[:, 0:4] == 0).all())
+
 print("\n=== real units (DAT-gated) ===")
 from dat_reader import find_game_dat, load_dat            # noqa: E402
 dat_path = find_game_dat()

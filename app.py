@@ -2610,7 +2610,8 @@ def api_unit_icon(unit_id: int):
     return send_file(cached, mimetype="image/webp", max_age=86400)
 
 
-_PREVIEW_VERSION = "v1"        # bump when game_sprites' output changes
+_PREVIEW_VERSION = "v2"        # bump when game_sprites' output changes
+                               # (v2: kept blocks across a moved box — square holes)
 _PREVIEWS_WARMED: set[str] = set()
 
 

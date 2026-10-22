@@ -138,10 +138,13 @@ def _decode(data: bytes, fr: dict, prev: dict) -> dict:
         q += 2 * ncmd
         bw, bh = (box[2] - box[0]) // 4, (box[3] - box[1]) // 4
         dxt = name in _DXT1_LAYERS
-        if flags & 0x80 and name in prev and prev[name][0] == box:
-            img = prev[name][1].copy()
-        else:
-            img = np.zeros((bh * 4, bw * 4, 4) if dxt else (bh * 4, bw * 4), dtype=np.uint8)
+        img = np.zeros((bh * 4, bw * 4, 4) if dxt else (bh * 4, bw * 4), dtype=np.uint8)
+        if flags & 0x80 and name in prev:
+            # Skipped blocks keep the previous frame's pixels — in canvas terms:
+            # the layer's box can move between frames.  Honouring this only for
+            # an unchanged box left the kept blocks transparent: square holes
+            # that looped with the animation (426 of 641 hero sprites use it).
+            _copy_overlap(prev[name], box, img)
         if len(cmds) and bw:
             starts = np.cumsum(cmds[:, 0] + np.concatenate([[0], cmds[:-1, 1]]))
             drawn = np.concatenate([np.arange(s, s + d) for s, d in zip(starts, cmds[:, 1])])
@@ -156,6 +159,16 @@ def _decode(data: bytes, fr: dict, prev: dict) -> dict:
         prev[name] = (box, img)
         p = nxt
     return layers
+
+
+def _copy_overlap(previous: tuple, box: tuple, img: np.ndarray) -> None:
+    """Copy the previous frame's layer pixels into `img` (at `box`) wherever
+    the two boxes overlap on the canvas."""
+    (px1, py1, px2, py2), pimg = previous
+    x1, y1, x2, y2 = box
+    ox1, oy1, ox2, oy2 = max(x1, px1), max(y1, py1), min(x2, px2), min(y2, py2)
+    if ox1 < ox2 and oy1 < oy2:
+        img[oy1 - y1:oy2 - y1, ox1 - x1:ox2 - x1] = pimg[oy1 - py1:oy2 - py1, ox1 - px1:ox2 - px1]
 
 
 def render_frame(data: bytes, index: int, frames: list[dict] | None = None) -> tuple[np.ndarray, tuple]:
