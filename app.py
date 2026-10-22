@@ -2511,6 +2511,55 @@ def api_builder_ut_catalog():
                     "imperial": _entries(_UNIQUE_IMP_STRINGS, _KM_IMP_UT_TECHS)})
 
 
+_HERO_CATALOG_CACHE: dict[str, list] = {}
+
+
+@app.route("/api/builder/heroes")
+def api_builder_heroes():
+    """The Heroes tab's catalog, from the player's DAT (heroes.hero_catalog).
+    Empty when no game is found: the tab then says so instead of guessing."""
+    import heroes
+    from civ_appender import _string_table
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return jsonify({"heroes": [], "from_game": False})
+    if dat_path not in _HERO_CATALOG_CACHE:
+        dat = _get_dat(dat_path)
+        names = _string_table()
+        _HERO_CATALOG_CACHE[dat_path] = heroes.hero_catalog(
+            dat, _unit_stats_block, lambda u: names.get(u.language_dll_name))
+    return jsonify({"heroes": _HERO_CATALOG_CACHE[dat_path], "from_game": True})
+
+
+@app.route("/api/unit-icon/<int:unit_id>")
+def api_unit_icon(unit_id: int):
+    """A unit's in-game icon, read from the player's game and cached as WebP.
+
+    Nothing is bundled: the picture is the one the game shows on the unit's
+    button (its `icon_id`), so a DLC unit has one the day it ships.  404 when
+    the game or the icon isn't found; the page falls back to its placeholder."""
+    from PIL import Image
+    from dat_reader import find_unit_icon
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return ("", 404)
+    units = _get_dat(dat_path).civs[0].units
+    if not 0 <= unit_id < len(units) or units[unit_id] is None:
+        return ("", 404)
+    icon_id = units[unit_id].icon_id
+    game = hashlib.md5(str(Path(dat_path).resolve()).encode()).hexdigest()[:10]
+    cached = _cache_dir() / "icons" / game / f"{icon_id}.webp"
+    if not cached.exists():
+        src = find_unit_icon(dat_path, icon_id)
+        if src is None:
+            return ("", 404)
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cached.with_suffix(".tmp")
+        Image.open(src).convert("RGBA").save(tmp, "WEBP", quality=85)
+        tmp.replace(cached)
+    return send_file(cached, mimetype="image/webp", max_age=86400)
+
+
 @app.route("/api/builder/ut/costs")
 def api_builder_ut_costs():
     """Return vanilla tech research costs (from DAT) for all UT catalog entries."""

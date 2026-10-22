@@ -1,0 +1,213 @@
+{
+ "_note": [
+  "Hand-written notes for heroes, keyed by unit id: what the DAT cannot say.",
+  "Stats are NOT kept here: heroes.hero_catalog reads them from the player's DAT (the 30 hand-typed",
+  "stat blocks these replaced all matched the DAT exactly, 2026-10-22).",
+  "faction: the side the hero fought for, shown under the name.  category: 'multiplayer' for heroes",
+  "a civ trains in ordinary games, else the hero is a campaign/scenario one.",
+  "specials: abilities the stats don't show.  Never invent one — only add what is confirmed.",
+  "1269 was listed as 'Genghis Khan' until 2026-10-22, but the game names it Girgen Khan (HGKHAN, 170 HP); the real Genghis Khan is 731 (HKHAN).  Whether the specials below describe 1269 or 731 is unconfirmed."
+ ],
+ "1954": {
+  "name": "Cao Cao",
+  "faction": "Wei",
+  "category": "multiplayer",
+  "specials": [
+   "Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)",
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1966": {
+  "name": "Liu Bei",
+  "faction": "Shu",
+  "category": "multiplayer",
+  "specials": [
+   "Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)"
+  ]
+ },
+ "1978": {
+  "name": "Sun Jian",
+  "faction": "Wu",
+  "category": "multiplayer",
+  "specials": [
+   "Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)",
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "169": {
+  "name": "Aethelflaed",
+  "faction": "Anglo-Saxon"
+ },
+ "1071": {
+  "name": "Abraha Elephant",
+  "faction": "Ethiopian",
+  "specials": [
+   "Trample — deals full attack damage to all enemies within 0.5 tile radius",
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "777": {
+  "name": "Attila the Hun",
+  "faction": "Hunnic",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1070": {
+  "name": "Babur",
+  "faction": "Mughal",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "429": {
+  "name": "Barbarossa",
+  "faction": "German"
+ },
+ "1165": {
+  "name": "Bayinnaung",
+  "faction": "Burmese",
+  "specials": [
+   "Trample — deals full attack damage to all enemies within 0.5 tile radius",
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "198": {
+  "name": "El Cid (Infantry)",
+  "faction": "Spanish"
+ },
+ "824": {
+  "name": "El Cid (Cavalry)",
+  "faction": "Spanish",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "439": {
+  "name": "Francesco Sforza",
+  "faction": "Italian"
+ },
+ "1157": {
+  "name": "Gajah Mada",
+  "faction": "Malay"
+ },
+ "1269": {
+  "faction": "Mongol",
+  "specials": [
+   "Pass-through projectile — arrows pierce through multiple targets in a line",
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1265": {
+  "name": "Ivaylo",
+  "faction": "Bulgarian",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1715": {
+  "name": "Jadwiga",
+  "faction": "Polish",
+  "specials": [
+   "Does not deal direct combat damage — support / scripted role",
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1713": {
+  "name": "Jan Žižka",
+  "faction": "Bohemian",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1266": {
+  "name": "Tzar Konstantin",
+  "faction": "Byzantine",
+  "specials": [
+   "Trample — deals full attack damage to all enemies within 1 tile radius",
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "2637": {
+  "name": "Lautaro",
+  "faction": "Inca",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1178": {
+  "name": "Le Loi",
+  "faction": "Vietnamese"
+ },
+ "1034": {
+  "name": "Musa",
+  "faction": "Malian",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1074": {
+  "name": "Pachacuti",
+  "faction": "Inca"
+ },
+ "929": {
+  "name": "Saladin",
+  "faction": "Saracen",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1035": {
+  "name": "Sundjata",
+  "faction": "Malian",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1822": {
+  "name": "Tamar",
+  "faction": "Georgian",
+  "specials": [
+   "Does not deal direct combat damage — support / scripted role",
+   "Extremely long range (9 tiles)",
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1727": {
+  "name": "Ulrich Von Jungingen",
+  "faction": "Teutonic",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "193": {
+  "name": "Vlad Dracula",
+  "faction": "Romanian",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1281": {
+  "name": "Vytautas",
+  "faction": "Lithuanian",
+  "specials": [
+   "Flanking bonus — deals +25% damage from the sides and rear"
+  ]
+ },
+ "1690": {
+  "name": "Warwolf Trebuchet",
+  "faction": "English",
+  "specials": [
+   "Cannot move — stationary siege weapon",
+   "Area damage — damages all units (including allies) within 0.7 tile radius",
+   "Range 20 — extreme bombardment range"
+  ]
+ },
+ "1066": {
+  "name": "Yodit",
+  "faction": "Ethiopian",
+  "specials": [
+   "Pass-through projectile — arrows pierce through multiple targets in a line"
+  ]
+ }
+}

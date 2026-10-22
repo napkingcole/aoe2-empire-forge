@@ -843,11 +843,20 @@
         click again to deselect.
       </p>
 
-      {# Category filter #}
-      <div class="btn-group btn-group-sm mb-3" role="group" id="hero-filter-group">
-        <button type="button" class="btn btn-outline-secondary active" data-filter="all">All</button>
-        <button type="button" class="btn btn-outline-secondary" data-filter="multiplayer">Multiplayer</button>
-        <button type="button" class="btn btn-outline-secondary" data-filter="campaign">Campaign</button>
+      {# Filters: category or unit type, plus a name/faction search #}
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <div class="btn-group btn-group-sm" role="group" id="hero-filter-group">
+          <button type="button" class="btn btn-outline-secondary active" data-filter="all">All</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="multiplayer">Multiplayer</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="infantry">Infantry</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="cavalry">Cavalry</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="archers">Archers</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="monks">Monks</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="other">Other</button>
+        </div>
+        <input type="search" id="hero-search" class="form-control form-control-sm" style="max-width:14rem"
+               placeholder="Search heroes" aria-label="Search heroes">
+        <span id="hero-count" class="text-muted small"></span>
       </div>
 
       {# Hero icon grid (populated by JS) #}

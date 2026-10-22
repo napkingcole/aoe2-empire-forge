@@ -56,6 +56,7 @@ ALLOWED = {
     "from_draft",                   # civ_schema.py    draft  -> schema
     "_km_to_draft",                 # app.py           KM     -> draft
     "_attack_bonuses",              # civ_summary.py  the UU catalog's stats, not a civ_def
+    "hero_catalog",                 # heroes.py       a hero's attack-bonus stats, not a civ_def
     "api_civ_summary",              # app.py  tells a Builder draft from a KM file by
                                     #         its bonuses' shape — format detection
     "is_km_format",                 # civ_schema.py    format detection

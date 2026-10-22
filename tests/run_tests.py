@@ -59,6 +59,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("team bonus catalog",              "test_team_bonus_catalog.py",   "build"),
     ("spawn scaling + UU flags",        "test_spawn_and_flags.py",      "build"),
     ("UT multiplier flags",             "test_ut_multiplier_flags.py",  "data"),
+    ("hero catalog from the DAT",       "test_hero_catalog.py",         "data"),
 
     # Build tests: each builds at least one civ.  Build smoke runs in --quick
     # too, because a NameError that broke every build once reached the branch

@@ -149,7 +149,7 @@ function showStep(n) {
   document.getElementById("step-counter").textContent = `Step ${n} of ${TOTAL_STEPS}`;
   currentStep = n;
 
-  if (n === 8) { renderHeroGrid(); _heroRefreshUI(); }
+  if (n === 8) loadHeroCatalog().then(() => { renderHeroGrid(); _heroRefreshUI(); });
 
   // Scroll to top of wizard area on step change
   document.getElementById(`panel-${n}`).scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1055,168 +1055,35 @@ document.getElementById("btn-export-json").addEventListener("click", async () =>
 // ── Hero Unit (Step 7) ────────────────────────────────────────────────────────
 
 // ── Hero catalog ─────────────────────────────────────────────────────────────
-// stats sourced from vanilla DAT. cost strips campaign-only Res4 entries.
-// specials: human-readable strings for notable abilities not visible from raw stats.
-const _HERO_CATALOG = [
-  // Multiplayer (Three Kingdoms)
-  { id: 1954, name: "Cao Cao",              faction: "Wei",          category: "multiplayer",
-    stats: { hp:475, speed:1.3,  attack:14, ma:3, pa:3, range:null, reload:2.0,
-             cost:"500 Food, 500 Gold",
-             bonuses:[["Packed Unit",3]],
-             specials:["Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1966, name: "Liu Bei",              faction: "Shu",          category: "multiplayer",
-    stats: { hp:425, speed:0.9,  attack:15, ma:3, pa:3, range:null, reload:2.0,
-             cost:"500 Food, 500 Gold",
-             bonuses:[["Eagle Warrior",3]],
-             specials:["Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)"] }},
-  { id: 1978, name: "Sun Jian",             faction: "Wu",           category: "multiplayer",
-    stats: { hp:400, speed:1.55, attack:15, ma:4, pa:4, range:null, reload:2.0,
-             cost:"500 Food, 500 Gold",
-             bonuses:[],
-             specials:["Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  // Campaign
-  { id:  169, name: "Aethelflaed",          faction: "Anglo-Saxon",  category: "campaign",
-    stats: { hp:140, speed:1.03, attack:8,  ma:0, pa:0, range:null, reload:2.0,
-             cost:"65 Food, 25 Gold",
-             bonuses:[["Building",2]],
-             specials:[] }},
-  { id: 1071, name: "Abraha Elephant",      faction: "Ethiopian",    category: "campaign",
-    stats: { hp:750, speed:0.7,  attack:25, ma:1, pa:3, range:null, reload:2.0,
-             cost:"200 Food, 75 Gold",
-             bonuses:[["Building",15],["Cavalry Archer",15]],
-             specials:["Trample — deals full attack damage to all enemies within 0.5 tile radius","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id:  777, name: "Attila the Hun",       faction: "Hunnic",       category: "campaign",
-    stats: { hp:350, speed:1.2,  attack:13, ma:2, pa:2, range:null, reload:2.0,
-             cost:"60 Food, 20 Gold",
-             bonuses:[["Building",3],["Camel",40]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1070, name: "Babur",                faction: "Mughal",       category: "campaign",
-    stats: { hp:300, speed:1.45, attack:15, ma:0, pa:0, range:null, reload:2.0,
-             cost:"55 Food, 60 Gold",
-             bonuses:[["Cavalry",18],["Castle",9],["Pikeman",9]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id:  429, name: "Barbarossa",           faction: "German",       category: "campaign",
-    stats: { hp:170, speed:0.75, attack:19, ma:10,pa:2, range:null, reload:2.0,
-             cost:"85 Food, 40 Gold",
-             bonuses:[["Eagle Warrior",4],["Chariot",4]],
-             specials:[] }},
-  { id: 1165, name: "Bayinnaung",           faction: "Burmese",      category: "campaign",
-    stats: { hp:400, speed:0.75, attack:18, ma:1, pa:3, range:null, reload:2.0,
-             cost:"120 Food, 75 Gold",
-             bonuses:[["Building",10],["Cavalry Archer",10]],
-             specials:["Trample — deals full attack damage to all enemies within 0.5 tile radius","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id:  198, name: "El Cid (Infantry)",    faction: "Spanish",      category: "campaign",
-    stats: { hp:330, speed:0.9,  attack:13, ma:2, pa:1, range:null, reload:2.0,
-             cost:"60 Food, 20 Gold",
-             bonuses:[["Building",3]],
-             specials:[] }},
-  { id:  824, name: "El Cid (Cavalry)",     faction: "Spanish",      category: "campaign",
-    stats: { hp:430, speed:1.32, attack:15, ma:2, pa:3, range:null, reload:2.0,
-             cost:"50 Food",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id:  439, name: "Francesco Sforza",     faction: "Italian",      category: "campaign",
-    stats: { hp:200, speed:1.0,  attack:12, ma:1, pa:3, range:null, reload:1.9,
-             cost:"50 Food, 35 Gold",
-             bonuses:[["Chariot",2],["Knight",12]],
-             specials:[] }},
-  { id: 1157, name: "Gajah Mada",           faction: "Malay",        category: "campaign",
-    stats: { hp:425, speed:0.9,  attack:20, ma:2, pa:0, range:null, reload:2.0,
-             cost:"60 Food, 20 Gold",
-             bonuses:[["Eagle Warrior",8],["Chariot",4]],
-             specials:[] }},
-  { id: 1269, name: "Genghis Khan",         faction: "Mongol",       category: "campaign",
-    stats: { hp:170, speed:1.4,  attack:10, ma:3, pa:3, range:6.0,  reload:2.0,
-             cost:"40 Wood, 60 Gold",
-             bonuses:[["Building",2]],
-             specials:["Pass-through projectile — arrows pierce through multiple targets in a line","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1265, name: "Ivaylo",               faction: "Bulgarian",    category: "campaign",
-    stats: { hp:180, speed:1.35, attack:14, ma:1, pa:2, range:null, reload:1.9,
-             cost:"60 Food, 70 Gold",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1715, name: "Jadwiga",              faction: "Polish",       category: "campaign",
-    stats: { hp:270, speed:1.4,  attack:0,  ma:1, pa:1, range:6.0,  reload:1.6,
-             cost:"100 Gold",
-             bonuses:[],
-             specials:["Does not deal direct combat damage — support / scripted role","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1713, name: "Jan Žižka",            faction: "Bohemian",     category: "campaign",
-    stats: { hp:230, speed:1.4,  attack:16, ma:4, pa:1, range:null, reload:2.0,
-             cost:"50 Food",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1266, name: "Tzar Konstantin",      faction: "Byzantine",    category: "campaign",
-    stats: { hp:300, speed:1.4,  attack:14, ma:3, pa:3, range:null, reload:1.9,
-             cost:"60 Food, 70 Gold",
-             bonuses:[],
-             specials:["Trample — deals full attack damage to all enemies within 1 tile radius","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 2637, name: "Lautaro",              faction: "Inca",         category: "campaign",
-    stats: { hp:300, speed:1.5,  attack:18, ma:0, pa:4, range:null, reload:2.0,
-             cost:"50 Food",
-             bonuses:[["Knight",3]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1178, name: "Le Loi",               faction: "Vietnamese",   category: "campaign",
-    stats: { hp:350, speed:1.0,  attack:22, ma:2, pa:4, range:null, reload:2.0,
-             cost:"50 Food",
-             bonuses:[],
-             specials:[] }},
-  { id: 1034, name: "Musa",                 faction: "Malian",       category: "campaign",
-    stats: { hp:230, speed:1.41, attack:18, ma:1, pa:1, range:4.0,  reload:2.0,
-             cost:"50 Wood, 60 Gold",
-             bonuses:[["Infantry",1],["Boar",5]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1074, name: "Pachacuti",            faction: "Inca",         category: "campaign",
-    stats: { hp:230, speed:0.95, attack:10, ma:2, pa:2, range:null, reload:2.0,
-             cost:"60 Food, 30 Gold",
-             bonuses:[["Cavalry",16],["Pikeman",13]],
-             specials:[] }},
-  { id:  929, name: "Saladin",              faction: "Saracen",      category: "campaign",
-    stats: { hp:150, speed:1.4,  attack:12, ma:1, pa:0, range:3.0,  reload:2.0,
-             cost:"55 Food, 85 Gold",
-             bonuses:[["Cavalry",12]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1035, name: "Sundjata",             faction: "Malian",       category: "campaign",
-    stats: { hp:290, speed:1.5,  attack:14, ma:2, pa:3, range:null, reload:2.0,
-             cost:"80 Food",
-             bonuses:[["Siege",10]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1822, name: "Tamar",                faction: "Georgian",     category: "campaign",
-    stats: { hp:320, speed:1.4,  attack:0,  ma:1, pa:2, range:9.0,  reload:1.6,
-             cost:"100 Gold",
-             bonuses:[],
-             specials:["Does not deal direct combat damage — support / scripted role","Extremely long range (9 tiles)","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1727, name: "Ulrich Von Jungingen", faction: "Teutonic",     category: "campaign",
-    stats: { hp:350, speed:1.3,  attack:17, ma:8, pa:6, range:null, reload:2.0,
-             cost:"50 Food",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id:  193, name: "Vlad Dracula",         faction: "Romanian",     category: "campaign",
-    stats: { hp:210, speed:1.35, attack:16, ma:6, pa:2, range:null, reload:1.9,
-             cost:"50 Food, 80 Gold",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1281, name: "Vytautas",             faction: "Lithuanian",   category: "campaign",
-    stats: { hp:220, speed:1.5,  attack:15, ma:4, pa:5, range:null, reload:2.0,
-             cost:"40 Wood, 50 Gold",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1690, name: "Warwolf Trebuchet",    faction: "English",      category: "campaign",
-    stats: { hp:300, speed:0,    attack:300,ma:0, pa:200,range:20.0, reload:10.0,
-             cost:"200 Wood, 200 Gold",
-             bonuses:[["Building",500]],
-             specials:["Cannot move — stationary siege weapon","Area damage — damages all units (including allies) within 0.7 tile radius","Range 20 — extreme bombardment range"] }},
-  { id: 1066, name: "Yodit",                faction: "Ethiopian",    category: "campaign",
-    stats: { hp:170, speed:1.3,  attack:17, ma:0, pa:0, range:6.0,  reload:2.0,
-             cost:"50 Food, 25 Gold",
-             bonuses:[["Eagle Warrior",1]],
-             specials:["Pass-through projectile — arrows pierce through multiple targets in a line"] }},
-];
+// Read from the player's DAT (heroes.py via /api/builder/heroes): every hero the
+// game can place, ~215 of them, with stats from the DAT.  The hand-written part
+// — faction, abilities the stats don't show — is static/data/hero_notes.json.
+// Until 2026-10-22 this was a hand-typed list of 30.
+let _HERO_CATALOG = [];
+let _HERO_NAMES = {};
+let _heroCatalogFor = null;     // the dat_path the catalog was loaded for
 
-const _HERO_NAMES = Object.fromEntries(_HERO_CATALOG.map(h => [h.id, h.name]));
+function _datQuery() {
+  return draft.dat_path ? `?dat_path=${encodeURIComponent(draft.dat_path)}` : "";
+}
+
+async function loadHeroCatalog() {
+  const key = draft.dat_path || "";
+  if (_heroCatalogFor === key && _HERO_CATALOG.length) return;
+  try {
+    const data = await (await fetch(`/api/builder/heroes${_datQuery()}`)).json();
+    _HERO_CATALOG = data.heroes || [];
+    _HERO_NAMES = Object.fromEntries(_HERO_CATALOG.map(h => [h.id, h.name]));
+    _heroCatalogFor = key;
+  } catch (e) {
+    console.warn("Could not load the hero catalog:", e);
+  }
+}
 
 const _HERO_PLACEHOLDER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='6' fill='%231e293b'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-size='28' fill='%2364748b'%3E%E2%9B%B9%3C/text%3E%3C/svg%3E";
 
 let _heroFilter = "all";
+let _heroSearch = "";
 
 function _heroId() { return draft.hero_unit?.base_unit_id ?? null; }
 
@@ -1266,28 +1133,38 @@ function _heroSave() {
 
 function renderHeroGrid(filter) {
   if (filter !== undefined) _heroFilter = filter;
-  const heroes = _HERO_CATALOG.filter(
-    h => _heroFilter === "all" || h.category === _heroFilter
-  );
+  const q = _heroSearch.trim().toLowerCase();
+  const heroes = _HERO_CATALOG.filter(h =>
+    (_heroFilter === "all" || h.category === _heroFilter || h.kind === _heroFilter) &&
+    (!q || h.name.toLowerCase().includes(q) || (h.faction || "").toLowerCase().includes(q)));
   const curId = _heroId();
   const container = document.getElementById("hero-grid");
   if (!container) return;
+  const count = document.getElementById("hero-count");
+  if (count) count.textContent = _HERO_CATALOG.length ? `${heroes.length} of ${_HERO_CATALOG.length}` : "";
 
   container.innerHTML = heroes.map(h => {
     const sel = h.id === curId ? ' selected' : '';
-    return `<div class="hero-grid-card${sel}" data-hero-id="${h.id}" title="${h.name}">
+    return `<div class="hero-grid-card${sel}" data-hero-id="${h.id}" title="${_esc(h.name)}">
       <div class="hero-card-inner">
-        <img class="hero-card-img" src="/static/icons/heroes/${h.id}.webp" loading="lazy">
-        <div class="hero-card-name">${h.name}</div>
-        ${h.faction ? `<div class="hero-card-faction">${h.faction}</div>` : ""}
+        <img class="hero-card-img" src="/api/unit-icon/${h.id}${_datQuery()}" loading="lazy" data-fallback="/static/icons/heroes/${h.id}.webp">
+        <div class="hero-card-name">${_esc(h.name)}</div>
+        ${h.faction ? `<div class="hero-card-faction">${_esc(h.faction)}</div>` : ""}
       </div>
     </div>`;
   }).join("") ||
-    `<div class="text-muted small fst-italic">No heroes in this category.</div>`;
+    (_HERO_CATALOG.length
+      ? `<div class="text-muted small fst-italic">No heroes match.</div>`
+      : `<div class="text-muted small fst-italic">Heroes are read from your game — point Empire Forge at it in step 1.</div>`);
 
   // Wire onerror via JS to avoid single-quote escaping issues in inline HTML attributes
+  // The game's icon, else the picture we used to ship for the original 30,
+  // else the placeholder.
   container.querySelectorAll(".hero-grid-card img").forEach(img => {
-    img.onerror = () => { img.onerror = null; img.src = _HERO_PLACEHOLDER; };
+    img.onerror = () => {
+      if (img.dataset.fallback) { img.src = img.dataset.fallback; delete img.dataset.fallback; }
+      else { img.onerror = null; img.src = _HERO_PLACEHOLDER; }
+    };
   });
 
   const popup = _getHeroPopup();
@@ -1320,6 +1197,7 @@ function _getHeroPopup() {
 function _buildHeroPopupHTML(hero) {
   const s = hero.stats;
   const catLabel = hero.category === "multiplayer" ? "Multiplayer" : "Campaign";
+  const typeLine = [hero.faction, catLabel].filter(Boolean).join(" &middot; ");
 
   const row = (label, val) =>
     `<div class="pop-row"><span class="pop-label">${label}</span><span class="pop-val">${val}</span></div>`;
@@ -1348,8 +1226,8 @@ function _buildHeroPopupHTML(hero) {
     rows.push(`<div class="pop-section-label">Special</div>${spRows}`);
   }
 
-  return `<div class="pop-name">${hero.name}</div>
-          <div class="pop-type">${hero.faction} &middot; ${catLabel}</div>
+  return `<div class="pop-name">${_esc(hero.name)}</div>
+          <div class="pop-type">${typeLine}</div>
           ${rows.join("")}`;
 }
 
@@ -1394,6 +1272,13 @@ function _heroRefreshUI() {
   const fl = hu.flags || {};
   if (g("hero-flag-regen")) g("hero-flag-regen").checked = !!fl.regen_hp;
 }
+
+// Search
+document.getElementById("hero-search")?.addEventListener("input", e => {
+  _heroSearch = e.target.value;
+  renderHeroGrid();
+  _heroRefreshUI();
+});
 
 // Filter buttons
 document.querySelectorAll("#hero-filter-group button").forEach(btn => {
@@ -4389,6 +4274,7 @@ async function init() {
     const res  = await fetch(_metaUrl());
     const meta = await res.json();
     _showRosterNotice(meta.roster_from_game);
+    loadHeroCatalog();   // background: the review step names the hero from it
 
     window._metaArchitectures = meta.architectures;
     window._metaCivs          = meta.civs;

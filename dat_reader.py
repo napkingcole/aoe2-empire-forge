@@ -102,6 +102,26 @@ def find_game_strings(dat_path: str | Path | None) -> Path | None:
     return p if p.is_file() else None
 
 
+def find_unit_icon(dat_path: str | Path | None, icon_id: int) -> Path | None:
+    """The game's own picture for a unit's `icon_id`, or None.
+
+    DE keeps unit icons as 256x256 DDS textures in
+    `<game>/widgetui/textures/ingame/units/{icon_id:03}_50730.DDS` — some files
+    have a lower-case extension.  (`resources/_common/wpfg/resources/uniticons`
+    holds only ~95 legacy PNGs.)  Same walk from the DAT as find_game_strings."""
+    if not dat_path or icon_id is None or icon_id < 0:
+        return None
+    parents = Path(dat_path).resolve().parents
+    if len(parents) <= 3:
+        return None
+    folder = parents[3] / "widgetui" / "textures" / "ingame" / "units"
+    for ext in ("DDS", "dds"):
+        p = folder / f"{icon_id:03d}_50730.{ext}"
+        if p.is_file():
+            return p
+    return None
+
+
 # The DAT most recently loaded — the game whose strings name its units.
 last_loaded: Path | None = None
 
