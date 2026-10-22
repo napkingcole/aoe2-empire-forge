@@ -3492,7 +3492,9 @@ function renderUUGrid() {
     return;
   }
 
-  let items = _uuCatalog;
+  const selectedIdx = draft.unique_unit?.km_idx;
+  // Retired units (KM's custom ones) show only for a civ that already has one.
+  let items = _uuCatalog.filter(u => !u.retired || u.km_idx === selectedIdx);
   if (typeFilter === "vanilla")    items = items.filter(u => u.vanilla && !u.chronicles);
   if (typeFilter === "chronicles") items = items.filter(u => u.chronicles);
   if (typeFilter === "scenario")   items = items.filter(u => u.scenario);
@@ -3504,10 +3506,11 @@ function renderUUGrid() {
     return;
   }
 
-  const selectedIdx = draft.unique_unit?.km_idx;
   grid.innerHTML = items.map(u => {
     const iconSrc = u.icon || UU_PLACEHOLDER;
-    const badge   = u.chronicles
+    const badge   = u.retired
+      ? `<span class="uu-badge uu-badge-retired" title="Retired: still builds for this civ, no longer offered">R</span>`
+      : u.chronicles
       ? `<span class="uu-badge uu-badge-chronicles" title="Chronicles unit">Ch</span>`
       : u.scenario
       ? `<span class="uu-badge uu-badge-scenario" title="Scenario unit">S</span>`
@@ -3572,7 +3575,9 @@ function selectUU(kmIdx) {
   iconEl.onerror = () => { iconEl.src = UU_PLACEHOLDER; };
   document.getElementById("uu-selected-name").textContent = unit.name;
   document.getElementById("uu-selected-type").textContent =
-    unit.chronicles ? "Chronicles unit" : unit.vanilla ? "Vanilla base unit" : "Custom base unit";
+    unit.retired ? "Retired — still builds for this civ, but is no longer offered"
+    : unit.chronicles ? "Chronicles unit" : unit.scenario ? "Scenario unit"
+    : unit.vanilla ? "Vanilla base unit" : "Custom base unit";
 
   document.getElementById("uu-name-override").value = draft.unique_unit.name       || "";
   document.getElementById("uu-description").value   = draft.unique_unit.description || "";

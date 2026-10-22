@@ -785,6 +785,11 @@ details[open] > summary::before {
   color: var(--blue-5);
   border: 1px solid oklch(from var(--blue-5) l c h / 0.4);
 }
+.uu-badge-retired {
+  background: oklch(from #888 l c h / 0.15);
+  color: #aaa;
+  border: 1px solid oklch(from #888 l c h / 0.5);
+}
 .uu-badge-scenario {
   background: oklch(from #2e7d5b l c h / 0.15);
   color: #4fae84;

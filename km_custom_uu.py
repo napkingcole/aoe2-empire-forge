@@ -706,6 +706,15 @@ SCENARIO_UUS: dict[int, tuple[str, int, int | None]] = {
     115: ("Cobra Car",               748, None),
     116: ("Sharkatzor",             1222, None),
     117: ("War Penguin",             639, None),
+    # Real game units KM had re-tuned by hand (presets 40-50); the game's own
+    # versions replace them (2026-10-22, the user's call — see civ_schema.RETIRED_UUS).
+    118: ("Xolotl Warrior",         1570, None),
+    119: ("Ninja",                  1145, None),
+    120: ("Flamethrower",            188, None),
+    121: ("Photonman",              1577, None),
+    122: ("Amazon Warrior",          825, None),
+    123: ("Amazon Archer",           850, None),
+    124: ("Iroquois Warrior",       1374, None),
 }
 
 # Every elite upgrade we generate costs and takes what DE's typically do: the

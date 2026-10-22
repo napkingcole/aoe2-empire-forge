@@ -380,8 +380,8 @@
     <div class="card-body">
 
       <p class="text-muted small mb-3">
-        Choose a base unit for your Unique Unit — vanilla units keep their in-game stats,
-        custom units use preset values. You can override the name shown in-game.
+        Choose a base unit for your Unique Unit — every unit keeps its in-game stats; a scenario
+        unit with no Elite of its own gets a standard one. You can override the name shown in-game.
       </p>
 
       {# Search + type filter #}
@@ -400,7 +400,6 @@
             <option value="vanilla">Vanilla only</option>
             <option value="chronicles">Chronicles only</option>
             <option value="scenario">Scenario only</option>
-            <option value="custom">Custom only</option>
           </select>
         </div>
       </div>
@@ -417,7 +416,7 @@
       <div class="form-text mb-3">
         <span class="uu-badge uu-badge-vanilla">V</span> Vanilla — uses the original game unit as a base.
         <span class="uu-badge uu-badge-scenario ms-2">S</span> Scenario — a unit from the scenario editor, Elite included.
-        <span class="uu-badge uu-badge-custom ms-2">C</span> Custom — a new unit built from scratch.
+        <span class="uu-badge uu-badge-retired ms-2">R</span> Retired — shown only for a civ that already uses it.
       </div>
 
       {# Selected unit details (hidden until a unit is picked) #}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scenario units as unique units (km 103-117).  DAT-gated.
+"""Scenario units as unique units (km 103-124); KM's custom ones retired.  DAT-gated.
 
 km_custom_uu.SCENARIO_UUS offers fifteen units the scenario editor can place
 but no civ trains: the UU is the game's own unit as it stands, the Elite is the
@@ -61,7 +61,7 @@ def elite_of(uid):
 
 
 print("=== the table ===")
-check("fifteen scenario units, 103-117", sorted(kcu.SCENARIO_UUS) == list(range(103, 118)))
+check("twenty-two scenario units, 103-124", sorted(kcu.SCENARIO_UUS) == list(range(103, 125)))
 check("none collides with a vanilla or KM index",
       not set(kcu.SCENARIO_UUS) & (set(_KM_UU_TECHS) | set(range(0, 103))))
 check("every one is named for the picker", all(_KM_UU_NAMES.get(i) == n for i, (n, _, _) in kcu.SCENARIO_UUS.items()))
@@ -112,6 +112,26 @@ check("but not the other scenario units' icons", not others, others[:3])
 
 strings = uz.read(next(n for n in uz.namelist() if n.endswith("key-value-modded-strings-utf8.txt") and "/en/" in n)).decode()
 check("the UU and its Elite are named", '"Qizilbash Warrior"' in strings and "Elite Qizilbash Warrior" in strings)
+
+print("\n=== KM's custom units are retired, not deleted ===")
+# 2026-10-22, the user's call: KM's 36 (re-tuned game units, or invented units
+# wearing a hero's model) leave the picker; a civ that has one still builds it.
+from civ_schema import RETIRED_UUS                                # noqa: E402
+import app as webapp                                              # noqa: E402
+check("all 36 KM custom units are retired", RETIRED_UUS == frozenset(
+    i for i, p in kcu.PRESETS.items() if p["mode"] != "scenario") and len(RETIRED_UUS) == 36)
+with webapp.app.test_request_context("/api/builder/uu/catalog"):
+    entries = webapp._uu_catalog_entries()
+check("the picker marks every one retired", all(e["retired"] == (e["km_idx"] in RETIRED_UUS) for e in entries))
+check("...and offers every scenario unit", {e["km_idx"] for e in entries if e["scenario"]} == set(kcu.SCENARIO_UUS))
+from civ_appender import apply_civ                                # noqa: E402
+old = {"format": FORMAT_KEY, "alias": "Wololo Probe", "architecture": 2, "language": 0, "bonuses": [],
+       "unique_unit": {"km_idx": 39},        # Crusader Knight, as Unhinged Empires' Wololo Warlords
+       "tree": {"units": [83], "buildings": [109, 82], "techs": [101, 102, 103]}}
+with contextlib.redirect_stdout(io.StringIO()):
+    r = apply_civ(dat, old, target_slot=4)
+check("a civ that already has a retired one still builds it",
+      r.get("uu_id", -1) >= 0 and r.get("km_uu_make_avail_tech_id", -1) >= 0, {k: r.get(k) for k in ("uu_id", "elite_uu_id")})
 
 print("\nPASS" if not failures else f"\n{failures} FAILED")
 sys.exit(1 if failures else 0)

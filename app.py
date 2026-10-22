@@ -104,7 +104,11 @@ def _uu_table_fingerprint() -> str:
     table means the next DLC invalidates the cache by itself.
     """
     import civ_appender as ca
-    raw = repr(sorted((k, tuple(v)) for k, v in ca._KM_UU_TECHS.items()))
+    import km_custom_uu as kcu
+    # The presets too: a scenario unit added (118-124) or a cost changed
+    # (SCENARIO_COSTS) left the same stale-cache gap until 2026-10-22.
+    raw = repr((sorted((k, tuple(v)) for k, v in ca._KM_UU_TECHS.items()),
+                sorted((k, repr(v)) for k, v in kcu.PRESETS.items())))
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
 
@@ -2369,6 +2373,7 @@ def _uu_catalog_entries() -> list[dict]:
         77: "306_50730.png",   # Wind Warrior
     }
 
+    from civ_schema import RETIRED_UUS
     unsupported = {47, 75}
     vanilla_keys = set(ca._KM_UU_TECHS.keys())
     catalog = []
@@ -2474,6 +2479,9 @@ def _uu_catalog_entries() -> list[dict]:
             "icon":          (f"/api/unit-icon/{kcu.SCENARIO_UUS[km_idx][1]}" if km_idx in kcu.SCENARIO_UUS
                               else f"/resources/uniticons/{icon_file}" if icon_file else None),
             "scenario":      km_idx in kcu.SCENARIO_UUS,
+            # KM's custom units (civ_schema.RETIRED_UUS): listed so a civ that
+            # already has one still shows it, but the picker offers it to no one else.
+            "retired":       km_idx in RETIRED_UUS,
             "stats":         entry_stats,
             "training_cost": entry_stats["cost"] if entry_stats else None,
             "elite_upgrade": elite_upgrades.get(km_idx) or (

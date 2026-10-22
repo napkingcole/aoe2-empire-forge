@@ -49,6 +49,21 @@ RETIRED_UU_FLAGS = frozenset({"ignore_armor"})
 #     RETIRED_INTO_TREE): it still does what it says, but it has a better home.
 RETIRED_CIV_BONUSES = frozenset({333, 51})
 
+# KM's 36 custom unique units (km_custom_uu.PRESETS 39-77), retired from the
+# picker 2026-10-22 (the user's call).  Ten were real game units KM had re-tuned
+# by hand — the game's own are scenario units now (118-124), or heroes on the
+# Heroes tab (Crusader Knight, Saboteur, Sosso Guard); 24 were invented units
+# wearing a real hero's model (the Jaridah is Attila's) with hand-typed stats,
+# where the 28-preset population bug lived; the Swiss Pikeman is the Heavy
+# Pikeman (scenario 109).  Hidden, not deleted: a saved civ or KM import that
+# carries one still builds it, as Unhinged Empires' Wololo Warlords does.
+def _km_custom_uu_ids() -> frozenset:
+    import km_custom_uu
+    return frozenset(i for i, p in km_custom_uu.PRESETS.items() if p["mode"] != "scenario")
+
+
+RETIRED_UUS = _km_custom_uu_ids()
+
 # Cards whose choice moved into the tech tree.  A civ that picked one reads as
 # if its tree held `add` and not `remove`, derived on every read (as the Unlock
 # cards are) so an old civ or a KM import keeps building what it built before.
