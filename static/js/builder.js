@@ -1067,6 +1067,63 @@ function _datQuery() {
   return draft.dat_path ? `?dat_path=${encodeURIComponent(draft.dat_path)}` : "";
 }
 
+// ── Unit previews ─────────────────────────────────────────────────────────────
+// How a unit looks in the game, rendered by the server from the player's own
+// sprites (game_sprites.py): a still on hover, and Idle / Walk / Attack in a
+// window from each card's play button.
+function _previewSrc(unitId, kind = "still") {
+  return `/api/unit-preview/${unitId}/${kind}${_datQuery()}`;
+}
+
+function _previewImgHtml(unitId) {
+  if (unitId == null) return "";
+  return `<div class="pop-preview"><img src="${_previewSrc(unitId)}" alt="" onerror="this.parentNode.remove()"></div>`;
+}
+
+function _previewBtnHtml(unitId, name) {
+  if (unitId == null) return "";
+  return `<button type="button" class="unit-preview-btn" data-preview-unit="${unitId}" data-preview-name="${_esc(name)}"
+            title="See it in the game" aria-label="Preview ${_esc(name)}"><i class="fa-solid fa-play"></i></button>`;
+}
+
+function _wirePreviewButtons(container) {
+  container.querySelectorAll(".unit-preview-btn").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();                 // the card's own click selects it
+      openUnitPreview(parseInt(btn.dataset.previewUnit, 10), btn.dataset.previewName);
+    });
+  });
+}
+
+let _previewModal = null;
+function openUnitPreview(unitId, name) {
+  const el = document.getElementById("modal-unit-preview");
+  if (!el) return;
+  _previewModal = _previewModal || new bootstrap.Modal(el);
+  el.querySelector(".modal-title").textContent = name || "";
+  const img = el.querySelector("#unit-preview-img");
+  const status = el.querySelector("#unit-preview-status");
+  const show = kind => {
+    el.querySelectorAll("[data-preview-kind]").forEach(b =>
+      b.classList.toggle("active", b.dataset.previewKind === kind));
+    status.textContent = "Rendering from your game…";
+    status.classList.remove("d-none");
+    img.classList.add("d-none");
+    img.onload = () => {
+      // 1.5x, the same for every unit so sizes compare as in the game (the
+      // sprites are sharp enough), capped to the window.
+      img.style.width = `${Math.min(img.naturalWidth * 1.5, 440)}px`;
+      status.classList.add("d-none");
+      img.classList.remove("d-none");
+    };
+    img.onerror = () => { status.textContent = "This animation isn't in your game files."; };
+    img.src = _previewSrc(unitId, kind);
+  };
+  el.querySelectorAll("[data-preview-kind]").forEach(b => { b.onclick = () => show(b.dataset.previewKind); });
+  show("idle");
+  _previewModal.show();
+}
+
 async function loadHeroCatalog() {
   const key = draft.dat_path || "";
   if (_heroCatalogFor === key && _HERO_CATALOG.length) return;
@@ -1147,6 +1204,7 @@ function renderHeroGrid(filter) {
     const sel = h.id === curId ? ' selected' : '';
     return `<div class="hero-grid-card${sel}" data-hero-id="${h.id}" title="${_esc(h.name)}">
       <div class="hero-card-inner">
+        ${_previewBtnHtml(h.id, h.name)}
         <img class="hero-card-img" src="/api/unit-icon/${h.id}${_datQuery()}" loading="lazy" data-fallback="/static/icons/heroes/${h.id}.webp">
         <div class="hero-card-name">${_esc(h.name)}</div>
         ${h.faction ? `<div class="hero-card-faction">${_esc(h.faction)}</div>` : ""}
@@ -1158,6 +1216,7 @@ function renderHeroGrid(filter) {
       : `<div class="text-muted small fst-italic">Heroes are read from your game — point Empire Forge at it in step 1.</div>`);
 
   // Wire onerror via JS to avoid single-quote escaping issues in inline HTML attributes
+  _wirePreviewButtons(container);
   // The game's icon, else the picture we used to ship for the original 30,
   // else the placeholder.
   container.querySelectorAll(".hero-grid-card img").forEach(img => {
@@ -1226,7 +1285,7 @@ function _buildHeroPopupHTML(hero) {
     rows.push(`<div class="pop-section-label">Special</div>${spRows}`);
   }
 
-  return `<div class="pop-name">${_esc(hero.name)}</div>
+  return `${_previewImgHtml(hero.id)}<div class="pop-name">${_esc(hero.name)}</div>
           <div class="pop-type">${typeLine}</div>
           ${rows.join("")}`;
 }
@@ -3405,7 +3464,7 @@ function _buildUUPopupHTML(unit) {
           + `<i class="fa-solid fa-triangle-exclamation me-1"></i>`
           + `Game files not found &mdash; set your DAT path in Step 1</div>`
         : `<div class="pop-row" style="opacity:.6;font-style:italic;">No stats available</div>`;
-    return `<div class="pop-name">${unit.name}</div>
+    return `${_previewImgHtml(unit.preview_unit)}<div class="pop-name">${unit.name}</div>
             <div class="pop-row"><span class="pop-label">Type</span><span class="pop-val">${badge}</span></div>
             ${loadingLine}`;
   }
@@ -3476,7 +3535,7 @@ function _buildUUPopupHTML(unit) {
     rows.push(`<div class="pop-section-label">Special</div>${traitRows}`);
   }
 
-  return `<div class="pop-name">${unit.name}</div>
+  return `${_previewImgHtml(unit.preview_unit)}<div class="pop-name">${unit.name}</div>
           <div class="pop-type">${badge}</div>
           ${rows.join("")}`;
 }
@@ -3521,11 +3580,13 @@ function renderUUGrid() {
     return `
       <div class="uu-card${sel}" data-km-idx="${u.km_idx}">
         ${badge}
+        ${_previewBtnHtml(u.preview_unit, u.name)}
         <img class="uu-card-icon" src="${iconSrc}" alt="${u.name}">
         <div class="uu-card-name">${u.name}</div>
       </div>`;
   }).join("");
 
+  _wirePreviewButtons(grid);
   // Wire onerror via JS to avoid quote-escaping issues in inline HTML attributes
   grid.querySelectorAll(".uu-card-icon").forEach(img => {
     img.onerror = () => { img.onerror = null; img.src = UU_PLACEHOLDER; };
@@ -4341,9 +4402,11 @@ async function init() {
   const ctInput  = document.getElementById("civtechtrees-path-input");
   const datStatus = document.getElementById("dat-detect-status");
 
+  // Parses the DAT and renders the pickers' preview stills in the background.
+  // With no path the server warms whatever game it detects (_resolve_dat_path).
   function _prewarmDat(datPath) {
-    if (!datPath) return;
-    fetch(`/api/builder/prewarm?dat_path=${encodeURIComponent(datPath)}`).catch(() => {});
+    const q = datPath ? `?dat_path=${encodeURIComponent(datPath)}` : "";
+    fetch(`/api/builder/prewarm${q}`).catch(() => {});
   }
 
   async function detectDat() {
@@ -4414,6 +4477,7 @@ async function init() {
       } else {
         datStatus.textContent = `✕ ${d.reason}`;
         datStatus.className   = "form-text text-danger";
+        _prewarmDat("");     // a stale saved path: warm the game the server finds
       }
     } catch (e) {
       datStatus.textContent = `Could not check that path: ${e.message}`;

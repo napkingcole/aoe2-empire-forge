@@ -1039,6 +1039,30 @@
 </div>
 
 {# Start Fresh modal #}
+{# Unit preview: Idle / Walk / Attack, rendered from the player's sprites #}
+<div class="modal fade" id="modal-unit-preview" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Unit</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Animation">
+          <button type="button" class="btn btn-outline-secondary" data-preview-kind="idle">Idle</button>
+          <button type="button" class="btn btn-outline-secondary" data-preview-kind="walk">Walk</button>
+          <button type="button" class="btn btn-outline-secondary" data-preview-kind="attack">Attack</button>
+        </div>
+        <div class="unit-preview-stage">
+          <div id="unit-preview-status" class="text-muted small"></div>
+          <img id="unit-preview-img" class="d-none" alt="The unit in the game">
+        </div>
+        <p class="small text-muted mt-2 mb-0">As it looks in your game: facing south-west, in Player 1 Blue, at Normal speed.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="modal-start-fresh" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">

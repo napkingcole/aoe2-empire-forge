@@ -2198,6 +2198,9 @@ def api_builder_prewarm():
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path:
         return jsonify({"status": "skipped", "reason": "no dat_path"})
+    if dat_path not in _PREVIEWS_WARMED:
+        _PREVIEWS_WARMED.add(dat_path)
+        threading.Thread(target=_warm_previews, args=(dat_path,), daemon=True).start()
     if dat_path in _UU_STATS_CACHE:
         return jsonify({"status": "already_cached"})
 
@@ -2457,6 +2460,12 @@ def _uu_catalog_entries() -> list[dict]:
     # is what an un-illustrated unit should look like.  The upshot is that
     # dropping a new file into uniticons/ is the whole job — no code change.
     _icon_dir = Path(__file__).parent / "uniticons"
+    preview_units: dict[int, int] = {}
+    if dat_path:
+        try:
+            preview_units = _uu_preview_units(_get_dat(dat_path))
+        except Exception:                                        # noqa: BLE001
+            preview_units = {}
 
     for km_idx, name in ca._KM_UU_NAMES.items():
         if km_idx in unsupported or km_idx in missing_in_dat:
@@ -2482,6 +2491,8 @@ def _uu_catalog_entries() -> list[dict]:
             # KM's custom units (civ_schema.RETIRED_UUS): listed so a civ that
             # already has one still shows it, but the picker offers it to no one else.
             "retired":       km_idx in RETIRED_UUS,
+            # The game unit /api/unit-preview shows for it (None: no preview).
+            "preview_unit":  preview_units.get(km_idx),
             "stats":         entry_stats,
             "training_cost": entry_stats["cost"] if entry_stats else None,
             "elite_upgrade": elite_upgrades.get(km_idx) or (
@@ -2597,6 +2608,88 @@ def api_unit_icon(unit_id: int):
         game_art.icon_rgb(src).save(tmp, "WEBP", quality=85)
         tmp.replace(cached)
     return send_file(cached, mimetype="image/webp", max_age=86400)
+
+
+_PREVIEW_VERSION = "v1"        # bump when game_sprites' output changes
+_PREVIEWS_WARMED: set[str] = set()
+
+
+def _preview_path(dat_path: str, unit_id: int, kind: str) -> Path:
+    game = hashlib.md5(str(Path(dat_path).resolve()).encode()).hexdigest()[:10]
+    return _cache_dir() / f"previews-{_PREVIEW_VERSION}" / game / f"{kind}_{unit_id}.webp"
+
+
+def _render_preview(dat_path: str, unit_id: int, kind: str) -> Path | None:
+    """The cached preview, rendered from the player's sprites on first ask:
+    kind "still" (first idle frame) or one of game_sprites.ANIMATIONS."""
+    import game_sprites
+    cached = _preview_path(dat_path, unit_id, kind)
+    if cached.exists():
+        return cached
+    dat = _get_dat(dat_path)
+    units = dat.civs[0].units
+    if not 0 <= unit_id < len(units) or units[unit_id] is None:
+        return None
+    unit = units[unit_id]
+    data = (game_sprites.still_webp(dat, dat_path, unit) if kind == "still"
+            else game_sprites.animation_webp(dat, dat_path, unit, kind))
+    if data is None:
+        return None
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cached.with_suffix(f".{threading.get_ident()}.tmp")
+    tmp.write_bytes(data)
+    tmp.replace(cached)
+    return cached
+
+
+@app.route("/api/unit-preview/<int:unit_id>/<kind>")
+def api_unit_preview(unit_id: int, kind: str):
+    """A unit as it looks in the game, facing south-west in Player 1 Blue:
+    `still`, or an animated `idle` / `walk` / `attack` at Normal speed.
+    Rendered from the player's own sprites (game_sprites) and cached; 404 when
+    the game or the sprite isn't found."""
+    import game_sprites
+    if kind != "still" and kind not in game_sprites.ANIMATIONS:
+        return ("", 404)
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return ("", 404)
+    path = _render_preview(dat_path, unit_id, kind)
+    if path is None:
+        return ("", 404)
+    return send_file(path, mimetype="image/webp", max_age=86400)
+
+
+def _warm_previews(dat_path: str) -> None:
+    """Render every hero's and unique unit's still in the background, so the
+    pickers show them at once (the user's idea, 2026-10-22).  ~6 s for all."""
+    import heroes
+    from civ_appender import _string_table
+    try:
+        dat = _get_dat(dat_path)
+        names = _string_table()
+        ids = {h["id"] for h in heroes.hero_catalog(
+            dat, _unit_stats_block, lambda u: names.get(u.language_dll_name))}
+        ids |= set(_uu_preview_units(dat).values())
+        for uid in sorted(ids):
+            _render_preview(dat_path, uid, "still")
+    except Exception as exc:                                      # noqa: BLE001
+        print(f"[previews] {exc}", flush=True)
+
+
+def _uu_preview_units(dat) -> dict[int, int]:
+    """km_idx -> the game unit a unique unit looks like: a vanilla UU's own
+    unit (from its make-avail tech), a preset's base unit."""
+    import civ_appender as ca
+    import km_custom_uu as kcu
+    out: dict[int, int] = {i: p["base_unit_id"] for i, p in kcu.PRESETS.items()}
+    for i, (make_avail, _elite) in ca._KM_UU_TECHS.items():
+        if 0 <= make_avail < len(dat.techs) and dat.techs[make_avail].effect_id >= 0:
+            for c in dat.effects[dat.techs[make_avail].effect_id].effect_commands:
+                if c.type in (2, 3) and c.a >= 0:
+                    out[i] = int(c.a)
+                    break
+    return out
 
 
 @app.route("/api/builder/ut/costs")
