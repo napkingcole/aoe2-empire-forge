@@ -447,29 +447,28 @@ VANILLA_DISPLAY_NAMES: dict[str, str] = {
     "French":  "Franks",
 }
 
-# Index 0 = Gaia, 1 = Britons, … matches DAT civ order.
-_CIV_NAMES_BY_DAT_INDEX: list[str] = []
-try:
-    _civ_list = json.loads(
-        (Path(__file__).parent / "civilizations.json").read_text(encoding="utf-8")
-    ).get("civilization_list", [])
-    _CIV_NAMES_BY_DAT_INDEX = [c.get("internal_name", "") for c in _civ_list]
-except Exception:
-    pass
+def _civ_names_by_dat_index() -> list[str]:
+    """Civ names in DAT order (0 = Gaia, 1 = Britons, …), from the player's
+    civilizations.json through civ_roster — not a bundled copy, which was
+    removed 2026-10-21.  Only labels the upload page's civ list."""
+    return [c["name"] for c in civ_roster(_resolve_dat_path() or None)]
+
 
 def _km_civ_name(km_index: int) -> str:
     """Friendly name for a 0-based KM civ index (castle/wonder/language style)."""
     dat_idx = km_index + 1
-    if 0 < dat_idx < len(_CIV_NAMES_BY_DAT_INDEX):
-        return _CIV_NAMES_BY_DAT_INDEX[dat_idx]
+    names = _civ_names_by_dat_index()
+    if 0 < dat_idx < len(names):
+        return names[dat_idx]
     return str(km_index)
 
 def _arch_name(arch_val: int) -> str:
     """Friendly name for a 1-based KM architecture value."""
     if 1 <= arch_val <= len(_ARCH_REP_CIVS):
         dat_idx = _ARCH_REP_CIVS[arch_val - 1]
-        if dat_idx < len(_CIV_NAMES_BY_DAT_INDEX):
-            return _CIV_NAMES_BY_DAT_INDEX[dat_idx]
+        names = _civ_names_by_dat_index()
+        if dat_idx < len(names):
+            return names[dat_idx]
     return str(arch_val)
 
 

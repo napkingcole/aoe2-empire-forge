@@ -174,7 +174,7 @@ TEAM BONUSES — two traps, both of which have bitten (2026-09-18):
     - **`unit.name` is an internal codename and lies.**  775 is 'MONKY' (the
       Missionary), 1137 is 'TIGER' (a wild animal), 1572 is 'MERCHANT', 594 is
       'SHEEPG'.  Read lists through `civ_appender.unit_label()`, which resolves
-      `language_dll_name` against `vanilla/key-value/key-value-strings-utf8.txt`.
+      `language_dll_name` against the game's own key-value strings.
       Three wrong units had sat in these lists unnoticed precisely because the
       codenames looked plausible.
     - **Attribute 20 is Minimum Range, not build rate.**  Both "built 100%

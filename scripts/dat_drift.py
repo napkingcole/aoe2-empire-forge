@@ -130,8 +130,6 @@ def main() -> int:
         print(f"\n  new civs: {added_civs}")
         print("  → add these to build_civ.KM_TECHTREE_ORDER, or their civ-picker")
         print("    name strings (10271 + index) land on the wrong slot.")
-        print("  → refresh the bundled civilizations.json: the game validates its")
-        print("    entry count against the DAT civ count.")
 
     # ── 2. Techs we depend on whose effect changed ──────────────────────────
     print("\n═══ Techs we depend on ═══")

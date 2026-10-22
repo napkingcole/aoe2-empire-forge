@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import build_all                                            # noqa: E402
+import dat_reader                                           # noqa: E402
 from civ_schema import FORMAT_KEY                           # noqa: E402
 from dat_reader import find_game_dat                        # noqa: E402
 
@@ -31,7 +32,7 @@ OUT = ROOT / "ignore" / "qa_2_6_2"
 
 
 def tree_from(civ_file: str) -> dict:
-    data = json.loads((ROOT / "CivTechTrees" / civ_file).read_text(encoding="utf-8"))
+    data = json.loads((dat_reader.find_civtechtrees(dat_reader.find_game_dat()) / civ_file).read_text(encoding="utf-8"))
     out = {"units": [], "buildings": [], "techs": []}
     for sec in ("civ_techs_units", "civ_techs_buildings"):
         for n in data[sec]:

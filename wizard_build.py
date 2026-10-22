@@ -19,7 +19,7 @@ from build_all import (
     _ut_name,
     _BONUS_NAMES,
     _TEAM_BONUS_NAMES,
-    _VANILLA_CIV_DESCRIPTIONS,
+    vanilla_civ_descriptions,
     DLL_CREATION_OFFSET,
     DLL_HELP_OFFSET,
     DLL_TECH_TREE_OFFSET,
@@ -467,11 +467,12 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     # Descriptions exist only for the original 45 civs (sids 120150-120194),
     # indexed from Britons = 0, i.e. DAT slot - 1.
     replaced_pos = {name_sid - 10271}
+    civ_descriptions = vanilla_civ_descriptions(dat_path)
     for i in range(45):
         if i in replaced_pos:
             continue
         sid  = 120150 + i
-        text = _VANILLA_CIV_DESCRIPTIONS.get(sid)
+        text = civ_descriptions.get(sid)
         if text:
             for lang in LANGUAGES:
                 string_lines[lang].append(f'{sid} "{text}"')

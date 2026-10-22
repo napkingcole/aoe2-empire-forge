@@ -285,18 +285,12 @@ try:
     lost = client.get("/api/builder/meta").get_json()
 finally:
     appmod.find_game_dat = _real_find
-check("game not found: the list still fills in, from our copy", len(lost["civs"]) > 40, len(lost["civs"]))
+check("game not found: the list still fills in", len(lost["civs"]) > 40, len(lost["civs"]))
 check("...and is flagged as NOT from the player's game, for the wizard's notice",
       lost.get("roster_from_game") is False, lost.get("roster_from_game"))
 
-# The copy we ship is only a backup, but it must not fall behind the game: a
-# patch that adds civs (Viking Sagas: 60 -> 63) leaves them out of every
-# picker for anyone whose game isn't found.  Refresh civilizations.json from
-# the game when this fails.
-import json as _json                                              # noqa: E402
-_bundled = _json.loads((ROOT / "civilizations.json").read_text(encoding="utf-8"))["civilization_list"]
-check("our bundled civilizations.json covers every civ in this game",
-      len(_bundled) >= len(_probe_dat.civs), f"bundled {len(_bundled)} vs game {len(_probe_dat.civs)}")
+# No bundled civilizations.json to keep in step with the game any more: it was
+# removed 2026-10-21, and the roster is only ever the player's.
 
 # Architecture and Monk options must each name a real partition in this DAT:
 # an option whose representative civ does not actually carry that icon_set or

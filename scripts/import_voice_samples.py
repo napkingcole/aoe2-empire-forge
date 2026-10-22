@@ -149,7 +149,10 @@ def _have_encoder(name: str) -> bool:
 def _civ_value_lookup() -> dict[str, tuple[int, str]]:
     """slug -> (voice value, civ name), from civilizations.json internal names."""
     import json
-    civs = json.loads((ROOT / "civilizations.json").read_text())["civilization_list"]
+    sys.path.insert(0, str(ROOT))
+    from build_civ import civ_roster          # the player's civilizations.json
+    import dat_reader
+    civs = [{"internal_name": c["name"]} for c in civ_roster(dat_reader.find_game_dat())]
     table: dict[str, tuple[int, str]] = {}
     for i, c in enumerate(civs):
         name = c.get("internal_name") or ""

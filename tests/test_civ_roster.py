@@ -49,11 +49,21 @@ def check(label, cond, extra=""):
         print(f"  FAIL {label}" + (f"\n       {extra}" if extra else ""))
 
 
-print("=== the roster loads from civilizations.json ===")
+# The player's game: there is no bundled copy to read instead (2026-10-21).
+from dat_reader import find_game_dat, find_civtechtrees              # noqa: E402
+from build_civ import _find_adjacent_json                            # noqa: E402
+GAME_DAT = find_game_dat()
+if GAME_DAT is None:
+    print("  skip  no game found (point EMPIREFORGE_DAT at one)")
+    sys.exit(0)
+GAME_TREES = find_civtechtrees(GAME_DAT)
+
+print("=== the roster loads from the game's civilizations.json ===")
 roster = civ_roster()
-bundled = json.loads((ROOT / "civilizations.json").read_text(encoding="utf-8"))["civilization_list"]
-check("one entry per civ slot", len(roster) == len(bundled),
-      f"{len(roster)} vs {len(bundled)}")
+game_civs = json.loads(_find_adjacent_json(GAME_DAT, "civilizations.json")
+                       .read_text(encoding="utf-8"))["civilization_list"]
+check("with no path given, it reads the player's game", len(roster) == len(game_civs),
+      f"{len(roster)} vs {len(game_civs)}")
 check("slot 0 is Gaia", roster[0]["name"] == "Gaia", roster[0])
 check("slot 1 is Britons with sid 10271",
       roster[1]["name"] == "Britons" and roster[1]["name_sid"] == 10271, roster[1])
@@ -75,9 +85,9 @@ check("Mayan resolves to MAYANS, the file that actually ships",
       "MAYA.json does not exist; the per-civ tech tree patch is guarded by "
       ".exists(), so this silently shipped an unpatched tree")
 check("...and the file it names is really there",
-      (ROOT / "CivTechTrees" / "MAYANS.json").exists())
+      (GAME_TREES / "MAYANS.json").exists())
 check("...while the name the frozen table produced is not",
-      not (ROOT / "CivTechTrees" / "MAYA.json").exists())
+      not (GAME_TREES / "MAYA.json").exists())
 
 print("\n=== no regression for the civs that already worked ===")
 # Every civ in the frozen list must still get the sid it always got.
@@ -103,9 +113,10 @@ check("the frozen list is still reachable as the last-resort fallback",
       _civ_techtree_index("Britons") == 0)
 
 print("\n=== and it absorbs civs the frozen list never had ===")
-# Only meaningful against an updated install; skips cleanly otherwise.
-dlc = ROOT / "9-22-26 update" / "empires2_x2_p1.dat"
-if dlc.exists():
+# The player's game has the Viking Sagas civs (the old "9-22-26 update" copy
+# this read is gone); skips cleanly against an older DAT.
+dlc = GAME_DAT
+if len(civ_roster(str(dlc))) - 1 > len(KM_TECHTREE_ORDER):
     r = civ_roster(str(dlc))
     check("the DLC roster is longer than the frozen list",
           len(r) - 1 > len(KM_TECHTREE_ORDER),
@@ -131,7 +142,7 @@ if dlc.exists():
                       False, f"got {got}")
     check("every civilizations.json name resolves to its own DAT slot", True)
 else:
-    print("  skip  no updated DAT present (game data is gitignored)")
+    print("  skip  this game predates the civs the frozen list lacks")
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")

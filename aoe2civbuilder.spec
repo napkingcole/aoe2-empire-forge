@@ -22,17 +22,13 @@ a = Analysis(
     datas=[
         ('templates', 'templates'),
         ('static', 'static'),
-        ('CivTechTrees', 'CivTechTrees'),
         ('uniticons', 'uniticons'),
-        ('vanilla/aoe2techtree_strings', 'vanilla/aoe2techtree_strings'),
-        # Display names for units, buildings and techs.  The player's own copy
-        # is read first (dat_reader.find_game_strings); this is the fallback.
-        ('vanilla/key-value/key-value-strings-utf8.txt', 'vanilla/key-value'),
+        # No game files ship (CivTechTrees, civilizations.json, strings,
+        # futuravailableunits.json were removed 2026-10-21): everything is read
+        # from the player's install, beside their DAT.
         ('bonus_catalog_raw.json', '.'),
         ('bonus_names.json', '.'),
         ('team_bonus_names.json', '.'),
-        ('civilizations.json', '.'),
-        ('futuravailableunits.json', '.'),
         # Names every unit-voice clip in the game's Wwise banks.  The clips
         # themselves are read from the PLAYER's install at build time
         # (voice_source.py), so no game audio ships in the exe; the picker

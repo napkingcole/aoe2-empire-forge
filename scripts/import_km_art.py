@@ -72,7 +72,10 @@ def _option_lookup() -> dict[str, dict[str, int]]:
     """slug -> value, for civs (castle/wonder) and architectures (tc)."""
     sys.path.insert(0, str(ROOT))
     import json as _json
-    civs = _json.loads((ROOT / "civilizations.json").read_text())["civilization_list"]
+    sys.path.insert(0, str(ROOT))
+    from build_civ import civ_roster          # the player's civilizations.json
+    import dat_reader
+    civs = [{"internal_name": c["name"]} for c in civ_roster(dat_reader.find_game_dat())]
     from app import _ARCH_OPTIONS
     return {
         # civ option value is the DAT index minus one, matching draft.castle

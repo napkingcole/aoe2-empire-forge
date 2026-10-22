@@ -201,6 +201,10 @@ check("DAT is a plausible size (>5 MB)",
       f"{dz.getinfo(dat_entry).file_size if dat_entry else 0} bytes")
 check("data zip carries the patched CivTechTrees",
       any("CivTechTrees" in n and n.endswith(".json") for n in dz.namelist()))
+# We never change it, so a copy could only freeze the game's — June's, without
+# the Viking Sagas civs, rode in every mod until 2026-10-21.
+check("data zip does not carry futuravailableunits.json",
+      not any(n.endswith("futuravailableunits.json") for n in dz.namelist()))
 
 # ── The strings file ─────────────────────────────────────────────────────────
 uz = zipfile.ZipFile(io.BytesIO(outer.read(ui_zip)))
@@ -219,6 +223,22 @@ check("strings file is populated", len(rows) > 50, f"{len(rows)} lines")
 # picks is undocumented, so it silently decides what a player sees.
 dupes = {sid for sid, n in collections.Counter(s for s, _ in rows).items() if n > 1}
 check("no string id is written twice", not dupes, f"duplicated: {sorted(dupes)}")
+
+# The other civs' picker descriptions are re-emitted (the engine ignores ours
+# otherwise) — from the player's game, so they match it word for word.
+import dat_reader                                                   # noqa: E402
+_kv = dat_reader.find_game_strings(dat_reader.find_game_dat())
+if _kv:
+    game_desc = {int(m.group(1)): m.group(2) for m in
+                 (re.match(r'^\s*(\d+)\s+"(.*)"\s*$', l)
+                  for l in _kv.read_text(encoding="utf-8").splitlines()) if m}
+    ours = {sid: t for sid, t in rows if 120150 <= sid < 120195}
+    check("the other civs' descriptions are re-emitted", len(ours) >= 40, f"{len(ours)}")
+    # ...all but the replaced civ's own slot (Bohemians, 120150 + 38), which
+    # carries the custom civ's description instead.
+    differ = sorted(sid for sid, t in ours.items() if game_desc.get(sid) != t)
+    check("...exactly as the game writes them, except the replaced civ's",
+          differ == [120188], differ)
 
 # The unique unit asked for a resource it does not natively charge.  If the
 # 3-slot merge regresses, the tooltip quotes the vanilla cost instead.

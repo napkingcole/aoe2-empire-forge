@@ -291,45 +291,37 @@ def ut_research_label(name: str, desc: str) -> str:
     return "Research " + ut_selection_text(name, desc)
 
 
-def _load_vanilla_civ_descriptions() -> dict[int, str]:
-    """Extract vanilla civ descriptions (sids 120150-120194) from the bundled
-    aoe2techtree locale JSON, converting <br> → literal \\n for the modded-strings
-    format that AoE2 DE expects.
+def vanilla_civ_descriptions(dat_path) -> dict[int, str]:
+    """The game's own civ descriptions (sids 120150-120194), from the player's
+    key-value strings — already in the modded-strings markup (literal \\n,
+    <b>...<b>), so they are re-emitted as they are.
 
     Why this exists: the engine silently ignores 120150+i overrides unless ALL
     45 vanilla civ description IDs are present in the modded-strings file (the
     KM/NKC pattern). Writing only the modified slots was not enough; we have to
     re-emit vanilla content for the unchanged slots too.
+
+    Read from the player's game, never a bundled copy: until 2026-10-21 this
+    came from a copy of aoe2techtree's locale file, and 28 of the 45 had gone
+    stale (the Franks without Ordonnance Companies) — every mod re-wrote those
+    civs' picker text with old wording.
     """
-    src = Path(__file__).parent / "vanilla" / "aoe2techtree_strings" / "en_strings.json"
-    if not src.exists():
-        src = Path(__file__).parent / "AoE2-Civbuilder-main" / "public" / \
-              "aoe2techtree" / "data" / "locales" / "en" / "strings.json"
-    if not src.exists():
+    import dat_reader
+    src = dat_reader.find_game_strings(dat_path)
+    if src is None:
+        print("  WARNING: the game's strings were not found beside the DAT; the other "
+              "civs' descriptions are not re-emitted, so the custom civ's may not show")
         return {}
-    raw = json.loads(src.read_text(encoding="utf-8"))
     out: dict[int, str] = {}
-    for sid in range(120150, 120195):
-        text = raw.get(str(sid))
-        if text is None:
-            continue
-        # Normalise to AoE2 DE modded-strings markup:
-        #   <br>      → \n     (DE uses \n for line breaks in this file)
-        #   </b>      → <b>    (DE uses <b>...<b> toggle, not HTML-style close)
-        #   real LF   → strip  (the source JSON has both <br> and a following LF;
-        #                       we only want the literal \n that replaced <br>)
-        #   "         → '      (avoid breaking the surrounding "..." quotes)
-        # Leaving </b> in place crashes the picker once the engine actually
-        # reads the description (e.g., once entries become contiguous).
-        text = text.replace("<br>", "\\n")
-        text = text.replace("</b>", "<b>")
-        text = text.replace("\n", "")
-        text = text.replace('"', "'")
-        out[sid] = text
+    with open(src, encoding="utf-8") as fh:
+        for line in fh:
+            m = _KV_LINE_RE.match(line)
+            if m and 120150 <= int(m.group(1)) < 120195:
+                out[int(m.group(1))] = m.group(2)
     return out
 
 
-_VANILLA_CIV_DESCRIPTIONS: dict[int, str] = _load_vanilla_civ_descriptions()
+_KV_LINE_RE = re.compile(r'^\s*(\d+)\s+"(.*)"\s*$')
 
 
 def _ut_name(bonus_id: int | None, castle: bool) -> str:
@@ -361,10 +353,10 @@ def dat_json_files(dat_path, civs_overrides: dict) -> dict[str, bytes]:
     One function for all three build routes (they each carried a copy of
     the civilizations.json half).
 
-    Both are read from beside the player's DAT.  civilizations.json falls
-    back to our bundled copy, as it always has.  unitlines.json has no copy
-    here: without the player's, the civ keeps the replaced civ's unique unit
-    line (the AI then can't find a custom UU — see patch_unitlines)."""
+    Both are read from beside the player's DAT, never a bundled copy (the one
+    we shipped was removed 2026-10-21).  Without the player's unitlines.json
+    the civ keeps the replaced civ's unique unit line (the AI then can't find
+    a custom UU — see patch_unitlines)."""
     from build_civ import _find_adjacent_json
     from civ_appender import patch_unitlines
     out: dict[str, bytes] = {}
@@ -373,8 +365,8 @@ def dat_json_files(dat_path, civs_overrides: dict) -> dict[str, bytes]:
     dat_path = Path(dat_path)
     base_civs = _find_adjacent_json(dat_path, "civilizations.json")
     if base_civs is None or not base_civs.exists():
-        base_civs = Path(__file__).parent / "civilizations.json"
-    if not base_civs.exists():
+        print("  WARNING: no civilizations.json beside the DAT; the civ picker will show "
+              "the replaced civ's name and description")
         return out
     try:
         civ_list = json.loads(base_civs.read_text(encoding="utf-8")).get("civilization_list", [])
@@ -422,9 +414,6 @@ def _build_combined_data_zip(dat,
         separators=(",", ":"),
     ).encode("utf-8")
 
-    futura_path = Path(__file__).parent / "futuravailableunits.json"
-    futura_bytes = (futura_path.read_bytes() if futura_path.exists() else None)
-
     # NKC's stored zips have a top-level wrapper folder, but those wrappers
     # appear to be NKC's local-backup convention — installing our build with
     # wrappers inside the zip triggers "Failed to load dataset / .gpv" errors
@@ -439,9 +428,10 @@ def _build_combined_data_zip(dat,
                     compress_type=zipfile.ZIP_STORED)
         for name, data in (dat_jsons or {}).items():     # civilizations.json, unitlines.json
             zf.writestr(f"resources/_common/dat/{name}", data)
-        if futura_bytes is not None:
-            zf.writestr("resources/_common/dat/futuravailableunits.json",
-                        futura_bytes)
+        # No futuravailableunits.json (the "available in a later age" buttons):
+        # we never change it, so a copy could only freeze the game's at build
+        # time — the one we shipped until 2026-10-21 was June's, without the
+        # three Viking Sagas civs.  The game's own stays in charge.
         for name, data in per_civ_tt.items():
             zf.writestr(f"resources/_common/dat/CivTechTrees/{name}", data)
         for fname, png in button_pngs.items():
@@ -1045,11 +1035,12 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     # Steam game-file install masquerading as a mod bug. See feedback memory.)
     # Descriptions exist only for the original 45 civs, indexed Britons = 0.
     _replaced_pos = {sid - 10271 for sid in replaced_name_sids}
+    civ_descriptions = vanilla_civ_descriptions(dat_path)
     for i in range(45):
         if i in _replaced_pos:
             continue
         sid = 120150 + i
-        text = _VANILLA_CIV_DESCRIPTIONS.get(sid)
+        text = civ_descriptions.get(sid)
         if text is None:
             continue
         for lang in LANGUAGES:

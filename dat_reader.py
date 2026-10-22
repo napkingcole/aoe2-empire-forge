@@ -15,15 +15,12 @@ STEAM_DAT_CANDIDATES = [
     # macOS — Steam
     Path.home() / "Library/Application Support/Steam/steamapps/common/AoE2DE"
     / "resources/_common/dat/empires2_x2_p1.dat",
-    # dev: a full Windows install copied to the Mac (2026-10-21).  Preferred over
-    # the DAT-only copies below because everything else — strings,
-    # CivTechTrees, civilizations.json, voice banks, unit icons — is found
-    # relative to the DAT, so this is the only copy that behaves like a player's.
+    # dev: a full Windows install copied to the Mac (2026-10-21), the one
+    # source on this machine.  Everything else — strings, CivTechTrees,
+    # civilizations.json, voice banks — is found relative to the DAT, so a
+    # DAT-only copy never behaved like a player's; those candidates (../aoe2/)
+    # were removed.  EMPIREFORGE_DAT still points a run at any other DAT.
     Path.home() / "Age of Empires 2/resources/_common/dat/empires2_x2_p1.dat",
-    # dev reference copy (sibling aoe2/ directory — convenient for local testing)
-    Path(__file__).parent.parent / "aoe2/dat-file-6-2-26/empires2_x2_p1.dat",  # VER 8.9 Jun 6
-    Path(__file__).parent.parent / "aoe2/base/empires2_x2_p1.dat",
-    Path(__file__).parent.parent / "aoe2/base-dat/empires2_x2_p1.dat",
     # Windows — Steam (32-bit Program Files)
     Path("C:/Program Files (x86)/Steam/steamapps/common/AoE2DE"
          "/resources/_common/dat/empires2_x2_p1.dat"),
