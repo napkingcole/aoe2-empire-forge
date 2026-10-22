@@ -1096,6 +1096,34 @@ function _wirePreviewButtons(container) {
 }
 
 let _previewModal = null;
+let _groundRaf = null;
+
+// Scroll the grass under a walking unit at its real speed, opposite to where it
+// faces (south-west, so the ground slides up-right).  One tile is ~54 px on
+// screen at standard sprite scale; the window shows sprites at 1.5x their own.
+const _TILE_PX = 54, _NORMAL_SPEED = 1.7;
+function _stopGround() {
+  if (_groundRaf) cancelAnimationFrame(_groundRaf);
+  _groundRaf = null;
+}
+function _startGround(stage, img, meta) {
+  _stopGround();
+  if (!meta || !(meta.speed > 0)) return;
+  let x = 0, y = 0, last = null;
+  const step = t => {
+    if (last != null && img.naturalWidth) {
+      const shown = img.clientWidth / img.naturalWidth;        // the window's own scale
+      const pxPerSec = meta.speed * _NORMAL_SPEED * _TILE_PX * meta.scale * shown;
+      const d = pxPerSec * (t - last) / 1000 / Math.SQRT2;
+      x += d; y -= d;
+      stage.style.backgroundPosition = `${x.toFixed(1)}px ${y.toFixed(1)}px`;
+    }
+    last = t;
+    _groundRaf = requestAnimationFrame(step);
+  };
+  _groundRaf = requestAnimationFrame(step);
+}
+
 function openUnitPreview(unitId, name) {
   const el = document.getElementById("modal-unit-preview");
   if (!el) return;
@@ -1103,7 +1131,12 @@ function openUnitPreview(unitId, name) {
   el.querySelector(".modal-title").textContent = name || "";
   const img = el.querySelector("#unit-preview-img");
   const status = el.querySelector("#unit-preview-status");
+  const stage = el.querySelector(".unit-preview-stage");
+  const meta = fetch(`/api/unit-preview/${unitId}/meta${_datQuery()}`).then(r => r.json()).catch(() => null);
+  el.addEventListener("hidden.bs.modal", _stopGround, { once: true });
   const show = kind => {
+    _stopGround();
+    stage.style.backgroundPosition = "0 0";
     el.querySelectorAll("[data-preview-kind]").forEach(b =>
       b.classList.toggle("active", b.dataset.previewKind === kind));
     status.textContent = "Rendering from your game…";
@@ -1115,6 +1148,7 @@ function openUnitPreview(unitId, name) {
       img.style.width = `${Math.min(img.naturalWidth * 1.5, 440)}px`;
       status.classList.add("d-none");
       img.classList.remove("d-none");
+      if (kind === "walk") meta.then(m => _startGround(stage, img, m));
     };
     img.onerror = () => { status.textContent = "This animation isn't in your game files."; };
     img.src = _previewSrc(unitId, kind);

@@ -1055,8 +1055,10 @@ details[open] > summary::before {
   min-height: 260px; display: flex; align-items: center; justify-content: center;
   border-radius: 8px;
   background-color: #6f8a4c;
-  background-image: url('/static/grass.jpg');
-  background-size: cover;
-  background-position: center;
+  /* A mirrored, seamless copy of the scene's grass, so it can scroll under
+     a walking unit (builder.js _startGround). */
+  background-image: url('/static/grass-tile.jpg');
+  background-size: 700px auto;
+  background-repeat: repeat;
 }
 .unit-preview-stage img { max-width: 100%; max-height: 360px; }

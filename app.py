@@ -2610,8 +2610,9 @@ def api_unit_icon(unit_id: int):
     return send_file(cached, mimetype="image/webp", max_age=86400)
 
 
-_PREVIEW_VERSION = "v2"        # bump when game_sprites' output changes
-                               # (v2: kept blocks across a moved box — square holes)
+_PREVIEW_VERSION = "v3"        # bump when game_sprites' output changes
+                               # (v2: kept blocks across a moved box — square holes;
+                               #  v3: frames under 20 ms dropped — browsers slowed them)
 _PREVIEWS_WARMED: set[str] = set()
 
 
@@ -2641,6 +2642,26 @@ def _render_preview(dat_path: str, unit_id: int, kind: str) -> Path | None:
     tmp.write_bytes(data)
     tmp.replace(cached)
     return cached
+
+
+@app.route("/api/unit-preview/<int:unit_id>/meta")
+def api_unit_preview_meta(unit_id: int):
+    """What the preview window needs to scroll the ground under a walking unit:
+    its speed (tiles per second at game speed 1.0) and its sprites' scale
+    against the standard ones (2 for Enhanced Graphics' _x2)."""
+    import game_sprites
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return jsonify({"speed": 0, "scale": 1})
+    dat = _get_dat(dat_path)
+    units = dat.civs[0].units
+    if not 0 <= unit_id < len(units) or units[unit_id] is None:
+        return jsonify({"speed": 0, "scale": 1})
+    unit = units[unit_id]
+    g = dat.graphics[game_sprites.unit_graphic(unit, "walk")] if game_sprites.unit_graphic(unit, "walk") >= 0 else None
+    sprite = game_sprites.find_sprite(dat_path, g.file_name) if g is not None else None
+    return jsonify({"speed": round(float(unit.speed), 3),
+                    "scale": 2 if sprite is not None and sprite.stem.endswith("_x2") else 1})
 
 
 @app.route("/api/unit-preview/<int:unit_id>/<kind>")

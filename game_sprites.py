@@ -27,8 +27,10 @@ Timing: the DAT's frame_duration is at game speed 1.0; "Normal" is 1.7.  Judge
 speed in a browser: macOS Preview plays animated WebP slowly.
 
 Agreed with the user 2026-10-21/22: facing south-west, Player 1 Blue, every
-animation at its own DAT timing ÷ 1.7 with all its frames.
+animation at its own DAT timing ÷ 1.7 with all its frames — except one whose
+frames would be under MIN_FRAME_MS, which browsers slow down (see there).
 """
+import math
 import struct
 from pathlib import Path
 
@@ -38,6 +40,11 @@ from PIL import Image
 from game_art import player_tint
 
 NORMAL_SPEED = 1.7
+# Browsers play a frame of 10 ms or less as 100 ms (Chrome, and Firefox below
+# ~20 ms), so the Ninja's and War Penguin's walks — 17 ms in the DAT, 10 ms at
+# Normal speed — crawled.  Faster animations drop frames evenly instead, so a
+# loop still takes as long as in the game.
+MIN_FRAME_MS = 20
 SOUTH_WEST = 6                      # of 16 angles; 0 = east, clockwise
 _MAIN, _SHADOW, _OUTLINE, _DAMAGE, _PLAYER = 0x01, 0x02, 0x04, 0x08, 0x10
 _ORDER = [(_MAIN, "main", True), (_SHADOW, "shadow", True), (_OUTLINE, "outline", True),
@@ -282,13 +289,15 @@ def unit_frames(dat, dat_path, unit, kind: str, angle: int = SOUTH_WEST,
     if not parts:
         return None
     g = dat.graphics[graphic_id]
-    count = 1 if still else max(1, g.frame_count)
-    ms = max(10, round(g.frame_duration * 1000 / NORMAL_SPEED)) if g.frame_duration > 0 else 67
+    exact = g.frame_duration * 1000 / NORMAL_SPEED if g.frame_duration > 0 else 67.0
+    step = 1 if still else max(1, math.ceil(MIN_FRAME_MS / exact - 1e-9))
+    picks = [0] if still else list(range(0, max(1, g.frame_count), step))
+    ms = round(exact * step)
 
     # Composite each frame on a canvas centred on the hotspot.
     size = 2 * max(max(f["w"], f["h"]) for s, *_ in parts for f in s.frames[:1]) + 64
     raw = []
-    for i in range(count):
+    for i in picks:
         canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         for sprite, first, per, ox, oy in parts:
             img, (hx, hy) = render_frame(sprite.data, first + (i % per), sprite.frames)

@@ -111,6 +111,16 @@ else:
         check(f"Qizilbash {kind}: all {g.frame_count} frames", len(frames) == g.frame_count, len(frames))
         check(f"Qizilbash {kind}: {ms} ms a frame = the DAT's {g.frame_duration * 1000:.1f} at Normal speed (÷1.7)",
               ms == round(g.frame_duration * 1000 / gs.NORMAL_SPEED))
+    # The Ninja's walk is 17 ms a frame in the DAT — 10 ms at Normal speed,
+    # which browsers play as 100 ms.  Frames drop evenly instead; the stride
+    # still takes as long as in the game.
+    ninja = units[1145]
+    g = dat.graphics[gs.unit_graphic(ninja, "walk")]
+    frames, ms = gs.unit_frames(dat, dat_path, ninja, "walk")
+    game_s = g.frame_count * g.frame_duration / gs.NORMAL_SPEED
+    check(f"Ninja walk: no frame under {gs.MIN_FRAME_MS} ms ({ms} ms)", ms >= gs.MIN_FRAME_MS)
+    check(f"...and the stride still takes the game's {game_s:.2f} s ({len(frames) * ms / 1000:.2f} s)",
+          abs(len(frames) * ms / 1000 - game_s) < 0.03)
     sprite = gs.find_sprite(dat_path, dat.graphics[q.standing_graphic[0]].file_name)
     has_x2 = (gs.graphics_folder(dat_path) / (dat.graphics[q.standing_graphic[0]].file_name[:-3] + "_x2.sld")).exists()
     check("the Enhanced Graphics _x2 sprite is used when the game has it",
