@@ -6,7 +6,7 @@
   "faction: the side the hero fought for, shown under the name.  category: 'multiplayer' for heroes",
   "a civ trains in ordinary games, else the hero is a campaign/scenario one.",
   "specials: abilities the stats don't show.  Never invent one — only add what is confirmed.",
-  "1269 was listed as 'Genghis Khan' until 2026-10-22, but the game names it Girgen Khan (HGKHAN, 170 HP); the real Genghis Khan is 731 (HKHAN).  Whether the specials below describe 1269 or 731 is unconfirmed."
+  "1269 was listed as 'Genghis Khan' until 2026-10-22, but the game names it Girgen Khan (HGKHAN, 170 HP); the real Genghis Khan is 731 (HKHAN).  Its two ability notes (pass-through arrows, +25% flanking) were dropped: neither the user nor the wikis could say which Khan they described."
  ],
  "1954": {
   "name": "Cao Cao",
@@ -92,11 +92,7 @@
   "faction": "Malay"
  },
  "1269": {
-  "faction": "Mongol",
-  "specials": [
-   "Pass-through projectile — arrows pierce through multiple targets in a line",
-   "Flanking bonus — deals +25% damage from the sides and rear"
-  ]
+  "faction": "Mongol"
  },
  "1265": {
   "name": "Ivaylo",
