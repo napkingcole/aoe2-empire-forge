@@ -15,6 +15,11 @@ STEAM_DAT_CANDIDATES = [
     # macOS — Steam
     Path.home() / "Library/Application Support/Steam/steamapps/common/AoE2DE"
     / "resources/_common/dat/empires2_x2_p1.dat",
+    # dev: a full Windows install copied to the Mac (2026-10-21).  Preferred over
+    # the DAT-only copies below because everything else — strings,
+    # CivTechTrees, civilizations.json, voice banks, unit icons — is found
+    # relative to the DAT, so this is the only copy that behaves like a player's.
+    Path.home() / "Age of Empires 2/resources/_common/dat/empires2_x2_p1.dat",
     # dev reference copy (sibling aoe2/ directory — convenient for local testing)
     Path(__file__).parent.parent / "aoe2/dat-file-6-2-26/empires2_x2_p1.dat",  # VER 8.9 Jun 6
     Path(__file__).parent.parent / "aoe2/base/empires2_x2_p1.dat",
