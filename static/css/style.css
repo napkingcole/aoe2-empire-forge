@@ -1050,9 +1050,13 @@ details[open] > summary::before {
 }
 .unit-preview-btn:hover, .unit-preview-btn:focus-visible { opacity: 1; transform: scale(1.12); }
 .hero-grid-card, .uu-card { position: relative; }
-/* A patch of grass-brown ground, so the shadow and colours read as in game. */
+/* The scene's own grass (scene.css), so the shadow and colours read as in game. */
 .unit-preview-stage {
   min-height: 260px; display: flex; align-items: center; justify-content: center;
-  border-radius: 8px; background: radial-gradient(circle at 50% 60%, #8d8456 0%, #6f6a45 70%);
+  border-radius: 8px;
+  background-color: #6f8a4c;
+  background-image: url('/static/grass.jpg');
+  background-size: cover;
+  background-position: center;
 }
 .unit-preview-stage img { max-width: 100%; max-height: 360px; }
