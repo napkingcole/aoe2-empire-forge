@@ -19,6 +19,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -2662,6 +2663,17 @@ def _render_preview(dat_path: str, unit_id: int, kind: str) -> Path | None:
     return cached
 
 
+def _art_delay() -> None:
+    """For trying the loaders: EF_ART_DELAY=<seconds> holds every scene-art
+    and unit-preview answer that long, as a slow first render would."""
+    delay = os.environ.get("EF_ART_DELAY")
+    if delay:
+        try:
+            time.sleep(float(delay))
+        except ValueError:
+            pass
+
+
 _SCENE_ANIMATING: set = set()          # (dat_path, slot, value) being rendered in the background
 
 
@@ -2712,6 +2724,7 @@ def api_scene_art(slot: str, value: int):
     import game_sprites
     if slot not in game_sprites.SCENE_SLOTS:
         return ("", 404)
+    _art_delay()
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path:
         return ("", 404)
@@ -2790,6 +2803,7 @@ def api_unit_preview(unit_id: int, kind: str):
     import game_sprites
     if kind != "still" and kind not in game_sprites.ANIMATIONS:
         return ("", 404)
+    _art_delay()
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path:
         return ("", 404)
