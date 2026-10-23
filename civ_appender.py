@@ -6416,6 +6416,17 @@ def _original_civ(dat: DatFile, idx: int):
     return _original_civs(dat).get(idx, dat.civs[idx])
 
 
+def _shipped_tech_civ(dat: DatFile, tid: int) -> int:
+    """The civ tech `tid` was gated to as the game shipped it.
+
+    Replacing a slot sets that civ's leftover techs to civ 99 so they never
+    fire.  A later civ in the same build that reads one as a SOURCE (a UT
+    copied from the Goths' Anarchy, whose UU it must swap for its own) then
+    saw civ 99 — and _src_civ_uu_ids(99) answered with whichever replaced
+    civ's UU came first, so Anarchy kept training Huskarls (QA 2026-10-23)."""
+    return getattr(dat, "_ef_original_tech_civs", {}).get(tid, dat.techs[tid].civ)
+
+
 def _every_civ(dat: DatFile) -> list:
     """Every civ's data for an edit that must reach ALL civs (a unit appended
     or a spare slot filled in each civ): the slots, plus the kept originals,
@@ -6720,6 +6731,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 continue
             if i in preserve_indices:
                 continue
+            if not hasattr(dat, "_ef_original_tech_civs"):
+                dat._ef_original_tech_civs = {}
+            dat._ef_original_tech_civs.setdefault(i, t.civ)   # see _shipped_tech_civ
             t.civ = 99  # civ 99 never exists → tech silently never fires
             # Also remove from all research location panels to prevent ghost buttons.
             for loc in (t.research_locations or []):
@@ -7419,7 +7433,7 @@ def _src_civ_uu_ids(dat: DatFile, civ_idx: int) -> tuple[set[int], set[int]]:
     for make_avail_id, elite_tech_id in _KM_UU_TECHS.values():
         if make_avail_id < 0 or make_avail_id >= len(dat.techs):
             continue
-        if dat.techs[make_avail_id].civ != civ_idx:
+        if _shipped_tech_civ(dat, make_avail_id) != civ_idx:
             continue
         eff_id = dat.techs[make_avail_id].effect_id
         if 0 <= eff_id < len(dat.effects):
@@ -7525,7 +7539,8 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         # civ's UU from the make-avail tech in _KM_UU_TECHS.
         src_base_uu_ids: set[int] = set()
         src_elite_uu_ids: set[int] = set()
-        if source_tech.civ != -1:
+        source_civ = _shipped_tech_civ(dat, tech_id)
+        if source_civ != -1:
             # Only an enable of the source civ's REAL unique unit marks the
             # Anarchy/Marauders shape.  Timurid Siegecraft enables the Flaming
             # Camel and Flemish Revolution the Flemish Militia; read as "the
@@ -7533,7 +7548,7 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
             # Timurid Siegecraft's five trebuchet +2 range commands landed on
             # this civ's Elite UU — a melee unit with +10 range that never hit
             # anything, and trebuchets with no bonus (reported 2026-10-12).
-            real_base, _ = _src_civ_uu_ids(dat, source_tech.civ)
+            real_base, _ = _src_civ_uu_ids(dat, source_civ)
             src_base_uu_ids = {int(ec.a) for ec in all_cmds if _is_enable(ec)} & real_base
             if src_base_uu_ids:
                 # Anarchy/Marauders style: derive elite as remainder of unit refs
@@ -7542,7 +7557,7 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                 src_elite_uu_ids = all_unit_refs - src_base_uu_ids
             else:
                 # Stat-buff UT: look up source civ's UU from _KM_UU_TECHS.
-                src_base_uu_ids, src_elite_uu_ids = _src_civ_uu_ids(dat, source_tech.civ)
+                src_base_uu_ids, src_elite_uu_ids = _src_civ_uu_ids(dat, source_civ)
                 # Only log when at least one effect command actually targets a
                 # UU unit ID (i.e. will be deferred). Avoids false-positive
                 # messages for UTs like Ordo Cavalry (EC_RESOURCE only).

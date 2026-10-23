@@ -178,5 +178,14 @@ units = dat.civs[r["civ_index"]].units
 slot = [(t.unit_id, t.button_id) for t in units[r["uu_id"]].creatable.train_locations]
 check("the Qizilbash trains on Castle button 1, page 1", (82, 1) in slot, slot)
 
+# Same QA round: Anarchy trained Huskarls at the Barracks.  Replacing the Goths
+# had set their Anarchy to civ 99, and the UT copy read that instead of the
+# Goths — _src_civ_uu_ids(99) then answered with the Britons' Longbowman, the
+# first civ replaced, so the Huskarl was never swapped for the Qizilbash.
+ut_cmds = dat.effects[dat.techs[r["castle_ut_tech_id"]].effect_id].effect_commands
+named = {int(c.a) for c in ut_cmds if c.type in (0, 2)}
+check("Anarchy moves the Qizilbash to the Barracks, not the Huskarl",
+      {r["uu_id"], r["elite_uu_id"]} <= named and not named & {41, 555}, sorted(named))
+
 print("\nPASS" if not failures else f"\n{failures} FAILED")
 sys.exit(1 if failures else 0)
