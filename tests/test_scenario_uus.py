@@ -187,5 +187,31 @@ named = {int(c.a) for c in ut_cmds if c.type in (0, 2)}
 check("Anarchy moves the Qizilbash to the Barracks, not the Huskarl",
       {r["uu_id"], r["elite_uu_id"]} <= named and not named & {41, 555}, sorted(named))
 
+print("\n=== the greyed later-age buttons are the new civ's ===")
+# futuravailableunits.json is keyed by civ NAME: the Goths' entry put a greyed
+# Huskarl on Castle button 1 through the Dark and Feudal Ages (QA 2026-10-23).
+tree = game_tree("GOTHS.json")
+tree["units"] = [u for u in tree["units"] if u != 440]                 # no Petard
+civ = qa("Future Probe", 103, "GOTHS.json", 12)
+civ["tree"] = tree
+with contextlib.redirect_stdout(io.StringIO()):
+    blob = build_wizard_mod(to_draft(civ), str(dat_path), "Goths")
+outer = zipfile.ZipFile(io.BytesIO(blob))
+dz = zipfile.ZipFile(io.BytesIO(outer.read(next(n for n in outer.namelist() if n.endswith("-data.zip")))))
+future = json.loads(dz.read("resources/_common/dat/futuravailableunits.json"))
+civs = json.loads(dz.read("resources/_common/dat/civilizations.json"))["civilization_list"]
+goths = next(c for c in civs if c["internal_name"] == "Goths")
+castle = next(b for b in future["Goths"]["Buildings"] if b["ID"] == 82)
+units = {u["ID"] for u in castle["Units"]}
+techs = {t["ID"] for t in castle["Techs"]}
+check("the Castle shows the Qizilbash and its Elite, not the Huskarl",
+      {goths["unique_unit_id"], goths["elite_unique_unit_id"]} <= units and not units & {41, 555}, sorted(units))
+check("...and this civ's UTs and Elite upgrade, not Anarchy, Perfusion or Elite Huskarl",
+      {goths["unique_tech_id_1"], goths["unique_tech_id_2"], goths["unique_unit_upgrade_id"]} <= techs
+      and not techs & {16, 457, 365}, sorted(techs))
+check("a unit the tree took away is no greyed button (Petard)", 440 not in units, sorted(units))
+check("other civs are the game's own", future["Britons"] == json.loads(
+    (dat_path.parent / "futuravailableunits.json").read_text(encoding="utf-8"))["Britons"])
+
 print("\nPASS" if not failures else f"\n{failures} FAILED")
 sys.exit(1 if failures else 0)

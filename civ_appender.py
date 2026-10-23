@@ -971,6 +971,114 @@ def patch_civilizations_list(civ_list: list[dict], civs_overrides: dict) -> None
             ]
 
 
+def patch_future_units(future: dict, base_civ_list: list[dict], civs_overrides: dict,
+                       trees: dict[str, bytes] | None = None) -> list[str]:
+    """Rewrite each replaced civ's entry in futuravailableunits.json, the
+    game's list of the greyed "available in a later age" buttons.  Returns
+    the civ names it changed.
+
+    The file is keyed by civ name, not slot, and nothing else touches it: a
+    custom civ over the Goths showed a greyed Huskarl on Castle button 1
+    through the Dark and Feudal Ages (on maps that start with a Castle), and
+    its own UU only once the Castle Age came (in game, 2026-10-23).
+
+    `base_civ_list` is the game's civilizations.json as shipped — its entry
+    names the replaced civ's UU, Elite, upgrade and UTs, which become the new
+    civ's (a UT by its age: Castle Age is the Castle UT).  `trees` is the
+    mod's per-civ CivTechTrees files: a button the new tree marks
+    NotAvailable is dropped, and one it has that the replaced civ lacked is
+    added from the game's FullTechCiv entry, so the greyed buttons are the
+    new civ's.  A button the tree has no node for is kept — upgrade techs
+    (Pikeman, Crossbowman) are none, the tree shows their unit.  Without a
+    tree only the unique items are swapped."""
+    full = {b["ID"]: b for b in future.get("FullTechCiv", {}).get("Buildings", [])}
+    changed = []
+    for slot_idx, ov in civs_overrides.items():
+        if slot_idx >= len(base_civ_list):
+            continue
+        base = base_civ_list[slot_idx]
+        civ = future.get(base.get("internal_name"))
+        if civ is None:
+            continue
+        units = {}
+        if ov.get("uu_unit_id") is not None:
+            units = {base.get("unique_unit_id"): ov["uu_unit_id"],
+                     base.get("elite_unique_unit_id"): ov.get("uu_elite_id")}
+        techs = {}
+        if ov.get("uu_unit_id") is not None:
+            techs[base.get("unique_unit_upgrade_id")] = ov.get("uu_upgrade_tech_id")
+        uts = {base.get("unique_tech_id_1"), base.get("unique_tech_id_2")} - {None}
+        by_age = {3: ov.get("castle_ut_tech_id"), 4: ov.get("imp_ut_tech_id")}
+
+        status = None
+        tree = (trees or {}).get(f"{base.get('tech_tree_name', '')}.json")
+        if tree is not None:
+            doc = json.loads(tree)
+            status = {(n.get("Use Type"), n["Node ID"]): n.get("Node Status")
+                      for sec in ("civ_techs_units", "civ_techs_buildings") for n in doc.get(sec, [])}
+
+        def tree_says(kind, item):
+            """The tree's node status for this button, or None if it has no
+            node (an upgrade tech like Pikeman: the tree shows the unit)."""
+            if status is None:
+                return None
+            return status.get((kind, item["ID"]), status.get(("Building", item["ID"])) if kind == "Unit" else None)
+
+        def available(kind, item):
+            return tree_says(kind, item) != "NotAvailable"
+
+        def tree_has(kind, item):
+            return tree_says(kind, item) not in (None, "NotAvailable")
+
+        def swap(kind, item):
+            """The item as the new civ has it, or None to drop it."""
+            item = dict(item)
+            if kind == "Unit" and item["ID"] in units:
+                if units[item["ID"]] is None:
+                    return None
+                item["ID"] = units[item["ID"]]
+                return item
+            if kind == "Tech" and item["ID"] in techs:
+                if techs[item["ID"]] is None:
+                    return None
+                item["ID"] = techs[item["ID"]]
+                return item               # an elite upgrade is no tree node
+            if kind == "Tech" and item["ID"] in uts:
+                new = by_age.get(item.get("RequiredAge"))
+                if new is None:
+                    return None
+                item["ID"] = new
+                return item
+            return item if available(kind, item) else None
+
+        buildings = []
+        seen = set()
+        for b in civ.get("Buildings", []):
+            nb = dict(b)
+            seen.add(b["ID"])
+            for key, kind in (("Units", "Unit"), ("Techs", "Tech")):
+                if key not in b:
+                    continue
+                items = [x for x in (swap(kind, i) for i in b[key]) if x is not None]
+                have = {i["ID"] for i in items}
+                if status is not None:
+                    items += [dict(i) for i in full.get(b["ID"], {}).get(key, [])
+                              if i["ID"] not in have and tree_has(kind, i)]
+                nb[key] = items
+            buildings.append(nb)
+        if status is not None:
+            for bid, b in full.items():
+                if bid in seen:
+                    continue
+                nb = {**b, **{key: [dict(i) for i in b.get(key, []) if tree_has(kind, i)]
+                              for key, kind in (("Units", "Unit"), ("Techs", "Tech")) if key in b}}
+                if any(nb.get(k) for k in ("Units", "Techs")):
+                    buildings.append(nb)
+        civ["Buildings"] = buildings
+        changed.append(base.get("internal_name"))
+    return changed
+
+
 # unitlines.json says LineIDs "have to be between (-400, -199)".
 _UNIT_LINE_RANGE = range(-399, -199)
 

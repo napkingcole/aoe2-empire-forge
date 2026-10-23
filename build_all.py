@@ -26,6 +26,7 @@ import re
 import sys
 import tempfile
 import zipfile
+from copy import deepcopy
 from pathlib import Path
 
 from dat_reader import find_game_dat, load_dat, dat_info
@@ -347,9 +348,12 @@ def _ut_source(civ_def: dict, group: int) -> tuple[int | None, bool]:
     return int(entries[0][0]), entries[0][2] == "castle"
 
 
-def dat_json_files(dat_path, civs_overrides: dict) -> dict[str, bytes]:
+def dat_json_files(dat_path, civs_overrides: dict,
+                   per_civ_tt: dict[str, bytes] | None = None) -> dict[str, bytes]:
     """The game's own JSON files the data mod overrides, patched for the
-    replaced civs: civilizations.json and unitlines.json, keyed by file name.
+    replaced civs: civilizations.json, unitlines.json and
+    futuravailableunits.json (whose greyed buttons follow `per_civ_tt`, the
+    mod's CivTechTrees files), keyed by file name.
     One function for all three build routes (they each carried a copy of
     the civilizations.json half).
 
@@ -358,7 +362,7 @@ def dat_json_files(dat_path, civs_overrides: dict) -> dict[str, bytes]:
     the civ keeps the replaced civ's unique unit line (the AI then can't find
     a custom UU — see patch_unitlines)."""
     from build_civ import _find_adjacent_json
-    from civ_appender import patch_unitlines
+    from civ_appender import patch_future_units, patch_unitlines
     out: dict[str, bytes] = {}
     if not civs_overrides:
         return out
@@ -370,6 +374,7 @@ def dat_json_files(dat_path, civs_overrides: dict) -> dict[str, bytes]:
         return out
     try:
         civ_list = json.loads(base_civs.read_text(encoding="utf-8")).get("civilization_list", [])
+        shipped_civ_list = deepcopy(civ_list)
         patch_civilizations_list(civ_list, civs_overrides)
     except Exception as e:                                   # noqa: BLE001
         print(f"  WARNING: Could not generate civilizations.json: {e}")
@@ -387,6 +392,14 @@ def dat_json_files(dat_path, civs_overrides: dict) -> dict[str, bytes]:
     else:
         print("  NOTE: no unitlines.json beside the DAT; a custom unique unit keeps the replaced "
               "civ's unit line, so the AI may not train it")
+    future_path = _find_adjacent_json(dat_path, "futuravailableunits.json")
+    if future_path is not None and future_path.exists():
+        try:
+            future = json.loads(future_path.read_text(encoding="utf-8"))
+            if patch_future_units(future, shipped_civ_list, civs_overrides, per_civ_tt):
+                out["futuravailableunits.json"] = json.dumps(future, ensure_ascii=False).encode("utf-8")
+        except Exception as e:                               # noqa: BLE001
+            print(f"  WARNING: Could not patch futuravailableunits.json: {e}")
     out["civilizations.json"] = json.dumps({"civilization_list": civ_list},
                                            separators=(",", ":")).encode("utf-8")
     return out
@@ -426,12 +439,12 @@ def _build_combined_data_zip(dat,
         # again costs ~1s for no size gain: store it as is.
         zf.writestr("resources/_common/dat/empires2_x2_p1.dat", dat_bytes,
                     compress_type=zipfile.ZIP_STORED)
-        for name, data in (dat_jsons or {}).items():     # civilizations.json, unitlines.json
+        # civilizations.json, unitlines.json, futuravailableunits.json: the
+        # player's own, patched for the replaced civs (dat_json_files).  The
+        # bundled futuravailableunits.json shipped until 2026-10-21 was June's,
+        # without the three Viking Sagas civs.
+        for name, data in (dat_jsons or {}).items():
             zf.writestr(f"resources/_common/dat/{name}", data)
-        # No futuravailableunits.json (the "available in a later age" buttons):
-        # we never change it, so a copy could only freeze the game's at build
-        # time — the one we shipped until 2026-10-21 was June's, without the
-        # three Viking Sagas civs.  The game's own stays in charge.
         for name, data in per_civ_tt.items():
             zf.writestr(f"resources/_common/dat/CivTechTrees/{name}", data)
         for fname, png in button_pngs.items():
@@ -1108,7 +1121,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     }
 
     # civilizations.json and unitlines.json, patched for the replaced civs.
-    dat_jsons = dat_json_files(dat_path, civs_overrides)
+    dat_jsons = dat_json_files(dat_path, civs_overrides, per_civ_tt)
 
     # Batch language/voice assignment using KM's 3-phase algorithm.
     print("\nAssigning languages (KM 3-phase)…")

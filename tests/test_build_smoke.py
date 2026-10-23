@@ -25,6 +25,7 @@ Scope, deliberately:
 import collections
 import contextlib
 import io
+import json
 import re
 import sys
 import zipfile
@@ -201,10 +202,13 @@ check("DAT is a plausible size (>5 MB)",
       f"{dz.getinfo(dat_entry).file_size if dat_entry else 0} bytes")
 check("data zip carries the patched CivTechTrees",
       any("CivTechTrees" in n and n.endswith(".json") for n in dz.namelist()))
-# We never change it, so a copy could only freeze the game's — June's, without
-# the Viking Sagas civs, rode in every mod until 2026-10-21.
-check("data zip does not carry futuravailableunits.json",
-      not any(n.endswith("futuravailableunits.json") for n in dz.namelist()))
+# The player's own, patched for the replaced civ (2026-10-23) — never a frozen
+# copy: June's, without the Viking Sagas civs, rode in every mod until 2026-10-21.
+_fut = next((n for n in dz.namelist() if n.endswith("futuravailableunits.json")), None)
+from build_civ import _find_adjacent_json as _adj                       # noqa: E402
+_game_fut = json.loads(_adj(Path(dat_path), "futuravailableunits.json").read_text(encoding="utf-8"))
+check("futuravailableunits.json is the player's, every civ kept",
+      _fut is not None and set(json.loads(dz.read(_fut))) == set(_game_fut))
 
 # ── The strings file ─────────────────────────────────────────────────────────
 uz = zipfile.ZipFile(io.BytesIO(outer.read(ui_zip)))

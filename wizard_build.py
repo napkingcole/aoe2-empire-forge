@@ -523,7 +523,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
                 per_civ_tt[json_file.name] = json_file.read_bytes()
 
     # ── civilizations.json + unitlines.json ─────────────────────────────────
-    dat_jsons = dat_json_files(dat_path, civs_overrides)
+    dat_jsons = dat_json_files(dat_path, civs_overrides, per_civ_tt)
 
     # ── Package ──────────────────────────────────────────────────────────────
     data_zip = _build_combined_data_zip(

@@ -1123,7 +1123,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
         # validates this file's entry count against the DAT civ count and
         # silently drops modded-strings civ-picker overrides without it.
         # unitlines.json too (dat_json_files: one function for all three routes).
-        dat_jsons = dat_json_files(dat_path_obj, civs_overrides)
+        dat_jsons = dat_json_files(dat_path_obj, civs_overrides, per_civ_tt)
 
         # Batch language/voice assignment using KM's 3-phase algorithm.
         lang_assignments = [(r["civ_index"], r["lang_val"]) for r in build_results]
