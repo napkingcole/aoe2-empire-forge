@@ -533,16 +533,27 @@ function renderScene() {
           img.src = fb;
           return;
         }
+        btn.classList.remove("is-loading");
         markEmpty();
         _sizeScene();
       };
       img.onload = () => {
+        btn.classList.remove("is-loading");
         if (!usedFallback) {
           img.dataset.game = "1";
           _awaitSceneAnimation(img, src);
         }
         _sizeScene();
       };
+      // The hammering Villager stands beside the slot while its art loads
+      // (alone on a first load; beside the old picture on a change).
+      if (img.src !== new URL(src, location.href).href) {
+        if (!btn.querySelector(".scene-loader")) {
+          btn.insertAdjacentHTML("beforeend",
+            '<img class="scene-loader" src="/static/img/villager-building.webp" alt="" aria-hidden="true">');
+        }
+        btn.classList.add("is-loading");
+      }
       img.src = src;
       img.alt = label;
       img.style.display = "";
@@ -590,11 +601,16 @@ function _sizeScene() {
   const pad = parseFloat(getComputedStyle(stage).paddingLeft) + parseFloat(getComputedStyle(stage).paddingRight);
   const others = buildings.filter(i => !i.dataset.game).reduce((w, i) => w + i.clientWidth, 0);
   const avail = stage.clientWidth - pad - gap * Math.max(0, buildings.length - 1) - others;
-  const wide = game.reduce((w, i) => w + nat(i, "naturalWidth"), 0);
-  const tall = Math.max(1, ...game.filter(i => i !== imgOf("wonder")).map(i => nat(i, "naturalHeight")));
+  // The Monastery is a small building beside a Town Center and a Castle, so
+  // it may be drawn larger (--scene-monastery-boost, scene.css).
+  const css = getComputedStyle(stage);
+  const monasteryBoost = parseFloat(css.getPropertyValue("--scene-monastery-boost")) || 1;
+  const factor = img => img === imgOf("monastery_skin_building") ? monasteryBoost : 1;
+  const wide = game.reduce((w, i) => w + nat(i, "naturalWidth") * factor(i), 0);
+  const tall = Math.max(1, ...game.filter(i => i !== imgOf("wonder")).map(i => nat(i, "naturalHeight") * factor(i)));
   let k = Math.min(_SCENE_MAX_SCALE, _SCENE_ROW_H / tall, wide ? avail / wide : _SCENE_MAX_SCALE);
   if (!(k > 0)) k = _SCENE_MAX_SCALE;
-  const boost = parseFloat(getComputedStyle(stage).getPropertyValue("--scene-unit-boost")) || 3;
+  const boost = parseFloat(css.getPropertyValue("--scene-unit-boost")) || 3;
   const size = (img, scale) => {
     if (!img) return;
     if (img.dataset.game && img.naturalWidth) {
@@ -605,7 +621,7 @@ function _sizeScene() {
       img.style.width = img.style.height = img.style.maxHeight = "";
     }
   };
-  _SCENE_BUILDINGS.forEach(key => size(imgOf(key), k));
+  _SCENE_BUILDINGS.forEach(key => size(imgOf(key), k * factor(imgOf(key))));
   ["monk_skin", "starting_scout"].forEach(key => size(imgOf(key), k * boost));
   // The wonder's slot stops at _SCENE_WONDER_H and hides the rest (scene.css
   // .is-clipped keeps the base, so only the top of a spire goes).

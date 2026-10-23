@@ -16,6 +16,11 @@
   /* Units drawn this many times the buildings' scale (true scale makes a
      Monk a few pixels tall beside a Castle). */
   --scene-unit-boost:  3;
+  /* The Monastery drawn this many times the other buildings' scale: beside a
+     Town Center and a Castle it reads too small at the game's own. */
+  --scene-monastery-boost: 1.4;
+  /* Space between the buildings; the scale shrinks to fit it. */
+  --scene-building-gap: clamp(14px, 3.5vw, 44px);
 
   position: relative;
   border: 1px solid var(--border, #C9B896);
@@ -50,7 +55,7 @@
   display: flex;
   align-items: flex-end;        /* every building stands on one ground line */
   justify-content: center;
-  gap: clamp(4px, 2vw, 22px);
+  gap: var(--scene-building-gap);
   z-index: 1;
 }
 
@@ -89,6 +94,20 @@
 .scene-slot.is-clipped:focus-visible { transform: none; }
 .scene-slot--tc     img { height: clamp( 82px, 15vw, 180px); }
 .scene-slot--castle img { height: clamp( 78px, 20vw, 270px); }
+
+/* Loading: the hammering Villager beside the slot (builder.js renderScene). */
+.scene-slot .scene-loader { display: none; }
+.scene-slot.is-loading {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+.scene-slot.is-loading .scene-loader {
+  display: block;
+  width: auto;
+  height: 56px;
+  filter: none;
+}
 
 /* Units stand in front of the buildings, overlapping the row above */
 .scene-units {
@@ -230,6 +249,6 @@
 
 @media (max-width: 575.98px) {
   .scene-stage { min-height: 230px; padding-inline: 10px; }
-  .scene-row   { gap: 2px; }
+  .scene-row   { --scene-building-gap: 6px; }
   .scene-units { gap: 10px; }
 }
