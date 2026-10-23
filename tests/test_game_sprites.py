@@ -131,5 +131,28 @@ else:
                       (2612, "War Dog"), (1690, "Warwolf Trebuchet")):
         check(f"{name} renders", gs.still_webp(dat, dat_path, units[uid]) is not None)
 
+    print("\n=== the identity scene, from the game ===")
+    # Every option the wizard offers draws the game's own sprite (2026-10-23):
+    # the bundled pictures had no art for 28 wonders or the South American
+    # Town Center, and the cut-out Monks were blurry.
+    from civ_appender import MONK_SKIN_OPTIONS
+    import app as webapp
+    archs = sorted({c.icon_set for c in dat.civs[1:]})
+    missing = [("architecture", v) for v in archs if gs.scene_still(dat, dat_path, "architecture", v) is None]
+    missing += [(s, i - 1) for i in range(1, len(dat.civs)) for s in ("wonder", "castle")
+                if gs.scene_still(dat, dat_path, s, i - 1) is None]
+    missing += [("monk_skin", o["value"]) for o in MONK_SKIN_OPTIONS
+                if gs.scene_still(dat, dat_path, "monk_skin", o["value"]) is None]
+    missing += [("starting_scout", o["value"]) for o in webapp._SCOUT_OPTIONS
+                if gs.scene_still(dat, dat_path, "starting_scout", o["value"]) is None]
+    check(f"every architecture ({len(archs)}), wonder, castle, Monk and scout renders", not missing, missing[:6])
+    # A Town Center is four units; the scene draws the game's whole-building
+    # "Preview" sprite with the back piece's shadow under it.
+    tc = gs.scene_still(dat, dat_path, "architecture", 2)
+    bare = gs.graphic_frames(dat, dat_path, dat.civs[1].units[gs._TC_PREVIEW].standing_graphic[0], still=True)[0][0]
+    check("the Town Center carries its shadow", tc.size[0] >= bare.size[0] and tc.getbbox() is not None
+          and sum(tc.getchannel("A").histogram()[1:]) > sum(bare.getchannel("A").histogram()[1:]))
+    check("an unknown value is no art, not a crash", gs.scene_still(dat, dat_path, "wonder", 999) is None)
+
 print("\nPASS" if not failures else f"\n{failures} FAILED")
 sys.exit(1 if failures else 0)

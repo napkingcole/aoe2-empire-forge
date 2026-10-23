@@ -2644,6 +2644,40 @@ def _render_preview(dat_path: str, unit_id: int, kind: str) -> Path | None:
     return cached
 
 
+def _render_scene_art(dat_path: str, slot: str, value: int) -> Path | None:
+    """The cached art for one identity-scene slot (game_sprites.scene_still)."""
+    import game_sprites
+    cached = _preview_path(dat_path, value, f"scene-{slot}")
+    if cached.exists():
+        return cached
+    data = game_sprites.scene_webp(_get_dat(dat_path), dat_path, slot, value)
+    if data is None:
+        return None
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cached.with_suffix(f".{threading.get_ident()}.tmp")
+    tmp.write_bytes(data)
+    tmp.replace(cached)
+    return cached
+
+
+@app.route("/api/scene-art/<slot>/<int:value>")
+def api_scene_art(slot: str, value: int):
+    """Step 1's scene, drawn from the player's game: a Town Center by
+    architecture, a civ's wonder, castle or Monk, a starting scout.  404 when
+    the game or the sprite isn't found — the wizard then shows the bundled
+    picture."""
+    import game_sprites
+    if slot not in game_sprites.SCENE_SLOTS:
+        return ("", 404)
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return ("", 404)
+    path = _render_scene_art(dat_path, slot, value)
+    if path is None:
+        return ("", 404)
+    return send_file(path, mimetype="image/webp", max_age=86400)
+
+
 @app.route("/api/builder/appearances")
 def api_builder_appearances():
     """Looks a unique unit may wear (civ_appender.appearance_ok): every hero and
@@ -2729,6 +2763,14 @@ def _warm_previews(dat_path: str) -> None:
         ids |= set(_uu_preview_units(dat).values())
         for uid in sorted(ids):
             _render_preview(dat_path, uid, "still")
+        # The identity scene, every option of every slot (the pickers show them all).
+        from civ_appender import MONK_SKIN_OPTIONS
+        scene = [("architecture", v) for v in sorted({c.icon_set for c in dat.civs[1:]})]
+        scene += [(s, i - 1) for i in range(1, len(dat.civs)) for s in ("wonder", "castle")]
+        scene += [("monk_skin", o["value"]) for o in MONK_SKIN_OPTIONS]
+        scene += [("starting_scout", o["value"]) for o in _SCOUT_OPTIONS]
+        for slot, value in scene:
+            _render_scene_art(dat_path, slot, value)
     except Exception as exc:                                      # noqa: BLE001
         print(f"[previews] {exc}", flush=True)
 

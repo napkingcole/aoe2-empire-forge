@@ -336,27 +336,13 @@ const DEFAULT_ARCHITECTURE = 2;   // Western European — matches civ_appender's
 // `defaultLabel` when the long form would wrap (the Monk uses just "Default").
 const DEFAULT_OPTION_LABEL = "— Architecture Default —";
 
-// Unit slots carry TWO art variants:
-//   scene  — an in-game sprite cut out on its patch of grass, which reads
-//            correctly standing in the scene but is small and awkwardly framed
-//            when contain-fitted into a 78px picker tile;
-//   picker — the standard square in-game button icon.
-// A slot declares `pickerArt`/`pickerFallback` when it wants them to differ;
-// otherwise the picker just reuses the scene art.
-const SCOUT_ICONS = {
-  448:  "/static/icons/units/scout.png",
-  751:  "/static/icons/units/eagle_warrior.png",
-  1755: "/static/icons/units/camel_rider.png",
-  2550: "/static/icons/units/champi.png",
-};
-
-// Per-skin Monk art is keyed by the MONK_SKIN_OPTIONS value (which is the DAT
-// civ index the Monk graphic gets copied from).  Drop a file in with that name
-// and it appears — no code change.
-//   scene   static/img/scene/monks/monk_<value>.webp
-//   picker  static/img/scene/monks/icons/monk_<value>.webp
-// Either falls back to the generic Monk icon when absent.
-const MONK_ART_FALLBACK = "/static/icons/units/monk.png";
+// Every slot's art is drawn from the player's game (/api/scene-art,
+// game_sprites.scene_still): the game's own sprites, all at one scale, and a
+// civ a patch adds has art at once.  The pictures in static/img/scene are the
+// fallback for when the game isn't found yet.  The pickers show the same art.
+function _sceneArt(slot, value) {
+  return `/api/scene-art/${slot}/${value}${_datQuery()}`;
+}
 
 // monk_skin -1 ("architecture default") has no art of its own; draw European.
 // NB: in-game the default actually follows the architecture set, so this is
@@ -392,7 +378,8 @@ const SCENE_SLOTS = {
     options: () => window._metaArchitectures || [],
     get:     () => draft.architecture ?? DEFAULT_ARCHITECTURE,
     set:     v => { draft.architecture = v; },
-    art:     v => `/static/img/scene/arch/tc_${v}.webp`,
+    art:      v => _sceneArt("architecture", v),
+    fallback: v => `/static/img/scene/arch/tc_${v}.webp`,
     name:    v => (window._metaArchitectures || []).find(o => o.value === v)?.label || `#${v}`,
     caption: v => `${SCENE_SLOTS.architecture.name(v)} architecture`,
   },
@@ -402,7 +389,8 @@ const SCENE_SLOTS = {
     options: () => window._metaCivs || [],
     get:     () => draft.wonder,
     set:     v => { draft.wonder = v; },
-    art:     v => { const a = _artIdx(v); return a === null ? null : `/static/img/scene/wonders/wonder_${a}.webp`; },
+    art:      v => _sceneArt("wonder", v),
+    fallback: v => { const a = _artIdx(v); return a === null ? null : `/static/img/scene/wonders/wonder_${a}.webp`; },
     // KM names the wonder itself ("Hagia Sophia (Byzantines)"), which is far
     // more use than the civ name alone.
     name:    v => { const a = _artIdx(v); return (a !== null && _sceneNames.wonders?.[a]) || _civLabel(v); },
@@ -415,7 +403,8 @@ const SCENE_SLOTS = {
     options: () => window._metaCivs || [],
     get:     () => draft.castle,
     set:     v => { draft.castle = v; },
-    art:     v => { const a = _artIdx(v); return a === null ? null : `/static/img/scene/castles/castle_${a}.webp`; },
+    art:      v => _sceneArt("castle", v),
+    fallback: v => { const a = _artIdx(v); return a === null ? null : `/static/img/scene/castles/castle_${a}.webp`; },
     // KM's castle names are just "<Civ> Castle" and carry some stale civ names
     // (Hindustani, Polish), so the live civ label is the better label here.
     name:    _civLabel,
@@ -428,10 +417,8 @@ const SCENE_SLOTS = {
     options: () => window._metaMonks || [],
     get:     () => draft.monk_skin,
     set:     v => { if (v < 0) delete draft.monk_skin; else draft.monk_skin = v; },
-    art:            v => `/static/img/scene/monks/monk_${v}.webp`,
-    fallback:       MONK_ART_FALLBACK,
-    pickerArt:      v => `/static/img/scene/monks/icons/monk_${v}.webp`,
-    pickerFallback: MONK_ART_FALLBACK,
+    art:      v => _sceneArt("monk_skin", v),
+    fallback: v => `/static/img/scene/monks/monk_${v}.webp`,
     name:    v => (window._metaMonks || []).find(o => o.value === v)?.label || "Default",
     caption: v => `${SCENE_SLOTS.monk_skin.name(v)} Monk`,
     defaultable: true,
@@ -446,12 +433,8 @@ const SCENE_SLOTS = {
     options: () => window._metaScouts || [],
     get:     () => draft.starting_scout ?? 448,
     set:     v => { draft.starting_scout = v; },
-    // Cut-out sprites once they exist; until then each unit's own button icon
-    // stands in (per-value, so an Eagle Scout doesn't fall back to a horse).
-    art:            v => `/static/img/scene/scouts/scout_${v}.webp`,
-    fallback:       v => SCOUT_ICONS[v],
-    pickerArt:      v => `/static/img/scene/scouts/icons/scout_${v}.webp`,
-    pickerFallback: v => SCOUT_ICONS[v],
+    art:      v => _sceneArt("starting_scout", v),
+    fallback: v => `/static/img/scene/scouts/scout_${v}.webp`,
     name:    v => (window._metaScouts || []).find(o => o.value === v)?.label || `#${v}`,
     caption: v => SCENE_SLOTS.starting_scout.name(v),
   },
@@ -532,11 +515,14 @@ function renderScene() {
         const fb = _resolveFallback(slot.fallback, value);
         if (fb && !usedFallback) {
           usedFallback = true;
+          delete img.dataset.game;
           img.src = fb;
           return;
         }
         markEmpty();
+        _sizeScene();
       };
+      img.onload = () => { if (!usedFallback) img.dataset.game = "1"; _sizeScene(); };
       img.src = src;
       img.alt = label;
       img.style.display = "";
@@ -557,6 +543,44 @@ function renderScene() {
   }
   updateSceneCaption();
 }
+
+// The game's sprites share one scale, so the scene draws them all at one:
+// the three buildings at whatever fits the stage (and no taller than
+// _SCENE_MAX_H), the units at that times --scene-unit-boost (scene.css) — at
+// the game's true ratio a Monk would be a few pixels tall beside a Castle.
+// Bundled fallback pictures keep scene.css's own sizes.
+const _SCENE_MAX_H = 300, _SCENE_MAX_SCALE = 0.5;
+function _sizeScene() {
+  const stage = document.getElementById("identity-scene");
+  if (!stage || !stage.clientWidth) return;
+  const imgOf = k => document.getElementById(`scene-img-${k}`);
+  const shown = img => img && img.style.display !== "none" && img.naturalWidth;
+  const buildings = ["wonder", "architecture", "castle"].map(imgOf).filter(shown);
+  const game = buildings.filter(i => i.dataset.game);
+  const row = stage.querySelector(".scene-row");
+  const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+  const pad = parseFloat(getComputedStyle(stage).paddingLeft) + parseFloat(getComputedStyle(stage).paddingRight);
+  const others = buildings.filter(i => !i.dataset.game).reduce((w, i) => w + i.clientWidth, 0);
+  const avail = stage.clientWidth - pad - gap * 2 - others;
+  const wide = game.reduce((w, i) => w + i.naturalWidth, 0);
+  const tall = Math.max(1, ...game.map(i => i.naturalHeight));
+  let k = Math.min(_SCENE_MAX_SCALE, _SCENE_MAX_H / tall, wide ? avail / wide : _SCENE_MAX_SCALE);
+  if (!(k > 0)) k = _SCENE_MAX_SCALE;
+  const boost = parseFloat(getComputedStyle(stage).getPropertyValue("--scene-unit-boost")) || 3;
+  const size = (img, scale) => {
+    if (!img) return;
+    if (img.dataset.game && img.naturalWidth) {
+      img.style.width = `${Math.round(img.naturalWidth * scale)}px`;
+      img.style.height = "auto";
+      img.style.maxHeight = "none";
+    } else {
+      img.style.width = img.style.height = img.style.maxHeight = "";
+    }
+  };
+  ["wonder", "architecture", "castle"].forEach(key => size(imgOf(key), k));
+  ["monk_skin", "starting_scout"].forEach(key => size(imgOf(key), k * boost));
+}
+window.addEventListener("resize", () => _sizeScene());
 
 function updateSceneCaption(key) {
   const el = document.getElementById("scene-caption");
@@ -612,15 +636,13 @@ function openScenePicker(key) {
       ? (slot.resolveDefault ? slot.resolveDefault()
                              : _effectiveCivValue(-1, draft.architecture ?? DEFAULT_ARCHITECTURE))
       : opt.value;
-    // The picker wants square button icons, not the scene's cut-out sprites.
-    const artFn = slot.pickerArt || slot.art;
-    const src = (drawVal === null || drawVal === undefined) ? null : artFn(drawVal);
+    const src = (drawVal === null || drawVal === undefined) ? null : slot.art(drawVal);
 
     const card = document.createElement("button");
     card.type = "button";
     card.className = "scene-picker-item" + (current === opt.value ? " selected" : "");
     const name = opt.value < 0 ? opt.label : slot.name(opt.value);
-    const fb = _resolveFallback(slot.pickerFallback ?? slot.fallback, drawVal) || "";
+    const fb = _resolveFallback(slot.fallback, drawVal) || "";
     card.innerHTML =
       (src ? `<img src="${src}" alt="" loading="lazy" data-fb="${fb}"
                    onerror="if(this.dataset.fb){this.src=this.dataset.fb;this.dataset.fb='';}

@@ -275,11 +275,13 @@ def unit_frames(dat, dat_path, unit, kind: str, angle: int = SOUTH_WEST,
 
 
 def graphic_frames(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST,
-                   still: bool = False) -> tuple[list[Image.Image], int] | None:
+                   still: bool = False, under: tuple = ()) -> tuple[list[Image.Image], int] | None:
     """unit_frames for any DAT graphic — one a unit's task plays (a Villager
-    building), not only its idle, walk and attack."""
+    building), not only its idle, walk and attack.  `under` adds (graphic id,
+    x, y) layers drawn first: a Town Center preview's shadow lives on another
+    piece of the building (scene_art)."""
     parts = []
-    for gid, ox, oy in _layers(dat, graphic_id):
+    for gid, ox, oy in (*under, *_layers(dat, graphic_id)):
         g = dat.graphics[gid]
         path = find_sprite(dat_path, g.file_name)
         if path is None:
@@ -344,4 +346,58 @@ def graphic_webp(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST) -> byt
     buf = io.BytesIO()
     frames[0].save(buf, "WEBP", save_all=True, append_images=frames[1:], duration=ms,
                    loop=0, quality=80, method=4)
+    return buf.getvalue()
+
+
+# ── The identity scene ───────────────────────────────────────────────────────
+# Step 1's scene (static/css/scene.css): each slot's art, rendered from the
+# player's game like the previews, so every piece is at the game's own scale
+# and a civ a patch adds has art at once.  The images in static/img/scene are
+# only the fallback for when the game isn't found.
+SCENE_SLOTS = ("architecture", "wonder", "castle", "monk_skin", "starting_scout")
+_CASTLE, _WONDER, _MONK = 82, 276, 125
+# A Town Center is four units (back, main, centre, front — the annexes); the
+# game also keeps the whole Castle Age one as a single "Preview" sprite, unit
+# 484, whose shadow is a delta of the back piece, unit 141.
+_TC_BACK, _TC_PREVIEW = 141, 484
+
+
+def scene_still(dat, dat_path, slot: str, value: int) -> Image.Image | None:
+    """One scene slot's art, facing south-west in Player 1 Blue.  Values are
+    the wizard's: architecture = civ.icon_set; wonder and castle = DAT civ
+    index - 1 (KM's convention); monk_skin = DAT civ index; starting_scout =
+    unit id."""
+    civs = dat.civs
+    under = ()
+    if slot == "architecture":
+        civ = next((c for c in civs[1:] if c.icon_set == value), None)
+        if civ is None:
+            return None
+        back = civ.units[_TC_BACK].standing_graphic[0]
+        under = tuple(layer for layer in _layers(dat, back) if layer[0] != back)
+        gid = civ.units[_TC_PREVIEW].standing_graphic[0]
+    elif slot in ("wonder", "castle", "monk_skin"):
+        idx = value if slot == "monk_skin" else value + 1
+        if not 1 <= idx < len(civs):
+            return None
+        unit = civs[idx].units[{"wonder": _WONDER, "castle": _CASTLE, "monk_skin": _MONK}[slot]]
+        gid = unit.standing_graphic[0]
+    elif slot == "starting_scout":
+        units = civs[0].units
+        if not 0 <= value < len(units) or units[value] is None:
+            return None
+        gid = units[value].standing_graphic[0]
+    else:
+        return None
+    got = graphic_frames(dat, dat_path, gid, still=True, under=under)
+    return got[0][0] if got else None
+
+
+def scene_webp(dat, dat_path, slot: str, value: int) -> bytes | None:
+    import io
+    im = scene_still(dat, dat_path, slot, value)
+    if im is None:
+        return None
+    buf = io.BytesIO()
+    im.save(buf, "WEBP", quality=88)
     return buf.getvalue()

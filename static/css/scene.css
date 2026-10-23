@@ -4,15 +4,18 @@
    real <button>, so the scene is the picker as well as the preview; the select
    row underneath is the same state reached by keyboard.
 
-   Building art comes from scripts/import_km_art.py (KM's renders, WebP).  The
-   ground is drawn in CSS — swap --scene-grass-image for a real tile if one is
-   ever added.
+   Every slot's art is the game's own sprite, rendered from the player's
+   files (/api/scene-art) and sized by builder.js _sizeScene at one shared
+   scale; the units at that scale times --scene-unit-boost.  The pictures
+   from scripts/import_km_art.py are the fallback when the game isn't found,
+   and keep the sizes below.
    ------------------------------------------------------------------------- */
 
 .scene-stage {
   --scene-grass:       #6f8a4c;
-  --scene-grass-dark:  #5d7740;
-  --scene-grass-image: none;
+  /* Units drawn this many times the buildings' scale (true scale makes a
+     Monk a few pixels tall beside a Castle). */
+  --scene-unit-boost:  3;
 
   position: relative;
   border: 1px solid var(--border, #C9B896);
@@ -24,8 +27,10 @@
   flex-direction: column;
   justify-content: flex-end;
   background-color: var(--scene-grass);
-  background-image: url('/static/grass.jpg');
-  background-size: cover;
+  /* Seamless, at its own size (the user's call, as in the unit previews). */
+  background-image: url('/static/seamless-grass.png');
+  background-size: auto;
+  background-repeat: repeat;
 }
 
 /* Soft horizon so the plane reads as ground rather than a green rectangle */
@@ -41,7 +46,7 @@
 .scene-row {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;        /* every building stands on one ground line */
   justify-content: center;
   gap: clamp(4px, 2vw, 22px);
   z-index: 1;
@@ -82,19 +87,12 @@
   align-items: flex-end;
   justify-content: center;
   gap: 18px;
-  margin-top: -70px;
+  margin-top: -24px;
   padding-bottom: 14px;
 }
 
-/* Units are sized by WIDTH, not height.  Sizing by height makes anything with
-   tall headgear — the Mesoamerican Monk especially — shrink its whole body to
-   fit the same box, so it reads as a much smaller figure than its neighbours.
-   Matching on width keeps bodies consistent and lets a tall headdress simply
-   rise higher, which is what happens in game.  max-height is only a sanity cap.
-   No border-radius: these are cut-out sprites, and rounding clips their corners.
-
-   Per-skin nudges hook off the value, e.g.:
-     .scene-slot--monk[data-value="15"] img { width: 46px; }            */
+/* Fallback pictures only: the game's sprites are sized by _sizeScene.
+   No border-radius: these are cut-out sprites, and rounding clips their corners. */
 .scene-slot--unit img {
   width: clamp(34px, 5.5vw, 53px);
   height: auto;
@@ -102,17 +100,6 @@
   object-fit: contain;
   object-position: bottom center;
 }
-.scene-slot.scene-slot--monk[data-value="5"] img { width: 44px } /* East Asian Monk */
-.scene-slot.scene-slot--monk[data-value="12"] img { width: 49px } /* Central Asian Monk */
-.scene-slot.scene-slot--monk[data-value="15"] img { width: 46px } /* Meso Monk */
-.scene-slot.scene-slot--monk[data-value="21"] img { width: 56px } /* Andean Monk */
-.scene-slot.scene-slot--monk[data-value="25"] img { width: 47px } /* Andean Monk */
-.scene-slot.scene-slot--scout[data-value="448"] img { width: 78px } /* Scout Cavalry */
-.scene-slot.scene-slot--scout[data-value="751"] img { width: 57px } /* Eagle Scout */
-.scene-slot.scene-slot--scout[data-value="1755"] img { width: 72px } /* Camel Scout */
-.scene-slot.scene-slot--scout[data-value="2550"] img { width: 58px } /* Champi Scout */
-
-/* A mounted scout is much wider than a standing Monk at the same width value. */
 .scene-slot--scout img { width: clamp(42px, 7vw, 66px); }
 
 .scene-slot:hover,
