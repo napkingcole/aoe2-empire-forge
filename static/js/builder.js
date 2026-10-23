@@ -544,12 +544,15 @@ function renderScene() {
   updateSceneCaption();
 }
 
-// The game's sprites share one scale, so the scene draws them all at one:
-// the three buildings at whatever fits the stage (and no taller than
-// _SCENE_MAX_H), the units at that times --scene-unit-boost (scene.css) — at
-// the game's true ratio a Monk would be a few pixels tall beside a Castle.
-// Bundled fallback pictures keep scene.css's own sizes.
-const _SCENE_MAX_H = 300, _SCENE_MAX_SCALE = 0.5;
+// The game's sprites share one scale, so the scene draws them all at one: the
+// scale that fits the three buildings across the stage, with the Town Center
+// and Castle no taller than _SCENE_ROW_H.  A wonder doesn't set it — the
+// cathedrals' spires (Britons, Burgundians) shrank everything else to ants —
+// it stands at the same scale and is clipped at the stage's top edge, past
+// _SCENE_WONDER_H (the user's idea, 2026-10-23).  The units are drawn at that
+// scale times --scene-unit-boost (scene.css).  Bundled fallback pictures keep
+// scene.css's own sizes.
+const _SCENE_ROW_H = 230, _SCENE_WONDER_H = 300, _SCENE_MAX_SCALE = 0.5;
 function _sizeScene() {
   const stage = document.getElementById("identity-scene");
   if (!stage || !stage.clientWidth) return;
@@ -563,8 +566,8 @@ function _sizeScene() {
   const others = buildings.filter(i => !i.dataset.game).reduce((w, i) => w + i.clientWidth, 0);
   const avail = stage.clientWidth - pad - gap * 2 - others;
   const wide = game.reduce((w, i) => w + i.naturalWidth, 0);
-  const tall = Math.max(1, ...game.map(i => i.naturalHeight));
-  let k = Math.min(_SCENE_MAX_SCALE, _SCENE_MAX_H / tall, wide ? avail / wide : _SCENE_MAX_SCALE);
+  const tall = Math.max(1, ...game.filter(i => i !== imgOf("wonder")).map(i => i.naturalHeight));
+  let k = Math.min(_SCENE_MAX_SCALE, _SCENE_ROW_H / tall, wide ? avail / wide : _SCENE_MAX_SCALE);
   if (!(k > 0)) k = _SCENE_MAX_SCALE;
   const boost = parseFloat(getComputedStyle(stage).getPropertyValue("--scene-unit-boost")) || 3;
   const size = (img, scale) => {
@@ -579,6 +582,15 @@ function _sizeScene() {
   };
   ["wonder", "architecture", "castle"].forEach(key => size(imgOf(key), k));
   ["monk_skin", "starting_scout"].forEach(key => size(imgOf(key), k * boost));
+  // The wonder's slot stops at _SCENE_WONDER_H and hides the rest (scene.css
+  // .is-clipped keeps the base, so only the top of a spire goes).
+  const wonder = imgOf("wonder");
+  const slot = wonder?.closest(".scene-slot");
+  if (slot) {
+    const clip = wonder.dataset.game && wonder.naturalHeight * k > _SCENE_WONDER_H;
+    slot.classList.toggle("is-clipped", Boolean(clip));
+    slot.style.height = clip ? `${_SCENE_WONDER_H}px` : "";
+  }
 }
 window.addEventListener("resize", () => _sizeScene());
 

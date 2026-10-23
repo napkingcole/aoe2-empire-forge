@@ -21,7 +21,9 @@
   border: 1px solid var(--border, #C9B896);
   border-radius: 8px;
   overflow: hidden;
-  padding: 18px 16px 0;
+  /* No top padding: a tall wonder is clipped flush with the stage's top
+     edge, as if it rose past it (builder.js _sizeScene). */
+  padding: 0 16px 0;
   min-height: 300px;
   display: flex;
   flex-direction: column;
@@ -76,6 +78,15 @@
 }
 
 .scene-slot--wonder img { height: clamp(120px, 22vw, 280px); }
+/* A spire taller than the stage: keep the base, lose the top. */
+.scene-slot.is-clipped {
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 0;
+}
+.scene-slot.is-clipped:hover,
+.scene-slot.is-clipped:focus-visible { transform: none; }
 .scene-slot--tc     img { height: clamp( 82px, 15vw, 180px); }
 .scene-slot--castle img { height: clamp( 78px, 20vw, 270px); }
 
