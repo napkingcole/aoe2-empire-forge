@@ -205,6 +205,24 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.7.0": [
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Scenario units as unique units.</strong> 22 units the scenario editor can place but no civ trains, among them the Qizilbash Warrior, War Dog, Ninja, Photonman and Amazon Archer. Each gets an Elite: the game's own where one exists, otherwise +15% HP and a little more attack, armour or range",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>See units as they look in the game.</strong> Hover a hero or unique unit for a picture, or press its play button to watch it idle, walk and attack, drawn from your own game files in Player 1 Blue",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Every hero in your game</strong> on the Heroes tab (over 200), with search and filters, read from your game so new ones appear when the game adds them",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Unique unit appearance.</strong> Give your unique unit the look of a hero or another unit of the same kind and size, keeping its own stats. Its Elite wears the look's Elite when the game has one",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>The Appearance scene, drawn from your game.</strong> Every wonder, castle, Town Center, Monk and starting scout is the game's own art, at one scale, including the wonders we never had pictures for. The Tupi wonder's waterfall moves",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Choose your Monastery.</strong> Its look is separate from the architecture, like the Monk's: pick any of 16, or keep the architecture's own",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Ambuscade</strong>, a Castle unique tech: your unique unit also trains at the Archery Range",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Accuracy</strong> as a custom bonus effect (\"Archers +20% accuracy\"), never past 100%",
+        "<strong class=\"color-accent-2\">NEW:</strong> A <strong>notice for retired bonus cards</strong> an older civ still carries, with where each went and a button to remove them",
+        "<strong class=\"color-accent-2\">NEW:</strong> Empire Forge now reads <strong>everything from your own game files</strong>: civ descriptions, tech trees, unit icons and the greyed \"later age\" buttons, so they match your game after every patch",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Economic upgrades one age earlier</strong> now include Crop Rotation and Caravan, at -40% food as the game's Burgundians have it",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Anarchy, Marauders and Ambuscade</strong> trained the replaced civ's unique unit (Huskarls) when another civ came before it in the same mod",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Greyed Castle buttons before the Castle Age</strong> showed the replaced civ's unique unit on maps that start with a Castle",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Your unique unit keeps Castle button 1</strong>, page 1, even over a leftover unit from the civ it replaced",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Several custom unique units <strong>trained for 0 population</strong>",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> A destroyed <strong>Monastery left Britons rubble</strong> whatever the architecture",
+    ],
     "2.6.2": [
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Fully-upgraded stats.</strong> On the Review step, Preview stats shows every unit and building as it would be in a Post-Imperial game, with each number broken down into the techs, bonuses and unique techs behind it. It also lists which of your bonuses don't reach a unit, so you can check combinations before building the mod",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Custom bonuses that wait.</strong> A card can start from an age (\"Archers +15% HP from the Castle Age\"), grow each age (\"Militia line +5/+10/+15 HP\"), or wait until a building is up (\"free Loom once a Mill is built\")",
