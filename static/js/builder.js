@@ -853,7 +853,12 @@ function populateReview() {
     const iconSrc  = base?.icon || UU_PLACEHOLDER;
     const override = draft.unique_unit.name;
     const display  = override || baseName;
-    const subtitle = override ? `<div class="text-muted" style="font-size:.7rem;">base: ${baseName}</div>` : "";
+    const lookId   = draft.unique_unit.appearance;
+    const lookName = lookId == null ? null
+      : (_HERO_NAMES[lookId] || _uuCatalog.find(u => u.preview_unit === lookId)?.name
+         || _uuLooks.looks.find(l => l.id === lookId)?.name || `Unit #${lookId}`);
+    const subtitle = (override ? `<div class="text-muted" style="font-size:.7rem;">base: ${baseName}</div>` : "")
+      + (lookName ? `<div class="text-muted" style="font-size:.7rem;">looks like: ${_esc(lookName)}</div>` : "");
     const _uuRevImg = `<img id="uu-review-icon" src="${iconSrc}" style="width:32px;height:32px;object-fit:contain;background:oklch(from var(--body-bg) calc(l+0.06) c h);border-radius:4px;">`;
     uuHtml = `<div class="d-flex align-items-center gap-2">${_uuRevImg}<div><div>${display}</div>${subtitle}</div></div>`;
   }
@@ -3658,6 +3663,7 @@ function selectUU(kmIdx) {
     delete draft.unique_unit.overrides;
     delete draft.unique_unit.advanced_flags;
     delete draft.unique_unit.elite_upgrade;
+    delete draft.unique_unit.appearance;     // a look fits one unit's kind and size
   }
   draft.unique_unit.km_idx = kmIdx;
   saveDraft();
@@ -3680,8 +3686,95 @@ function selectUU(kmIdx) {
 
   _updateUUCostPreview(unit);
   populateUUOverrides(unit);
+  _renderUUAppearance();
   renderUUGrid();
 }
+
+// ── UU appearance ─────────────────────────────────────────────────────────────
+// Another unit's look on this unit's stats (civ_appender.copy_unit_look).  The
+// server lists only looks of the same kind and size (appearance_ok).
+let _uuLooks = { unit: null, looks: [] };
+
+function _selectedUUUnit() {
+  const sel = _uuCatalog.find(u => u.km_idx === draft.unique_unit?.km_idx);
+  return sel?.preview_unit ?? null;
+}
+
+async function _loadUULooks() {
+  const unit = _selectedUUUnit();
+  if (unit == null) return [];
+  if (_uuLooks.unit !== unit) {
+    const q = _datQuery() ? `${_datQuery()}&unit=${unit}` : `?unit=${unit}`;
+    try {
+      const data = await (await fetch(`/api/builder/appearances${q}`)).json();
+      _uuLooks = { unit, looks: data.looks || [] };
+    } catch { _uuLooks = { unit, looks: [] }; }
+  }
+  return _uuLooks.looks;
+}
+
+async function _renderUUAppearance() {
+  const id = draft.unique_unit?.appearance;
+  const nameEl = document.getElementById("uu-appearance-name");
+  const icon = document.getElementById("uu-appearance-icon");
+  const reset = document.getElementById("uu-appearance-reset");
+  if (!nameEl) return;
+  if (id == null) {
+    nameEl.textContent = "Its own";
+    icon.classList.add("d-none");
+    reset.classList.add("d-none");
+    return;
+  }
+  const looks = await _loadUULooks();
+  nameEl.textContent = looks.find(l => l.id === id)?.name || `Unit #${id}`;
+  icon.src = `/api/unit-icon/${id}${_datQuery()}`;
+  icon.classList.remove("d-none");
+  reset.classList.remove("d-none");
+}
+
+function _setUUAppearance(id) {
+  if (!draft.unique_unit) return;
+  if (id == null) delete draft.unique_unit.appearance;
+  else draft.unique_unit.appearance = id;
+  saveDraft();
+  _renderUUAppearance();
+}
+
+let _appearanceModal = null;
+async function openUUAppearancePicker() {
+  const el = document.getElementById("modal-uu-appearance");
+  _appearanceModal = _appearanceModal || new bootstrap.Modal(el);
+  const grid = document.getElementById("uu-appearance-grid");
+  const search = document.getElementById("uu-appearance-search");
+  grid.innerHTML = `<div class="text-muted small">Loading…</div>`;
+  _appearanceModal.show();
+  const looks = await _loadUULooks();
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    const cur = draft.unique_unit?.appearance;
+    const shown = looks.filter(l => !q || l.name.toLowerCase().includes(q));
+    grid.innerHTML = shown.map(l => `
+      <div class="uu-card${l.id === cur ? " selected" : ""}" data-look="${l.id}">
+        ${_previewBtnHtml(l.id, l.name)}
+        <img class="uu-card-icon" src="/api/unit-icon/${l.id}${_datQuery()}" alt="" loading="lazy">
+        <div class="uu-card-name">${_esc(l.name)}</div>
+      </div>`).join("") ||
+      `<div class="text-muted small fst-italic">${looks.length ? "No looks match."
+        : _selectedUUUnit() == null ? "Pick a unique unit first."
+        : "No other look fits this unit's kind and size."}</div>`;
+    _wirePreviewButtons(grid);
+    grid.querySelectorAll("[data-look]").forEach(card => card.addEventListener("click", () => {
+      _setUUAppearance(parseInt(card.dataset.look, 10));
+      _appearanceModal.hide();
+    }));
+  };
+  search.value = "";
+  search.oninput = draw;
+  draw();
+}
+
+document.getElementById("uu-appearance-btn")?.addEventListener("click", openUUAppearancePicker);
+document.getElementById("uu-appearance-reset")?.addEventListener("click", () => _setUUAppearance(null));
 
 function clearUU() {
   delete draft.unique_unit;

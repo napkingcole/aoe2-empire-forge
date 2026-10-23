@@ -6498,6 +6498,70 @@ def _copy_monk_skin(src_civ, dst_civ) -> None:
                 dt.proceeding_graphic_id = st.proceeding_graphic_id
 
 
+# ── Unique unit appearance ────────────────────────────────────────────────────
+# A UU can wear another unit's look — a hero's, a scenario unit's — keeping its
+# own stats (2026-10-22, the user's design: KM dressed invented units as heroes;
+# here the player picks stats and look separately).  The fields are what differs
+# between same-kind units in a full diff (Knight/Lancelot, Archer/Einar,
+# Militia/Wallace, Cavalry Archer/Genghis Khan), plus the selection box.  Not
+# copied: sounds (the voice axis, assign_all_languages), the collision box,
+# projectile and every stat.
+APPEARANCE_KINDS = (6, 0, 12, 36)    # infantry, foot archers, cavalry, cavalry archers
+APPEARANCE_SIZE_SLACK = 0.05         # selection box: a Knight can't wear an elephant
+
+
+def appearance_ok(src, dst) -> bool:
+    """May `dst` (a UU) wear `src`'s look?  The same kind, one of
+    APPEARANCE_KINDS, and art of the same size, so it fits the hitbox it is
+    drawn over.  Size is the selection box (outline): an elephant's collision
+    radius is a horse's 0.25, but its box is 0.6 to a horse's 0.4."""
+    return bool(src is not None and dst is not None and src.id != dst.id
+                and src.class_ == dst.class_ and dst.class_ in APPEARANCE_KINDS
+                and abs(src.outline_size_x - dst.outline_size_x) <= APPEARANCE_SIZE_SLACK + 1e-6
+                and src.dead_fish is not None and src.type_50 is not None
+                and src.dead_fish.walking_graphic >= 0 and src.type_50.attack_graphic >= 0)
+
+
+def copy_unit_look(src, dst) -> None:
+    """Dress `dst` in `src`'s look (see APPEARANCE_KINDS's note)."""
+    dst.standing_graphic = src.standing_graphic
+    dst.dying_graphic    = src.dying_graphic
+    dst.undead_graphic   = src.undead_graphic
+    dst.icon_id          = src.icon_id
+    dst.dead_unit_id     = src.dead_unit_id
+    dst.outline_size_x, dst.outline_size_y, dst.outline_size_z = (
+        src.outline_size_x, src.outline_size_y, src.outline_size_z)
+    dst.dead_fish.walking_graphic = src.dead_fish.walking_graphic
+    dst.dead_fish.running_graphic = src.dead_fish.running_graphic
+    dst.type_50.attack_graphic    = src.type_50.attack_graphic
+    dst.type_50.attack_graphic_2  = src.type_50.attack_graphic_2
+    # Where an archer's arrow leaves the sprite: the bow is drawn elsewhere.
+    dst.type_50.graphic_displacement = src.type_50.graphic_displacement
+    if src.creatable is not None and dst.creatable is not None:
+        dst.creatable.idle_attack_graphic = src.creatable.idle_attack_graphic
+
+
+def _apply_uu_appearance(dat: DatFile, civ_index: int, civ_def: dict,
+                         uu_ids: tuple[int, int], warnings: list) -> None:
+    uu = civ_def.get("unique_unit") if isinstance(civ_def.get("unique_unit"), dict) else {}
+    src_id = uu.get("appearance")
+    if src_id is None:
+        return
+    template = dat.civs[0].units                 # Gaia: never a build target
+    src = template[src_id] if 0 <= src_id < len(template) else None
+    units = dat.civs[civ_index].units
+    for uid in uu_ids:
+        dst = units[uid] if 0 <= uid < len(units) else None
+        if not appearance_ok(src, dst):
+            msg = (f"Unique unit appearance {unit_label(dat, 0, src_id)} doesn't fit "
+                   f"{unit_label(dat, civ_index, uid)} (not the same kind and size) — kept its own look")
+            print(f"       WARNING: {msg}")
+            warnings.append(msg)
+            continue
+        copy_unit_look(src, dst)
+        print(f"       UU appearance: {unit_label(dat, civ_index, uid)} wears {unit_label(dat, 0, src_id)}")
+
+
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> dict:
@@ -6994,6 +7058,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                "UU defined — effect left as a no-op.")
         print(f"       WARNING: {msg}")
         warnings.append(msg)
+
+    _apply_uu_appearance(dat, civ_index, civ_def,
+                         tuple(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0), warnings)
 
     # 7. Apply bonuses from catalog.
     bonus_results: dict = {"applied": 0, "skipped": [], "team_applied": 0, "team_total": 0,

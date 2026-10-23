@@ -143,6 +143,8 @@ def to_draft(schema: dict) -> dict:
     elite_up = norm_elite_upgrade(raw_uu.get("elite_upgrade"))
     if elite_up:
         uu["elite_upgrade"] = elite_up
+    if isinstance(raw_uu.get("appearance"), int):         # another unit's look (civ_appender)
+        uu["appearance"] = raw_uu["appearance"]
 
     # ── UTs ──────────────────────────────────────────────────────────────────
     def _ut(raw: dict | None, own_tier: str) -> dict:
@@ -296,6 +298,8 @@ def from_draft(draft: dict) -> dict:
     elite_up = norm_elite_upgrade(uu_raw.get("elite_upgrade"))
     if elite_up:
         uu_out["elite_upgrade"] = elite_up
+    if isinstance(uu_raw.get("appearance"), int):
+        uu_out["appearance"] = uu_raw["appearance"]
 
     schema: dict = {
         "format":         FORMAT_KEY,

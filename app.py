@@ -2644,6 +2644,40 @@ def _render_preview(dat_path: str, unit_id: int, kind: str) -> Path | None:
     return cached
 
 
+@app.route("/api/builder/appearances")
+def api_builder_appearances():
+    """Looks a unique unit may wear (civ_appender.appearance_ok): every hero and
+    every unit in the UU picker of the same kind and size.  ?unit=<game unit id>
+    is the UU itself (its catalog entry's preview_unit)."""
+    import heroes
+    from civ_appender import appearance_ok, _string_table
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    try:
+        target = int(request.args.get("unit", ""))
+    except ValueError:
+        return jsonify({"looks": []})
+    if not dat_path:
+        return jsonify({"looks": []})
+    dat = _get_dat(dat_path)
+    units = dat.civs[0].units
+    if not 0 <= target < len(units) or units[target] is None:
+        return jsonify({"looks": []})
+    names = _string_table()
+    hero_ids = {h["id"] for h in heroes.hero_catalog(
+        dat, _unit_stats_block, lambda u: names.get(u.language_dll_name))}
+    pool = hero_ids | set(_uu_preview_units(dat).values())
+    looks, seen = [], set()
+    for uid in sorted(pool):
+        u = units[uid] if 0 <= uid < len(units) else None
+        name = names.get(u.language_dll_name) if u is not None else None
+        if not name or name in seen or not appearance_ok(u, units[target]):
+            continue
+        seen.add(name)
+        looks.append({"id": uid, "name": name, "hero": uid in hero_ids})
+    looks.sort(key=lambda x: x["name"].casefold())
+    return jsonify({"looks": looks})
+
+
 @app.route("/api/unit-preview/<int:unit_id>/meta")
 def api_unit_preview_meta(unit_id: int):
     """What the preview window needs to scroll the ground under a walking unit:

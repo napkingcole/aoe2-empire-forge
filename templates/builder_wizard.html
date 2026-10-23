@@ -452,6 +452,21 @@
             <div id="uu-cost-preview" class="form-text mt-1" style="color: var(--accent-2); font-size: 0.75rem;"></div>
           </div>
         </div>
+
+        {# Appearance: another unit's look on this unit's stats (civ_appender.copy_unit_look) #}
+        <div class="mt-3" id="uu-appearance-row">
+          <label class="form-label fw-semibold mb-1">Appearance <span class="text-muted fw-normal small">(optional)</span></label>
+          <div class="d-flex align-items-center gap-2">
+            <img id="uu-appearance-icon" src="" alt="" class="d-none"
+                 style="width:40px;height:40px;border-radius:6px;object-fit:cover;">
+            <div class="me-auto">
+              <div id="uu-appearance-name" class="small fw-semibold">Its own</div>
+              <div class="small text-muted">Wear a hero's or another unit's look. Stats, cost and hitbox stay this unit's own.</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-link d-none" id="uu-appearance-reset">Use its own</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="uu-appearance-btn">Change look…</button>
+          </div>
+        </div>
       </div>
 
       {# Prompt when no unit selected #}
@@ -1039,6 +1054,23 @@
 </div>
 
 {# Start Fresh modal #}
+{# Appearance picker: looks of the same kind and size as the unique unit #}
+<div class="modal fade" id="modal-uu-appearance" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Choose a look</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">Units of the same kind and size as yours, so the art fits. Press <i class="fa-solid fa-play"></i> to see one move.</p>
+        <input type="search" id="uu-appearance-search" class="form-control form-control-sm mb-3" placeholder="Search looks" aria-label="Search looks">
+        <div id="uu-appearance-grid" class="uu-grid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {# Unit preview: Idle / Walk / Attack, rendered from the player's sprites #}
 <div class="modal fade" id="modal-unit-preview" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
