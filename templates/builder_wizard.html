@@ -86,6 +86,9 @@
           <button type="button" class="scene-slot scene-slot--tc" data-slot="architecture">
             <img id="scene-img-architecture" src="" alt="Town Center">
           </button>
+          <button type="button" class="scene-slot scene-slot--monastery" data-slot="monastery_skin_building">
+            <img id="scene-img-monastery_skin_building" src="" alt="Monastery">
+          </button>
           <button type="button" class="scene-slot scene-slot--castle" data-slot="castle">
             <img id="scene-img-castle" src="" alt="Castle">
           </button>
@@ -115,6 +118,13 @@
         <div class="scene-control">
           <label for="castle-select">Castle</label>
           <select id="castle-select" class="form-select" data-slot="castle">
+            <option value="-1">— Architecture Default —</option>
+          </select>
+        </div>
+        <div class="scene-control">
+          <label for="monastery-select">Monastery</label>
+          <select id="monastery-select" class="form-select" data-slot="monastery_skin_building"
+                  title="Monastery appearance is separate from architecture — Goths and Teutons build differently but share a Monastery.">
             <option value="-1">— Architecture Default —</option>
           </select>
         </div>

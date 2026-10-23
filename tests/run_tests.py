@@ -88,6 +88,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("KM import tree gaps",             "test_km_import_gaps.py",       "build"),
     ("elephant bonuses",                "test_elephant_bonuses.py",     "build"),
     ("monk voice gender",               "test_monk_voice.py",           "build"),
+    ("monastery skin",                  "test_monastery_skin.py",       "build"),
     ("replaced civ leftovers",          "test_replaced_civ_leftovers.py", "build"),
     ("custom bonus targets",            "test_custom_bonus_targets.py", "build"),
     ("multi-target, team & UT cards",   "test_custom_bonus_multi.py",   "build"),

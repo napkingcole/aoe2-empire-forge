@@ -1345,7 +1345,8 @@ def api_builder_meta():
     # stuck at 53 civs and the three Viking Sagas civs simply did not exist in
     # the wizard.  Falls back to the bundled copy on its own.
     from build_civ import civ_roster
-    from civ_appender import _UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, _ARCH_REP_CIVS
+    from civ_appender import (_UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS,
+                              _ARCH_REP_CIVS)
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     roster = civ_roster(dat_path) or []
     if not roster:
@@ -1364,6 +1365,7 @@ def api_builder_meta():
     # art under the new label.
     arch_options = _ARCH_OPTIONS
     monk_options = MONK_SKIN_OPTIONS
+    monastery_options = MONASTERY_SKIN_OPTIONS
     # Use the DAT only if it is ALREADY parsed.  This route is awaited by the
     # wizard's init() before anything renders, so it must never be the thing
     # that triggers a parse: doing so made a cold start sit on "Loading..." for
@@ -1397,8 +1399,20 @@ def api_builder_meta():
                     continue
                 _claimed.add(_g)
                 monk_options.append(_o)
+            # Monasteries the same way: an option is offered only when its civ
+            # still heads its own Monastery look in this game.
+            _claimed = set()
+            monastery_options = []
+            for _o in MONASTERY_SKIN_OPTIONS:
+                _u = _pd.civs[_o["value"]].units[104] if _o["value"] < len(_pd.civs) else None
+                _g = _u.standing_graphic if _u is not None else None
+                if _g is None or _g in _claimed:
+                    continue
+                _claimed.add(_g)
+                monastery_options.append(_o)
         except Exception:                                        # noqa: BLE001
             arch_options, monk_options = _ARCH_OPTIONS, MONK_SKIN_OPTIONS
+            monastery_options = MONASTERY_SKIN_OPTIONS
     # Driven by voice_wwise_map.json, not a fixed count: the build extracts
     # those clips from the player's own Wwise banks, so offering a voice the
     # map can't name would silently ship a civ with no audio.  A rebuilt map
@@ -1433,6 +1447,10 @@ def api_builder_meta():
         "voices": voice_options,
         "starting_scouts": _SCOUT_OPTIONS,
         "monk_skins": monk_options,
+        "monastery_skins": monastery_options,
+        # Goes on every preview and scene-art URL, so a browser never shows art
+        # it cached before game_sprites' output changed.
+        "art_version": _PREVIEW_VERSION,
         "unlock_bonuses": unlock_bonuses,
         "unlock_replaces": unlock_replaces,
         # Display names for the identity scene ("Hagia Sophia" rather than
@@ -2610,7 +2628,7 @@ def api_unit_icon(unit_id: int):
     return send_file(cached, mimetype="image/webp", max_age=86400)
 
 
-_PREVIEW_VERSION = "v3"        # bump when game_sprites' output changes
+_PREVIEW_VERSION = "v4"        # bump when game_sprites' output changes
                                # (v2: kept blocks across a moved box — square holes;
                                #  v3: frames under 20 ms dropped — browsers slowed them)
 _PREVIEWS_WARMED: set[str] = set()
@@ -2644,20 +2662,45 @@ def _render_preview(dat_path: str, unit_id: int, kind: str) -> Path | None:
     return cached
 
 
-def _render_scene_art(dat_path: str, slot: str, value: int) -> Path | None:
-    """The cached art for one identity-scene slot (game_sprites.scene_still)."""
+_SCENE_ANIMATING: set = set()          # (dat_path, slot, value) being rendered in the background
+
+
+def _render_scene_art(dat_path: str, slot: str, value: int, wait: bool = False) -> Path | None:
+    """The cached art for one identity-scene slot (game_sprites.scene_webp).
+    A moving building (the Tupi waterfall: about a minute) answers with its
+    still and renders the animation on a thread — the scene picks it up the
+    next time it draws.  `wait` renders it here instead (the prewarm)."""
     import game_sprites
     cached = _preview_path(dat_path, value, f"scene-{slot}")
     if cached.exists():
         return cached
-    data = game_sprites.scene_webp(_get_dat(dat_path), dat_path, slot, value)
-    if data is None:
-        return None
-    cached.parent.mkdir(parents=True, exist_ok=True)
-    tmp = cached.with_suffix(f".{threading.get_ident()}.tmp")
-    tmp.write_bytes(data)
-    tmp.replace(cached)
-    return cached
+    dat = _get_dat(dat_path)
+
+    def write(path, data):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f".{threading.get_ident()}.tmp")
+        tmp.write_bytes(data)
+        tmp.replace(path)
+        return path
+
+    if not wait and game_sprites.scene_animated(dat, slot, value):
+        key = (dat_path, slot, value)
+        if key not in _SCENE_ANIMATING:
+            _SCENE_ANIMATING.add(key)
+
+            def animate():
+                try:
+                    _render_scene_art(dat_path, slot, value, wait=True)
+                finally:
+                    _SCENE_ANIMATING.discard(key)
+            threading.Thread(target=animate, daemon=True).start()
+        still = _preview_path(dat_path, value, f"scene-{slot}-still")
+        if still.exists():
+            return still
+        data = game_sprites.scene_webp(dat, dat_path, slot, value, still=True)
+        return write(still, data) if data is not None else None
+    data = game_sprites.scene_webp(dat, dat_path, slot, value)
+    return write(cached, data) if data is not None else None
 
 
 @app.route("/api/scene-art/<slot>/<int:value>")
@@ -2675,7 +2718,13 @@ def api_scene_art(slot: str, value: int):
     path = _render_scene_art(dat_path, slot, value)
     if path is None:
         return ("", 404)
-    return send_file(path, mimetype="image/webp", max_age=86400)
+    # A still standing in for an animation mustn't be cached by the browser,
+    # and says so: the scene asks again until the animation is ready.
+    still = "-still_" in path.name
+    resp = send_file(path, mimetype="image/webp", max_age=0 if still else 86400)
+    if still:
+        resp.headers["X-Scene-Still"] = "1"
+    return resp
 
 
 @app.route("/api/builder/appearances")
@@ -2753,6 +2802,7 @@ def api_unit_preview(unit_id: int, kind: str):
 def _warm_previews(dat_path: str) -> None:
     """Render every hero's and unique unit's still in the background, so the
     pickers show them at once (the user's idea, 2026-10-22).  ~6 s for all."""
+    import game_sprites
     import heroes
     from civ_appender import _string_table
     try:
@@ -2764,13 +2814,16 @@ def _warm_previews(dat_path: str) -> None:
         for uid in sorted(ids):
             _render_preview(dat_path, uid, "still")
         # The identity scene, every option of every slot (the pickers show them all).
-        from civ_appender import MONK_SKIN_OPTIONS
+        from civ_appender import MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS
         scene = [("architecture", v) for v in sorted({c.icon_set for c in dat.civs[1:]})]
+        scene += [("monastery_skin_building", o["value"]) for o in MONASTERY_SKIN_OPTIONS]
         scene += [(s, i - 1) for i in range(1, len(dat.civs)) for s in ("wonder", "castle")]
         scene += [("monk_skin", o["value"]) for o in MONK_SKIN_OPTIONS]
         scene += [("starting_scout", o["value"]) for o in _SCOUT_OPTIONS]
+        # Moving buildings last: the Tupi waterfall alone takes about a minute.
+        scene.sort(key=lambda sv: game_sprites.scene_animated(dat, *sv))
         for slot, value in scene:
-            _render_scene_art(dat_path, slot, value)
+            _render_scene_art(dat_path, slot, value, wait=True)
     except Exception as exc:                                      # noqa: BLE001
         print(f"[previews] {exc}", flush=True)
 

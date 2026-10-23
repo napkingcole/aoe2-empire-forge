@@ -135,24 +135,46 @@ else:
     # Every option the wizard offers draws the game's own sprite (2026-10-23):
     # the bundled pictures had no art for 28 wonders or the South American
     # Town Center, and the cut-out Monks were blurry.
-    from civ_appender import MONK_SKIN_OPTIONS
+    from civ_appender import MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS
     import app as webapp
     archs = sorted({c.icon_set for c in dat.civs[1:]})
     missing = [("architecture", v) for v in archs if gs.scene_still(dat, dat_path, "architecture", v) is None]
     missing += [(s, i - 1) for i in range(1, len(dat.civs)) for s in ("wonder", "castle")
                 if gs.scene_still(dat, dat_path, s, i - 1) is None]
+    missing += [("monastery_skin_building", o["value"]) for o in MONASTERY_SKIN_OPTIONS
+                if gs.scene_still(dat, dat_path, "monastery_skin_building", o["value"]) is None]
     missing += [("monk_skin", o["value"]) for o in MONK_SKIN_OPTIONS
                 if gs.scene_still(dat, dat_path, "monk_skin", o["value"]) is None]
     missing += [("starting_scout", o["value"]) for o in webapp._SCOUT_OPTIONS
                 if gs.scene_still(dat, dat_path, "starting_scout", o["value"]) is None]
-    check(f"every architecture ({len(archs)}), wonder, castle, Monk and scout renders", not missing, missing[:6])
+    check(f"every architecture ({len(archs)}), wonder, castle, Monastery, Monk and scout renders",
+          not missing, missing[:6])
     # A Town Center is four units; the scene draws the game's whole-building
     # "Preview" sprite with the back piece's shadow under it.
-    tc = gs.scene_still(dat, dat_path, "architecture", 2)
-    bare = gs.graphic_frames(dat, dat_path, dat.civs[1].units[gs._TC_PREVIEW].standing_graphic[0], still=True)[0][0]
+    gid, under = gs._scene_graphic(dat, "architecture", 2)
+    tc = gs.graphic_frames(dat, dat_path, gid, still=True, under=under)[0][0]
+    bare = gs.graphic_frames(dat, dat_path, gid, still=True)[0][0]
     check("the Town Center carries its shadow", tc.size[0] >= bare.size[0] and tc.getbbox() is not None
           and sum(tc.getchannel("A").histogram()[1:]) > sum(bare.getchannel("A").histogram()[1:]))
     check("an unknown value is no art, not a crash", gs.scene_still(dat, dat_path, "wonder", 999) is None)
+    # Faint shadow specks hundreds of pixels below the Persian and Varangian
+    # wonders (alpha <= 37) stretched the crop: the scene showed them mostly
+    # empty grass.  The crop counts solid pixels only.
+    import numpy as np
+    for name in ("Persians", "Varangians"):
+        i = [c.name for c in dat.civs].index(name)
+        a = np.array(gs.scene_still(dat, dat_path, "wonder", i - 1).getchannel("A"))
+        solid = np.where(a.max(axis=1) >= gs._SOLID)[0]
+        check(f"the {name}' wonder is cropped to the building (no empty band below)",
+              a.shape[0] - 1 - solid.max() <= 12, f"{a.shape[0] - 1 - solid.max()} empty rows")
+    check("buildings are stored at half size, units at full",
+          gs.scene_still(dat, dat_path, "castle", 0).size[0] < 600
+          and gs.scene_still(dat, dat_path, "monk_skin", 1).size == gs.unit_frames(
+              dat, dat_path, dat.civs[1].units[125], "idle", still=True)[0][0].size)
+    check("the Tupi wonder and the shrine are known to move; a castle doesn't",
+          gs.scene_animated(dat, "wonder", [c.name for c in dat.civs].index("Tupi") - 1)
+          and gs.scene_animated(dat, "monastery_skin_building", 12)
+          and not gs.scene_animated(dat, "castle", 0))
 
 print("\nPASS" if not failures else f"\n{failures} FAILED")
 sys.exit(1 if failures else 0)

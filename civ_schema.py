@@ -109,8 +109,8 @@ def to_draft(schema: dict) -> dict:
     Convert a civbuilder_v1 JSON dict into the wizard draft format expected by
     _draft_to_civ_def, _apply_uu_overrides, and _override_ut_costs.
 
-    Unknown / Phase-Two keys (unit_overrides, button_moves, free_techs, second_uu,
-    monastery_skin_building) are passed through unchanged so future handlers can
+    Unknown / Phase-Two keys (unit_overrides, button_moves, free_techs, second_uu)
+    are passed through unchanged so future handlers can
     act on them without schema changes.
 
     When second_uu is implemented, build it on km_custom_uu.append_km_custom_uu
@@ -223,13 +223,14 @@ def to_draft(schema: dict) -> dict:
         "long_range_ship_elite": s.get("long_range_ship_elite", True),
         "starting_scout":        s.get("starting_scout"),
         "monk_skin":             s.get("monk_skin"),
+        # DAT civ index whose Monastery is copied (civ_appender.MONASTERY_SKIN_OPTIONS).
+        "monastery_skin_building": s.get("monastery_skin_building"),
 
         # Phase Two pass-throughs (not yet consumed by build pipeline)
         "second_uu":              s.get("second_uu"),
         "unit_overrides":         s.get("unit_overrides",         []),
         "button_moves":           s.get("button_moves",           []),
         "free_techs":             s.get("free_techs",             []),
-        "monastery_skin_building":s.get("monastery_skin_building"),
     }
     return draft
 
@@ -338,11 +339,11 @@ def from_draft(draft: dict) -> dict:
         "long_range_ship_elite":   draft.get("long_range_ship_elite", True),
         "starting_scout":          draft.get("starting_scout"),
         "monk_skin":               draft.get("monk_skin"),
+        "monastery_skin_building": draft.get("monastery_skin_building"),
 
         "unit_overrides":          draft.get("unit_overrides",          []),
         "button_moves":            draft.get("button_moves",            []),
         "free_techs":              draft.get("free_techs",              []),
-        "monastery_skin_building": draft.get("monastery_skin_building"),
     }
     return schema
 

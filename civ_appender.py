@@ -141,6 +141,63 @@ MONK_SKIN_OPTIONS: list[dict] = [
     {"value": 11, "label": "Nordic",        "example": "Vikings, Varangians, Danes"},
 ]
 
+# ── Monastery skin ────────────────────────────────────────────────────────────
+# The Monastery is its own axis too: its art is per civ, not per architecture
+# set (Goths and Teutons share one; the Mongols, Huns, Cumans and Khitans build
+# an animated shrine).  Five units carry it: the Monastery (104), its three
+# age versions (30-32) and its rubble (1421, class 14, which the architecture
+# pass never reached).  value = the DAT civ index whose Monastery is copied;
+# the draft key is the schema's long-reserved `monastery_skin_building`.
+# Chronicles civs' Monasteries are left out, as their Monks are.
+_MONASTERY_SKIN_UNITS = (30, 31, 32, 104)
+_MONASTERY_RUBBLE = 1421
+MONASTERY_SKIN_OPTIONS: list[dict] = [
+    {"value": 1,  "label": "Western European", "example": "Britons, Franks, Celts, Burgundians"},
+    {"value": 3,  "label": "Central European", "example": "Goths, Teutons"},
+    {"value": 22, "label": "Eastern European", "example": "Slavs, Magyars, Poles, Bohemians"},
+    {"value": 7,  "label": "Byzantine",        "example": "Byzantines, Sicilians, Romans, Armenians"},
+    {"value": 14, "label": "Mediterranean",    "example": "Spanish, Italians, Portuguese"},
+    {"value": 11, "label": "Nordic",           "example": "Vikings, Varangians, Danes"},
+    {"value": 8,  "label": "Middle Eastern",   "example": "Persians, Saracens, Turks, Berbers"},
+    {"value": 12, "label": "Steppe Shrine",    "example": "Mongols, Huns, Cumans, Khitans"},
+    {"value": 33, "label": "Central Asian",    "example": "Tatars"},
+    {"value": 5,  "label": "East Asian",       "example": "Japanese, Chinese, Koreans"},
+    {"value": 28, "label": "Southeast Asian",  "example": "Khmer, Malay, Burmese"},
+    {"value": 20, "label": "South Asian",      "example": "Hindustanis, Dravidians, Bengalis"},
+    {"value": 25, "label": "Ethiopian",        "example": "Ethiopians"},
+    {"value": 26, "label": "West African",     "example": "Malians"},
+    {"value": 15, "label": "Mesoamerican",     "example": "Aztecs, Mayans"},
+    {"value": 21, "label": "Andean",           "example": "Incas, Muisca, Mapuche, Tupi"},
+]
+
+
+def _copy_monastery_skin(src_civ, dst_civ) -> None:
+    """Copy the Monastery's look (MONASTERY_SKIN_OPTIONS) from one civ to
+    another: the same fields _copy_architecture copies for a building, on the
+    four Monastery units, and the rubble's graphics.  Runs after the
+    architecture pass, so an explicit choice wins; with no choice it copies
+    the architecture's own, which is how the rubble gets there at all."""
+    src_units, dst_units = src_civ.units, dst_civ.units
+    for i in _MONASTERY_SKIN_UNITS:
+        if i >= len(src_units) or i >= len(dst_units):
+            continue
+        src, dst = src_units[i], dst_units[i]
+        if src is None or dst is None:
+            continue
+        dst.standing_graphic = src.standing_graphic
+        dst.dying_graphic    = src.dying_graphic
+        dst.undead_graphic   = src.undead_graphic
+        dst.damage_graphics  = deepcopy(src.damage_graphics)
+        dst.building         = deepcopy(src.building)
+        if src.creatable is not None and dst.creatable is not None:
+            dst.creatable.garrison_graphic = src.creatable.garrison_graphic
+    i = _MONASTERY_RUBBLE
+    if i < len(src_units) and i < len(dst_units) and src_units[i] is not None and dst_units[i] is not None:
+        dst_units[i].standing_graphic = src_units[i].standing_graphic
+        dst_units[i].dying_graphic    = src_units[i].dying_graphic
+        dst_units[i].undead_graphic   = src_units[i].undead_graphic
+
+
 # ── Starting scout ────────────────────────────────────────────────────────────
 # civ.resources[263] holds the unit the civ starts the game with alongside its
 # Villagers.  Vanilla uses only four values: every civ is 448 (Scout Cavalry)
@@ -6915,6 +6972,10 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     monk_src_civ = (_original_civ(dat, monk_src)
                     if isinstance(monk_src, int) and 0 < monk_src < len(dat.civs)
                     else None)
+    monastery_src = civ_def.get("monastery_skin_building", -1)
+    monastery_src_civ = (_original_civ(dat, monastery_src)
+                         if isinstance(monastery_src, int) and 0 < monastery_src < len(dat.civs)
+                         else None)
     # Read the vanilla Monk genders before this slot is overwritten (cached).
     _female_monk_civs(dat)
     _voice_idx = int(civ_def.get("language", 0) or 0) + 1
@@ -6946,6 +7007,13 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             print(f"       Monk skin: architecture default ({_monk_from.name!r})")
         _match_monk_voice(dat, dat.civs[civ_index],
                           monk_src if monk_src_civ is not None else arch_src, _voice_idx)
+
+    # Monastery: independent of architecture too (MONASTERY_SKIN_OPTIONS).
+    _monastery_from = monastery_src_civ if monastery_src_civ is not None else arch_src_civ
+    if _monastery_from is not None:
+        _copy_monastery_skin(_monastery_from, dat.civs[civ_index])
+        if monastery_src_civ is not None:
+            print(f"       Monastery: from DAT civ {monastery_src} ({monastery_src_civ.name!r})")
 
     # Starting scout: the deepcopy base (civ 1) starts with a Scout Cavalry, so
     # leaving this unset keeps vanilla behaviour.

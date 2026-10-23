@@ -46,6 +46,7 @@ NORMAL_SPEED = 1.7
 # loop still takes as long as in the game.
 MIN_FRAME_MS = 20
 SOUTH_WEST = 6                      # of 16 angles; 0 = east, clockwise
+_SOLID = 48                         # alpha that counts when cropping (shadow specks don't)
 _MAIN, _SHADOW, _OUTLINE, _DAMAGE, _PLAYER = 0x01, 0x02, 0x04, 0x08, 0x10
 _ORDER = [(_MAIN, "main", True), (_SHADOW, "shadow", True), (_OUTLINE, "outline", True),
           (_DAMAGE, "damage", False), (_PLAYER, "player", False)]
@@ -275,7 +276,8 @@ def unit_frames(dat, dat_path, unit, kind: str, angle: int = SOUTH_WEST,
 
 
 def graphic_frames(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST,
-                   still: bool = False, under: tuple = ()) -> tuple[list[Image.Image], int] | None:
+                   still: bool = False, under: tuple = (),
+                   min_ms: int = MIN_FRAME_MS) -> tuple[list[Image.Image], int] | None:
     """unit_frames for any DAT graphic — one a unit's task plays (a Villager
     building), not only its idle, walk and attack.  `under` adds (graphic id,
     x, y) layers drawn first: a Town Center preview's shadow lives on another
@@ -298,26 +300,43 @@ def graphic_frames(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST,
         return None
     g = dat.graphics[graphic_id]
     exact = g.frame_duration * 1000 / NORMAL_SPEED if g.frame_duration > 0 else 67.0
-    step = 1 if still else max(1, math.ceil(MIN_FRAME_MS / exact - 1e-9))
+    step = 1 if still else max(1, math.ceil(min_ms / exact - 1e-9))
     picks = [0] if still else list(range(0, max(1, g.frame_count), step))
     ms = round(exact * step)
 
-    # Composite each frame on a canvas centred on the hotspot.
-    size = 2 * max(max(f["w"], f["h"]) for s, *_ in parts for f in s.frames[:1]) + 64
-    raw = []
+    # Composite each frame on a canvas centred on the hotspot, and keep only
+    # the part it draws: a wonder's canvas is ~4000 px square, and holding 120
+    # of them (the Tupi waterfall) took gigabytes.
+    # Big enough for every frame drawn around its hotspot, and no bigger.
+    size = 2 * max(max(f["hot"][0], f["w"] - f["hot"][0], f["hot"][1], f["h"] - f["hot"][1]) + abs(ox) + abs(oy)
+                   for sprite, first, per, ox, oy in parts
+                   for f in sprite.frames[first:first + per]) + 64
+    kept, boxes = [], []
     for i in picks:
         canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         for sprite, first, per, ox, oy in parts:
             img, (hx, hy) = render_frame(sprite.data, first + (i % per), sprite.frames)
             canvas.alpha_composite(Image.fromarray(img, "RGBA"), (size // 2 - hx + ox, size // 2 - hy + oy))
-        raw.append(canvas)
-    boxes = [b for b in (im.getbbox() for im in raw) if b]
+        drawn = canvas.getbbox()
+        kept.append((canvas.crop(drawn), drawn) if drawn else (None, None))
+        # Crop to what is solidly drawn: a few near-invisible shadow specks far
+        # below the Persian and Varangian wonders (alpha <= 37) stretched the
+        # box by hundreds of pixels, so the scene showed them mostly empty space.
+        solid = canvas.getchannel("A").point(lambda a: 255 if a >= _SOLID else 0).getbbox()
+        if solid:
+            boxes.append(solid)
     if not boxes:
         return None
     pad = 8
     box = (max(0, min(b[0] for b in boxes) - pad), max(0, min(b[1] for b in boxes) - pad),
            min(size, max(b[2] for b in boxes) + pad), min(size, max(b[3] for b in boxes) + pad))
-    return [im.crop(box) for im in raw], ms
+    out = []
+    for im, drawn in kept:
+        frame = Image.new("RGBA", (box[2] - box[0], box[3] - box[1]), (0, 0, 0, 0))
+        if im is not None:
+            frame.paste(im, (drawn[0] - box[0], drawn[1] - box[1]))   # paste clips what falls outside
+        out.append(frame)
+    return out, ms
 
 
 def still_webp(dat, dat_path, unit) -> bytes | None:
@@ -354,8 +373,15 @@ def graphic_webp(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST) -> byt
 # player's game like the previews, so every piece is at the game's own scale
 # and a civ a patch adds has art at once.  The images in static/img/scene are
 # only the fallback for when the game isn't found.
-SCENE_SLOTS = ("architecture", "wonder", "castle", "monk_skin", "starting_scout")
-_CASTLE, _WONDER, _MONK = 82, 276, 125
+SCENE_SLOTS = ("architecture", "wonder", "castle", "monastery_skin_building", "monk_skin", "starting_scout")
+_CASTLE, _WONDER, _MONK, _MONASTERY = 82, 276, 125, 104
+# Buildings are stored at half the sprite's size: the scene shows them at about
+# a quarter, so half is still sharp on a 2x screen, and an animated one (the
+# Tupi waterfall) stays a few MB rather than tens.  builder.js
+# _SCENE_BUILDING_SCALE undoes it, so every slot keeps the game's one scale.
+SCENE_BUILDINGS = ("architecture", "wonder", "castle", "monastery_skin_building")
+SCENE_BUILDING_SCALE = 0.5
+_SCENE_MIN_FRAME_MS = 66
 # A Town Center is four units (back, main, centre, front — the annexes); the
 # game also keeps the whole Castle Age one as a single "Preview" sprite, unit
 # 484, whose shadow is a delta of the back piece, unit 141.
@@ -365,39 +391,76 @@ _TC_BACK, _TC_PREVIEW = 141, 484
 def scene_still(dat, dat_path, slot: str, value: int) -> Image.Image | None:
     """One scene slot's art, facing south-west in Player 1 Blue.  Values are
     the wizard's: architecture = civ.icon_set; wonder and castle = DAT civ
-    index - 1 (KM's convention); monk_skin = DAT civ index; starting_scout =
-    unit id."""
+    index - 1 (KM's convention); monk_skin and monastery_skin_building = DAT
+    civ index; starting_scout = unit id."""
+    got = _scene_frames(dat, dat_path, slot, value, still=True)
+    return got[0][0] if got else None
+
+
+def scene_animated(dat, slot: str, value: int) -> bool:
+    """Whether a scene slot's building moves (the Tupi wonder's waterfall, the
+    Central Asian shrine) — those take a minute to render, so the server shows
+    the still first."""
+    gid = _scene_graphic(dat, slot, value)[0]
+    return (slot in SCENE_BUILDINGS and gid is not None and 0 <= gid < len(dat.graphics)
+            and dat.graphics[gid] is not None and dat.graphics[gid].frame_count > 1)
+
+
+def _scene_frames(dat, dat_path, slot: str, value: int, still: bool):
+    """graphic_frames for a scene slot, buildings at SCENE_BUILDING_SCALE."""
+    gid, under = _scene_graphic(dat, slot, value)
+    if gid is None:
+        return None
+    # A building's animation (water, flags) reads fine at 15 fps, and that
+    # keeps the Tupi waterfall's 120 frames to 40.
+    got = graphic_frames(dat, dat_path, gid, still=still, under=under, min_ms=_SCENE_MIN_FRAME_MS)
+    if got is None or slot not in SCENE_BUILDINGS:
+        return got
+    frames, ms = got
+    return [f.resize((max(1, round(f.width * SCENE_BUILDING_SCALE)), max(1, round(f.height * SCENE_BUILDING_SCALE))),
+                     Image.LANCZOS) for f in frames], ms
+
+
+def _scene_graphic(dat, slot: str, value: int) -> tuple:
+    """(graphic id, layers drawn under it) for a scene slot, or (None, ())."""
     civs = dat.civs
     under = ()
     if slot == "architecture":
         civ = next((c for c in civs[1:] if c.icon_set == value), None)
         if civ is None:
-            return None
+            return None, ()
         back = civ.units[_TC_BACK].standing_graphic[0]
         under = tuple(layer for layer in _layers(dat, back) if layer[0] != back)
         gid = civ.units[_TC_PREVIEW].standing_graphic[0]
-    elif slot in ("wonder", "castle", "monk_skin"):
-        idx = value if slot == "monk_skin" else value + 1
+    elif slot in ("wonder", "castle", "monk_skin", "monastery_skin_building"):
+        idx = value if slot in ("monk_skin", "monastery_skin_building") else value + 1
         if not 1 <= idx < len(civs):
-            return None
-        unit = civs[idx].units[{"wonder": _WONDER, "castle": _CASTLE, "monk_skin": _MONK}[slot]]
+            return None, ()
+        unit = civs[idx].units[{"wonder": _WONDER, "castle": _CASTLE, "monk_skin": _MONK,
+                                "monastery_skin_building": _MONASTERY}[slot]]
         gid = unit.standing_graphic[0]
     elif slot == "starting_scout":
         units = civs[0].units
         if not 0 <= value < len(units) or units[value] is None:
-            return None
+            return None, ()
         gid = units[value].standing_graphic[0]
     else:
-        return None
-    got = graphic_frames(dat, dat_path, gid, still=True, under=under)
-    return got[0][0] if got else None
+        return None, ()
+    return gid, under
 
 
-def scene_webp(dat, dat_path, slot: str, value: int) -> bytes | None:
+def scene_webp(dat, dat_path, slot: str, value: int, still: bool = False) -> bytes | None:
+    """The slot's art as WebP — animated when the building is (the Tupi
+    wonder's waterfall, the Central Asian shrine), unless `still`."""
     import io
-    im = scene_still(dat, dat_path, slot, value)
-    if im is None:
+    got = _scene_frames(dat, dat_path, slot, value, still=still or slot not in SCENE_BUILDINGS)
+    if got is None:
         return None
+    frames, ms = got
     buf = io.BytesIO()
-    im.save(buf, "WEBP", quality=88)
+    if len(frames) > 1:
+        frames[0].save(buf, "WEBP", save_all=True, append_images=frames[1:], duration=ms,
+                       loop=0, quality=80, method=4)
+    else:
+        frames[0].save(buf, "WEBP", quality=88)
     return buf.getvalue()

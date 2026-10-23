@@ -341,7 +341,7 @@ const DEFAULT_OPTION_LABEL = "— Architecture Default —";
 // civ a patch adds has art at once.  The pictures in static/img/scene are the
 // fallback for when the game isn't found yet.  The pickers show the same art.
 function _sceneArt(slot, value) {
-  return `/api/scene-art/${slot}/${value}${_datQuery()}`;
+  return `/api/scene-art/${slot}/${value}${_artQuery()}`;
 }
 
 // monk_skin -1 ("architecture default") has no art of its own; draw European.
@@ -410,6 +410,20 @@ const SCENE_SLOTS = {
     name:    _civLabel,
     caption: v => `${_civLabel(v)} Castle`,
     defaultable: true,
+  },
+  monastery_skin_building: {
+    title:   "Select Monastery",
+    select:  "monastery-select",
+    options: () => window._metaMonasteries || [],
+    get:     () => draft.monastery_skin_building,
+    set:     v => { if (v < 0) delete draft.monastery_skin_building; else draft.monastery_skin_building = v; },
+    art:     v => _sceneArt("monastery_skin_building", v),
+    name:    v => (window._metaMonasteries || []).find(o => o.value === v)?.label || `#${v}`,
+    caption: v => `${SCENE_SLOTS.monastery_skin_building.name(v)} Monastery`,
+    defaultable: true,
+    // The architecture's own Monastery (its representative civ, a DAT index).
+    resolveDefault: () => { const c = _archRep(draft.architecture ?? DEFAULT_ARCHITECTURE); return c === null ? null : c + 1; },
+    defaultCaption: "Architecture Default Monastery",
   },
   monk_skin: {
     title:   "Select Monk",
@@ -522,7 +536,13 @@ function renderScene() {
         markEmpty();
         _sizeScene();
       };
-      img.onload = () => { if (!usedFallback) img.dataset.game = "1"; _sizeScene(); };
+      img.onload = () => {
+        if (!usedFallback) {
+          img.dataset.game = "1";
+          _awaitSceneAnimation(img, src);
+        }
+        _sizeScene();
+      };
       img.src = src;
       img.alt = label;
       img.style.display = "";
@@ -545,54 +565,73 @@ function renderScene() {
 }
 
 // The game's sprites share one scale, so the scene draws them all at one: the
-// scale that fits the three buildings across the stage, with the Town Center
-// and Castle no taller than _SCENE_ROW_H.  A wonder doesn't set it — the
+// scale that fits the buildings across the stage, with the Town Center, Castle
+// and Monastery no taller than _SCENE_ROW_H.  A wonder doesn't set it — the
 // cathedrals' spires (Britons, Burgundians) shrank everything else to ants —
 // it stands at the same scale and is clipped at the stage's top edge, past
 // _SCENE_WONDER_H (the user's idea, 2026-10-23).  The units are drawn at that
-// scale times --scene-unit-boost (scene.css).  Bundled fallback pictures keep
+// scale times --scene-unit-boost (scene.css).  Buildings come at
+// _SCENE_BUILDING_SCALE of the sprite (game_sprites.SCENE_BUILDING_SCALE), so
+// their natural size is divided by it.  Bundled fallback pictures keep
 // scene.css's own sizes.
 const _SCENE_ROW_H = 230, _SCENE_WONDER_H = 300, _SCENE_MAX_SCALE = 0.5;
+const _SCENE_BUILDING_SCALE = 0.5;
+const _SCENE_BUILDINGS = ["wonder", "architecture", "monastery_skin_building", "castle"];
 function _sizeScene() {
   const stage = document.getElementById("identity-scene");
   if (!stage || !stage.clientWidth) return;
   const imgOf = k => document.getElementById(`scene-img-${k}`);
   const shown = img => img && img.style.display !== "none" && img.naturalWidth;
-  const buildings = ["wonder", "architecture", "castle"].map(imgOf).filter(shown);
+  const nat = (img, dim) => img[dim] / (_SCENE_BUILDINGS.some(k => imgOf(k) === img) ? _SCENE_BUILDING_SCALE : 1);
+  const buildings = _SCENE_BUILDINGS.map(imgOf).filter(shown);
   const game = buildings.filter(i => i.dataset.game);
   const row = stage.querySelector(".scene-row");
   const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
   const pad = parseFloat(getComputedStyle(stage).paddingLeft) + parseFloat(getComputedStyle(stage).paddingRight);
   const others = buildings.filter(i => !i.dataset.game).reduce((w, i) => w + i.clientWidth, 0);
-  const avail = stage.clientWidth - pad - gap * 2 - others;
-  const wide = game.reduce((w, i) => w + i.naturalWidth, 0);
-  const tall = Math.max(1, ...game.filter(i => i !== imgOf("wonder")).map(i => i.naturalHeight));
+  const avail = stage.clientWidth - pad - gap * Math.max(0, buildings.length - 1) - others;
+  const wide = game.reduce((w, i) => w + nat(i, "naturalWidth"), 0);
+  const tall = Math.max(1, ...game.filter(i => i !== imgOf("wonder")).map(i => nat(i, "naturalHeight")));
   let k = Math.min(_SCENE_MAX_SCALE, _SCENE_ROW_H / tall, wide ? avail / wide : _SCENE_MAX_SCALE);
   if (!(k > 0)) k = _SCENE_MAX_SCALE;
   const boost = parseFloat(getComputedStyle(stage).getPropertyValue("--scene-unit-boost")) || 3;
   const size = (img, scale) => {
     if (!img) return;
     if (img.dataset.game && img.naturalWidth) {
-      img.style.width = `${Math.round(img.naturalWidth * scale)}px`;
+      img.style.width = `${Math.round(nat(img, "naturalWidth") * scale)}px`;
       img.style.height = "auto";
       img.style.maxHeight = "none";
     } else {
       img.style.width = img.style.height = img.style.maxHeight = "";
     }
   };
-  ["wonder", "architecture", "castle"].forEach(key => size(imgOf(key), k));
+  _SCENE_BUILDINGS.forEach(key => size(imgOf(key), k));
   ["monk_skin", "starting_scout"].forEach(key => size(imgOf(key), k * boost));
   // The wonder's slot stops at _SCENE_WONDER_H and hides the rest (scene.css
   // .is-clipped keeps the base, so only the top of a spire goes).
   const wonder = imgOf("wonder");
   const slot = wonder?.closest(".scene-slot");
   if (slot) {
-    const clip = wonder.dataset.game && wonder.naturalHeight * k > _SCENE_WONDER_H;
+    const clip = wonder.dataset.game && nat(wonder, "naturalHeight") * k > _SCENE_WONDER_H;
     slot.classList.toggle("is-clipped", Boolean(clip));
     slot.style.height = clip ? `${_SCENE_WONDER_H}px` : "";
   }
 }
 window.addEventListener("resize", () => _sizeScene());
+
+// A moving building (the Tupi waterfall, the Central Asian shrine) takes the
+// server a minute to render, so it first answers with the still and marks it
+// X-Scene-Still; ask again every 10 s and swap the animation in when it's ready.
+function _awaitSceneAnimation(img, src) {
+  clearTimeout(img._animTimer);
+  if (src.includes("&t=") || !_SCENE_BUILDINGS.some(k => img.id === `scene-img-${k}`)) return;
+  const ask = () => fetch(src, { method: "HEAD", cache: "no-store" }).then(r => {
+    if (img.src !== new URL(src, location.href).href) return;     // the slot moved on
+    if (r.headers.get("X-Scene-Still")) img._animTimer = setTimeout(ask, 10000);
+    else img.src = `${src}&t=${Date.now()}`;
+  }).catch(() => {});
+  ask();
+}
 
 function updateSceneCaption(key) {
   const el = document.getElementById("scene-caption");
@@ -821,6 +860,10 @@ function populateReview() {
     : "Default (Britons)";
   const scoutName = (window._metaScouts || [])
     .find(s => s.value === (draft.starting_scout ?? 448))?.label || "Scout Cavalry";
+  const monasteryName = draft.monastery_skin_building != null && draft.monastery_skin_building >= 0
+    ? ((window._metaMonasteries || []).find(m => m.value === draft.monastery_skin_building)?.label
+       || `#${draft.monastery_skin_building}`)
+    : "Architecture Default";
   const monkName = draft.monk_skin != null && draft.monk_skin >= 0
     ? ((window._metaMonks || []).find(m => m.value === draft.monk_skin)?.label
        || `#${draft.monk_skin}`)
@@ -834,6 +877,7 @@ function populateReview() {
     _reviewRow("Wonder Skin",  wonderName),
     _reviewRow("Voice",        voiceName),
     _reviewRow("Starting Scout", scoutName),
+    _reviewRow("Monastery",    monasteryName),
     _reviewRow("Monk Skin",    monkName),
     _reviewRow("Emblem",       draft.emblem ? "&#10003; Uploaded" : "<em class='text-muted'>None</em>"),
   ].join("");
@@ -1106,12 +1150,20 @@ function _datQuery() {
   return draft.dat_path ? `?dat_path=${encodeURIComponent(draft.dat_path)}` : "";
 }
 
+// Rendered art (previews, the scene) also names the server's art version, so a
+// browser never shows art it cached before the renderer changed.
+function _artQuery() {
+  const v = `v=${encodeURIComponent(window._artVersion || "")}`;
+  const q = _datQuery();
+  return q ? `${q}&${v}` : `?${v}`;
+}
+
 // ── Unit previews ─────────────────────────────────────────────────────────────
 // How a unit looks in the game, rendered by the server from the player's own
 // sprites (game_sprites.py): a still on hover, and Idle / Walk / Attack in a
 // window from each card's play button.
 function _previewSrc(unitId, kind = "still") {
-  return `/api/unit-preview/${unitId}/${kind}${_datQuery()}`;
+  return `/api/unit-preview/${unitId}/${kind}${_artQuery()}`;
 }
 
 function _previewImgHtml(unitId) {
@@ -4516,6 +4568,8 @@ async function init() {
     window._metaCivs          = meta.civs;
     window._metaScouts        = meta.starting_scouts || [];
     window._metaMonks         = meta.monk_skins      || [];
+    window._metaMonasteries   = meta.monastery_skins || [];
+    window._artVersion        = meta.art_version     || "";
     _unlockBonusUnits         = meta.unlock_bonuses  || {};
     _unlockReplaces           = meta.unlock_replaces || {};
     // A draft with no tree yet (new civ, or one saved before this defaulted to
@@ -4547,6 +4601,8 @@ async function init() {
     populateScoutSelect(meta.starting_scouts || [], draft.starting_scout);
     populateSelect("monk-select", meta.monk_skins || [], draft.monk_skin,
                    SCENE_SLOTS.monk_skin.defaultLabel);
+    populateSelect("monastery-select", meta.monastery_skins || [], draft.monastery_skin_building,
+                   DEFAULT_OPTION_LABEL);
 
     bindScene();
     renderScene();
