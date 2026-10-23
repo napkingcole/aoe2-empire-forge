@@ -15,6 +15,7 @@
     "1":  { "multiplier": false, "_label": "Kasbah — type=15 team effect, non-scalable" },
     "12": { "multiplier": false, "_label": "Anarchy — EC_SET + EC_ENABLE (unit unlock)" },
     "13": { "multiplier": false, "_label": "Marauders — EC_SET + EC_ENABLE (unit unlock)" },
+    "68": { "multiplier": false, "_label": "Ambuscade — Marauders at the Archery Range (unit unlock)" },
     "21": { "multiplier": false, "_label": "Corvinian Army — EC_SET cost conversion, idempotent" },
     "22": { "multiplier": false, "_label": "Thalassocracy — EC_UPGRADE unit swap, idempotent" },
     "25": { "multiplier": false, "_label": "Nomads — EC_UPGRADE house remove, idempotent" },

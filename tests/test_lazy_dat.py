@@ -4,7 +4,8 @@
 load_dat leaves each civ's units as raw bytes until something reads them, and
 writes untouched civs straight back from those bytes.  That is only safe if the
 result is byte-identical to genieutils' own full parse-and-save, so that is the
-assertion: for an untouched DAT, and for a real build.  DAT-gated, ~60s.
+assertion: for an untouched DAT, and for a real build.  DAT-gated; the slowest
+file in the suite, so tests/run_tests.py starts it first.
 
     venv/bin/python tests/test_lazy_dat.py
 """
@@ -53,8 +54,13 @@ check(f"a second load uses the offset cache and parses no civ ({took:.1f}s)",
       not parsed and took < 6, parsed)
 
 eager = DatFile.parse(str(path))
-check("an untouched DAT saves byte-identical to a full parse", lazy.to_bytes() == eager.to_bytes())
-check("so does the first (cache-writing) load", first.to_bytes() == eager.to_bytes())
+# The reference every comparison below uses.  Computed once: serializing a
+# full parse is slow, and the test used to redo it (and re-parse the DAT just
+# to get it back) four times.
+EAGER_BYTES = eager.to_bytes()
+check("an untouched DAT saves byte-identical to a full parse", lazy.to_bytes() == EAGER_BYTES)
+check("so does the first (cache-writing) load", first.to_bytes() == EAGER_BYTES)
+del first                                 # each DAT is ~0.5 GB; keep only what is still read
 
 clone = copy.deepcopy(lazy.civs[1])
 check("copying an untouched civ copies its bytes, not its units",
@@ -92,7 +98,7 @@ for dat in (one, eager):                 # identical edits: a copied unit in eve
 check("per-unit edits and appends save byte-identical to the same edits on a full parse",
       one.to_bytes() == eager.to_bytes())
 check("...without parsing any civ in full", not any(c.units.materialized for c in one.civs))
-eager = DatFile.parse(str(path))          # untouched again for the build below
+del one, eager, shared, probe, clone
 
 # A real build: header edits, a cloned civ, unit edits, appended techs/effects.
 CIV = {"alias": "LazyProbe", "architecture": 6, "language": 3,
@@ -101,10 +107,12 @@ CIV = {"alias": "LazyProbe", "architecture": 6, "language": 3,
        "unique_unit": {"km_idx": 11},
        "tree": {"units": [4, 7, 38, 39, 74, 280, 2485], "buildings": [12, 87, 101, 82], "techs": []}}
 outs = []
-for dat in (load_dat(path), DatFile.parse(str(path))):
+for make in (lambda: load_dat(path), lambda: DatFile.parse(str(path))):
+    dat = make()
     with contextlib.redirect_stdout(io.StringIO()):
         apply_civ(dat, copy.deepcopy(CIV), target_slot=3)
     outs.append(dat.to_bytes())
+    del dat
 check("a full apply_civ build saves byte-identical, lazy vs eager", outs[0] == outs[1])
 
 # Saving: level-3 raw deflate (dat_lazy.SAVE_LEVEL) — any level inflates to
@@ -114,16 +122,23 @@ import zlib                                                  # noqa: E402
 from build_all import _build_combined_data_zip               # noqa: E402
 saved = dat_lazy.save_bytes(lazy)
 check("the saved DAT inflates to exactly the bytes a full parse writes",
-      zlib.decompress(saved, wbits=-15) == eager.to_bytes())
+      zlib.decompress(saved, wbits=-15) == EAGER_BYTES)
 with zipfile.ZipFile(io.BytesIO(_build_combined_data_zip(lazy, {}, {}))) as zf:
     info = zf.getinfo("resources/_common/dat/empires2_x2_p1.dat")
     check("the mod zip stores the DAT uncompressed, and it reads back intact",
           info.compress_type == zipfile.ZIP_STORED
-          and zlib.decompress(zf.read(info), wbits=-15) == eager.to_bytes())
+          and zlib.decompress(zf.read(info), wbits=-15) == EAGER_BYTES)
 
+# A stand-in for DatFile.parse: that it is called is the whole fallback, and a
+# real full parse here cost ~20s of the test's run time.
 os.environ["EMPIREFORGE_EAGER_DAT"] = "1"
-check("EMPIREFORGE_EAGER_DAT=1 falls back to the plain parse",
-      type(dat_lazy.parse(path).civs[1]).__name__ == "Civ")
+_real_datfile, calls = dat_lazy.DatFile, []
+dat_lazy.DatFile = type("DatFileProbe", (), {"parse": staticmethod(lambda p: calls.append(p) or "eager")})
+try:
+    check("EMPIREFORGE_EAGER_DAT=1 falls back to the plain parse",
+          dat_lazy.parse(path) == "eager" and calls == [str(path)], calls)
+finally:
+    dat_lazy.DatFile = _real_datfile
 
 print("\nAll checks passed." if not failures else f"\n{failures} check(s) failed.")
 sys.exit(1 if failures else 0)

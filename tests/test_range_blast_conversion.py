@@ -96,6 +96,21 @@ got = built(9, both)
 check("two cards stack (+0.5 and +1)", sorted(got.get((MANGONEL, 22), [])) == [(4, 0.5), (4, 1.0)],
       f"{got.get((MANGONEL, 22))}")
 
+print("\n=== accuracy (#86) ===")
+ARCHERS = {"type": "group", "id": "archers"}
+got = built(10, cards(SIEGE, {"attr": "accuracy", "op": "add", "value": 20})
+              + cards(ARCHERS, {"attr": "accuracy", "op": "add", "value": 15}))
+check("Trebuchet 15% -> ADD 20, as the Huns' +35", got.get((TREB, 11)) == [(4, 20.0)], f"{got.get((TREB, 11))}")
+check("Archer 80% -> ADD 15", got.get((ARCHER, 11)) == [(4, 15.0)], f"{got.get((ARCHER, 11))}")
+check("Skirmisher 90% +15 stops at 100 (ADD 10)", got.get((SKIRM, 11)) == [(4, 10.0)], f"{got.get((SKIRM, 11))}")
+check("Mangonel (already 100%) gets nothing", (MANGONEL, 11) not in got, f"{got.get((MANGONEL, 11))}")
+got = built(11, cards(SIEGE, {"attr": "accuracy", "op": "add", "value": -30}))
+check("a reduction stops at 0 (Trebuchet 15% -30 -> ADD -15)", got.get((TREB, 11)) == [(4, -15.0)],
+      f"{got.get((TREB, 11))}")
+check("card text reads as a percentage",
+      cb.card_text(cards(SIEGE, {"attr": "accuracy", "op": "add", "value": 20})[0]).endswith("+20% accuracy"),
+      cb.card_text(cards(SIEGE, {"attr": "accuracy", "op": "add", "value": 20})[0]))
+
 print("\n=== conversion ===")
 got = built(10, cards({"type": "civ"}, {"attr": "convert_time", "op": "add", "value": -1}))
 check("faster Monks: 176 and 177 -1, as Inquisition", got.get((176, "res")) == [(1, -1.0)]
@@ -116,12 +131,13 @@ check("Inquisition writes 176 and 177", {(1, 176), (1, 177)} <= effect_res("Inqu
 check("Faith writes 178 and 179", {(1, 178), (1, 179)} <= effect_res("Faith"))
 
 print("\n=== offered where they mean something ===")
-allowed = cb.allowed_attrs(dat, [(f"unit:{u}", "unit", u) for u in (MANGONEL, TREB, SCORPION, ARCHER, SKIRM)])
+allowed = cb.allowed_attrs(dat, [(f"unit:{u}", "unit", u) for u in (MANGONEL, TREB, SCORPION, ARCHER, SKIRM, WAR_ELE)])
 for uid, has, lacks in ((MANGONEL, {"min_range", "no_min_range", "blast_radius"}, set()),
                         (TREB, {"min_range", "blast_radius"}, set()),
                         (SCORPION, {"min_range"}, {"blast_radius"}),
                         (SKIRM, {"min_range"}, {"blast_radius"}),
-                        (ARCHER, set(), {"min_range", "no_min_range", "blast_radius"})):
+                        (ARCHER, {"accuracy"}, {"min_range", "no_min_range", "blast_radius"}),
+                        (WAR_ELE, set(), {"accuracy"})):
     a = set(allowed[f"unit:{uid}"])
     check(f"unit {uid}: offers {sorted(has)}, not {sorted(lacks)}", has <= a and not (lacks & a), f"{sorted(a)}")
 

@@ -141,6 +141,63 @@ MONK_SKIN_OPTIONS: list[dict] = [
     {"value": 11, "label": "Nordic",        "example": "Vikings, Varangians, Danes"},
 ]
 
+# ── Monastery skin ────────────────────────────────────────────────────────────
+# The Monastery is its own axis too: its art is per civ, not per architecture
+# set (Goths and Teutons share one; the Mongols, Huns, Cumans and Khitans build
+# an animated shrine).  Five units carry it: the Monastery (104), its three
+# age versions (30-32) and its rubble (1421, class 14, which the architecture
+# pass never reached).  value = the DAT civ index whose Monastery is copied;
+# the draft key is the schema's long-reserved `monastery_skin_building`.
+# Chronicles civs' Monasteries are left out, as their Monks are.
+_MONASTERY_SKIN_UNITS = (30, 31, 32, 104)
+_MONASTERY_RUBBLE = 1421
+MONASTERY_SKIN_OPTIONS: list[dict] = [
+    {"value": 1,  "label": "Western European", "example": "Britons, Franks, Celts, Burgundians"},
+    {"value": 3,  "label": "Central European", "example": "Goths, Teutons"},
+    {"value": 22, "label": "Eastern European", "example": "Slavs, Magyars, Poles, Bohemians"},
+    {"value": 7,  "label": "Byzantine",        "example": "Byzantines, Sicilians, Romans, Armenians"},
+    {"value": 14, "label": "Mediterranean",    "example": "Spanish, Italians, Portuguese"},
+    {"value": 11, "label": "Nordic",           "example": "Vikings, Varangians, Danes"},
+    {"value": 8,  "label": "Middle Eastern",   "example": "Persians, Saracens, Turks, Berbers"},
+    {"value": 12, "label": "Steppe Shrine",    "example": "Mongols, Huns, Cumans, Khitans"},
+    {"value": 33, "label": "Central Asian",    "example": "Tatars"},
+    {"value": 5,  "label": "East Asian",       "example": "Japanese, Chinese, Koreans"},
+    {"value": 28, "label": "Southeast Asian",  "example": "Khmer, Malay, Burmese"},
+    {"value": 20, "label": "South Asian",      "example": "Hindustanis, Dravidians, Bengalis"},
+    {"value": 25, "label": "Ethiopian",        "example": "Ethiopians"},
+    {"value": 26, "label": "West African",     "example": "Malians"},
+    {"value": 15, "label": "Mesoamerican",     "example": "Aztecs, Mayans"},
+    {"value": 21, "label": "Andean",           "example": "Incas, Muisca, Mapuche, Tupi"},
+]
+
+
+def _copy_monastery_skin(src_civ, dst_civ) -> None:
+    """Copy the Monastery's look (MONASTERY_SKIN_OPTIONS) from one civ to
+    another: the same fields _copy_architecture copies for a building, on the
+    four Monastery units, and the rubble's graphics.  Runs after the
+    architecture pass, so an explicit choice wins; with no choice it copies
+    the architecture's own, which is how the rubble gets there at all."""
+    src_units, dst_units = src_civ.units, dst_civ.units
+    for i in _MONASTERY_SKIN_UNITS:
+        if i >= len(src_units) or i >= len(dst_units):
+            continue
+        src, dst = src_units[i], dst_units[i]
+        if src is None or dst is None:
+            continue
+        dst.standing_graphic = src.standing_graphic
+        dst.dying_graphic    = src.dying_graphic
+        dst.undead_graphic   = src.undead_graphic
+        dst.damage_graphics  = deepcopy(src.damage_graphics)
+        dst.building         = deepcopy(src.building)
+        if src.creatable is not None and dst.creatable is not None:
+            dst.creatable.garrison_graphic = src.creatable.garrison_graphic
+    i = _MONASTERY_RUBBLE
+    if i < len(src_units) and i < len(dst_units) and src_units[i] is not None and dst_units[i] is not None:
+        dst_units[i].standing_graphic = src_units[i].standing_graphic
+        dst_units[i].dying_graphic    = src_units[i].dying_graphic
+        dst_units[i].undead_graphic   = src_units[i].undead_graphic
+
+
 # ── Starting scout ────────────────────────────────────────────────────────────
 # civ.resources[263] holds the unit the civ starts the game with alongside its
 # Villagers.  Vanilla uses only four values: every civ is 448 (Scout Cavalry)
@@ -356,6 +413,8 @@ _KM_UU_NAMES: dict[int, str] = {
     100: "Companion Cavalry",
     101: "Rhomphaia Warrior",
     102: "Pattiyodha Longbowman",
+    # Scenario units, 103-117: km_custom_uu.SCENARIO_UUS names them.
+    **{i: name for i, (name, _base, _elite) in km_custom_uu.SCENARIO_UUS.items()},
 }
 
 # ── Display names for build-log messages ─────────────────────────────────────
@@ -366,25 +425,25 @@ _KM_UU_NAMES: dict[int, str] = {
 # resolve the real name through unit.language_dll_name against the game's
 # vanilla string table, and keep the id and codename alongside it.
 #
-# The player's own copy comes first, so names follow their patch; ours is the
-# fallback.  The custom bonus picker names every unit, building and tech from
-# this table too — the exe once shipped without our copy, and the picker came
-# up with six units, the ones whose names are hard-coded.
-_VANILLA_STRINGS_PATH = Path(__file__).parent / "vanilla" / "key-value" / "key-value-strings-utf8.txt"
+# Only the player's own copy, so names follow their patch (our bundled copy was
+# removed 2026-10-21).  The custom bonus picker names every unit, building and
+# tech from this table too: with no game found it has no names to show, and
+# once came up with only the six whose names are hard-coded — the wizard asks
+# for the game first.
 _STRING_LINE_RE = re.compile(r'^\s*(\d+)\s+"(.*)"\s*$')
 _vanilla_strings: dict[int, str] | None = None
 _vanilla_strings_key: Path | None = None    # dat_reader.last_loaded it was read for
 
 
-def _strings_source() -> Path:
-    """The key-value file _string_table reads: the loaded game's, else ours."""
+def _strings_source() -> Path | None:
+    """The key-value file _string_table reads: the loaded game's, or None."""
     import dat_reader
     dat = dat_reader.last_loaded or dat_reader.find_game_dat()
-    return dat_reader.find_game_strings(dat) or _VANILLA_STRINGS_PATH
+    return dat_reader.find_game_strings(dat)
 
 
 def _string_table() -> dict[int, str]:
-    """id -> English display string, from the game's key-value file or ours.
+    """id -> English display string, from the game's key-value file.
 
     Re-read when a different DAT has been loaded since, so the strings belong
     to the game being built."""
@@ -393,17 +452,16 @@ def _string_table() -> dict[int, str]:
     if _vanilla_strings is None or dat_reader.last_loaded != _vanilla_strings_key:
         _vanilla_strings_key = dat_reader.last_loaded
         table: dict[int, str] = {}
-        for path in dict.fromkeys((_strings_source(), _VANILLA_STRINGS_PATH)):
-            try:
+        path = _strings_source()
+        try:
+            if path:
                 with open(path, encoding="utf-8") as fh:
                     for line in fh:
                         m = _STRING_LINE_RE.match(line)
                         if m:
                             table[int(m.group(1))] = m.group(2)
-            except OSError:
-                continue  # log prettiness is never worth failing a build over
-            if table:
-                break
+        except OSError:
+            pass  # log prettiness is never worth failing a build over
         if not table:
             print("[strings] WARNING: no key-value strings found — unit, building "
                   "and tech names will be missing", flush=True)
@@ -968,6 +1026,114 @@ def patch_civilizations_list(civ_list: list[dict], civs_overrides: dict) -> None
             entry["unique_unit_string_ids"] = [
                 {"name": ov["uu_name_sid"], "description": desc_sid_uu}
             ]
+
+
+def patch_future_units(future: dict, base_civ_list: list[dict], civs_overrides: dict,
+                       trees: dict[str, bytes] | None = None) -> list[str]:
+    """Rewrite each replaced civ's entry in futuravailableunits.json, the
+    game's list of the greyed "available in a later age" buttons.  Returns
+    the civ names it changed.
+
+    The file is keyed by civ name, not slot, and nothing else touches it: a
+    custom civ over the Goths showed a greyed Huskarl on Castle button 1
+    through the Dark and Feudal Ages (on maps that start with a Castle), and
+    its own UU only once the Castle Age came (in game, 2026-10-23).
+
+    `base_civ_list` is the game's civilizations.json as shipped — its entry
+    names the replaced civ's UU, Elite, upgrade and UTs, which become the new
+    civ's (a UT by its age: Castle Age is the Castle UT).  `trees` is the
+    mod's per-civ CivTechTrees files: a button the new tree marks
+    NotAvailable is dropped, and one it has that the replaced civ lacked is
+    added from the game's FullTechCiv entry, so the greyed buttons are the
+    new civ's.  A button the tree has no node for is kept — upgrade techs
+    (Pikeman, Crossbowman) are none, the tree shows their unit.  Without a
+    tree only the unique items are swapped."""
+    full = {b["ID"]: b for b in future.get("FullTechCiv", {}).get("Buildings", [])}
+    changed = []
+    for slot_idx, ov in civs_overrides.items():
+        if slot_idx >= len(base_civ_list):
+            continue
+        base = base_civ_list[slot_idx]
+        civ = future.get(base.get("internal_name"))
+        if civ is None:
+            continue
+        units = {}
+        if ov.get("uu_unit_id") is not None:
+            units = {base.get("unique_unit_id"): ov["uu_unit_id"],
+                     base.get("elite_unique_unit_id"): ov.get("uu_elite_id")}
+        techs = {}
+        if ov.get("uu_unit_id") is not None:
+            techs[base.get("unique_unit_upgrade_id")] = ov.get("uu_upgrade_tech_id")
+        uts = {base.get("unique_tech_id_1"), base.get("unique_tech_id_2")} - {None}
+        by_age = {3: ov.get("castle_ut_tech_id"), 4: ov.get("imp_ut_tech_id")}
+
+        status = None
+        tree = (trees or {}).get(f"{base.get('tech_tree_name', '')}.json")
+        if tree is not None:
+            doc = json.loads(tree)
+            status = {(n.get("Use Type"), n["Node ID"]): n.get("Node Status")
+                      for sec in ("civ_techs_units", "civ_techs_buildings") for n in doc.get(sec, [])}
+
+        def tree_says(kind, item):
+            """The tree's node status for this button, or None if it has no
+            node (an upgrade tech like Pikeman: the tree shows the unit)."""
+            if status is None:
+                return None
+            return status.get((kind, item["ID"]), status.get(("Building", item["ID"])) if kind == "Unit" else None)
+
+        def available(kind, item):
+            return tree_says(kind, item) != "NotAvailable"
+
+        def tree_has(kind, item):
+            return tree_says(kind, item) not in (None, "NotAvailable")
+
+        def swap(kind, item):
+            """The item as the new civ has it, or None to drop it."""
+            item = dict(item)
+            if kind == "Unit" and item["ID"] in units:
+                if units[item["ID"]] is None:
+                    return None
+                item["ID"] = units[item["ID"]]
+                return item
+            if kind == "Tech" and item["ID"] in techs:
+                if techs[item["ID"]] is None:
+                    return None
+                item["ID"] = techs[item["ID"]]
+                return item               # an elite upgrade is no tree node
+            if kind == "Tech" and item["ID"] in uts:
+                new = by_age.get(item.get("RequiredAge"))
+                if new is None:
+                    return None
+                item["ID"] = new
+                return item
+            return item if available(kind, item) else None
+
+        buildings = []
+        seen = set()
+        for b in civ.get("Buildings", []):
+            nb = dict(b)
+            seen.add(b["ID"])
+            for key, kind in (("Units", "Unit"), ("Techs", "Tech")):
+                if key not in b:
+                    continue
+                items = [x for x in (swap(kind, i) for i in b[key]) if x is not None]
+                have = {i["ID"] for i in items}
+                if status is not None:
+                    items += [dict(i) for i in full.get(b["ID"], {}).get(key, [])
+                              if i["ID"] not in have and tree_has(kind, i)]
+                nb[key] = items
+            buildings.append(nb)
+        if status is not None:
+            for bid, b in full.items():
+                if bid in seen:
+                    continue
+                nb = {**b, **{key: [dict(i) for i in b.get(key, []) if tree_has(kind, i)]
+                              for key, kind in (("Units", "Unit"), ("Techs", "Tech")) if key in b}}
+                if any(nb.get(k) for k in ("Units", "Techs")):
+                    buildings.append(nb)
+        civ["Buildings"] = buildings
+        changed.append(base.get("internal_name"))
+    return changed
 
 
 # unitlines.json says LineIDs "have to be between (-400, -199)".
@@ -1835,7 +2001,8 @@ def _button_picks(civ_def: dict) -> dict[tuple[int, int], int]:
 
 def _plan_button_layout(dat: DatFile, units, present: set[int],
                         runtime: dict[tuple[int, int], int], tech_ok,
-                        picks: dict[tuple[int, int], int]) -> dict:
+                        picks: dict[tuple[int, int], int],
+                        favoured: frozenset = frozenset()) -> dict:
     """Decide which lines keep page 1 and where the rest go.  Reads, never writes.
 
     Shared by the build (_resolve_button_collisions) and the wizard's preview
@@ -1846,6 +2013,10 @@ def _plan_button_layout(dat: DatFile, units, present: set[int],
       runtime  (unit, train-location index) -> building set by the civ's own techs
       tech_ok  tech id -> can this civ research it
       picks    (building, button) -> unit whose line keeps page 1
+      favoured unit ids whose line wins its slot by default — the civ's own
+               unique unit and Elite.  Without it the lowest unit id won, so a
+               UU built as a new unit (2752) lost Castle button 1 to a leftover
+               Huskarl node in the tree (41) and went to page 2 (QA, 2026-10-23).
 
     Returns {"conflicts": [...], "moves": [...]}: a conflict lists a slot's lines
     in page order (winner first) with the default winner; a move is one line
@@ -1889,7 +2060,7 @@ def _plan_button_layout(dat: DatFile, units, present: set[int],
 
         def rank(line):
             hits = [prio.index(u) for u in line if u in prio]
-            return (min(hits) if hits else len(prio), min(line))
+            return (0 if line & favoured else 1, min(hits) if hits else len(prio), min(line))
         return sorted(lines, key=rank)
 
     conflicts: list[dict] = []
@@ -2182,7 +2353,17 @@ def button_layout_preview(dat: DatFile, civ_def: dict, tree_techs: set[int]) -> 
         return tech.civ == -1 and tid not in unticked
 
     picks = _button_picks(civ_def)
-    plan = _plan_button_layout(dat, units, present, {}, tech_ok, picks)
+    # The civ's own UU wins its Castle slot, as in the build.  Only a vanilla
+    # UU exists in the template; a custom or scenario one is built later.
+    favoured = frozenset()
+    km = get_km_uu_index(civ_def)
+    if km in _KM_UU_TECHS:
+        make_avail = _KM_UU_TECHS[km][0]
+        if 0 <= make_avail < len(dat.techs) and dat.techs[make_avail].effect_id >= 0:
+            favoured = frozenset(int(c.a) for c in dat.effects[dat.techs[make_avail].effect_id].effect_commands
+                                 if c.type in (2, 3) and c.a >= 0)
+            favoured |= {m for u in favoured for m in _upgrade_neighbours(dat).get(u, ())}
+    plan = _plan_button_layout(dat, units, present, {}, tech_ok, picks, favoured)
     if not plan["conflicts"]:
         return []
 
@@ -2375,7 +2556,8 @@ def _place_hero(dat: DatFile, civ_index: int, civ_def: dict) -> None:
         loc.hot_key_id = HERO_CASTLE_HOTKEY
 
 
-def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict) -> list[dict]:
+def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict,
+                               favoured: frozenset = frozenset()) -> list[dict]:
     """Move colliding unit lines to the building's second page.  Returns a log.
 
     Runs after the tree and bonuses have enabled everything.  Only lines the civ
@@ -2427,7 +2609,7 @@ def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict) -> l
             return False
         return t.civ in (-1, civ_index) and tid not in disabled
 
-    plan = _plan_button_layout(dat, units, present, runtime, tech_ok, _button_picks(civ_def))
+    plan = _plan_button_layout(dat, units, present, runtime, tech_ok, _button_picks(civ_def), favoured)
     if not plan["moves"]:
         return []
 
@@ -5590,9 +5772,10 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                 _apply_ec_list_entry(dat, civ_index, ec_entry, multiplier)
             applied += len(ec_entries)
             # Bonus 105 is half catalog, half structural: the ec_list carries the
-            # -33% food, but "one age earlier" is a prerequisite rewrite no
-            # EffectCommand can express, so only the discount ever landed
-            # (issue #26).
+            # -40% food (x0.6, the game's Burgundian value — it was -33%
+            # until the user matched it, 2026-10-23), but "one age earlier" is
+            # a prerequisite rewrite no EffectCommand can express, so only the
+            # discount ever landed (issue #26).
             if bonus_id == _EARLY_ECO_BONUS:
                 _apply_early_eco_shims(dat, civ_index)
             continue
@@ -5834,7 +6017,7 @@ def _apply_elephant_extensions(dat: DatFile, civ_index: int, techs, multiplier: 
         print(f"       Elephants: tech {tid} extended with {len(cmds)} commands")
 
 
-# Bonus 105 — "Economic upgrades cost -33% food and available one age earlier".
+# Bonus 105 — "Economic upgrades cost -40% food and available one age earlier".
 # The catalog's ec_list covers the discount; the other half is structural.
 _EARLY_ECO_BONUS = 105
 
@@ -5846,8 +6029,10 @@ _EARLY_ECO_BONUS = 105
 _EARLY_ECO_SHIM_TECHS = (
     758,  # Feudal-tier eco techs   (Wheelbarrow, Gold/Stone Mining, Horse Collar,
           #                          Double-Bit Axe, Fishing Lines)
-    760,  # Imperial-tier           (Crop Rotation)
+    759,  # Castle-tier             (Caravan)
+    760,  # Imperial-tier           (Guilds)
     761,  # Heavy Plow
+    766,  # Crop Rotation           (issue #80: missing, so it stayed Imperial)
     762,  # Bow Saw
     763,  # Hand Cart
     764,  # Gold Shaft Mining
@@ -6396,6 +6581,17 @@ def _original_civ(dat: DatFile, idx: int):
     return _original_civs(dat).get(idx, dat.civs[idx])
 
 
+def _shipped_tech_civ(dat: DatFile, tid: int) -> int:
+    """The civ tech `tid` was gated to as the game shipped it.
+
+    Replacing a slot sets that civ's leftover techs to civ 99 so they never
+    fire.  A later civ in the same build that reads one as a SOURCE (a UT
+    copied from the Goths' Anarchy, whose UU it must swap for its own) then
+    saw civ 99 — and _src_civ_uu_ids(99) answered with whichever replaced
+    civ's UU came first, so Anarchy kept training Huskarls (QA 2026-10-23)."""
+    return getattr(dat, "_ef_original_tech_civs", {}).get(tid, dat.techs[tid].civ)
+
+
 def _every_civ(dat: DatFile) -> list:
     """Every civ's data for an edit that must reach ALL civs (a unit appended
     or a spare slot filled in each civ): the slots, plus the kept originals,
@@ -6493,6 +6689,104 @@ def _copy_monk_skin(src_civ, dst_civ) -> None:
         if src.bird is not None and dst.bird is not None:
             for st, dt in zip(src.bird.tasks, dst.bird.tasks):
                 dt.proceeding_graphic_id = st.proceeding_graphic_id
+
+
+# ── Unique unit appearance ────────────────────────────────────────────────────
+# A UU can wear another unit's look — a hero's, a scenario unit's — keeping its
+# own stats (2026-10-22, the user's design: KM dressed invented units as heroes;
+# here the player picks stats and look separately).  The fields are what differs
+# between same-kind units in a full diff (Knight/Lancelot, Archer/Einar,
+# Militia/Wallace, Cavalry Archer/Genghis Khan), plus the selection box.  Not
+# copied: sounds (the voice axis, assign_all_languages), the collision box,
+# projectile and every stat.
+APPEARANCE_KINDS = (6, 0, 12, 36)    # infantry, foot archers, cavalry, cavalry archers
+APPEARANCE_SIZE_SLACK = 0.05         # selection box: a Knight can't wear an elephant
+
+
+def appearance_ok(src, dst) -> bool:
+    """May `dst` (a UU) wear `src`'s look?  The same kind, one of
+    APPEARANCE_KINDS, and art of the same size, so it fits the hitbox it is
+    drawn over.  Size is the selection box (outline): an elephant's collision
+    radius is a horse's 0.25, but its box is 0.6 to a horse's 0.4."""
+    return bool(src is not None and dst is not None and src.id != dst.id
+                and src.class_ == dst.class_ and dst.class_ in APPEARANCE_KINDS
+                and abs(src.outline_size_x - dst.outline_size_x) <= APPEARANCE_SIZE_SLACK + 1e-6
+                and src.dead_fish is not None and src.type_50 is not None
+                and src.dead_fish.walking_graphic >= 0 and src.type_50.attack_graphic >= 0)
+
+
+def copy_unit_look(src, dst) -> None:
+    """Dress `dst` in `src`'s look (see APPEARANCE_KINDS's note)."""
+    dst.standing_graphic = src.standing_graphic
+    dst.dying_graphic    = src.dying_graphic
+    dst.undead_graphic   = src.undead_graphic
+    dst.icon_id          = src.icon_id
+    dst.dead_unit_id     = src.dead_unit_id
+    dst.outline_size_x, dst.outline_size_y, dst.outline_size_z = (
+        src.outline_size_x, src.outline_size_y, src.outline_size_z)
+    dst.dead_fish.walking_graphic = src.dead_fish.walking_graphic
+    dst.dead_fish.running_graphic = src.dead_fish.running_graphic
+    dst.type_50.attack_graphic    = src.type_50.attack_graphic
+    dst.type_50.attack_graphic_2  = src.type_50.attack_graphic_2
+    # Where an archer's arrow leaves the sprite: the bow is drawn elsewhere.
+    dst.type_50.graphic_displacement = src.type_50.graphic_displacement
+    if src.creatable is not None and dst.creatable is not None:
+        dst.creatable.idle_attack_graphic = src.creatable.idle_attack_graphic
+        # A second attack (the Fire Archer's volley at buildings is a charge
+        # attack) plays creatable.special_graphic.  Left alone it kept the
+        # UU's own art mid-look (QA 2026-10-23); a look with no special attack
+        # of its own lends its normal one.
+        if dst.creatable.special_graphic >= 0:
+            dst.creatable.special_graphic = (src.creatable.special_graphic
+                                             if src.creatable.special_graphic >= 0
+                                             else src.type_50.attack_graphic)
+
+
+def look_elite(dat: DatFile, src_id: int) -> int | None:
+    """The Elite of a look, if the game has one: a unit the look upgrades to
+    whose display name is "Elite <its name>" (Chu Ko Nu -> Elite Chu Ko Nu,
+    Qizilbash Warrior -> Elite Qizilbash Warrior).  Heroes have none."""
+    units = dat.civs[0].units
+    name = _string_table().get(units[src_id].language_dll_name) if units[src_id] else None
+    if not name:
+        return None
+    want = f"Elite {name}"
+    for tech in dat.techs:
+        if 0 <= tech.effect_id < len(dat.effects):
+            for c in dat.effects[tech.effect_id].effect_commands:
+                if c.type == EC_UPGRADE and int(c.a) == src_id and 0 <= c.b < len(units):
+                    b = units[int(c.b)]
+                    if b is not None and _string_table().get(b.language_dll_name) == want:
+                        return int(c.b)
+    return None
+
+
+def _apply_uu_appearance(dat: DatFile, civ_index: int, civ_def: dict,
+                         uu_ids: tuple[int, int], warnings: list) -> None:
+    uu = civ_def.get("unique_unit") if isinstance(civ_def.get("unique_unit"), dict) else {}
+    src_id = uu.get("appearance")
+    if src_id is None:
+        return
+    template = dat.civs[0].units                 # Gaia: never a build target
+    src = template[src_id] if 0 <= src_id < len(template) else None
+    units = dat.civs[civ_index].units
+    # The Elite wears the look's own Elite when the game has one (the user's
+    # call, QA 2026-10-23), so it changes at the upgrade as vanilla units do.
+    elite_src_id = look_elite(dat, src_id) if src is not None else None
+    for n, uid in enumerate(uu_ids):
+        dst = units[uid] if 0 <= uid < len(units) else None
+        if n == 1 and elite_src_id is not None and appearance_ok(template[elite_src_id], dst):
+            copy_unit_look(template[elite_src_id], dst)
+            print(f"       UU appearance: {unit_label(dat, civ_index, uid)} wears {unit_label(dat, 0, elite_src_id)}")
+            continue
+        if not appearance_ok(src, dst):
+            msg = (f"Unique unit appearance {unit_label(dat, 0, src_id)} doesn't fit "
+                   f"{unit_label(dat, civ_index, uid)} (not the same kind and size) — kept its own look")
+            print(f"       WARNING: {msg}")
+            warnings.append(msg)
+            continue
+        copy_unit_look(src, dst)
+        print(f"       UU appearance: {unit_label(dat, civ_index, uid)} wears {unit_label(dat, 0, src_id)}")
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -6602,6 +6896,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 continue
             if i in preserve_indices:
                 continue
+            if not hasattr(dat, "_ef_original_tech_civs"):
+                dat._ef_original_tech_civs = {}
+            dat._ef_original_tech_civs.setdefault(i, t.civ)   # see _shipped_tech_civ
             t.civ = 99  # civ 99 never exists → tech silently never fires
             # Also remove from all research location panels to prevent ghost buttons.
             for loc in (t.research_locations or []):
@@ -6675,6 +6972,10 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     monk_src_civ = (_original_civ(dat, monk_src)
                     if isinstance(monk_src, int) and 0 < monk_src < len(dat.civs)
                     else None)
+    monastery_src = civ_def.get("monastery_skin_building", -1)
+    monastery_src_civ = (_original_civ(dat, monastery_src)
+                         if isinstance(monastery_src, int) and 0 < monastery_src < len(dat.civs)
+                         else None)
     # Read the vanilla Monk genders before this slot is overwritten (cached).
     _female_monk_civs(dat)
     _voice_idx = int(civ_def.get("language", 0) or 0) + 1
@@ -6706,6 +7007,13 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             print(f"       Monk skin: architecture default ({_monk_from.name!r})")
         _match_monk_voice(dat, dat.civs[civ_index],
                           monk_src if monk_src_civ is not None else arch_src, _voice_idx)
+
+    # Monastery: independent of architecture too (MONASTERY_SKIN_OPTIONS).
+    _monastery_from = monastery_src_civ if monastery_src_civ is not None else arch_src_civ
+    if _monastery_from is not None:
+        _copy_monastery_skin(_monastery_from, dat.civs[civ_index])
+        if monastery_src_civ is not None:
+            print(f"       Monastery: from DAT civ {monastery_src} ({monastery_src_civ.name!r})")
 
     # Starting scout: the deepcopy base (civ 1) starts with a Scout Cavalry, so
     # leaving this unset keeps vanilla behaviour.
@@ -6915,19 +7223,23 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     #     UU_SUBSTITUTION_TYPES / _build_ut_effect_cmds) now that this civ's
     #     own elite UU id is fully resolved across all 3 possible paths above.
 
-    # hot_key_id for button 4 (R key) in each target building.
+    # (button, hot_key_id) the UU takes in each target building.
     # Verified against vanilla units: Huskarl → Barracks 16748, Tarkan → Stable 16741.
-    _ANARCHY_SLOT_HOTKEYS: dict[int, int] = {
-        12:  16748,   # Barracks btn4 (R)
-        101: 16741,   # Stable btn4 (R)
+    # Archery Range 4 is the Hand Cannoneer's, so Ambuscade uses 10 (G), empty
+    # for every civ; 16176 is grid position 10's hotkey (see _grid_hotkeys).
+    _ANARCHY_SLOTS: dict[int, tuple[int, int]] = {
+        12:  (4, 16748),    # Barracks btn4 (R)
+        101: (4, 16741),    # Stable btn4 (R)
+        87:  (10, 16176),   # Archery Range btn10 (G)
     }
 
     def _ensure_anarchy_train_slot(uid: int, target_building: int = 12) -> None:
-        """Add a (-1, button=4) train_location to the civ's unit copy so the
-        unit appears at button 4 (R key) at whatever building attribute 42
-        points to after Anarchy/Marauders fires.  Without this slot the engine
-        falls back to button 1, overwriting the militia/cavalry line button.
-        target_building is the EC_SET c=42 d value (e.g. 12=Barracks, 101=Stable)."""
+        """Add a (-1, button) train_location to the civ's unit copy so the unit
+        appears at its _ANARCHY_SLOTS button at whatever building attribute 42
+        points to after Anarchy/Marauders/Ambuscade fires.  Without this slot
+        the engine falls back to button 1, overwriting the militia/cavalry line
+        button.  target_building is the EC_SET c=42 d value (e.g. 12=Barracks,
+        101=Stable, 87=Archery Range)."""
         if uid < 0 or uid >= len(dat.civs[civ_index].units):
             return
         u = dat.civs[civ_index].units[uid]
@@ -6937,10 +7249,10 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         tls = getattr(cre, 'train_locations', [])
         if not tls or any(tl.unit_id == -1 for tl in tls):
             return  # already has dynamic slot or no train_locations
-        hot_key = _ANARCHY_SLOT_HOTKEYS.get(target_building, 16748)
+        button, hot_key = _ANARCHY_SLOTS.get(target_building, (4, 16748))
         dyn = deepcopy(tls[0])
         dyn.unit_id    = -1
-        dyn.button_id  = 4
+        dyn.button_id  = button
         dyn.hot_key_id = hot_key
         # Insert at index 1 so the -1 placeholder sits right after the Castle
         # slot (matching Huskarl/Tarkan's vanilla layout). EC_SET c=42 only
@@ -6987,6 +7299,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                "UU defined — effect left as a no-op.")
         print(f"       WARNING: {msg}")
         warnings.append(msg)
+
+    _apply_uu_appearance(dat, civ_index, civ_def,
+                         tuple(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0), warnings)
 
     # 7. Apply bonuses from catalog.
     bonus_results: dict = {"applied": 0, "skipped": [], "team_applied": 0, "team_total": 0,
@@ -7042,7 +7357,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # 7c. Two lines on one training button: keep one, move the rest to page 2.
     #     Last, so every unit the tree and bonuses enabled is already in place.
     _place_hero(dat, civ_index, civ_def)
-    button_layout = _resolve_button_collisions(dat, civ_index, civ_def)
+    button_layout = _resolve_button_collisions(
+        dat, civ_index, civ_def,
+        frozenset(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0))
     for _entry in button_layout:
         if _entry["to"] is None:
             # A player-visible warning, not just a log line: the unit silently
@@ -7181,6 +7498,18 @@ _KM_CASTLE_UT_TECHS: dict[int, int] = {
     65: 1491,   # Clerical Recruitment (Saxons)
     66: 1473,   # Vendel Legacy (Varangians)
     67: 1484,   # Hamask (Danes) — resource 33, EffectFunction 30
+    # Ours, not DE's: Ambuscade, "create Unique Unit at Archery Ranges" (issue
+    # #81).  No vanilla tech does this, so it is Marauders with the building
+    # rewritten — see _UT_SOURCE_REWRITES.
+    68: 483,
+}
+
+# Presets that copy a vanilla tech but write a different value into one of its
+# EC_SET attributes: (tier, preset) -> {attribute: new d}.  Ambuscade is
+# Marauders pointed at the Archery Range (attr 42 = the train location's
+# building) instead of the Stable.
+_UT_SOURCE_REWRITES: dict[tuple[str, int], dict[int, float]] = {
+    ("castle", 68): {42: 87.0},
 }
 
 _KM_IMP_UT_TECHS: dict[int, int] = {
@@ -7280,7 +7609,7 @@ def _src_civ_uu_ids(dat: DatFile, civ_idx: int) -> tuple[set[int], set[int]]:
     for make_avail_id, elite_tech_id in _KM_UU_TECHS.values():
         if make_avail_id < 0 or make_avail_id >= len(dat.techs):
             continue
-        if dat.techs[make_avail_id].civ != civ_idx:
+        if _shipped_tech_civ(dat, make_avail_id) != civ_idx:
             continue
         eff_id = dat.techs[make_avail_id].effect_id
         if 0 <= eff_id < len(dat.effects):
@@ -7368,6 +7697,14 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         if eid < 0 or eid >= len(dat.effects):
             continue
         all_cmds = dat.effects[eid].effect_commands
+        rewrite = _UT_SOURCE_REWRITES.get((tier, int(bonus_id)))
+        if rewrite:
+            # Copies: the commands below are appended as-is, and the originals
+            # still belong to the vanilla tech.
+            all_cmds = [deepcopy(ec) for ec in all_cmds]
+            for ec in all_cmds:
+                if ec.type == EC_SET and int(ec.c) in rewrite:
+                    ec.d = rewrite[int(ec.c)]
 
         # For civ-specific techs (e.g. Anarchy, Marauders) that contain an
         # EC_ENABLE(b=1) command targeting their own UU: identify the source
@@ -7378,7 +7715,8 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         # civ's UU from the make-avail tech in _KM_UU_TECHS.
         src_base_uu_ids: set[int] = set()
         src_elite_uu_ids: set[int] = set()
-        if source_tech.civ != -1:
+        source_civ = _shipped_tech_civ(dat, tech_id)
+        if source_civ != -1:
             # Only an enable of the source civ's REAL unique unit marks the
             # Anarchy/Marauders shape.  Timurid Siegecraft enables the Flaming
             # Camel and Flemish Revolution the Flemish Militia; read as "the
@@ -7386,7 +7724,7 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
             # Timurid Siegecraft's five trebuchet +2 range commands landed on
             # this civ's Elite UU — a melee unit with +10 range that never hit
             # anything, and trebuchets with no bonus (reported 2026-10-12).
-            real_base, _ = _src_civ_uu_ids(dat, source_tech.civ)
+            real_base, _ = _src_civ_uu_ids(dat, source_civ)
             src_base_uu_ids = {int(ec.a) for ec in all_cmds if _is_enable(ec)} & real_base
             if src_base_uu_ids:
                 # Anarchy/Marauders style: derive elite as remainder of unit refs
@@ -7395,7 +7733,7 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
                 src_elite_uu_ids = all_unit_refs - src_base_uu_ids
             else:
                 # Stat-buff UT: look up source civ's UU from _KM_UU_TECHS.
-                src_base_uu_ids, src_elite_uu_ids = _src_civ_uu_ids(dat, source_tech.civ)
+                src_base_uu_ids, src_elite_uu_ids = _src_civ_uu_ids(dat, source_civ)
                 # Only log when at least one effect command actually targets a
                 # UU unit ID (i.e. will be deferred). Avoids false-positive
                 # messages for UTs like Ordo Cavalry (EC_RESOURCE only).

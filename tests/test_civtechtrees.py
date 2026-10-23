@@ -24,7 +24,13 @@ from build_civ import (  # noqa: E402
     _FARM_NODE_ID, _OPT_IN_UNIT_NODE_SOURCES,
 )
 
-CIVDIR = ROOT / "CivTechTrees"
+# The player's game's trees — there is no bundled copy any more (2026-10-21).
+from dat_reader import find_game_dat, find_civtechtrees  # noqa: E402
+_dat = find_game_dat()
+CIVDIR = find_civtechtrees(_dat) if _dat else None
+if CIVDIR is None:
+    print("  skip  no game CivTechTrees found (point EMPIREFORGE_DAT at one)")
+    sys.exit(0)
 CAMPS = {68, 562, 584}          # Mill, Lumber Camp, Mining Camp
 SETTLEMENT, FOLWARK, MULE = 2556, 1734, 1808
 BASE = {50, 12, 87}             # a few unrelated buildings every civ has

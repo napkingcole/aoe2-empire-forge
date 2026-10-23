@@ -124,8 +124,13 @@ _standard_cache: set | None = None
 def _standard_nodes() -> set[tuple[str, int]]:
     global _standard_cache
     if _standard_cache is None:
+        import dat_reader
         counts: dict[tuple[str, int], int] = {}
-        files = sorted((_ROOT / "CivTechTrees").glob("*.json"))
+        # The player's own trees (never a bundled copy, removed 2026-10-21).
+        # No game found: no "standard" set, so the summary lists no gaps.
+        dat = dat_reader.last_loaded or dat_reader.find_game_dat()
+        folder = dat_reader.find_civtechtrees(dat) if dat else None
+        files = sorted(folder.glob("*.json")) if folder else []
         for f in files:
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))

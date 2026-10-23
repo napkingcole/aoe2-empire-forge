@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Display names come from the player's game strings, with ours as fallback.
+"""Display names come from the player's game strings — and only from there.
 
-The exe shipped without vanilla/key-value/ — never listed in the spec — so
-_string_table() swallowed the OSError and returned nothing.  The custom bonus
-picker drops every entry with no name, and a player's Unit tab came up with
-six units (the hard-coded PICKER_NAMES) and two filter pills.  So:
+The exe once shipped without our bundled strings — never listed in the spec —
+so the custom bonus picker came up with six units (the hard-coded
+PICKER_NAMES).  Since 2026-10-21 there is no bundled copy at all: every game
+file is read from the player's install, beside their DAT, so nothing can go
+stale (our CivTechTrees had, by four months and three civs).  So:
 
-  - the game's own key-value file is found from the DAT and read first;
-  - ours is the fallback when the DAT isn't in a game layout;
+  - the game's own key-value file is found from the DAT and read;
+  - with no game strings there are no names (not an old copy);
   - every data file the runtime reads through Path(__file__).parent is in
-    the PyInstaller spec, so the next one can't go missing silently.
+    the PyInstaller spec, so the next one can't go missing silently;
+  - and no copy of a game file is in the repo or the spec to fall back on.
 
     venv/bin/python tests/test_game_strings.py
 """
@@ -56,21 +58,20 @@ with tempfile.TemporaryDirectory() as tmp:
           dat_reader.find_game_strings(dat) == kv.resolve(),
           str(dat_reader.find_game_strings(dat)))
     table = fresh_table(dat)
-    check("the game's file wins over ours", table.get(5083) == "Archer from the game",
+    check("the game's file is read", table.get(5083) == "Archer from the game",
           repr(table.get(5083)))
 
     kv.unlink()
     check("no game file -> None", dat_reader.find_game_strings(dat) is None)
     table = fresh_table(dat)
-    check("falls back to our copy", len(table) > 10000 and table.get(5083) == "Archer",
-          f"{len(table)} strings, 5083={table.get(5083)!r}")
+    check("no game strings -> no names, never a stale copy", table == {}, f"{len(table)} strings")
 
-print("a DAT outside a game layout uses our copy")
+print("a DAT outside a game layout has no strings to read")
 with tempfile.TemporaryDirectory() as tmp:
     loose = Path(tmp) / "empires2_x2_p1.dat"
     loose.write_bytes(b"")
     table = fresh_table(loose)
-    check("loose DAT -> bundled strings", table.get(5083) == "Archer", repr(table.get(5083)))
+    check("loose DAT -> no names", table == {}, f"{len(table)} strings")
 
 print("re-read when a different DAT is loaded")
 with tempfile.TemporaryDirectory() as tmp:
@@ -106,6 +107,13 @@ for py in runtime:
         seen.add(rel)
         bundled = any(rel == d or rel.startswith(d.rstrip("/") + "/") for d in datas)
         check(f"{rel} ({py.name})", bundled, "not in aoe2civbuilder.spec datas")
+
+print("no game file is bundled to go stale")
+GAME_COPIES = ["CivTechTrees", "civilizations.json", "futuravailableunits.json", "vanilla"]
+for name in GAME_COPIES:
+    check(f"{name} is not in the repo", not (ROOT / name).exists())
+    check(f"{name} is not in the exe spec",
+          not any(d == name or d.startswith(name + "/") for d in datas))
 
 print()
 if failures:

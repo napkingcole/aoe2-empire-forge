@@ -19,7 +19,7 @@ from build_all import (
     _ut_name,
     _BONUS_NAMES,
     _TEAM_BONUS_NAMES,
-    _VANILLA_CIV_DESCRIPTIONS,
+    vanilla_civ_descriptions,
     DLL_CREATION_OFFSET,
     DLL_HELP_OFFSET,
     DLL_TECH_TREE_OFFSET,
@@ -99,6 +99,7 @@ def _draft_to_civ_def(draft: dict) -> dict:
         "long_range_ship_elite": draft.get("long_range_ship_elite", True),
         "starting_scout":        draft.get("starting_scout"),
         "monk_skin":             draft.get("monk_skin"),
+        "monastery_skin_building": draft.get("monastery_skin_building"),
         # Which line keeps page 1 where two share a training button — read by
         # civ_appender._resolve_button_collisions; absent means the default table.
         "button_moves":          draft.get("button_moves") or [],
@@ -122,9 +123,9 @@ def _draft_to_civ_def(draft: dict) -> dict:
     # The description matters here as well as in the string block: apply_civ
     # bakes it into the KM-custom UU's Castle hover tooltip, and dropping it
     # left that tooltip with stats but no flavour text (issue #34).
-    if uu.get("name") or uu.get("description"):
+    if uu.get("name") or uu.get("description") or uu.get("appearance") is not None:
         civ_def["unique_unit"] = {
-            k: uu[k] for k in ("name", "description") if uu.get(k)
+            k: uu[k] for k in ("name", "description", "appearance") if uu.get(k) not in (None, "")
         }
 
     # Hero unit is NOT added to tree[0] — adding it would create a vanilla type=8
@@ -467,11 +468,12 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     # Descriptions exist only for the original 45 civs (sids 120150-120194),
     # indexed from Britons = 0, i.e. DAT slot - 1.
     replaced_pos = {name_sid - 10271}
+    civ_descriptions = vanilla_civ_descriptions(dat_path)
     for i in range(45):
         if i in replaced_pos:
             continue
         sid  = 120150 + i
-        text = _VANILLA_CIV_DESCRIPTIONS.get(sid)
+        text = civ_descriptions.get(sid)
         if text:
             for lang in LANGUAGES:
                 string_lines[lang].append(f'{sid} "{text}"')
@@ -522,7 +524,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
                 per_civ_tt[json_file.name] = json_file.read_bytes()
 
     # ── civilizations.json + unitlines.json ─────────────────────────────────
-    dat_jsons = dat_json_files(dat_path, civs_overrides)
+    dat_jsons = dat_json_files(dat_path, civs_overrides, per_civ_tt)
 
     # ── Package ──────────────────────────────────────────────────────────────
     data_zip = _build_combined_data_zip(
@@ -532,6 +534,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     ui_zip = _build_combined_ui_zip(
         ai_stubs, button_pngs, combined_strings,
         mod_name=mod_name, lang_values={lang_val}, dat_path=dat_path,
+        icon_ids={ov.get("icon_id") for ov in civs_overrides.values()},
     )
 
     buf = io.BytesIO()

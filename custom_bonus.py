@@ -261,6 +261,12 @@ ATTRS: dict[str, dict] = {
                       "fields": [20], "kinds": ("unit", "building")},
     "blast_radius":  {"label": "blast radius", "ops": ("add",), "max": 5, "unit_field": "blast_width",
                       "fields": [22], "kinds": ("unit", "building")},
+    # #86.  Percentage POINTS, as vanilla writes it: the Huns' "Trebuchets +35%
+    # accuracy" is an ADD of 35 to attribute 11.  Per unit like the two above,
+    # and `ceiling` keeps a unit at or under 100% — vanilla never goes past it
+    # (Thumb Ring and Warwolf SET 100), so what the engine does there is untested.
+    "accuracy":      {"label": "accuracy", "ops": ("add",), "max": 100, "pct": True, "ceiling": 100,
+                      "unit_field": "accuracy_percent", "fields": [11], "kinds": ("unit", "building")},
     # ── Techs ── (EC_TECH_COST / EC_TECH_TIME; see tech_effect_commands)
     "tech_cost":     {"label": "cost",             "ops": ("mul", "add"),                        "kinds": ("tech",)},
     "research_speed":{"label": "research speed",   "ops": ("mul",), "faster": True,             "kinds": ("tech",)},
@@ -463,6 +469,9 @@ _CAPABLE = {
     "min_range":     lambda u: bool(u.type_50) and u.type_50.min_range > 0,
     "no_min_range":  lambda u: bool(u.type_50) and u.type_50.min_range > 0,
     "blast_radius":  _splashes,
+    # Ranged and with an attack, or there is nothing to miss.
+    "accuracy":      lambda u: bool(u.type_50) and u.type_50.max_range > 0
+                               and any(a.amount > 0 for a in u.type_50.attacks),
     "work_rate":     lambda u: _moves_resources(u) or (
                          bool(u.bird) and any(t.action_type == _HEAL_ACTION for t in u.bird.tasks)),
 }
@@ -620,7 +629,7 @@ def catalog() -> dict:
                    for k, j in JOBS.items()],
         "attrs":  [{"id": k, "label": a["label"], "ops": list(a["ops"]),
                     "kinds": list(a["kinds"]), "novalue": bool(a.get("novalue")),
-                    "positive": bool(a.get("positive"))}
+                    "positive": bool(a.get("positive")), "pct": bool(a.get("pct"))}
                    for k, a in ATTRS.items()],
         "cost_resources": list(COST_RESOURCES),
         "civ_ages": [{"id": k, "label": f"{v} Age"} for k, v in CIV_AGES.items()],
@@ -930,7 +939,7 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
     steps = eff.get("steps") or {}
     vals  = [float(v) for v in steps.values()] or [float(eff["value"])]
     v     = vals[-1]                       # faster/slower follows where it ends up
-    pct   = "%" if eff["op"] == "mul" or eff["attr"] == "cost" else ""
+    pct   = "%" if eff["op"] == "mul" or eff["attr"] == "cost" or spec.get("pct") else ""
 
     def signed(unit: str = "") -> str:
         return "/".join(f"{'+' if x > 0 else '-'}{_fmt_num(abs(x))}{unit}" for x in vals)
@@ -1357,6 +1366,8 @@ def _plain_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
                         continue
                     v = float(eff["value"])
                     d = v if v > 0 else -min(-v, base)
+                    if spec.get("ceiling") is not None:
+                        d = min(d, spec["ceiling"] - base)      # accuracy stops at 100%
                     if d:
                         cmds.append(EffectCommand(type=EC_ADD, a=uid, b=-1, c=spec["fields"][0], d=d))
         elif ATTRS[eff["attr"]].get("per_building"):

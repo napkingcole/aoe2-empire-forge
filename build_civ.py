@@ -342,8 +342,7 @@ def _find_adjacent_json(dat_path: Path, filename: str) -> Path | None:
              "/resources/_common/dat") / filename,
         Path("C:/XboxGames/Age of Empires II Definitive Edition/Content"
              "/resources/_common/dat") / filename,
-        Path(__file__).parent / filename,  # bundled copy alongside this script
-    ]
+    ]   # no bundled copy: the player's game is the one source (2026-10-21)
     for p in candidates:
         if p.exists():
             return p
@@ -358,13 +357,11 @@ def _find_techtree_json(dat_path: Path) -> Path | None:
 def _find_civ_techtrees_folder(dat_path: Path) -> Path | None:
     """Locate the CivTechTrees/ folder (per-civ tech tree JSON files).
 
-    Prefers the live copy from the game installation (always up to date with
-    DLC) over the bundled copy shipped with this app (frozen at build time).
+    Only ever the game's own: the copy we used to bundle as a fallback was
+    frozen in June 2026 and missing the Viking Sagas civs when it was removed
+    (2026-10-21).
     """
-    candidates = [
-        dat_path.parent / "CivTechTrees",         # game install — preferred
-        Path(__file__).parent / "CivTechTrees",   # bundled fallback
-    ]
+    candidates = [dat_path.parent / "CivTechTrees"]
     p = dat_path.parent
     for _ in range(4):
         candidates.append(p / "resources/_common/dat/CivTechTrees")
@@ -1228,10 +1225,15 @@ _ROSTER_CACHE: dict[str, list[dict]] = {}
 def civ_roster(dat_path: str | Path | None = None) -> list[dict]:
     """One entry per DAT civ slot: {name, techtree_id, name_sid}.
 
-    Prefers the `civilizations.json` beside the player's DAT, falls back to the
-    copy we ship, and finally synthesises from KM_TECHTREE_ORDER so a missing or
-    unreadable file degrades instead of breaking the build.
+    Reads the `civilizations.json` beside the player's DAT; without one it
+    synthesises from KM_TECHTREE_ORDER, so a missing or unreadable file degrades
+    instead of breaking the build (the wizard then says the list is not the
+    game's).  No bundled copy since 2026-10-21, so with no path given it looks
+    for the player's game, as the bundled copy used to stand in for.
     """
+    if not dat_path:
+        import dat_reader
+        dat_path = dat_reader.last_loaded or dat_reader.find_game_dat()
     key = str(dat_path or "")
     if key in _ROSTER_CACHE:
         return _ROSTER_CACHE[key]
@@ -1241,7 +1243,6 @@ def civ_roster(dat_path: str | Path | None = None) -> list[dict]:
         found = _find_adjacent_json(Path(dat_path), "civilizations.json")
         if found:
             candidates.append(found)
-    candidates.append(Path(__file__).parent / "civilizations.json")
 
     roster: list[dict] = []
     for path in candidates:

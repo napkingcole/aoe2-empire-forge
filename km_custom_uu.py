@@ -680,6 +680,108 @@ PRESETS: dict[int, dict] = {
     },
 }
 
+# ── Scenario units (issues #55, #84 and the "scenario units as UUs" request) ──
+# Units the scenario editor can place but no civ trains.  Unlike KM's presets
+# above, nothing about them is hand-tuned: the UU is the game's own unit as it
+# stands — stats, cost, train time — and the Elite is the game's own elite where
+# one exists (Qizilbash, War Dog), else scenario_elite() below.  Picked
+# 2026-10-21 from a survey of every editor-placeable combat unit; animals stay
+# out, cheat units are in (the user's call).  The KM-custom units built from
+# scenario units (Crusader Knight, Ninja, Photonman, …) are already offered.
+#   index: (name, base unit, the game's elite unit or None)
+SCENARIO_UUS: dict[int, tuple[str, int, int | None]] = {
+    103: ("Qizilbash Warrior",      1817, 1829),
+    104: ("War Dog",                2612, 2613),
+    105: ("Imperial Legionary",        1, None),
+    106: ("Imperial Centurion",      275, None),
+    107: ("Norse Warrior",           361, None),
+    108: ("Eastern Swordsman",       894, None),
+    109: ("Heavy Pikeman",           892, None),
+    110: ("Bandit",                  299, None),
+    111: ("Priest",                 1023, None),
+    112: ("Pagan Priest",           1940, None),
+    # Cheat-code units
+    113: ("Furious the Monkey Boy",  860, None),
+    114: ("Alfred the Alpaca",      1300, None),
+    115: ("Cobra Car",               748, None),
+    116: ("Sharkatzor",             1222, None),
+    117: ("War Penguin",             639, None),
+    # Real game units KM had re-tuned by hand (presets 40-50); the game's own
+    # versions replace them (2026-10-22, the user's call — see civ_schema.RETIRED_UUS).
+    118: ("Xolotl Warrior",         1570, None),
+    119: ("Ninja",                  1145, None),
+    120: ("Flamethrower",            188, None),
+    121: ("Photonman",              1577, None),
+    122: ("Amazon Warrior",          825, None),
+    123: ("Amazon Archer",           850, None),
+    124: ("Iroquois Warrior",       1374, None),
+}
+
+# Every elite upgrade we generate costs and takes what DE's typically do: the
+# median over its 65 unique units is ~1,500 resources and 45 s.
+SCENARIO_ELITE_TECH = {"cost": (800, 0, 0, 700), "time": 45}
+
+# Costs where the game's own won't do (the user's call, 2026-10-22): the Cobra
+# Car's is population only, the Bandit's 300 food for a Militia-like unit.
+#   index: (food, wood, stone, gold), for both tiers
+SCENARIO_COSTS: dict[int, tuple[int, int, int, int]] = {
+    110: (100, 0, 0, 0),     # Bandit
+    115: (200, 0, 0, 200),   # Cobra Car — "very powerful"
+}
+
+for _idx, (_name, _base, _elite) in SCENARIO_UUS.items():
+    _cost = SCENARIO_COSTS.get(_idx)
+    PRESETS[_idx] = {
+        "name": _name, "base_unit_id": _base, "elite_unit_id": _elite,
+        "mode": "scenario", "elite_tech": SCENARIO_ELITE_TECH,
+        # Everything below is KM's hand-tuning, which a scenario unit has none
+        # of: the unit's own values stand.
+        "unit_cost": {"mode": "full", "uu": _cost, "elite": _cost} if _cost else None,
+        "post_cost": [], "unit_train_time": (None, None),
+        "hp": (None, None), "speed": (None, None),
+        "attacks": (None, None), "armors": (None, None),
+        "displayed_attack": (None, None), "displayed_melee_armor": (None, None),
+        "displayed_pierce_armor": (None, None), "extra": {},
+    }
+
+
+def _raise_class(entries: list, cls: int, amount: int) -> None:
+    for e in entries:
+        if e.class_ == cls:
+            e.amount += amount
+            return
+    entries.append(AttackOrArmor(class_=cls, amount=amount))
+
+
+def scenario_elite(unit) -> None:
+    """Make `unit` (a copy of the base unit) into a generated Elite, in place.
+
+    DE's typical elite step, measured over its 65 unique units (2026-10-21) and
+    agreed with the user: HP +15% (to the nearest 5, at least +5), and
+      - melee:  +2 attack, +1 pierce armour;
+      - ranged: +1 attack, +1 range (with line of sight and search radius, as
+        every range change here is written — custom_bonus "range");
+      - no attack at all (Priests): +1 range only, never an attack it lacks.
+    """
+    t50 = unit.type_50
+    unit.hit_points = max(int(round(unit.hit_points * 1.15 / 5) * 5), unit.hit_points + 5)
+    attacks = any(a.amount > 0 for a in t50.attacks if a.class_ in (3, 4))
+    if t50.max_range > 1:
+        t50.max_range += 1
+        t50.displayed_range += 1
+        unit.line_of_sight += 1
+        if unit.bird is not None:
+            unit.bird.search_radius += 1
+        if attacks:
+            _raise_class(t50.attacks, 3, 1)
+            t50.displayed_attack += 1
+    elif attacks:
+        _raise_class(t50.attacks, 4, 2)
+        t50.displayed_attack += 2
+        _raise_class(t50.armours, 3, 1)
+        unit.creatable.displayed_pierce_armour += 1
+
+
 # ── Bespoke aura-task wiring ─────────────────────────────────────────────────
 # Each entry copies a Task from a SOURCE unit's Bird.TaskList[index] (cloning
 # field-for-field, then overriding the listed fields) onto BOTH the UU and
@@ -824,17 +926,18 @@ def _apply_unit_cost(unit, cost_spec: dict | None, tier: str) -> None:
     rc = unit.creatable.resource_costs
     if cost_spec["mode"] == "full":
         food, wood, stone, gold = cost_spec[tier]
-        slot = 0
-        for res_type, amount in zip(RES_SLOTS, (food, wood, stone, gold)):
-            if amount > 0:
-                rc[slot].type = res_type
-                rc[slot].amount = amount
-                rc[slot].flag = 1
-                slot += 1
-        for i in range(slot, 3):
-            rc[i].type = -1
-            rc[i].amount = 0
-            rc[i].flag = 0
+        # A unit has exactly 3 cost slots, and one is usually population (type
+        # 4, flag 0) — CLAUDE.md quirk 14.  This used to blank every slot after
+        # the resources it wrote, so the 28 presets with a full cost (Gendarme,
+        # Hetaireia, …) trained for no population.  Keep the non-spendable
+        # entries; spendables fill the slots that are left.
+        keep = [(c.type, c.amount, c.flag) for c in rc if c.type >= 0 and c.type not in RES_SLOTS]
+        spend = [(t, a, 1) for t, a in zip(RES_SLOTS, (food, wood, stone, gold)) if a > 0]
+        entries = (spend[:3 - len(keep)] + keep + [(-1, 0, 0)] * 3)[:3]
+        for slot, (res_type, amount, flag) in enumerate(entries):
+            rc[slot].type = res_type
+            rc[slot].amount = amount
+            rc[slot].flag = flag
     elif cost_spec["mode"] == "amount":
         for slot_idx, amount in cost_spec[tier]:
             rc[slot_idx].amount = amount
@@ -843,11 +946,27 @@ def _apply_unit_cost(unit, cost_spec: dict | None, tier: str) -> None:
 def _apply_post_cost(uu_unit, elite_unit, post_cost: list) -> None:
     for tier, slot, type_, amount, flag in post_cost:
         unit = uu_unit if tier == "uu" else elite_unit
-        rc = unit.creatable.resource_costs[slot]
+        costs = unit.creatable.resource_costs
+        # KM's slot numbers assumed population was gone (see _apply_unit_cost);
+        # never overwrite it — take the next empty slot, or skip.
+        if costs[slot].type >= 0 and costs[slot].type not in RES_SLOTS:
+            slot = next((i for i, c in enumerate(costs) if c.type < 0), None)
+            if slot is None:
+                continue
+        rc = costs[slot]
         rc.type, rc.amount, rc.flag = type_, amount, flag
 
 
 def _apply_preset_stats(uu_unit, elite_unit, preset: dict) -> None:
+    if preset["mode"] == "scenario":
+        # The UU is the game's unit as it stands; the Elite is the game's own
+        # (cloned in append_km_custom_uu) or generated.  A SCENARIO_COSTS cost
+        # replaces the game's on both.
+        if preset.get("elite_unit_id") is None:
+            scenario_elite(elite_unit)
+        _apply_unit_cost(uu_unit, preset["unit_cost"], "uu")
+        _apply_unit_cost(elite_unit, preset["unit_cost"], "elite")
+        return
     hp = preset["hp"]
     if hp[0] is not None:
         uu_unit.hit_points = hp[0]
@@ -1118,16 +1237,18 @@ def append_km_custom_uu(dat: DatFile, civ_index: int, km_uu_index: int,
         uu.enabled = 0
         civ.units.append(uu)
 
-        elite = deepcopy(base)
+        # A scenario unit with a real elite (Qizilbash, War Dog) clones it.
+        elite = deepcopy(civ.units[preset.get("elite_unit_id") or base_id])
         elite.id = elite_id
         elite.base_id = elite_id
         elite.copy_id = elite_id
         elite.enabled = 0
         civ.units.append(elite)
 
+    elite_src = preset.get("elite_unit_id") or base_id
     if base_id < len(dat.unit_headers):
         dat.unit_headers.append(deepcopy(dat.unit_headers[base_id]))
-        dat.unit_headers.append(deepcopy(dat.unit_headers[base_id]))
+        dat.unit_headers.append(deepcopy(dat.unit_headers[elite_src if elite_src < len(dat.unit_headers) else base_id]))
 
     uu_unit = dat.civs[civ_index].units[uu_id]
     elite_unit = dat.civs[civ_index].units[elite_id]

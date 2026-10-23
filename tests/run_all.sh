@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# Run every test. From the repo root:  ./tests/run_all.sh
+# Run the tests. From the repo root:
 #
-# Deliberately dependency-free — plain scripts, no pytest, no node_modules.
-# Adding a test means dropping a file in here and adding a line below.
+#   ./tests/run_all.sh                 everything, 6 files at a time
+#   ./tests/run_all.sh --quick         data checks + build smoke + changed tests
+#   ./tests/run_all.sh --quick test_ambuscade.py   ...plus the files named
+#   ./tests/run_all.sh test_ambuscade.py           just the files named
+#   ./tests/run_all.sh -j 1            one at a time
+#
+# SKIP_SMOKE=1 skips the build tests; ROUNDTRIP=1 adds the route round-trip.
+# The test list and the runner live in tests/run_tests.py.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -10,112 +16,4 @@ cd "$(dirname "$0")/.."
 PY=./venv/bin/python
 [ -x "$PY" ] || PY=python3
 
-failed=0
-
-run() {
-    local label="$1"; shift
-    echo
-    echo "════ $label"
-    if "$@"; then
-        echo "──── $label: PASS"
-    else
-        echo "──── $label: FAIL"
-        failed=1
-    fi
-}
-
-if command -v node >/dev/null 2>&1; then
-    run "editor layout (node)" node tests/test_editor_layout.js
-    run "blank-civ seed tree (node)" node tests/test_seed_tree.js
-    run "unit exclusivity (node)"    node tests/test_unit_exclusivity.js
-else
-    echo "!! node not found — skipping tests/test_editor_layout.js, tests/test_seed_tree.js, tests/test_unit_exclusivity.js"
-    failed=1
-fi
-
-run "in-game tech tree (python)"  "$PY" tests/test_civtechtrees.py
-run "civ_def formats (python)"    "$PY" tests/test_civ_def_formats.py
-run "no direct civ_def reads"     "$PY" tests/test_no_direct_civdef_reads.py
-run "catalog resource ids"        "$PY" tests/test_resource_ids.py
-run "civ roster"                  "$PY" tests/test_civ_roster.py
-run "game strings + exe bundle"    "$PY" tests/test_game_strings.py
-run "no blank unit icons"         "$PY" tests/test_blank_uniticons.py
-run "button pages"                "$PY" tests/test_button_pages.py
-run "UT cost override"            "$PY" tests/test_ut_cost_override.py
-run "multiplier scaling"          "$PY" tests/test_multiplier_scaling.py
-run "explicit file encodings"     "$PY" tests/test_explicit_encoding.py
-run "voices from the player's banks" "$PY" tests/test_voice_source.py
-run "armour class vs card text"  "$PY" tests/test_armor_class_text.py
-run "relic bonus reaches the UU"  "$PY" tests/test_relic_bonus_uu.py
-run "chronicles bonus cards"      "$PY" tests/test_chronicles_bonuses.py
-run "bonus 54 fishermen"          "$PY" tests/test_bonus_54_fishermen.py
-run "audit fixes (python)"        "$PY" tests/test_audit_fixes.py
-run "team bonus catalog"          "$PY" tests/test_team_bonus_catalog.py
-run "spawn scaling + UU flags"    "$PY" tests/test_spawn_and_flags.py
-run "UT multiplier flags"         "$PY" tests/test_ut_multiplier_flags.py
-
-# Build smoke: builds ONE civ end to end (~25s, of which ~17s is loading the
-# DAT).  Everything above this line is a pure data check that never builds a
-# civ, which is how a NameError that broke every build once reached the branch
-# with the suite still green.  Runs by default and skips itself cleanly when no
-# DAT is found; SKIP_SMOKE=1 opts out.
-if [ "${SKIP_SMOKE:-0}" = "1" ]; then
-    echo
-    echo "──── build smoke: SKIPPED (SKIP_SMOKE=1 was set)"
-else
-    run "lazy DAT loading"     "$PY" tests/test_lazy_dat.py
-    run "vanilla UU tooltips"  "$PY" tests/test_uu_vanilla_hover.py
-    run "renamed vanilla UU is this civ's only" "$PY" tests/test_renamed_vanilla_uu.py
-    run "Donjon gets tower bonuses"  "$PY" tests/test_donjon_towers.py
-    run "Chronicles unique units"   "$PY" tests/test_chronicles_uu.py
-    run "build smoke (python)" "$PY" tests/test_build_smoke.py
-    run "civ with no UU (python)" "$PY" tests/test_no_uu_civ.py
-    run "unlock unit bonuses"     "$PY" tests/test_unlock_unit_bonuses.py
-    run "shared prereq bonuses"   "$PY" tests/test_shared_prereq_bonuses.py
-    run "age-shift cards 221/247" "$PY" tests/test_age_shift_cards.py
-    run "UT enable not misread as UU" "$PY" tests/test_ut_enable_misread.py
-    run "Thracian bonuses 458/459"  "$PY" tests/test_thracian_bonuses.py
-    run "KM import tree gaps"     "$PY" tests/test_km_import_gaps.py
-    run "elephant bonuses"        "$PY" tests/test_elephant_bonuses.py
-    run "monk voice gender"       "$PY" tests/test_monk_voice.py
-    run "replaced civ leftovers"  "$PY" tests/test_replaced_civ_leftovers.py
-    run "custom bonus targets"    "$PY" tests/test_custom_bonus_targets.py
-    run "multi-target, team & UT cards" "$PY" tests/test_custom_bonus_multi.py
-    run "UT preset pools"         "$PY" tests/test_ut_pools.py
-    run "elite upgrade cost"      "$PY" tests/test_elite_upgrade_cost.py
-    run "unit line targets"       "$PY" tests/test_unit_line_targets.py
-    run "population limit bonus"  "$PY" tests/test_pop_cap_bonus.py
-    run "population space bonus"  "$PY" tests/test_pop_space_bonus.py
-    run "range, blast, conversion" "$PY" tests/test_range_blast_conversion.py
-    run "civ share summary"       "$PY" tests/test_civ_summary.py
-    run "dat_path fallback"       "$PY" tests/test_dat_path_fallback.py
-    run "issues 38-44 batch"      "$PY" tests/test_issues_40_44.py
-    run "custom bonus composer"   "$PY" tests/test_custom_bonus.py
-    run "custom bonus gating"     "$PY" tests/test_custom_bonus_when.py
-    run "civ build order"         "$PY" tests/test_civ_build_order.py
-    run "fully-upgraded stats"    "$PY" tests/test_fu_stats.py
-    run "blank-civ seed (python)" "$PY" tests/test_full_seed.py
-    run "Longship in the tree"    "$PY" tests/test_longship_tree.py
-    run "AI unique unit lines"    "$PY" tests/test_unit_lines.py
-    run "update check order"      "$PY" tests/test_update_check.py
-    run "Fortified Outpost target" "$PY" tests/test_fortified_outpost.py
-    run "UT text, both routes"    "$PY" tests/test_ut_description_routes.py
-fi
-
-# Route round-trip builds all 19 saved civs down BOTH routes and compares them —
-# a drift check, distinct from the smoke test's "does it build at all".  ~80s,
-# so it stays opt-in.  It skips itself cleanly when no DAT is found.
-if [ "${ROUNDTRIP:-0}" = "1" ]; then
-    run "route round-trip (python)" "$PY" tests/test_route_roundtrip.py
-else
-    echo
-    echo "──── route round-trip: SKIPPED (ROUNDTRIP=1 to run, needs game DAT, ~80s)"
-fi
-
-echo
-if [ "$failed" -eq 0 ]; then
-    echo "All test files passed."
-else
-    echo "Some test files FAILED."
-fi
-exit "$failed"
+exec "$PY" tests/run_tests.py "$@"

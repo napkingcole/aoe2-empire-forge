@@ -62,7 +62,8 @@
     "64": { "icon": "cavalry_archer.png",    "category": "archers"   },
     "65": { "icon": "monk.png",              "category": "monk"      },
     "66": { "icon": "knight.png",            "category": "cavalry"   },
-    "67": { "icon": "infantry.png",          "category": "infantry"  }
+    "67": { "icon": "infantry.png",          "category": "infantry"  },
+    "68": { "icon": "archery_range.png",     "category": "unique"    }
   },
   "imperial": {
     "0":  { "icon": "infantry.png",         "category": "infantry"  },

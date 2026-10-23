@@ -86,6 +86,9 @@
           <button type="button" class="scene-slot scene-slot--tc" data-slot="architecture">
             <img id="scene-img-architecture" src="" alt="Town Center">
           </button>
+          <button type="button" class="scene-slot scene-slot--monastery" data-slot="monastery_skin_building">
+            <img id="scene-img-monastery_skin_building" src="" alt="Monastery">
+          </button>
           <button type="button" class="scene-slot scene-slot--castle" data-slot="castle">
             <img id="scene-img-castle" src="" alt="Castle">
           </button>
@@ -115,6 +118,13 @@
         <div class="scene-control">
           <label for="castle-select">Castle</label>
           <select id="castle-select" class="form-select" data-slot="castle">
+            <option value="-1">— Architecture Default —</option>
+          </select>
+        </div>
+        <div class="scene-control">
+          <label for="monastery-select">Monastery</label>
+          <select id="monastery-select" class="form-select" data-slot="monastery_skin_building"
+                  title="Monastery appearance is separate from architecture — Goths and Teutons build differently but share a Monastery.">
             <option value="-1">— Architecture Default —</option>
           </select>
         </div>
@@ -323,7 +333,7 @@
       </div>
 
       <div id="bonus-grid" class="bonus-grid">
-        <div class="text-muted small fst-italic">Loading…</div>
+        <div class="ef-loader" role="status"><img src="{{ url_for('static', filename='img/villager-building.webp') }}" alt=""><span>Loading…</span></div>
       </div>
     </div>
   </div>
@@ -366,7 +376,7 @@
       </div>
 
       <div id="team-bonus-grid" class="bonus-grid">
-        <div class="text-muted small fst-italic">Loading…</div>
+        <div class="ef-loader" role="status"><img src="{{ url_for('static', filename='img/villager-building.webp') }}" alt=""><span>Loading…</span></div>
       </div>
     </div>
   </div>
@@ -380,8 +390,8 @@
     <div class="card-body">
 
       <p class="text-muted small mb-3">
-        Choose a base unit for your Unique Unit — vanilla units keep their in-game stats,
-        custom units use preset values. You can override the name shown in-game.
+        Choose a base unit for your Unique Unit — every unit keeps its in-game stats; a scenario
+        unit with no Elite of its own gets a standard one. You can override the name shown in-game.
       </p>
 
       {# Search + type filter #}
@@ -399,7 +409,7 @@
             <option value="all">All units</option>
             <option value="vanilla">Vanilla only</option>
             <option value="chronicles">Chronicles only</option>
-            <option value="custom">Custom only</option>
+            <option value="scenario">Scenario only</option>
           </select>
         </div>
       </div>
@@ -411,11 +421,12 @@
 
       {# Unit grid #}
       <div id="uu-grid" class="uu-grid mb-3">
-        <div class="text-muted small fst-italic">Loading…</div>
+        <div class="ef-loader" role="status"><img src="{{ url_for('static', filename='img/villager-building.webp') }}" alt=""><span>Loading…</span></div>
       </div>
       <div class="form-text mb-3">
         <span class="uu-badge uu-badge-vanilla">V</span> Vanilla — uses the original game unit as a base.
-        <span class="uu-badge uu-badge-custom ms-2">C</span> Custom — a new unit built from scratch.
+        <span class="uu-badge uu-badge-scenario ms-2">S</span> Scenario — a unit from the scenario editor, Elite included.
+        <span class="uu-badge uu-badge-retired ms-2">R</span> Retired — shown only for a civ that already uses it.
       </div>
 
       {# Selected unit details (hidden until a unit is picked) #}
@@ -449,6 +460,21 @@
             <textarea id="uu-description" class="form-control" rows="2" maxlength="200"
                       placeholder="Short description shown on the civ selection screen."></textarea>
             <div id="uu-cost-preview" class="form-text mt-1" style="color: var(--accent-2); font-size: 0.75rem;"></div>
+          </div>
+        </div>
+
+        {# Appearance: another unit's look on this unit's stats (civ_appender.copy_unit_look) #}
+        <div class="mt-3" id="uu-appearance-row">
+          <label class="form-label fw-semibold mb-1">Appearance <span class="text-muted fw-normal small">(optional)</span></label>
+          <div class="d-flex align-items-center gap-2">
+            <img id="uu-appearance-icon" src="" alt="" class="d-none"
+                 style="width:40px;height:40px;border-radius:6px;object-fit:cover;">
+            <div class="me-auto">
+              <div id="uu-appearance-name" class="small fw-semibold">Its own</div>
+              <div class="small text-muted">Wear a hero's or another unit's look. Stats, cost and hitbox stay this unit's own.</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-link d-none" id="uu-appearance-reset">Use its own</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="uu-appearance-btn">Change look…</button>
           </div>
         </div>
       </div>
@@ -743,7 +769,7 @@
       </div>
       <div id="{{ prefix }}-limit" class="text-danger small mb-2 d-none" role="alert"></div>
       <div id="{{ prefix }}-vanilla-grid" class="bonus-grid ut-grid mb-3">
-        <div class="text-muted small fst-italic">Loading…</div>
+        <div class="ef-loader" role="status"><img src="{{ url_for('static', filename='img/villager-building.webp') }}" alt=""><span>Loading…</span></div>
       </div>
 
 
@@ -843,11 +869,20 @@
         click again to deselect.
       </p>
 
-      {# Category filter #}
-      <div class="btn-group btn-group-sm mb-3" role="group" id="hero-filter-group">
-        <button type="button" class="btn btn-outline-secondary active" data-filter="all">All</button>
-        <button type="button" class="btn btn-outline-secondary" data-filter="multiplayer">Multiplayer</button>
-        <button type="button" class="btn btn-outline-secondary" data-filter="campaign">Campaign</button>
+      {# Filters: category or unit type, plus a name/faction search #}
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <div class="btn-group btn-group-sm" role="group" id="hero-filter-group">
+          <button type="button" class="btn btn-outline-secondary active" data-filter="all">All</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="multiplayer">Multiplayer</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="infantry">Infantry</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="cavalry">Cavalry</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="archers">Archers</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="monks">Monks</button>
+          <button type="button" class="btn btn-outline-secondary" data-filter="other">Other</button>
+        </div>
+        <input type="search" id="hero-search" class="form-control form-control-sm" style="max-width:14rem"
+               placeholder="Search heroes" aria-label="Search heroes">
+        <span id="hero-count" class="text-muted small"></span>
       </div>
 
       {# Hero icon grid (populated by JS) #}
@@ -952,7 +987,7 @@
 
   {# Summary sections (populated by JS) #}
   <div id="review-content" class="mb-3">
-    <div class="text-muted small">Loading summary…</div>
+    <div class="ef-loader" role="status"><img src="{{ url_for('static', filename='img/villager-building.webp') }}" alt=""><span>Loading summary…</span></div>
   </div>
 
   {# Button layout — only shown when two of the civ's units share a training
@@ -1029,6 +1064,47 @@
 </div>
 
 {# Start Fresh modal #}
+{# Appearance picker: looks of the same kind and size as the unique unit #}
+<div class="modal fade" id="modal-uu-appearance" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Choose a look</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">Units of the same kind and size as yours, so the art fits. Press <i class="fa-solid fa-play"></i> to see one move.</p>
+        <input type="search" id="uu-appearance-search" class="form-control form-control-sm mb-3" placeholder="Search looks" aria-label="Search looks">
+        <div id="uu-appearance-grid" class="uu-grid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Unit preview: Idle / Walk / Attack, rendered from the player's sprites #}
+<div class="modal fade" id="modal-unit-preview" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Unit</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Animation">
+          <button type="button" class="btn btn-outline-secondary" data-preview-kind="idle">Idle</button>
+          <button type="button" class="btn btn-outline-secondary" data-preview-kind="walk">Walk</button>
+          <button type="button" class="btn btn-outline-secondary" data-preview-kind="attack">Attack</button>
+        </div>
+        <div class="unit-preview-stage">
+          <div id="unit-preview-status" class="text-white small"></div>
+          <img id="unit-preview-img" class="d-none" alt="The unit in the game">
+        </div>
+        <p class="small text-muted mt-2 mb-0">In-game preview, facing southwest, in Player 1 Blue.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="modal-start-fresh" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">

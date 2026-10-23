@@ -49,6 +49,21 @@ RETIRED_UU_FLAGS = frozenset({"ignore_armor"})
 #     RETIRED_INTO_TREE): it still does what it says, but it has a better home.
 RETIRED_CIV_BONUSES = frozenset({333, 51})
 
+# KM's 36 custom unique units (km_custom_uu.PRESETS 39-77), retired from the
+# picker 2026-10-22 (the user's call).  Ten were real game units KM had re-tuned
+# by hand — the game's own are scenario units now (118-124), or heroes on the
+# Heroes tab (Crusader Knight, Saboteur, Sosso Guard); 24 were invented units
+# wearing a real hero's model (the Jaridah is Attila's) with hand-typed stats,
+# where the 28-preset population bug lived; the Swiss Pikeman is the Heavy
+# Pikeman (scenario 109).  Hidden, not deleted: a saved civ or KM import that
+# carries one still builds it, as Unhinged Empires' Wololo Warlords does.
+def _km_custom_uu_ids() -> frozenset:
+    import km_custom_uu
+    return frozenset(i for i, p in km_custom_uu.PRESETS.items() if p["mode"] != "scenario")
+
+
+RETIRED_UUS = _km_custom_uu_ids()
+
 # Cards whose choice moved into the tech tree.  A civ that picked one reads as
 # if its tree held `add` and not `remove`, derived on every read (as the Unlock
 # cards are) so an old civ or a KM import keeps building what it built before.
@@ -94,8 +109,8 @@ def to_draft(schema: dict) -> dict:
     Convert a civbuilder_v1 JSON dict into the wizard draft format expected by
     _draft_to_civ_def, _apply_uu_overrides, and _override_ut_costs.
 
-    Unknown / Phase-Two keys (unit_overrides, button_moves, free_techs, second_uu,
-    monastery_skin_building) are passed through unchanged so future handlers can
+    Unknown / Phase-Two keys (unit_overrides, button_moves, free_techs, second_uu)
+    are passed through unchanged so future handlers can
     act on them without schema changes.
 
     When second_uu is implemented, build it on km_custom_uu.append_km_custom_uu
@@ -128,6 +143,8 @@ def to_draft(schema: dict) -> dict:
     elite_up = norm_elite_upgrade(raw_uu.get("elite_upgrade"))
     if elite_up:
         uu["elite_upgrade"] = elite_up
+    if isinstance(raw_uu.get("appearance"), int):         # another unit's look (civ_appender)
+        uu["appearance"] = raw_uu["appearance"]
 
     # ── UTs ──────────────────────────────────────────────────────────────────
     def _ut(raw: dict | None, own_tier: str) -> dict:
@@ -206,13 +223,14 @@ def to_draft(schema: dict) -> dict:
         "long_range_ship_elite": s.get("long_range_ship_elite", True),
         "starting_scout":        s.get("starting_scout"),
         "monk_skin":             s.get("monk_skin"),
+        # DAT civ index whose Monastery is copied (civ_appender.MONASTERY_SKIN_OPTIONS).
+        "monastery_skin_building": s.get("monastery_skin_building"),
 
         # Phase Two pass-throughs (not yet consumed by build pipeline)
         "second_uu":              s.get("second_uu"),
         "unit_overrides":         s.get("unit_overrides",         []),
         "button_moves":           s.get("button_moves",           []),
         "free_techs":             s.get("free_techs",             []),
-        "monastery_skin_building":s.get("monastery_skin_building"),
     }
     return draft
 
@@ -281,6 +299,8 @@ def from_draft(draft: dict) -> dict:
     elite_up = norm_elite_upgrade(uu_raw.get("elite_upgrade"))
     if elite_up:
         uu_out["elite_upgrade"] = elite_up
+    if isinstance(uu_raw.get("appearance"), int):
+        uu_out["appearance"] = uu_raw["appearance"]
 
     schema: dict = {
         "format":         FORMAT_KEY,
@@ -319,11 +339,11 @@ def from_draft(draft: dict) -> dict:
         "long_range_ship_elite":   draft.get("long_range_ship_elite", True),
         "starting_scout":          draft.get("starting_scout"),
         "monk_skin":               draft.get("monk_skin"),
+        "monastery_skin_building": draft.get("monastery_skin_building"),
 
         "unit_overrides":          draft.get("unit_overrides",          []),
         "button_moves":            draft.get("button_moves",            []),
         "free_techs":              draft.get("free_techs",              []),
-        "monastery_skin_building": draft.get("monastery_skin_building"),
     }
     return schema
 

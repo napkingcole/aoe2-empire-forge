@@ -149,7 +149,7 @@ function showStep(n) {
   document.getElementById("step-counter").textContent = `Step ${n} of ${TOTAL_STEPS}`;
   currentStep = n;
 
-  if (n === 8) { renderHeroGrid(); _heroRefreshUI(); }
+  if (n === 8) loadHeroCatalog().then(() => { renderHeroGrid(); _heroRefreshUI(); });
 
   // Scroll to top of wizard area on step change
   document.getElementById(`panel-${n}`).scrollIntoView({ behavior: "smooth", block: "start" });
@@ -336,27 +336,13 @@ const DEFAULT_ARCHITECTURE = 2;   // Western European — matches civ_appender's
 // `defaultLabel` when the long form would wrap (the Monk uses just "Default").
 const DEFAULT_OPTION_LABEL = "— Architecture Default —";
 
-// Unit slots carry TWO art variants:
-//   scene  — an in-game sprite cut out on its patch of grass, which reads
-//            correctly standing in the scene but is small and awkwardly framed
-//            when contain-fitted into a 78px picker tile;
-//   picker — the standard square in-game button icon.
-// A slot declares `pickerArt`/`pickerFallback` when it wants them to differ;
-// otherwise the picker just reuses the scene art.
-const SCOUT_ICONS = {
-  448:  "/static/icons/units/scout.png",
-  751:  "/static/icons/units/eagle_warrior.png",
-  1755: "/static/icons/units/camel_rider.png",
-  2550: "/static/icons/units/champi.png",
-};
-
-// Per-skin Monk art is keyed by the MONK_SKIN_OPTIONS value (which is the DAT
-// civ index the Monk graphic gets copied from).  Drop a file in with that name
-// and it appears — no code change.
-//   scene   static/img/scene/monks/monk_<value>.webp
-//   picker  static/img/scene/monks/icons/monk_<value>.webp
-// Either falls back to the generic Monk icon when absent.
-const MONK_ART_FALLBACK = "/static/icons/units/monk.png";
+// Every slot's art is drawn from the player's game (/api/scene-art,
+// game_sprites.scene_still): the game's own sprites, all at one scale, and a
+// civ a patch adds has art at once.  The pictures in static/img/scene are the
+// fallback for when the game isn't found yet.  The pickers show the same art.
+function _sceneArt(slot, value) {
+  return `/api/scene-art/${slot}/${value}${_artQuery()}`;
+}
 
 // monk_skin -1 ("architecture default") has no art of its own; draw European.
 // NB: in-game the default actually follows the architecture set, so this is
@@ -392,7 +378,8 @@ const SCENE_SLOTS = {
     options: () => window._metaArchitectures || [],
     get:     () => draft.architecture ?? DEFAULT_ARCHITECTURE,
     set:     v => { draft.architecture = v; },
-    art:     v => `/static/img/scene/arch/tc_${v}.webp`,
+    art:      v => _sceneArt("architecture", v),
+    fallback: v => `/static/img/scene/arch/tc_${v}.webp`,
     name:    v => (window._metaArchitectures || []).find(o => o.value === v)?.label || `#${v}`,
     caption: v => `${SCENE_SLOTS.architecture.name(v)} architecture`,
   },
@@ -402,7 +389,8 @@ const SCENE_SLOTS = {
     options: () => window._metaCivs || [],
     get:     () => draft.wonder,
     set:     v => { draft.wonder = v; },
-    art:     v => { const a = _artIdx(v); return a === null ? null : `/static/img/scene/wonders/wonder_${a}.webp`; },
+    art:      v => _sceneArt("wonder", v),
+    fallback: v => { const a = _artIdx(v); return a === null ? null : `/static/img/scene/wonders/wonder_${a}.webp`; },
     // KM names the wonder itself ("Hagia Sophia (Byzantines)"), which is far
     // more use than the civ name alone.
     name:    v => { const a = _artIdx(v); return (a !== null && _sceneNames.wonders?.[a]) || _civLabel(v); },
@@ -415,12 +403,27 @@ const SCENE_SLOTS = {
     options: () => window._metaCivs || [],
     get:     () => draft.castle,
     set:     v => { draft.castle = v; },
-    art:     v => { const a = _artIdx(v); return a === null ? null : `/static/img/scene/castles/castle_${a}.webp`; },
+    art:      v => _sceneArt("castle", v),
+    fallback: v => { const a = _artIdx(v); return a === null ? null : `/static/img/scene/castles/castle_${a}.webp`; },
     // KM's castle names are just "<Civ> Castle" and carry some stale civ names
     // (Hindustani, Polish), so the live civ label is the better label here.
     name:    _civLabel,
     caption: v => `${_civLabel(v)} Castle`,
     defaultable: true,
+  },
+  monastery_skin_building: {
+    title:   "Select Monastery",
+    select:  "monastery-select",
+    options: () => window._metaMonasteries || [],
+    get:     () => draft.monastery_skin_building,
+    set:     v => { if (v < 0) delete draft.monastery_skin_building; else draft.monastery_skin_building = v; },
+    art:     v => _sceneArt("monastery_skin_building", v),
+    name:    v => (window._metaMonasteries || []).find(o => o.value === v)?.label || `#${v}`,
+    caption: v => `${SCENE_SLOTS.monastery_skin_building.name(v)} Monastery`,
+    defaultable: true,
+    // The architecture's own Monastery (its representative civ, a DAT index).
+    resolveDefault: () => { const c = _archRep(draft.architecture ?? DEFAULT_ARCHITECTURE); return c === null ? null : c + 1; },
+    defaultCaption: "Architecture Default Monastery",
   },
   monk_skin: {
     title:   "Select Monk",
@@ -428,10 +431,8 @@ const SCENE_SLOTS = {
     options: () => window._metaMonks || [],
     get:     () => draft.monk_skin,
     set:     v => { if (v < 0) delete draft.monk_skin; else draft.monk_skin = v; },
-    art:            v => `/static/img/scene/monks/monk_${v}.webp`,
-    fallback:       MONK_ART_FALLBACK,
-    pickerArt:      v => `/static/img/scene/monks/icons/monk_${v}.webp`,
-    pickerFallback: MONK_ART_FALLBACK,
+    art:      v => _sceneArt("monk_skin", v),
+    fallback: v => `/static/img/scene/monks/monk_${v}.webp`,
     name:    v => (window._metaMonks || []).find(o => o.value === v)?.label || "Default",
     caption: v => `${SCENE_SLOTS.monk_skin.name(v)} Monk`,
     defaultable: true,
@@ -446,12 +447,8 @@ const SCENE_SLOTS = {
     options: () => window._metaScouts || [],
     get:     () => draft.starting_scout ?? 448,
     set:     v => { draft.starting_scout = v; },
-    // Cut-out sprites once they exist; until then each unit's own button icon
-    // stands in (per-value, so an Eagle Scout doesn't fall back to a horse).
-    art:            v => `/static/img/scene/scouts/scout_${v}.webp`,
-    fallback:       v => SCOUT_ICONS[v],
-    pickerArt:      v => `/static/img/scene/scouts/icons/scout_${v}.webp`,
-    pickerFallback: v => SCOUT_ICONS[v],
+    art:      v => _sceneArt("starting_scout", v),
+    fallback: v => `/static/img/scene/scouts/scout_${v}.webp`,
     name:    v => (window._metaScouts || []).find(o => o.value === v)?.label || `#${v}`,
     caption: v => SCENE_SLOTS.starting_scout.name(v),
   },
@@ -532,12 +529,48 @@ function renderScene() {
         const fb = _resolveFallback(slot.fallback, value);
         if (fb && !usedFallback) {
           usedFallback = true;
+          delete img.dataset.game;
           img.src = fb;
           return;
         }
+        btn.classList.remove("is-loading");
         markEmpty();
+        _sizeScene();
       };
-      img.src = src;
+      img.onload = () => {
+        btn.classList.remove("is-loading");
+        delete img.dataset.rw;
+        delete img.dataset.rh;
+        if (!usedFallback) {
+          img.dataset.game = "1";
+          _awaitSceneAnimation(img, src);
+        }
+        _sizeScene();
+      };
+      // The hammering Villager stands beside the slot while its art loads
+      // (alone on a first load; beside the old picture on a change).
+      // Already showing this art (or its animation): leave it be.
+      const showing = img.getAttribute("src") && _sameSceneArt(img.src, src);
+      if (!showing) {
+        if (!btn.querySelector(".scene-loader")) {
+          btn.insertAdjacentHTML("beforeend",
+            '<img class="scene-loader" src="/static/img/villager-building.webp" alt="" aria-hidden="true">');
+        }
+        btn.classList.add("is-loading");
+        // Reserve the building's footprint while it renders, so the Villager
+        // works where it will stand (sizes from the sprite headers).
+        delete img.dataset.rw;
+        delete img.dataset.rh;
+        if (src.startsWith("/api/scene-art/")) {
+          fetch(`/api/scene-art/${key}/${value}/size${_datQuery()}`).then(r => r.json()).then(sz => {
+            if (!_sameSceneArt(img.src, src) || !btn.classList.contains("is-loading") || !sz.w) return;
+            img.dataset.rw = sz.w;
+            img.dataset.rh = sz.h;
+            _sizeScene();
+          }).catch(() => {});
+        }
+        img.src = src;
+      }
       img.alt = label;
       img.style.display = "";
       btn.classList.remove("is-empty");
@@ -556,6 +589,107 @@ function renderScene() {
     }
   }
   updateSceneCaption();
+}
+
+// The game's sprites share one scale, so the scene draws them all at one: the
+// scale that fits the buildings across the stage, with the Town Center, Castle
+// and Monastery no taller than _SCENE_ROW_H.  A wonder doesn't set it — the
+// cathedrals' spires (Britons, Burgundians) shrank everything else to ants —
+// it stands at the same scale and is clipped at the stage's top edge, past
+// _SCENE_WONDER_H (the user's idea, 2026-10-23).  The units are drawn at that
+// scale times --scene-unit-boost (scene.css).  Buildings come at
+// _SCENE_BUILDING_SCALE of the sprite (game_sprites.SCENE_BUILDING_SCALE), so
+// their natural size is divided by it.  Bundled fallback pictures keep
+// scene.css's own sizes.
+const _SCENE_ROW_H = 230, _SCENE_WONDER_H = 300, _SCENE_MAX_SCALE = 0.5;
+const _SCENE_BUILDING_SCALE = 0.5;
+const _SCENE_BUILDINGS = ["wonder", "architecture", "monastery_skin_building", "castle"];
+function _sizeScene() {
+  const stage = document.getElementById("identity-scene");
+  if (!stage || !stage.clientWidth) return;
+  const imgOf = k => document.getElementById(`scene-img-${k}`);
+  // A slot still loading counts at its reserved size (renderScene).
+  const reserved = img => !img.naturalWidth && img.dataset.rw;
+  const shown = img => img && img.style.display !== "none" && (img.naturalWidth || reserved(img));
+  const raw = (img, dim) => reserved(img) ? +img.dataset[dim === "naturalWidth" ? "rw" : "rh"] : img[dim];
+  const nat = (img, dim) => raw(img, dim) / (_SCENE_BUILDINGS.some(k => imgOf(k) === img) ? _SCENE_BUILDING_SCALE : 1);
+  const buildings = _SCENE_BUILDINGS.map(imgOf).filter(shown);
+  const game = buildings.filter(i => i.dataset.game || reserved(i));
+  const row = stage.querySelector(".scene-row");
+  const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+  const pad = parseFloat(getComputedStyle(stage).paddingLeft) + parseFloat(getComputedStyle(stage).paddingRight);
+  const others = buildings.filter(i => !i.dataset.game).reduce((w, i) => w + i.clientWidth, 0);
+  const avail = stage.clientWidth - pad - gap * Math.max(0, buildings.length - 1) - others;
+  // The Monastery is a small building beside a Town Center and a Castle, so
+  // it may be drawn larger (--scene-monastery-boost, scene.css).
+  const css = getComputedStyle(stage);
+  const monasteryBoost = parseFloat(css.getPropertyValue("--scene-monastery-boost")) || 1;
+  const factor = img => img === imgOf("monastery_skin_building") ? monasteryBoost : 1;
+  const wide = game.reduce((w, i) => w + nat(i, "naturalWidth") * factor(i), 0);
+  const tall = Math.max(1, ...game.filter(i => i !== imgOf("wonder")).map(i => nat(i, "naturalHeight") * factor(i)));
+  let k = Math.min(_SCENE_MAX_SCALE, _SCENE_ROW_H / tall, wide ? avail / wide : _SCENE_MAX_SCALE);
+  if (!(k > 0)) k = _SCENE_MAX_SCALE;
+  const boost = parseFloat(css.getPropertyValue("--scene-unit-boost")) || 3;
+  const size = (img, scale) => {
+    if (!img) return;
+    const slot = img.closest(".scene-slot");
+    if (reserved(img)) {
+      // Nothing to draw yet: hold the spot the building will take.
+      slot.style.minWidth = `${Math.round(nat(img, "naturalWidth") * scale)}px`;
+      slot.style.minHeight = `${Math.round(Math.min(nat(img, "naturalHeight") * scale,
+                                                   img === imgOf("wonder") ? _SCENE_WONDER_H : Infinity))}px`;
+      return;
+    }
+    slot.style.minWidth = slot.style.minHeight = "";
+    if (img.dataset.game && img.naturalWidth) {
+      img.style.width = `${Math.round(nat(img, "naturalWidth") * scale)}px`;
+      img.style.height = "auto";
+      img.style.maxHeight = "none";
+    } else {
+      img.style.width = img.style.height = img.style.maxHeight = "";
+    }
+  };
+  _SCENE_BUILDINGS.forEach(key => size(imgOf(key), k * factor(imgOf(key))));
+  ["monk_skin", "starting_scout"].forEach(key => size(imgOf(key), k * boost));
+  // The wonder's slot stops at _SCENE_WONDER_H and hides the rest (scene.css
+  // .is-clipped keeps the base, so only the top of a spire goes).
+  const wonder = imgOf("wonder");
+  const slot = wonder?.closest(".scene-slot");
+  if (slot) {
+    const clip = wonder.dataset.game && wonder.naturalWidth && nat(wonder, "naturalHeight") * k > _SCENE_WONDER_H;
+    slot.classList.toggle("is-clipped", Boolean(clip));
+    slot.style.height = clip ? `${_SCENE_WONDER_H}px` : "";
+  }
+}
+window.addEventListener("resize", () => _sizeScene());
+
+// A moving building (the Tupi waterfall, the Central Asian shrine) takes the
+// server a minute to render, so it first answers with the still and marks it
+// X-Scene-Still; ask again every 10 s and swap the animation in when it's ready.
+// Only a building that came back as a still is ever reloaded: reloading every
+// building once it loaded (a plain one answers without the header too) left
+// each address with a &t=, so the next change to any slot no longer matched
+// and every slot showed its Villager again (the user found it, 2026-10-23).
+function _awaitSceneAnimation(img, src) {
+  clearTimeout(img._animTimer);
+  if (src.includes("&t=") || !_SCENE_BUILDINGS.some(k => img.id === `scene-img-${k}`)) return;
+  let wasStill = false;
+  const ask = () => fetch(src, { method: "HEAD", cache: "no-store" }).then(r => {
+    if (!_sameSceneArt(img.src, src)) return;                     // the slot moved on
+    if (r.headers.get("X-Scene-Still")) {
+      wasStill = true;
+      img._animTimer = setTimeout(ask, 10000);
+    } else if (wasStill) {
+      img.src = `${src}&t=${Date.now()}`;
+    }
+  }).catch(() => {});
+  ask();
+}
+
+/** Same art, ignoring the &t= that swapping in an animation adds. */
+function _sameSceneArt(a, b) {
+  const strip = u => { const x = new URL(u, location.href); x.searchParams.delete("t"); return x.href; };
+  return strip(a) === strip(b);
 }
 
 function updateSceneCaption(key) {
@@ -612,15 +746,13 @@ function openScenePicker(key) {
       ? (slot.resolveDefault ? slot.resolveDefault()
                              : _effectiveCivValue(-1, draft.architecture ?? DEFAULT_ARCHITECTURE))
       : opt.value;
-    // The picker wants square button icons, not the scene's cut-out sprites.
-    const artFn = slot.pickerArt || slot.art;
-    const src = (drawVal === null || drawVal === undefined) ? null : artFn(drawVal);
+    const src = (drawVal === null || drawVal === undefined) ? null : slot.art(drawVal);
 
     const card = document.createElement("button");
     card.type = "button";
     card.className = "scene-picker-item" + (current === opt.value ? " selected" : "");
     const name = opt.value < 0 ? opt.label : slot.name(opt.value);
-    const fb = _resolveFallback(slot.pickerFallback ?? slot.fallback, drawVal) || "";
+    const fb = _resolveFallback(slot.fallback, drawVal) || "";
     card.innerHTML =
       (src ? `<img src="${src}" alt="" loading="lazy" data-fb="${fb}"
                    onerror="if(this.dataset.fb){this.src=this.dataset.fb;this.dataset.fb='';}
@@ -787,6 +919,10 @@ function populateReview() {
     : "Default (Britons)";
   const scoutName = (window._metaScouts || [])
     .find(s => s.value === (draft.starting_scout ?? 448))?.label || "Scout Cavalry";
+  const monasteryName = draft.monastery_skin_building != null && draft.monastery_skin_building >= 0
+    ? ((window._metaMonasteries || []).find(m => m.value === draft.monastery_skin_building)?.label
+       || `#${draft.monastery_skin_building}`)
+    : "Architecture Default";
   const monkName = draft.monk_skin != null && draft.monk_skin >= 0
     ? ((window._metaMonks || []).find(m => m.value === draft.monk_skin)?.label
        || `#${draft.monk_skin}`)
@@ -800,6 +936,7 @@ function populateReview() {
     _reviewRow("Wonder Skin",  wonderName),
     _reviewRow("Voice",        voiceName),
     _reviewRow("Starting Scout", scoutName),
+    _reviewRow("Monastery",    monasteryName),
     _reviewRow("Monk Skin",    monkName),
     _reviewRow("Emblem",       draft.emblem ? "&#10003; Uploaded" : "<em class='text-muted'>None</em>"),
   ].join("");
@@ -853,7 +990,12 @@ function populateReview() {
     const iconSrc  = base?.icon || UU_PLACEHOLDER;
     const override = draft.unique_unit.name;
     const display  = override || baseName;
-    const subtitle = override ? `<div class="text-muted" style="font-size:.7rem;">base: ${baseName}</div>` : "";
+    const lookId   = draft.unique_unit.appearance;
+    const lookName = lookId == null ? null
+      : (_HERO_NAMES[lookId] || _uuCatalog.find(u => u.preview_unit === lookId)?.name
+         || _uuLooks.looks.find(l => l.id === lookId)?.name || `Unit #${lookId}`);
+    const subtitle = (override ? `<div class="text-muted" style="font-size:.7rem;">base: ${baseName}</div>` : "")
+      + (lookName ? `<div class="text-muted" style="font-size:.7rem;">looks like: ${_esc(lookName)}</div>` : "");
     const _uuRevImg = `<img id="uu-review-icon" src="${iconSrc}" style="width:32px;height:32px;object-fit:contain;background:oklch(from var(--body-bg) calc(l+0.06) c h);border-radius:4px;">`;
     uuHtml = `<div class="d-flex align-items-center gap-2">${_uuRevImg}<div><div>${display}</div>${subtitle}</div></div>`;
   }
@@ -1055,168 +1197,142 @@ document.getElementById("btn-export-json").addEventListener("click", async () =>
 // ── Hero Unit (Step 7) ────────────────────────────────────────────────────────
 
 // ── Hero catalog ─────────────────────────────────────────────────────────────
-// stats sourced from vanilla DAT. cost strips campaign-only Res4 entries.
-// specials: human-readable strings for notable abilities not visible from raw stats.
-const _HERO_CATALOG = [
-  // Multiplayer (Three Kingdoms)
-  { id: 1954, name: "Cao Cao",              faction: "Wei",          category: "multiplayer",
-    stats: { hp:475, speed:1.3,  attack:14, ma:3, pa:3, range:null, reload:2.0,
-             cost:"500 Food, 500 Gold",
-             bonuses:[["Packed Unit",3]],
-             specials:["Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1966, name: "Liu Bei",              faction: "Shu",          category: "multiplayer",
-    stats: { hp:425, speed:0.9,  attack:15, ma:3, pa:3, range:null, reload:2.0,
-             cost:"500 Food, 500 Gold",
-             bonuses:[["Eagle Warrior",3]],
-             specials:["Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)"] }},
-  { id: 1978, name: "Sun Jian",             faction: "Wu",           category: "multiplayer",
-    stats: { hp:400, speed:1.55, attack:15, ma:4, pa:4, range:null, reload:2.0,
-             cost:"500 Food, 500 Gold",
-             bonuses:[],
-             specials:["Three Kingdoms aura — stat buffs to nearby allies (Three Kingdoms mode only)","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  // Campaign
-  { id:  169, name: "Aethelflaed",          faction: "Anglo-Saxon",  category: "campaign",
-    stats: { hp:140, speed:1.03, attack:8,  ma:0, pa:0, range:null, reload:2.0,
-             cost:"65 Food, 25 Gold",
-             bonuses:[["Building",2]],
-             specials:[] }},
-  { id: 1071, name: "Abraha Elephant",      faction: "Ethiopian",    category: "campaign",
-    stats: { hp:750, speed:0.7,  attack:25, ma:1, pa:3, range:null, reload:2.0,
-             cost:"200 Food, 75 Gold",
-             bonuses:[["Building",15],["Cavalry Archer",15]],
-             specials:["Trample — deals full attack damage to all enemies within 0.5 tile radius","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id:  777, name: "Attila the Hun",       faction: "Hunnic",       category: "campaign",
-    stats: { hp:350, speed:1.2,  attack:13, ma:2, pa:2, range:null, reload:2.0,
-             cost:"60 Food, 20 Gold",
-             bonuses:[["Building",3],["Camel",40]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1070, name: "Babur",                faction: "Mughal",       category: "campaign",
-    stats: { hp:300, speed:1.45, attack:15, ma:0, pa:0, range:null, reload:2.0,
-             cost:"55 Food, 60 Gold",
-             bonuses:[["Cavalry",18],["Castle",9],["Pikeman",9]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id:  429, name: "Barbarossa",           faction: "German",       category: "campaign",
-    stats: { hp:170, speed:0.75, attack:19, ma:10,pa:2, range:null, reload:2.0,
-             cost:"85 Food, 40 Gold",
-             bonuses:[["Eagle Warrior",4],["Chariot",4]],
-             specials:[] }},
-  { id: 1165, name: "Bayinnaung",           faction: "Burmese",      category: "campaign",
-    stats: { hp:400, speed:0.75, attack:18, ma:1, pa:3, range:null, reload:2.0,
-             cost:"120 Food, 75 Gold",
-             bonuses:[["Building",10],["Cavalry Archer",10]],
-             specials:["Trample — deals full attack damage to all enemies within 0.5 tile radius","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id:  198, name: "El Cid (Infantry)",    faction: "Spanish",      category: "campaign",
-    stats: { hp:330, speed:0.9,  attack:13, ma:2, pa:1, range:null, reload:2.0,
-             cost:"60 Food, 20 Gold",
-             bonuses:[["Building",3]],
-             specials:[] }},
-  { id:  824, name: "El Cid (Cavalry)",     faction: "Spanish",      category: "campaign",
-    stats: { hp:430, speed:1.32, attack:15, ma:2, pa:3, range:null, reload:2.0,
-             cost:"50 Food",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id:  439, name: "Francesco Sforza",     faction: "Italian",      category: "campaign",
-    stats: { hp:200, speed:1.0,  attack:12, ma:1, pa:3, range:null, reload:1.9,
-             cost:"50 Food, 35 Gold",
-             bonuses:[["Chariot",2],["Knight",12]],
-             specials:[] }},
-  { id: 1157, name: "Gajah Mada",           faction: "Malay",        category: "campaign",
-    stats: { hp:425, speed:0.9,  attack:20, ma:2, pa:0, range:null, reload:2.0,
-             cost:"60 Food, 20 Gold",
-             bonuses:[["Eagle Warrior",8],["Chariot",4]],
-             specials:[] }},
-  { id: 1269, name: "Genghis Khan",         faction: "Mongol",       category: "campaign",
-    stats: { hp:170, speed:1.4,  attack:10, ma:3, pa:3, range:6.0,  reload:2.0,
-             cost:"40 Wood, 60 Gold",
-             bonuses:[["Building",2]],
-             specials:["Pass-through projectile — arrows pierce through multiple targets in a line","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1265, name: "Ivaylo",               faction: "Bulgarian",    category: "campaign",
-    stats: { hp:180, speed:1.35, attack:14, ma:1, pa:2, range:null, reload:1.9,
-             cost:"60 Food, 70 Gold",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1715, name: "Jadwiga",              faction: "Polish",       category: "campaign",
-    stats: { hp:270, speed:1.4,  attack:0,  ma:1, pa:1, range:6.0,  reload:1.6,
-             cost:"100 Gold",
-             bonuses:[],
-             specials:["Does not deal direct combat damage — support / scripted role","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1713, name: "Jan Žižka",            faction: "Bohemian",     category: "campaign",
-    stats: { hp:230, speed:1.4,  attack:16, ma:4, pa:1, range:null, reload:2.0,
-             cost:"50 Food",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1266, name: "Tzar Konstantin",      faction: "Byzantine",    category: "campaign",
-    stats: { hp:300, speed:1.4,  attack:14, ma:3, pa:3, range:null, reload:1.9,
-             cost:"60 Food, 70 Gold",
-             bonuses:[],
-             specials:["Trample — deals full attack damage to all enemies within 1 tile radius","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 2637, name: "Lautaro",              faction: "Inca",         category: "campaign",
-    stats: { hp:300, speed:1.5,  attack:18, ma:0, pa:4, range:null, reload:2.0,
-             cost:"50 Food",
-             bonuses:[["Knight",3]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1178, name: "Le Loi",               faction: "Vietnamese",   category: "campaign",
-    stats: { hp:350, speed:1.0,  attack:22, ma:2, pa:4, range:null, reload:2.0,
-             cost:"50 Food",
-             bonuses:[],
-             specials:[] }},
-  { id: 1034, name: "Musa",                 faction: "Malian",       category: "campaign",
-    stats: { hp:230, speed:1.41, attack:18, ma:1, pa:1, range:4.0,  reload:2.0,
-             cost:"50 Wood, 60 Gold",
-             bonuses:[["Infantry",1],["Boar",5]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1074, name: "Pachacuti",            faction: "Inca",         category: "campaign",
-    stats: { hp:230, speed:0.95, attack:10, ma:2, pa:2, range:null, reload:2.0,
-             cost:"60 Food, 30 Gold",
-             bonuses:[["Cavalry",16],["Pikeman",13]],
-             specials:[] }},
-  { id:  929, name: "Saladin",              faction: "Saracen",      category: "campaign",
-    stats: { hp:150, speed:1.4,  attack:12, ma:1, pa:0, range:3.0,  reload:2.0,
-             cost:"55 Food, 85 Gold",
-             bonuses:[["Cavalry",12]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1035, name: "Sundjata",             faction: "Malian",       category: "campaign",
-    stats: { hp:290, speed:1.5,  attack:14, ma:2, pa:3, range:null, reload:2.0,
-             cost:"80 Food",
-             bonuses:[["Siege",10]],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1822, name: "Tamar",                faction: "Georgian",     category: "campaign",
-    stats: { hp:320, speed:1.4,  attack:0,  ma:1, pa:2, range:9.0,  reload:1.6,
-             cost:"100 Gold",
-             bonuses:[],
-             specials:["Does not deal direct combat damage — support / scripted role","Extremely long range (9 tiles)","Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1727, name: "Ulrich Von Jungingen", faction: "Teutonic",     category: "campaign",
-    stats: { hp:350, speed:1.3,  attack:17, ma:8, pa:6, range:null, reload:2.0,
-             cost:"50 Food",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id:  193, name: "Vlad Dracula",         faction: "Romanian",     category: "campaign",
-    stats: { hp:210, speed:1.35, attack:16, ma:6, pa:2, range:null, reload:1.9,
-             cost:"50 Food, 80 Gold",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1281, name: "Vytautas",             faction: "Lithuanian",   category: "campaign",
-    stats: { hp:220, speed:1.5,  attack:15, ma:4, pa:5, range:null, reload:2.0,
-             cost:"40 Wood, 50 Gold",
-             bonuses:[],
-             specials:["Flanking bonus — deals +25% damage from the sides and rear"] }},
-  { id: 1690, name: "Warwolf Trebuchet",    faction: "English",      category: "campaign",
-    stats: { hp:300, speed:0,    attack:300,ma:0, pa:200,range:20.0, reload:10.0,
-             cost:"200 Wood, 200 Gold",
-             bonuses:[["Building",500]],
-             specials:["Cannot move — stationary siege weapon","Area damage — damages all units (including allies) within 0.7 tile radius","Range 20 — extreme bombardment range"] }},
-  { id: 1066, name: "Yodit",                faction: "Ethiopian",    category: "campaign",
-    stats: { hp:170, speed:1.3,  attack:17, ma:0, pa:0, range:6.0,  reload:2.0,
-             cost:"50 Food, 25 Gold",
-             bonuses:[["Eagle Warrior",1]],
-             specials:["Pass-through projectile — arrows pierce through multiple targets in a line"] }},
-];
+// Read from the player's DAT (heroes.py via /api/builder/heroes): every hero the
+// game can place, ~215 of them, with stats from the DAT.  The hand-written part
+// — faction, abilities the stats don't show — is static/data/hero_notes.json.
+// Until 2026-10-22 this was a hand-typed list of 30.
+let _HERO_CATALOG = [];
+let _HERO_NAMES = {};
+let _heroCatalogFor = null;     // the dat_path the catalog was loaded for
 
-const _HERO_NAMES = Object.fromEntries(_HERO_CATALOG.map(h => [h.id, h.name]));
+function _datQuery() {
+  return draft.dat_path ? `?dat_path=${encodeURIComponent(draft.dat_path)}` : "";
+}
+
+// Rendered art (previews, the scene) also names the server's art version, so a
+// browser never shows art it cached before the renderer changed.
+function _artQuery() {
+  const v = `v=${encodeURIComponent(window._artVersion || "")}`;
+  const q = _datQuery();
+  return q ? `${q}&${v}` : `?${v}`;
+}
+
+// ── Unit previews ─────────────────────────────────────────────────────────────
+// How a unit looks in the game, rendered by the server from the player's own
+// sprites (game_sprites.py): a still on hover, and Idle / Walk / Attack in a
+// window from each card's play button.
+function _previewSrc(unitId, kind = "still") {
+  return `/api/unit-preview/${unitId}/${kind}${_artQuery()}`;
+}
+
+function _previewImgHtml(unitId) {
+  if (unitId == null) return "";
+  return `<div class="pop-preview"><img src="${_previewSrc(unitId)}" alt="" onerror="this.parentNode.remove()"></div>`;
+}
+
+function _previewBtnHtml(unitId, name) {
+  if (unitId == null) return "";
+  return `<button type="button" class="unit-preview-btn" data-preview-unit="${unitId}" data-preview-name="${_esc(name)}"
+            title="See it in the game" aria-label="Preview ${_esc(name)}"><i class="fa-solid fa-play"></i></button>`;
+}
+
+function _wirePreviewButtons(container) {
+  container.querySelectorAll(".unit-preview-btn").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();                 // the card's own click selects it
+      openUnitPreview(parseInt(btn.dataset.previewUnit, 10), btn.dataset.previewName);
+    });
+  });
+}
+
+// The loader: a Villager hammering at a foundation, beside what is loading
+// (.ef-loader in plaster.css; its size is --ef-loader-size).
+function _loaderHtml(text, center = false) {
+  return `<div class="ef-loader${center ? " ef-loader-center" : ""}" role="status">
+    <img src="/static/img/villager-building.webp" alt=""><span>${_esc(text)}</span></div>`;
+}
+
+let _previewModal = null;
+let _groundRaf = null;
+
+// Scroll the grass under a walking unit at its real speed, opposite to where it
+// faces (south-west, so the ground slides up-right).  One tile is ~46 px on
+// screen at standard sprite scale (54 was the first guess; the user tuned it
+// 15% slower by eye, 2026-10-22); the window shows sprites at 1.5x their own.
+const _TILE_PX = 46, _NORMAL_SPEED = 1.7;
+function _stopGround() {
+  if (_groundRaf) cancelAnimationFrame(_groundRaf);
+  _groundRaf = null;
+}
+function _startGround(stage, img, meta) {
+  _stopGround();
+  if (!meta || !(meta.speed > 0)) return;
+  let x = 0, y = 0, last = null;
+  const step = t => {
+    if (last != null && img.naturalWidth) {
+      const shown = img.clientWidth / img.naturalWidth;        // the window's own scale
+      const pxPerSec = meta.speed * _NORMAL_SPEED * _TILE_PX * meta.scale * shown;
+      const d = pxPerSec * (t - last) / 1000 / Math.SQRT2;
+      x += d; y -= d;
+      stage.style.backgroundPosition = `${x.toFixed(1)}px ${y.toFixed(1)}px`;
+    }
+    last = t;
+    _groundRaf = requestAnimationFrame(step);
+  };
+  _groundRaf = requestAnimationFrame(step);
+}
+
+function openUnitPreview(unitId, name) {
+  const el = document.getElementById("modal-unit-preview");
+  if (!el) return;
+  _previewModal = _previewModal || new bootstrap.Modal(el);
+  el.querySelector(".modal-title").textContent = name || "";
+  const img = el.querySelector("#unit-preview-img");
+  const status = el.querySelector("#unit-preview-status");
+  const stage = el.querySelector(".unit-preview-stage");
+  const meta = fetch(`/api/unit-preview/${unitId}/meta${_datQuery()}`).then(r => r.json()).catch(() => null);
+  el.addEventListener("hidden.bs.modal", _stopGround, { once: true });
+  const show = kind => {
+    _stopGround();
+    stage.style.backgroundPosition = "0 0";
+    el.querySelectorAll("[data-preview-kind]").forEach(b =>
+      b.classList.toggle("active", b.dataset.previewKind === kind));
+    status.innerHTML = _loaderHtml("Rendering from your game…", true);
+    status.classList.remove("d-none");
+    img.classList.add("d-none");
+    img.onload = () => {
+      // 1.5x, the same for every unit so sizes compare as in the game (the
+      // sprites are sharp enough), capped to the window.
+      img.style.width = `${Math.min(img.naturalWidth * 1.5, 440)}px`;
+      status.classList.add("d-none");
+      img.classList.remove("d-none");
+      if (kind === "walk") meta.then(m => _startGround(stage, img, m));
+    };
+    img.onerror = () => { status.textContent = "This animation isn't in your game files."; };
+    img.src = _previewSrc(unitId, kind);
+  };
+  el.querySelectorAll("[data-preview-kind]").forEach(b => { b.onclick = () => show(b.dataset.previewKind); });
+  show("idle");
+  _previewModal.show();
+}
+
+async function loadHeroCatalog() {
+  const key = draft.dat_path || "";
+  if (_heroCatalogFor === key && _HERO_CATALOG.length) return;
+  try {
+    const data = await (await fetch(`/api/builder/heroes${_datQuery()}`)).json();
+    _HERO_CATALOG = data.heroes || [];
+    _HERO_NAMES = Object.fromEntries(_HERO_CATALOG.map(h => [h.id, h.name]));
+    _heroCatalogFor = key;
+  } catch (e) {
+    console.warn("Could not load the hero catalog:", e);
+  }
+}
 
 const _HERO_PLACEHOLDER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='6' fill='%231e293b'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-size='28' fill='%2364748b'%3E%E2%9B%B9%3C/text%3E%3C/svg%3E";
 
 let _heroFilter = "all";
+let _heroSearch = "";
 
 function _heroId() { return draft.hero_unit?.base_unit_id ?? null; }
 
@@ -1266,28 +1382,40 @@ function _heroSave() {
 
 function renderHeroGrid(filter) {
   if (filter !== undefined) _heroFilter = filter;
-  const heroes = _HERO_CATALOG.filter(
-    h => _heroFilter === "all" || h.category === _heroFilter
-  );
+  const q = _heroSearch.trim().toLowerCase();
+  const heroes = _HERO_CATALOG.filter(h =>
+    (_heroFilter === "all" || h.category === _heroFilter || h.kind === _heroFilter) &&
+    (!q || h.name.toLowerCase().includes(q) || (h.faction || "").toLowerCase().includes(q)));
   const curId = _heroId();
   const container = document.getElementById("hero-grid");
   if (!container) return;
+  const count = document.getElementById("hero-count");
+  if (count) count.textContent = _HERO_CATALOG.length ? `${heroes.length} of ${_HERO_CATALOG.length}` : "";
 
   container.innerHTML = heroes.map(h => {
     const sel = h.id === curId ? ' selected' : '';
-    return `<div class="hero-grid-card${sel}" data-hero-id="${h.id}" title="${h.name}">
+    return `<div class="hero-grid-card${sel}" data-hero-id="${h.id}" title="${_esc(h.name)}">
       <div class="hero-card-inner">
-        <img class="hero-card-img" src="/static/icons/heroes/${h.id}.webp" loading="lazy">
-        <div class="hero-card-name">${h.name}</div>
-        ${h.faction ? `<div class="hero-card-faction">${h.faction}</div>` : ""}
+        ${_previewBtnHtml(h.id, h.name)}
+        <img class="hero-card-img" src="/api/unit-icon/${h.id}${_datQuery()}" loading="lazy" data-fallback="/static/icons/heroes/${h.id}.webp">
+        <div class="hero-card-name">${_esc(h.name)}</div>
+        ${h.faction ? `<div class="hero-card-faction">${_esc(h.faction)}</div>` : ""}
       </div>
     </div>`;
   }).join("") ||
-    `<div class="text-muted small fst-italic">No heroes in this category.</div>`;
+    (_HERO_CATALOG.length
+      ? `<div class="text-muted small fst-italic">No heroes match.</div>`
+      : `<div class="text-muted small fst-italic">Heroes are read from your game — point Empire Forge at it in step 1.</div>`);
 
   // Wire onerror via JS to avoid single-quote escaping issues in inline HTML attributes
+  _wirePreviewButtons(container);
+  // The game's icon, else the picture we used to ship for the original 30,
+  // else the placeholder.
   container.querySelectorAll(".hero-grid-card img").forEach(img => {
-    img.onerror = () => { img.onerror = null; img.src = _HERO_PLACEHOLDER; };
+    img.onerror = () => {
+      if (img.dataset.fallback) { img.src = img.dataset.fallback; delete img.dataset.fallback; }
+      else { img.onerror = null; img.src = _HERO_PLACEHOLDER; }
+    };
   });
 
   const popup = _getHeroPopup();
@@ -1320,6 +1448,7 @@ function _getHeroPopup() {
 function _buildHeroPopupHTML(hero) {
   const s = hero.stats;
   const catLabel = hero.category === "multiplayer" ? "Multiplayer" : "Campaign";
+  const typeLine = [hero.faction, catLabel].filter(Boolean).join(" &middot; ");
 
   const row = (label, val) =>
     `<div class="pop-row"><span class="pop-label">${label}</span><span class="pop-val">${val}</span></div>`;
@@ -1348,8 +1477,8 @@ function _buildHeroPopupHTML(hero) {
     rows.push(`<div class="pop-section-label">Special</div>${spRows}`);
   }
 
-  return `<div class="pop-name">${hero.name}</div>
-          <div class="pop-type">${hero.faction} &middot; ${catLabel}</div>
+  return `${_previewImgHtml(hero.id)}<div class="pop-name">${_esc(hero.name)}</div>
+          <div class="pop-type">${typeLine}</div>
           ${rows.join("")}`;
 }
 
@@ -1394,6 +1523,13 @@ function _heroRefreshUI() {
   const fl = hu.flags || {};
   if (g("hero-flag-regen")) g("hero-flag-regen").checked = !!fl.regen_hp;
 }
+
+// Search
+document.getElementById("hero-search")?.addEventListener("input", e => {
+  _heroSearch = e.target.value;
+  renderHeroGrid();
+  _heroRefreshUI();
+});
 
 // Filter buttons
 document.querySelectorAll("#hero-filter-group button").forEach(btn => {
@@ -1949,7 +2085,8 @@ function _wireBonusGridEvents(grid, toggleFn, getDraftEntry) {
 
 let _bonusCatalog      = [];   // [{id, label}]
 let _teamCatalog       = [];
-let _utOverrides       = { castle: {}, imperial: {} };
+let _retiredCards      = { civ: {}, team: {} };  // {id: {label, successor}}, not offered
+let _utOverrides      = { castle: {}, imperial: {} };
 let _utCards           = { castle: {}, imperial: {} };  // {tier: {id: {icon, category}}}
 let _bonusCardNodes    = new Map();  // id → DOM element
 let _teamCardNodes     = new Map();  // id → DOM element
@@ -2027,6 +2164,7 @@ async function loadBonusCatalog() {
     const data = await catalogRes.json();
     _bonusCatalog = data.civ;
     _teamCatalog  = data.team;
+    _retiredCards = data.retired || { civ: {}, team: {} };
     _cardOverrides = {
       ...await cardsRes.json(),
       ...await teamCardsRes.json(),
@@ -2224,6 +2362,44 @@ function _wireGridEvents(container, nodeMap, toggleFn, getDraftEntry, parseId) {
   });
 }
 
+// Cards an older civ still carries that the picker no longer offers (issue
+// #78): withdrawn, superseded, or inert on this DAT.  The grid is drawn from
+// the catalog, so without this they were invisible but stayed in the file.
+// Superseded ones still build, so nothing is removed until the player says so.
+function _renderRetiredNotice(grid, key, catalog, isDerived, rerender) {
+  if (!catalog.length) return;           // catalog failed to load: everything would look retired
+  // Not offered, or offered but hidden by its card override (the server lists both).
+  const known = key === 'bonuses' ? _retiredCards.civ : _retiredCards.team;
+  const offered = new Set(catalog.map(c => c.id));
+  const retired = (draft[key] || []).filter(b =>
+    !isDerived(b.id) && (!offered.has(b.id) || String(b.id) in known));
+  if (!retired.length) return;
+  const remove = ids => {
+    draft[key] = (draft[key] || []).filter(b => !ids.includes(b.id));
+    saveDraft();
+    rerender();
+  };
+  const box = document.createElement('div');
+  box.className = 'alert alert-warning py-2 small mb-3 retired-cards';
+  box.innerHTML = `<div class="mb-1"><i class="fa-solid fa-box-archive"></i>
+    This civ carries ${retired.length === 1 ? 'a card' : `${retired.length} cards`}
+    Empire Forge no longer offers. Click one to remove it.
+    <button type="button" class="btn btn-sm btn-link p-0 ms-1 align-baseline retired-all">Remove all</button></div>`;
+  for (const b of retired) {
+    const r = known[String(b.id)] || {};
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'btn btn-sm btn-outline-secondary me-1 mb-1';
+    chip.innerHTML = `${_esc(r.label || `Bonus #${b.id}`)} <i class="fa-solid fa-xmark"></i>`;
+    chip.title = r.successor === 'the tech tree' ? 'Now chosen in the tech tree'
+               : r.successor ? `Replaced by: ${r.successor}` : 'No longer offered';
+    chip.addEventListener('click', () => remove([b.id]));
+    box.appendChild(chip);
+  }
+  box.querySelector('.retired-all').addEventListener('click', () => remove(retired.map(b => b.id)));
+  grid.prepend(box);
+}
+
 function _buildGridSkeleton(grid) {
   grid.innerHTML = '';
   const selSection   = document.createElement('div');
@@ -2259,6 +2435,7 @@ function renderBonusGrid() {
   _wireGridEvents(grid, _bonusCardNodes, toggleCivBonus,
     id => (draft.bonuses || []).find(b => b.id === id),
     idStr => parseInt(idStr, 10));
+  _renderRetiredNotice(grid, 'bonuses', _bonusCatalog, _isUnlockBonus, renderBonusGrid);
 
   emptyMsg.style.display = anyVisible ? 'none' : '';
   _updateBonusDivider(selSection, divider);
@@ -2666,6 +2843,7 @@ function renderTeamBonusGrid() {
   _wireGridEvents(grid, _teamCardNodes, toggleTeamBonus,
     id => (draft.team_bonuses || []).find(b => b.id === id),
     idStr => parseInt(idStr.replace(/^T/, ''), 10));
+  _renderRetiredNotice(grid, 'team_bonuses', _teamCatalog, () => false, renderTeamBonusGrid);
 
   emptyMsg.style.display = anyVisible ? 'none' : '';
   _updateBonusDivider(selSection, divider);
@@ -2915,7 +3093,7 @@ function renderUTGrid(step) {
   const grid = document.getElementById(`${prefix}-vanilla-grid`);
   if (!grid) return;
   if (!_castleUtCatalog.length && !_imperialUtCatalog.length) {
-    grid.innerHTML = '<div class="text-muted small fst-italic py-2">Loading…</div>';
+    grid.innerHTML = _loaderHtml("Loading…");
     return;
   }
 
@@ -3162,8 +3340,7 @@ async function renderFuStats() {
   const req = ++_fuReq;
   const snapshot = JSON.stringify(draft);
   btn.disabled = true;
-  body.innerHTML = `<div class="text-muted small mt-3">
-    <span class="spinner-border spinner-border-sm me-2"></span>Building your civ and researching everything…</div>`;
+  body.innerHTML = `<div class="mt-3">${_loaderHtml("Building your civ and researching everything…")}</div>`;
   let data;
   try {
     const r = await fetch("/api/builder/fu-stats", {
@@ -3242,8 +3419,7 @@ async function renderButtonLayout(retries = 30) {
   if (req !== _layoutReq) return;          // a newer request has taken over
   if (data.status === "loading") {
     card.classList.remove("d-none");
-    body.innerHTML = `<div class="text-muted small">
-      <span class="spinner-border spinner-border-sm me-2"></span>Reading the game data…</div>`;
+    body.innerHTML = _loaderHtml("Reading the game data…");
     if (retries > 0) {
       setTimeout(() => { if (req === _layoutReq) renderButtonLayout(retries - 1); }, 2000);
     }
@@ -3467,7 +3643,7 @@ function _getUUPopup() {
 
 function _buildUUPopupHTML(unit) {
   const s = unit.stats;
-  const badge = unit.chronicles ? "Chronicles" : unit.vanilla ? "Vanilla" : "Custom";
+  const badge = unit.chronicles ? "Chronicles" : unit.scenario ? "Scenario" : unit.vanilla ? "Vanilla" : "Custom";
 
   // Stats not loaded yet — show a loading indicator if we're still fetching
   if (!s) {
@@ -3478,7 +3654,7 @@ function _buildUUPopupHTML(unit) {
           + `<i class="fa-solid fa-triangle-exclamation me-1"></i>`
           + `Game files not found &mdash; set your DAT path in Step 1</div>`
         : `<div class="pop-row" style="opacity:.6;font-style:italic;">No stats available</div>`;
-    return `<div class="pop-name">${unit.name}</div>
+    return `${_previewImgHtml(unit.preview_unit)}<div class="pop-name">${unit.name}</div>
             <div class="pop-row"><span class="pop-label">Type</span><span class="pop-val">${badge}</span></div>
             ${loadingLine}`;
   }
@@ -3549,7 +3725,7 @@ function _buildUUPopupHTML(unit) {
     rows.push(`<div class="pop-section-label">Special</div>${traitRows}`);
   }
 
-  return `<div class="pop-name">${unit.name}</div>
+  return `${_previewImgHtml(unit.preview_unit)}<div class="pop-name">${unit.name}</div>
           <div class="pop-type">${badge}</div>
           ${rows.join("")}`;
 }
@@ -3565,10 +3741,13 @@ function renderUUGrid() {
     return;
   }
 
-  let items = _uuCatalog;
+  const selectedIdx = draft.unique_unit?.km_idx;
+  // Retired units (KM's custom ones) show only for a civ that already has one.
+  let items = _uuCatalog.filter(u => !u.retired || u.km_idx === selectedIdx);
   if (typeFilter === "vanilla")    items = items.filter(u => u.vanilla && !u.chronicles);
   if (typeFilter === "chronicles") items = items.filter(u => u.chronicles);
-  if (typeFilter === "custom")     items = items.filter(u => !u.vanilla);
+  if (typeFilter === "scenario")   items = items.filter(u => u.scenario);
+  if (typeFilter === "custom")     items = items.filter(u => !u.vanilla && !u.scenario);
   if (query) items = items.filter(u => u.name.toLowerCase().includes(query));
 
   if (!items.length) {
@@ -3576,11 +3755,14 @@ function renderUUGrid() {
     return;
   }
 
-  const selectedIdx = draft.unique_unit?.km_idx;
   grid.innerHTML = items.map(u => {
     const iconSrc = u.icon || UU_PLACEHOLDER;
-    const badge   = u.chronicles
+    const badge   = u.retired
+      ? `<span class="uu-badge uu-badge-retired" title="Retired: still builds for this civ, no longer offered">R</span>`
+      : u.chronicles
       ? `<span class="uu-badge uu-badge-chronicles" title="Chronicles unit">Ch</span>`
+      : u.scenario
+      ? `<span class="uu-badge uu-badge-scenario" title="Scenario unit">S</span>`
       : u.vanilla
       ? `<span class="uu-badge uu-badge-vanilla">V</span>`
       : `<span class="uu-badge uu-badge-custom">C</span>`;
@@ -3588,11 +3770,13 @@ function renderUUGrid() {
     return `
       <div class="uu-card${sel}" data-km-idx="${u.km_idx}">
         ${badge}
+        ${_previewBtnHtml(u.preview_unit, u.name)}
         <img class="uu-card-icon" src="${iconSrc}" alt="${u.name}">
         <div class="uu-card-name">${u.name}</div>
       </div>`;
   }).join("");
 
+  _wirePreviewButtons(grid);
   // Wire onerror via JS to avoid quote-escaping issues in inline HTML attributes
   grid.querySelectorAll(".uu-card-icon").forEach(img => {
     img.onerror = () => { img.onerror = null; img.src = UU_PLACEHOLDER; };
@@ -3629,6 +3813,7 @@ function selectUU(kmIdx) {
     delete draft.unique_unit.overrides;
     delete draft.unique_unit.advanced_flags;
     delete draft.unique_unit.elite_upgrade;
+    delete draft.unique_unit.appearance;     // a look fits one unit's kind and size
   }
   draft.unique_unit.km_idx = kmIdx;
   saveDraft();
@@ -3642,15 +3827,104 @@ function selectUU(kmIdx) {
   iconEl.onerror = () => { iconEl.src = UU_PLACEHOLDER; };
   document.getElementById("uu-selected-name").textContent = unit.name;
   document.getElementById("uu-selected-type").textContent =
-    unit.chronicles ? "Chronicles unit" : unit.vanilla ? "Vanilla base unit" : "Custom base unit";
+    unit.retired ? "Retired — still builds for this civ, but is no longer offered"
+    : unit.chronicles ? "Chronicles unit" : unit.scenario ? "Scenario unit"
+    : unit.vanilla ? "Vanilla base unit" : "Custom base unit";
 
   document.getElementById("uu-name-override").value = draft.unique_unit.name       || "";
   document.getElementById("uu-description").value   = draft.unique_unit.description || "";
 
   _updateUUCostPreview(unit);
   populateUUOverrides(unit);
+  _renderUUAppearance();
   renderUUGrid();
 }
+
+// ── UU appearance ─────────────────────────────────────────────────────────────
+// Another unit's look on this unit's stats (civ_appender.copy_unit_look).  The
+// server lists only looks of the same kind and size (appearance_ok).
+let _uuLooks = { unit: null, looks: [] };
+
+function _selectedUUUnit() {
+  const sel = _uuCatalog.find(u => u.km_idx === draft.unique_unit?.km_idx);
+  return sel?.preview_unit ?? null;
+}
+
+async function _loadUULooks() {
+  const unit = _selectedUUUnit();
+  if (unit == null) return [];
+  if (_uuLooks.unit !== unit) {
+    const q = _datQuery() ? `${_datQuery()}&unit=${unit}` : `?unit=${unit}`;
+    try {
+      const data = await (await fetch(`/api/builder/appearances${q}`)).json();
+      _uuLooks = { unit, looks: data.looks || [] };
+    } catch { _uuLooks = { unit, looks: [] }; }
+  }
+  return _uuLooks.looks;
+}
+
+async function _renderUUAppearance() {
+  const id = draft.unique_unit?.appearance;
+  const nameEl = document.getElementById("uu-appearance-name");
+  const icon = document.getElementById("uu-appearance-icon");
+  const reset = document.getElementById("uu-appearance-reset");
+  if (!nameEl) return;
+  if (id == null) {
+    nameEl.textContent = "Its own";
+    icon.classList.add("d-none");
+    reset.classList.add("d-none");
+    return;
+  }
+  const looks = await _loadUULooks();
+  nameEl.textContent = looks.find(l => l.id === id)?.name || `Unit #${id}`;
+  icon.src = `/api/unit-icon/${id}${_datQuery()}`;
+  icon.classList.remove("d-none");
+  reset.classList.remove("d-none");
+}
+
+function _setUUAppearance(id) {
+  if (!draft.unique_unit) return;
+  if (id == null) delete draft.unique_unit.appearance;
+  else draft.unique_unit.appearance = id;
+  saveDraft();
+  _renderUUAppearance();
+}
+
+let _appearanceModal = null;
+async function openUUAppearancePicker() {
+  const el = document.getElementById("modal-uu-appearance");
+  _appearanceModal = _appearanceModal || new bootstrap.Modal(el);
+  const grid = document.getElementById("uu-appearance-grid");
+  const search = document.getElementById("uu-appearance-search");
+  grid.innerHTML = _loaderHtml("Loading…");
+  _appearanceModal.show();
+  const looks = await _loadUULooks();
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    const cur = draft.unique_unit?.appearance;
+    const shown = looks.filter(l => !q || l.name.toLowerCase().includes(q));
+    grid.innerHTML = shown.map(l => `
+      <div class="uu-card${l.id === cur ? " selected" : ""}" data-look="${l.id}">
+        ${_previewBtnHtml(l.id, l.name)}
+        <img class="uu-card-icon" src="/api/unit-icon/${l.id}${_datQuery()}" alt="" loading="lazy">
+        <div class="uu-card-name">${_esc(l.name)}</div>
+      </div>`).join("") ||
+      `<div class="text-muted small fst-italic">${looks.length ? "No looks match."
+        : _selectedUUUnit() == null ? "Pick a unique unit first."
+        : "No other look fits this unit's kind and size."}</div>`;
+    _wirePreviewButtons(grid);
+    grid.querySelectorAll("[data-look]").forEach(card => card.addEventListener("click", () => {
+      _setUUAppearance(parseInt(card.dataset.look, 10));
+      _appearanceModal.hide();
+    }));
+  };
+  search.value = "";
+  search.oninput = draw;
+  draw();
+}
+
+document.getElementById("uu-appearance-btn")?.addEventListener("click", openUUAppearancePicker);
+document.getElementById("uu-appearance-reset")?.addEventListener("click", () => _setUUAppearance(null));
 
 function clearUU() {
   delete draft.unique_unit;
@@ -4347,11 +4621,14 @@ async function init() {
     const res  = await fetch(_metaUrl());
     const meta = await res.json();
     _showRosterNotice(meta.roster_from_game);
+    loadHeroCatalog();   // background: the review step names the hero from it
 
     window._metaArchitectures = meta.architectures;
     window._metaCivs          = meta.civs;
     window._metaScouts        = meta.starting_scouts || [];
     window._metaMonks         = meta.monk_skins      || [];
+    window._metaMonasteries   = meta.monastery_skins || [];
+    window._artVersion        = meta.art_version     || "";
     _unlockBonusUnits         = meta.unlock_bonuses  || {};
     _unlockReplaces           = meta.unlock_replaces || {};
     // A draft with no tree yet (new civ, or one saved before this defaulted to
@@ -4383,6 +4660,8 @@ async function init() {
     populateScoutSelect(meta.starting_scouts || [], draft.starting_scout);
     populateSelect("monk-select", meta.monk_skins || [], draft.monk_skin,
                    SCENE_SLOTS.monk_skin.defaultLabel);
+    populateSelect("monastery-select", meta.monastery_skins || [], draft.monastery_skin_building,
+                   DEFAULT_OPTION_LABEL);
 
     bindScene();
     renderScene();
@@ -4405,9 +4684,11 @@ async function init() {
   const ctInput  = document.getElementById("civtechtrees-path-input");
   const datStatus = document.getElementById("dat-detect-status");
 
+  // Parses the DAT and renders the pickers' preview stills in the background.
+  // With no path the server warms whatever game it detects (_resolve_dat_path).
   function _prewarmDat(datPath) {
-    if (!datPath) return;
-    fetch(`/api/builder/prewarm?dat_path=${encodeURIComponent(datPath)}`).catch(() => {});
+    const q = datPath ? `?dat_path=${encodeURIComponent(datPath)}` : "";
+    fetch(`/api/builder/prewarm${q}`).catch(() => {});
   }
 
   async function detectDat() {
@@ -4478,6 +4759,7 @@ async function init() {
       } else {
         datStatus.textContent = `✕ ${d.reason}`;
         datStatus.className   = "form-text text-danger";
+        _prewarmDat("");     // a stale saved path: warm the game the server finds
       }
     } catch (e) {
       datStatus.textContent = `Could not check that path: ${e.message}`;

@@ -3,3 +3,6 @@ flask
 # Flag upload: resizes to 104x104 and converts JPEG/WebP to PNG (issue #44).
 # Without it only PNG flags survive, unresized.
 pillow
+# Game art: icons' player-colour masks (game_art) and, next, sprite previews.
+# Adds ~10-12 MB to the exe (estimated 2026-10-22, accepted by the user).
+numpy

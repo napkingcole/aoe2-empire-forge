@@ -19,6 +19,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -79,7 +80,7 @@ _DAT_COSTS_CACHE: dict[str, dict] = {}
 _UU_STATS_CACHE: dict[str, dict] = {}
 
 # Bump this when _UU_TRAITS changes so stale disk caches are automatically invalidated.
-_UU_STATS_DISK_VERSION = 3  # bumped: fixed cost fallback + amount-mode cost parsing
+_UU_STATS_DISK_VERSION = 5  # bumped: scenario units' own costs (SCENARIO_COSTS)
 
 def _cache_dir() -> Path:
     """Per-user, so it survives restarts: next to the code it lands in the
@@ -104,7 +105,11 @@ def _uu_table_fingerprint() -> str:
     table means the next DLC invalidates the cache by itself.
     """
     import civ_appender as ca
-    raw = repr(sorted((k, tuple(v)) for k, v in ca._KM_UU_TECHS.items()))
+    import km_custom_uu as kcu
+    # The presets too: a scenario unit added (118-124) or a cost changed
+    # (SCENARIO_COSTS) left the same stale-cache gap until 2026-10-22.
+    raw = repr((sorted((k, tuple(v)) for k, v in ca._KM_UU_TECHS.items()),
+                sorted((k, repr(v)) for k, v in kcu.PRESETS.items())))
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
 
@@ -447,29 +452,28 @@ VANILLA_DISPLAY_NAMES: dict[str, str] = {
     "French":  "Franks",
 }
 
-# Index 0 = Gaia, 1 = Britons, … matches DAT civ order.
-_CIV_NAMES_BY_DAT_INDEX: list[str] = []
-try:
-    _civ_list = json.loads(
-        (Path(__file__).parent / "civilizations.json").read_text(encoding="utf-8")
-    ).get("civilization_list", [])
-    _CIV_NAMES_BY_DAT_INDEX = [c.get("internal_name", "") for c in _civ_list]
-except Exception:
-    pass
+def _civ_names_by_dat_index() -> list[str]:
+    """Civ names in DAT order (0 = Gaia, 1 = Britons, …), from the player's
+    civilizations.json through civ_roster — not a bundled copy, which was
+    removed 2026-10-21.  Only labels the upload page's civ list."""
+    return [c["name"] for c in civ_roster(_resolve_dat_path() or None)]
+
 
 def _km_civ_name(km_index: int) -> str:
     """Friendly name for a 0-based KM civ index (castle/wonder/language style)."""
     dat_idx = km_index + 1
-    if 0 < dat_idx < len(_CIV_NAMES_BY_DAT_INDEX):
-        return _CIV_NAMES_BY_DAT_INDEX[dat_idx]
+    names = _civ_names_by_dat_index()
+    if 0 < dat_idx < len(names):
+        return names[dat_idx]
     return str(km_index)
 
 def _arch_name(arch_val: int) -> str:
     """Friendly name for a 1-based KM architecture value."""
     if 1 <= arch_val <= len(_ARCH_REP_CIVS):
         dat_idx = _ARCH_REP_CIVS[arch_val - 1]
-        if dat_idx < len(_CIV_NAMES_BY_DAT_INDEX):
-            return _CIV_NAMES_BY_DAT_INDEX[dat_idx]
+        names = _civ_names_by_dat_index()
+        if dat_idx < len(names):
+            return names[dat_idx]
     return str(arch_val)
 
 
@@ -1120,7 +1124,7 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
         # validates this file's entry count against the DAT civ count and
         # silently drops modded-strings civ-picker overrides without it.
         # unitlines.json too (dat_json_files: one function for all three routes).
-        dat_jsons = dat_json_files(dat_path_obj, civs_overrides)
+        dat_jsons = dat_json_files(dat_path_obj, civs_overrides, per_civ_tt)
 
         # Batch language/voice assignment using KM's 3-phase algorithm.
         lang_assignments = [(r["civ_index"], r["lang_val"]) for r in build_results]
@@ -1141,7 +1145,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             ui_zip   = _build_combined_ui_zip(ai_stubs, button_pngs, combined_strings,
                                               mod_name=mod_name,
                                               lang_values=unique_lang_values,
-                                              dat_path=dat_path)
+                                              dat_path=dat_path,
+                                              icon_ids={ov.get("icon_id") for ov in civs_overrides.values()})
 
         out_path = sd / f"{prefix}.zip"
         with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as outer:
@@ -1341,7 +1346,8 @@ def api_builder_meta():
     # stuck at 53 civs and the three Viking Sagas civs simply did not exist in
     # the wizard.  Falls back to the bundled copy on its own.
     from build_civ import civ_roster
-    from civ_appender import _UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, _ARCH_REP_CIVS
+    from civ_appender import (_UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS,
+                              _ARCH_REP_CIVS)
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     roster = civ_roster(dat_path) or []
     if not roster:
@@ -1360,6 +1366,7 @@ def api_builder_meta():
     # art under the new label.
     arch_options = _ARCH_OPTIONS
     monk_options = MONK_SKIN_OPTIONS
+    monastery_options = MONASTERY_SKIN_OPTIONS
     # Use the DAT only if it is ALREADY parsed.  This route is awaited by the
     # wizard's init() before anything renders, so it must never be the thing
     # that triggers a parse: doing so made a cold start sit on "Loading..." for
@@ -1393,8 +1400,20 @@ def api_builder_meta():
                     continue
                 _claimed.add(_g)
                 monk_options.append(_o)
+            # Monasteries the same way: an option is offered only when its civ
+            # still heads its own Monastery look in this game.
+            _claimed = set()
+            monastery_options = []
+            for _o in MONASTERY_SKIN_OPTIONS:
+                _u = _pd.civs[_o["value"]].units[104] if _o["value"] < len(_pd.civs) else None
+                _g = _u.standing_graphic if _u is not None else None
+                if _g is None or _g in _claimed:
+                    continue
+                _claimed.add(_g)
+                monastery_options.append(_o)
         except Exception:                                        # noqa: BLE001
             arch_options, monk_options = _ARCH_OPTIONS, MONK_SKIN_OPTIONS
+            monastery_options = MONASTERY_SKIN_OPTIONS
     # Driven by voice_wwise_map.json, not a fixed count: the build extracts
     # those clips from the player's own Wwise banks, so offering a voice the
     # map can't name would silently ship a civ with no audio.  A rebuilt map
@@ -1429,6 +1448,10 @@ def api_builder_meta():
         "voices": voice_options,
         "starting_scouts": _SCOUT_OPTIONS,
         "monk_skins": monk_options,
+        "monastery_skins": monastery_options,
+        # Goes on every preview and scene-art URL, so a browser never shows art
+        # it cached before game_sprites' output changed.
+        "art_version": _PREVIEW_VERSION,
         "unlock_bonuses": unlock_bonuses,
         "unlock_replaces": unlock_replaces,
         # Display names for the identity scene ("Hagia Sophia" rather than
@@ -1894,7 +1917,31 @@ def api_builder_bonuses_catalog():
         for k, v in sorted(team_names.items(), key=lambda x: int(x[0]))
         if int(k) not in unsupported_team_ids
     ]
-    return jsonify({"civ": civ_bonuses, "team": team_bonuses})
+    # Everything hidden above, named, so the wizard can show an older civ the
+    # cards it still carries and let the player remove them (issue #78) —
+    # otherwise they are invisible in the grid but still in the file.
+    # A card can also stay in the catalog but be hidden by its card override
+    # (bonus_cards.json); its note says where the choice went, if anywhere.
+    with open(Path(__file__).parent / "static/data/bonus_cards.json", encoding="utf-8") as f:
+        cards = json.load(f)
+
+    def _successor(k: str) -> str | None:
+        if (sup := DEPRECATED_BONUSES.get(int(k))) is not None:
+            return names.get(str(sup))
+        note = (cards.get(k) or {}).get("_note", "")
+        if m := re.search(r"Superseded by bonus (\d+)", note):
+            return names.get(m.group(1))
+        return "the tech tree" if "tech tree" in note else None
+
+    card_hidden = {int(k) for k, v in cards.items()
+                   if isinstance(v, dict) and (v.get("hidden") or v.get("type") == "hidden")}
+    retired = {
+        "civ": {k: {"label": v, "successor": _successor(k)}
+                for k, v in names.items() if int(k) in hidden_ids | card_hidden},
+        "team": {k: {"label": v} for k, v in team_names.items()
+                 if int(k) in unsupported_team_ids},
+    }
+    return jsonify({"civ": civ_bonuses, "team": team_bonuses, "retired": retired})
 
 
 def _unit_stats_block(u) -> dict:
@@ -1997,6 +2044,27 @@ def _build_all_uu_stats(dat_path: str) -> dict[int, dict]:
 
     # ── Custom units (PRESETS) ───────────────────────────────────────────────
     for km_idx, p in presets.items():
+        if p.get("mode") == "scenario":
+            # Built the way the mod builds them, then read — so the popup
+            # can't disagree with the game (km_custom_uu.scenario_elite).
+            try:
+                from copy import deepcopy
+                units = dat.civs[0].units
+                bu = deepcopy(units[p["base_unit_id"]])
+                eu = deepcopy(units[p.get("elite_unit_id") or p["base_unit_id"]])
+                kcu._apply_preset_stats(bu, eu, p)     # the build's own step
+                cost = " ".join(f"{int(c.amount)}{RES[c.type]}" for c in bu.creatable.resource_costs
+                                if c.type in RES and c.amount > 0)
+                out[km_idx] = {
+                    "base":   _unit_stats_block(bu),
+                    "elite":  _unit_stats_block(eu),
+                    "ranged": bool(bu.type_50.max_range > 1),
+                    "traits": _UU_TRAITS.get(km_idx, []),
+                    "cost":   cost or None,
+                }
+            except Exception as e:                               # noqa: BLE001
+                print(f"  WARNING: no stats for scenario unit {km_idx}: {e}", flush=True)
+            continue
         try:
             base_uid = p.get("base_unit_id")
             bu = dat.civs[0].units[base_uid] if base_uid is not None else None
@@ -2149,6 +2217,9 @@ def api_builder_prewarm():
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path:
         return jsonify({"status": "skipped", "reason": "no dat_path"})
+    if dat_path not in _PREVIEWS_WARMED:
+        _PREVIEWS_WARMED.add(dat_path)
+        threading.Thread(target=_warm_previews, args=(dat_path,), daemon=True).start()
     if dat_path in _UU_STATS_CACHE:
         return jsonify({"status": "already_cached"})
 
@@ -2324,6 +2395,7 @@ def _uu_catalog_entries() -> list[dict]:
         77: "306_50730.png",   # Wind Warrior
     }
 
+    from civ_schema import RETIRED_UUS
     unsupported = {47, 75}
     vanilla_keys = set(ca._KM_UU_TECHS.keys())
     catalog = []
@@ -2407,6 +2479,12 @@ def _uu_catalog_entries() -> list[dict]:
     # is what an un-illustrated unit should look like.  The upshot is that
     # dropping a new file into uniticons/ is the whole job — no code change.
     _icon_dir = Path(__file__).parent / "uniticons"
+    preview_units: dict[int, int] = {}
+    if dat_path:
+        try:
+            preview_units = _uu_preview_units(_get_dat(dat_path))
+        except Exception:                                        # noqa: BLE001
+            preview_units = {}
 
     for km_idx, name in ca._KM_UU_NAMES.items():
         if km_idx in unsupported or km_idx in missing_in_dat:
@@ -2424,10 +2502,22 @@ def _uu_catalog_entries() -> list[dict]:
             # A Chronicles Castle unit (Immortal, Strategos, ...): built like a
             # vanilla UU, shown under its own filter and badge.
             "chronicles":    km_idx in ca._CHRONICLES_UU_CARDS,
-            "icon":          f"/resources/uniticons/{icon_file}" if icon_file else None,
+            # A scenario unit's icon is the game's own, read from the player's
+            # install (/api/unit-icon) — nothing for it is bundled.
+            "icon":          (f"/api/unit-icon/{kcu.SCENARIO_UUS[km_idx][1]}" if km_idx in kcu.SCENARIO_UUS
+                              else f"/resources/uniticons/{icon_file}" if icon_file else None),
+            "scenario":      km_idx in kcu.SCENARIO_UUS,
+            # KM's custom units (civ_schema.RETIRED_UUS): listed so a civ that
+            # already has one still shows it, but the picker offers it to no one else.
+            "retired":       km_idx in RETIRED_UUS,
+            # The game unit /api/unit-preview shows for it (None: no preview).
+            "preview_unit":  preview_units.get(km_idx),
             "stats":         entry_stats,
             "training_cost": entry_stats["cost"] if entry_stats else None,
-            "elite_upgrade": elite_upgrades.get(km_idx),
+            "elite_upgrade": elite_upgrades.get(km_idx) or (
+                {"cost": {r: v for r, v in zip(("food", "wood", "stone", "gold"),
+                                               kcu.SCENARIO_ELITE_TECH["cost"]) if v},
+                 "time": kcu.SCENARIO_ELITE_TECH["time"]} if km_idx in kcu.SCENARIO_UUS else None),
         })
     catalog.sort(key=lambda x: x["name"])
     return catalog
@@ -2486,6 +2576,304 @@ def api_builder_ut_catalog():
 
     return jsonify({"castle":   _entries(_UNIQUE_CASTLE_STRINGS, _KM_CASTLE_UT_TECHS),
                     "imperial": _entries(_UNIQUE_IMP_STRINGS, _KM_IMP_UT_TECHS)})
+
+
+_HERO_CATALOG_CACHE: dict[str, list] = {}
+
+
+@app.route("/api/builder/heroes")
+def api_builder_heroes():
+    """The Heroes tab's catalog, from the player's DAT (heroes.hero_catalog).
+    Empty when no game is found: the tab then says so instead of guessing."""
+    import heroes
+    from civ_appender import _string_table
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return jsonify({"heroes": [], "from_game": False})
+    if dat_path not in _HERO_CATALOG_CACHE:
+        dat = _get_dat(dat_path)
+        names = _string_table()
+        _HERO_CATALOG_CACHE[dat_path] = heroes.hero_catalog(
+            dat, _unit_stats_block, lambda u: names.get(u.language_dll_name))
+    return jsonify({"heroes": _HERO_CATALOG_CACHE[dat_path], "from_game": True})
+
+
+@app.route("/api/unit-icon/<int:unit_id>")
+def api_unit_icon(unit_id: int):
+    """A unit's in-game icon, read from the player's game and cached as WebP.
+
+    Nothing is bundled: the picture is the one the game shows on the unit's
+    button (its `icon_id`), so a DLC unit has one the day it ships.  404 when
+    the game or the icon isn't found; the page falls back to its placeholder."""
+    import game_art
+    from dat_reader import find_unit_icon
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return ("", 404)
+    units = _get_dat(dat_path).civs[0].units
+    if not 0 <= unit_id < len(units) or units[unit_id] is None:
+        return ("", 404)
+    icon_id = units[unit_id].icon_id
+    game = hashlib.md5(str(Path(dat_path).resolve()).encode()).hexdigest()[:10]
+    # Folder renamed whenever the conversion changes, so old copies are not served.
+    cached = _cache_dir() / "icons-blue" / game / f"{icon_id}.webp"
+    if not cached.exists():
+        src = find_unit_icon(dat_path, icon_id)
+        if src is None:
+            return ("", 404)
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cached.with_suffix(".tmp")
+        # The alpha channel is the player-colour mask: painted Player 1 Blue.
+        game_art.icon_rgb(src).save(tmp, "WEBP", quality=85)
+        tmp.replace(cached)
+    return send_file(cached, mimetype="image/webp", max_age=86400)
+
+
+_PREVIEW_VERSION = "v4"        # bump when game_sprites' output changes
+                               # (v2: kept blocks across a moved box — square holes;
+                               #  v3: frames under 20 ms dropped — browsers slowed them)
+_PREVIEWS_WARMED: set[str] = set()
+
+
+def _preview_path(dat_path: str, unit_id: int, kind: str) -> Path:
+    game = hashlib.md5(str(Path(dat_path).resolve()).encode()).hexdigest()[:10]
+    return _cache_dir() / f"previews-{_PREVIEW_VERSION}" / game / f"{kind}_{unit_id}.webp"
+
+
+def _render_preview(dat_path: str, unit_id: int, kind: str) -> Path | None:
+    """The cached preview, rendered from the player's sprites on first ask:
+    kind "still" (first idle frame) or one of game_sprites.ANIMATIONS."""
+    import game_sprites
+    cached = _preview_path(dat_path, unit_id, kind)
+    if cached.exists():
+        return cached
+    dat = _get_dat(dat_path)
+    units = dat.civs[0].units
+    if not 0 <= unit_id < len(units) or units[unit_id] is None:
+        return None
+    unit = units[unit_id]
+    data = (game_sprites.still_webp(dat, dat_path, unit) if kind == "still"
+            else game_sprites.animation_webp(dat, dat_path, unit, kind))
+    if data is None:
+        return None
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cached.with_suffix(f".{threading.get_ident()}.tmp")
+    tmp.write_bytes(data)
+    tmp.replace(cached)
+    return cached
+
+
+def _art_delay() -> None:
+    """For trying the loaders: EF_ART_DELAY=<seconds> holds every scene-art
+    and unit-preview answer that long, as a slow first render would."""
+    delay = os.environ.get("EF_ART_DELAY")
+    if delay:
+        try:
+            time.sleep(float(delay))
+        except ValueError:
+            pass
+
+
+_SCENE_ANIMATING: set = set()          # (dat_path, slot, value) being rendered in the background
+
+
+def _render_scene_art(dat_path: str, slot: str, value: int, wait: bool = False) -> Path | None:
+    """The cached art for one identity-scene slot (game_sprites.scene_webp).
+    A moving building (the Tupi waterfall: about a minute) answers with its
+    still and renders the animation on a thread — the scene picks it up the
+    next time it draws.  `wait` renders it here instead (the prewarm)."""
+    import game_sprites
+    cached = _preview_path(dat_path, value, f"scene-{slot}")
+    if cached.exists():
+        return cached
+    dat = _get_dat(dat_path)
+
+    def write(path, data):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f".{threading.get_ident()}.tmp")
+        tmp.write_bytes(data)
+        tmp.replace(path)
+        return path
+
+    if not wait and game_sprites.scene_animated(dat, slot, value):
+        key = (dat_path, slot, value)
+        if key not in _SCENE_ANIMATING:
+            _SCENE_ANIMATING.add(key)
+
+            def animate():
+                try:
+                    _render_scene_art(dat_path, slot, value, wait=True)
+                finally:
+                    _SCENE_ANIMATING.discard(key)
+            threading.Thread(target=animate, daemon=True).start()
+        still = _preview_path(dat_path, value, f"scene-{slot}-still")
+        if still.exists():
+            return still
+        data = game_sprites.scene_webp(dat, dat_path, slot, value, still=True)
+        return write(still, data) if data is not None else None
+    data = game_sprites.scene_webp(dat, dat_path, slot, value)
+    return write(cached, data) if data is not None else None
+
+
+@app.route("/api/scene-art/<slot>/<int:value>/size")
+def api_scene_art_size(slot: str, value: int):
+    """{"w", "h"} of a scene slot's art before it is drawn, so the scene can
+    reserve the spot: the saved picture's size when there is one, else read
+    from the sprite headers (game_sprites.scene_size)."""
+    import game_sprites
+    from PIL import Image
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if slot not in game_sprites.SCENE_SLOTS or not dat_path:
+        return jsonify({})
+    for kind in (f"scene-{slot}", f"scene-{slot}-still"):
+        cached = _preview_path(dat_path, value, kind)
+        if cached.exists():
+            with Image.open(cached) as im:
+                return jsonify({"w": im.width, "h": im.height})
+    size = game_sprites.scene_size(_get_dat(dat_path), dat_path, slot, value)
+    return jsonify({"w": size[0], "h": size[1]} if size else {})
+
+
+@app.route("/api/scene-art/<slot>/<int:value>")
+def api_scene_art(slot: str, value: int):
+    """Step 1's scene, drawn from the player's game: a Town Center by
+    architecture, a civ's wonder, castle or Monk, a starting scout.  404 when
+    the game or the sprite isn't found — the wizard then shows the bundled
+    picture."""
+    import game_sprites
+    if slot not in game_sprites.SCENE_SLOTS:
+        return ("", 404)
+    _art_delay()
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return ("", 404)
+    path = _render_scene_art(dat_path, slot, value)
+    if path is None:
+        return ("", 404)
+    # A still standing in for an animation mustn't be cached by the browser,
+    # and says so: the scene asks again until the animation is ready.
+    still = "-still_" in path.name
+    resp = send_file(path, mimetype="image/webp", max_age=0 if still else 86400)
+    if still:
+        resp.headers["X-Scene-Still"] = "1"
+    return resp
+
+
+@app.route("/api/builder/appearances")
+def api_builder_appearances():
+    """Looks a unique unit may wear (civ_appender.appearance_ok): every hero and
+    every unit in the UU picker of the same kind and size.  ?unit=<game unit id>
+    is the UU itself (its catalog entry's preview_unit)."""
+    import heroes
+    from civ_appender import appearance_ok, _string_table
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    try:
+        target = int(request.args.get("unit", ""))
+    except ValueError:
+        return jsonify({"looks": []})
+    if not dat_path:
+        return jsonify({"looks": []})
+    dat = _get_dat(dat_path)
+    units = dat.civs[0].units
+    if not 0 <= target < len(units) or units[target] is None:
+        return jsonify({"looks": []})
+    names = _string_table()
+    hero_ids = {h["id"] for h in heroes.hero_catalog(
+        dat, _unit_stats_block, lambda u: names.get(u.language_dll_name))}
+    pool = hero_ids | set(_uu_preview_units(dat).values())
+    looks, seen = [], set()
+    for uid in sorted(pool):
+        u = units[uid] if 0 <= uid < len(units) else None
+        name = names.get(u.language_dll_name) if u is not None else None
+        if not name or name in seen or not appearance_ok(u, units[target]):
+            continue
+        seen.add(name)
+        looks.append({"id": uid, "name": name, "hero": uid in hero_ids})
+    looks.sort(key=lambda x: x["name"].casefold())
+    return jsonify({"looks": looks})
+
+
+@app.route("/api/unit-preview/<int:unit_id>/meta")
+def api_unit_preview_meta(unit_id: int):
+    """What the preview window needs to scroll the ground under a walking unit:
+    its speed (tiles per second at game speed 1.0) and its sprites' scale
+    against the standard ones (2 for Enhanced Graphics' _x2)."""
+    import game_sprites
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return jsonify({"speed": 0, "scale": 1})
+    dat = _get_dat(dat_path)
+    units = dat.civs[0].units
+    if not 0 <= unit_id < len(units) or units[unit_id] is None:
+        return jsonify({"speed": 0, "scale": 1})
+    unit = units[unit_id]
+    g = dat.graphics[game_sprites.unit_graphic(unit, "walk")] if game_sprites.unit_graphic(unit, "walk") >= 0 else None
+    sprite = game_sprites.find_sprite(dat_path, g.file_name) if g is not None else None
+    return jsonify({"speed": round(float(unit.speed), 3),
+                    "scale": 2 if sprite is not None and sprite.stem.endswith("_x2") else 1})
+
+
+@app.route("/api/unit-preview/<int:unit_id>/<kind>")
+def api_unit_preview(unit_id: int, kind: str):
+    """A unit as it looks in the game, facing south-west in Player 1 Blue:
+    `still`, or an animated `idle` / `walk` / `attack` at Normal speed.
+    Rendered from the player's own sprites (game_sprites) and cached; 404 when
+    the game or the sprite isn't found."""
+    import game_sprites
+    if kind != "still" and kind not in game_sprites.ANIMATIONS:
+        return ("", 404)
+    _art_delay()
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return ("", 404)
+    path = _render_preview(dat_path, unit_id, kind)
+    if path is None:
+        return ("", 404)
+    return send_file(path, mimetype="image/webp", max_age=86400)
+
+
+def _warm_previews(dat_path: str) -> None:
+    """Render every hero's and unique unit's still in the background, so the
+    pickers show them at once (the user's idea, 2026-10-22).  ~6 s for all."""
+    import game_sprites
+    import heroes
+    from civ_appender import _string_table
+    try:
+        dat = _get_dat(dat_path)
+        names = _string_table()
+        ids = {h["id"] for h in heroes.hero_catalog(
+            dat, _unit_stats_block, lambda u: names.get(u.language_dll_name))}
+        ids |= set(_uu_preview_units(dat).values())
+        for uid in sorted(ids):
+            _render_preview(dat_path, uid, "still")
+        # The identity scene, every option of every slot (the pickers show them all).
+        from civ_appender import MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS
+        scene = [("architecture", v) for v in sorted({c.icon_set for c in dat.civs[1:]})]
+        scene += [("monastery_skin_building", o["value"]) for o in MONASTERY_SKIN_OPTIONS]
+        scene += [(s, i - 1) for i in range(1, len(dat.civs)) for s in ("wonder", "castle")]
+        scene += [("monk_skin", o["value"]) for o in MONK_SKIN_OPTIONS]
+        scene += [("starting_scout", o["value"]) for o in _SCOUT_OPTIONS]
+        # Moving buildings last: the Tupi waterfall alone takes about a minute.
+        scene.sort(key=lambda sv: game_sprites.scene_animated(dat, *sv))
+        for slot, value in scene:
+            _render_scene_art(dat_path, slot, value, wait=True)
+    except Exception as exc:                                      # noqa: BLE001
+        print(f"[previews] {exc}", flush=True)
+
+
+def _uu_preview_units(dat) -> dict[int, int]:
+    """km_idx -> the game unit a unique unit looks like: a vanilla UU's own
+    unit (from its make-avail tech), a preset's base unit."""
+    import civ_appender as ca
+    import km_custom_uu as kcu
+    out: dict[int, int] = {i: p["base_unit_id"] for i, p in kcu.PRESETS.items()}
+    for i, (make_avail, _elite) in ca._KM_UU_TECHS.items():
+        if 0 <= make_avail < len(dat.techs) and dat.techs[make_avail].effect_id >= 0:
+            for c in dat.effects[dat.techs[make_avail].effect_id].effect_commands:
+                if c.type in (2, 3) and c.a >= 0:
+                    out[i] = int(c.a)
+                    break
+    return out
 
 
 @app.route("/api/builder/ut/costs")

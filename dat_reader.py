@@ -15,10 +15,12 @@ STEAM_DAT_CANDIDATES = [
     # macOS — Steam
     Path.home() / "Library/Application Support/Steam/steamapps/common/AoE2DE"
     / "resources/_common/dat/empires2_x2_p1.dat",
-    # dev reference copy (sibling aoe2/ directory — convenient for local testing)
-    Path(__file__).parent.parent / "aoe2/dat-file-6-2-26/empires2_x2_p1.dat",  # VER 8.9 Jun 6
-    Path(__file__).parent.parent / "aoe2/base/empires2_x2_p1.dat",
-    Path(__file__).parent.parent / "aoe2/base-dat/empires2_x2_p1.dat",
+    # dev: a full Windows install copied to the Mac (2026-10-21), the one
+    # source on this machine.  Everything else — strings, CivTechTrees,
+    # civilizations.json, voice banks — is found relative to the DAT, so a
+    # DAT-only copy never behaved like a player's; those candidates (../aoe2/)
+    # were removed.  EMPIREFORGE_DAT still points a run at any other DAT.
+    Path.home() / "Age of Empires 2/resources/_common/dat/empires2_x2_p1.dat",
     # Windows — Steam (32-bit Program Files)
     Path("C:/Program Files (x86)/Steam/steamapps/common/AoE2DE"
          "/resources/_common/dat/empires2_x2_p1.dat"),
@@ -98,6 +100,26 @@ def find_game_strings(dat_path: str | Path | None) -> Path | None:
         return None
     p = parents[3] / "resources" / "en" / "strings" / "key-value" / "key-value-strings-utf8.txt"
     return p if p.is_file() else None
+
+
+def find_unit_icon(dat_path: str | Path | None, icon_id: int) -> Path | None:
+    """The game's own picture for a unit's `icon_id`, or None.
+
+    DE keeps unit icons as 256x256 DDS textures in
+    `<game>/widgetui/textures/ingame/units/{icon_id:03}_50730.DDS` — some files
+    have a lower-case extension.  (`resources/_common/wpfg/resources/uniticons`
+    holds only ~95 legacy PNGs.)  Same walk from the DAT as find_game_strings."""
+    if not dat_path or icon_id is None or icon_id < 0:
+        return None
+    parents = Path(dat_path).resolve().parents
+    if len(parents) <= 3:
+        return None
+    folder = parents[3] / "widgetui" / "textures" / "ingame" / "units"
+    for ext in ("DDS", "dds"):
+        p = folder / f"{icon_id:03d}_50730.{ext}"
+        if p.is_file():
+            return p
+    return None
 
 
 # The DAT most recently loaded — the game whose strings name its units.

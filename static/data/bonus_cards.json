@@ -1038,7 +1038,7 @@
     "type": "dual",
     "entity": "lumber_camp",
     "entity2": "mill",
-    "stat": "Economic upgrades cost -33% food and available one age earlier",
+    "stat": "Economic upgrades cost -40% food and available one age earlier",
     "description": "Economic Upgrades"
   },
   "106": {

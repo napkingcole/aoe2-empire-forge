@@ -285,18 +285,12 @@ try:
     lost = client.get("/api/builder/meta").get_json()
 finally:
     appmod.find_game_dat = _real_find
-check("game not found: the list still fills in, from our copy", len(lost["civs"]) > 40, len(lost["civs"]))
+check("game not found: the list still fills in", len(lost["civs"]) > 40, len(lost["civs"]))
 check("...and is flagged as NOT from the player's game, for the wizard's notice",
       lost.get("roster_from_game") is False, lost.get("roster_from_game"))
 
-# The copy we ship is only a backup, but it must not fall behind the game: a
-# patch that adds civs (Viking Sagas: 60 -> 63) leaves them out of every
-# picker for anyone whose game isn't found.  Refresh civilizations.json from
-# the game when this fails.
-import json as _json                                              # noqa: E402
-_bundled = _json.loads((ROOT / "civilizations.json").read_text(encoding="utf-8"))["civilization_list"]
-check("our bundled civilizations.json covers every civ in this game",
-      len(_bundled) >= len(_probe_dat.civs), f"bundled {len(_bundled)} vs game {len(_probe_dat.civs)}")
+# No bundled civilizations.json to keep in step with the game any more: it was
+# removed 2026-10-21, and the roster is only ever the player's.
 
 # Architecture and Monk options must each name a real partition in this DAT:
 # an option whose representative civ does not actually carry that icon_set or
@@ -414,9 +408,20 @@ check("no team bonus whose effect is missing or empty here is offered",
 print("\n=== UU picker icons are derived, and never point at a missing file ===")
 # An icon entry naming a PNG that is not there renders as a broken image; None
 # renders as no image, which is what an un-illustrated unit should look like.
+# Two kinds: a bundled PNG in uniticons/, or (scenario units) the game's own
+# icon served by /api/unit-icon/<unit id>, which must then exist in the game.
+from dat_reader import find_unit_icon                            # noqa: E402
 _icon_dir = ROOT / "uniticons"
-broken = [(u["km_idx"], u["icon"]) for u in uu
-          if u["icon"] and not (_icon_dir / Path(u["icon"]).name).exists()]
+
+
+def _icon_missing(icon: str) -> bool:
+    if icon.startswith("/api/unit-icon/"):
+        unit = _probe_dat.civs[0].units[int(icon.rsplit("/", 1)[1].split("?")[0])]
+        return find_unit_icon(dat_path, unit.icon_id) is None
+    return not (_icon_dir / Path(icon).name).exists()
+
+
+broken = [(u["km_idx"], u["icon"]) for u in uu if u["icon"] and _icon_missing(u["icon"])]
 check("no offered UU points at a missing icon file", not broken,
       f"broken: {broken[:6]}")
 check("...and the ones that do have art still show it",

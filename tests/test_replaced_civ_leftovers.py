@@ -38,7 +38,16 @@ def check(label, cond, extra=""):
 
 
 print("=== civilizations.json names the new civ's UTs and UU line ===")
-base = json.loads((ROOT / "civilizations.json").read_text(encoding="utf-8"))["civilization_list"]
+# The player's game's files (no bundled copies since 2026-10-21).
+from dat_reader import find_game_dat, find_civtechtrees     # noqa: E402
+from build_civ import _find_adjacent_json                   # noqa: E402
+_game = find_game_dat()
+if _game is None:
+    print("  skip  no game found (point EMPIREFORGE_DAT at one)")
+    sys.exit(0)
+GAME_TREES = find_civtechtrees(_game)
+base = json.loads(_find_adjacent_json(_game, "civilizations.json")
+                  .read_text(encoding="utf-8"))["civilization_list"]
 names = [e["internal_name"] for e in base]
 GURJ, TEUT, BRIT = names.index("Gurjaras"), names.index("Teutons"), names.index("Britons")
 civ_list = json.loads(json.dumps(base))
@@ -83,7 +92,7 @@ else:
         with contextlib.redirect_stdout(io.StringIO()):
             result = apply_civ(dat, civ_def, target_slot=slot)
             data = json.loads(_patch_per_civ_techtree(
-                ROOT / "CivTechTrees" / tree_file, civ_def, dat, slot, result))
+                GAME_TREES / tree_file, civ_def, dat, slot, result))
         return {n.get("Node ID"): n.get("Node Status") for n in data["civ_techs_units"]
                 if n.get("Node Type") == "UniqueUnit"}
 

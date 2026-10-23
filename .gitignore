@@ -1,5 +1,6 @@
 /ignore/
-/__pycache__/
+__pycache__/
+*.pyc
 /.cache/
 /AoE2-Civbuilder-main/
 /venv/
@@ -18,3 +19,4 @@
 /*update*/
 /*update*.zip
 empires2_x2_p1.dat
+tests/.timings.json
