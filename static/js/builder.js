@@ -549,7 +549,9 @@ function renderScene() {
       };
       // The hammering Villager stands beside the slot while its art loads
       // (alone on a first load; beside the old picture on a change).
-      if (img.src !== new URL(src, location.href).href) {
+      // Already showing this art (or its animation): leave it be.
+      const showing = img.getAttribute("src") && _sameSceneArt(img.src, src);
+      if (!showing) {
         if (!btn.querySelector(".scene-loader")) {
           btn.insertAdjacentHTML("beforeend",
             '<img class="scene-loader" src="/static/img/villager-building.webp" alt="" aria-hidden="true">');
@@ -561,14 +563,14 @@ function renderScene() {
         delete img.dataset.rh;
         if (src.startsWith("/api/scene-art/")) {
           fetch(`/api/scene-art/${key}/${value}/size${_datQuery()}`).then(r => r.json()).then(sz => {
-            if (img.src !== new URL(src, location.href).href || !btn.classList.contains("is-loading") || !sz.w) return;
+            if (!_sameSceneArt(img.src, src) || !btn.classList.contains("is-loading") || !sz.w) return;
             img.dataset.rw = sz.w;
             img.dataset.rh = sz.h;
             _sizeScene();
           }).catch(() => {});
         }
+        img.src = src;
       }
-      img.src = src;
       img.alt = label;
       img.style.display = "";
       btn.classList.remove("is-empty");
@@ -664,15 +666,30 @@ window.addEventListener("resize", () => _sizeScene());
 // A moving building (the Tupi waterfall, the Central Asian shrine) takes the
 // server a minute to render, so it first answers with the still and marks it
 // X-Scene-Still; ask again every 10 s and swap the animation in when it's ready.
+// Only a building that came back as a still is ever reloaded: reloading every
+// building once it loaded (a plain one answers without the header too) left
+// each address with a &t=, so the next change to any slot no longer matched
+// and every slot showed its Villager again (the user found it, 2026-10-23).
 function _awaitSceneAnimation(img, src) {
   clearTimeout(img._animTimer);
   if (src.includes("&t=") || !_SCENE_BUILDINGS.some(k => img.id === `scene-img-${k}`)) return;
+  let wasStill = false;
   const ask = () => fetch(src, { method: "HEAD", cache: "no-store" }).then(r => {
-    if (img.src !== new URL(src, location.href).href) return;     // the slot moved on
-    if (r.headers.get("X-Scene-Still")) img._animTimer = setTimeout(ask, 10000);
-    else img.src = `${src}&t=${Date.now()}`;
+    if (!_sameSceneArt(img.src, src)) return;                     // the slot moved on
+    if (r.headers.get("X-Scene-Still")) {
+      wasStill = true;
+      img._animTimer = setTimeout(ask, 10000);
+    } else if (wasStill) {
+      img.src = `${src}&t=${Date.now()}`;
+    }
   }).catch(() => {});
   ask();
+}
+
+/** Same art, ignoring the &t= that swapping in an animation adds. */
+function _sameSceneArt(a, b) {
+  const strip = u => { const x = new URL(u, location.href); x.searchParams.delete("t"); return x.href; };
+  return strip(a) === strip(b);
 }
 
 function updateSceneCaption(key) {
