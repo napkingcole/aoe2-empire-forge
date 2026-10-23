@@ -133,5 +133,50 @@ with contextlib.redirect_stdout(io.StringIO()):
 check("a civ that already has a retired one still builds it",
       r.get("uu_id", -1) >= 0 and r.get("km_uu_make_avail_tech_id", -1) >= 0, {k: r.get(k) for k in ("uu_id", "elite_uu_id")})
 
+print("\n=== the civ's own UU keeps Castle button 1 ===")
+# QA 2026-10-23: QA Qizilbash copied the Goths' tree, Huskarl node and all.
+# Castle button 1 then had two lines; the lower unit id won page 1, so the
+# Huskarl (41) kept it and the Qizilbash (a new unit, 2700s) went to page 2.
+# It only showed with earlier civs in the same build, as in the QA mod: this
+# is that mod's three civs, with the game's own Britons/Franks/Goths trees.
+from build_civ import _find_civ_slot                                # noqa: E402
+from dat_reader import find_civtechtrees                            # noqa: E402
+from wizard_build import _draft_to_civ_def as _to_civ_def           # noqa: E402
+from civ_schema import to_draft as _to_draft                        # noqa: E402
+
+
+def game_tree(civ_file):
+    data = json.loads((find_civtechtrees(dat_path) / civ_file).read_text(encoding="utf-8"))
+    out = {"units": [], "buildings": [], "techs": []}
+    for sec in ("civ_techs_units", "civ_techs_buildings"):
+        for n in data[sec]:
+            key = {"Unit": "units", "Building": "buildings", "Tech": "techs"}.get(n.get("Use Type"))
+            if key and n.get("Node Status") != "NotAvailable" and n["Node ID"] not in out[key]:
+                out[key].append(n["Node ID"])
+    return out
+
+
+def qa(alias, km, tree_file, ut, look=None):
+    uu = {"km_idx": km, "name": "", "description": ""}
+    if look is not None:
+        uu["appearance"] = look
+    return {"format": FORMAT_KEY, "alias": alias, "architecture": 2, "language": 0, "bonuses": [],
+            "unique_unit": uu, "tree": game_tree(tree_file),
+            "castle_ut": {"mode": "vanilla", "vanilla_km_idx": ut, "effects": [{"id": ut, "multiplier": 1, "tier": "castle"}]},
+            "imperial_ut": {"mode": "vanilla", "vanilla_km_idx": 0, "effects": [{"id": 0, "multiplier": 1, "tier": "imperial"}]}}
+
+
+fresh = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    for alias, km, tree_file, ut, look, civ in (("QA Range", 84, "BRITONS.json", 68, 73, "britons"),
+                                               ("QA Bandits", 110, "FRANKS.json", 2, 25, "franks"),
+                                               ("QA Qizilbash", 103, "GOTHS.json", 12, None, "goths")):
+        r = apply_civ(fresh, _to_civ_def(_to_draft(qa(alias, km, tree_file, ut, look))),
+                      target_slot=_find_civ_slot(fresh, civ))
+dat = fresh
+units = dat.civs[r["civ_index"]].units
+slot = [(t.unit_id, t.button_id) for t in units[r["uu_id"]].creatable.train_locations]
+check("the Qizilbash trains on Castle button 1, page 1", (82, 1) in slot, slot)
+
 print("\nPASS" if not failures else f"\n{failures} FAILED")
 sys.exit(1 if failures else 0)

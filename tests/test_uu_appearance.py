@@ -90,6 +90,26 @@ check("the UU keeps its own look", look(units[r["uu_id"]]) == look(plain_units[p
 check("...and the build says why", "doesn't fit" in log and any("appearance" in w for w in r.get("warnings", [])),
       [l for l in log.splitlines() if "appearance" in l.lower()][:2])
 
+print("\n=== QA 2026-10-23: a second attack, and the look's Elite ===")
+FIRE_ARCHER_KM, CHU_KO_NU, ELITE_CHU_KO_NU = 84, 73, 559
+check("the Chu Ko Nu's Elite is found by its game name", ca.look_elite(dat, CHU_KO_NU) == ELITE_CHU_KO_NU)
+check("...and a hero has none", ca.look_elite(dat, ATTILA) is None)
+draft = {"alias": "Look FA", "architecture": 2, "language": 0, "bonuses": [],
+         "unique_unit": {"km_idx": FIRE_ARCHER_KM, "appearance": CHU_KO_NU},
+         "tree": {"units": [83], "buildings": [109, 82], "techs": [101, 102, 103]}}
+with contextlib.redirect_stdout(io.StringIO()):
+    r = ca.apply_civ(dat, _draft_to_civ_def(draft), target_slot=8)
+units = dat.civs[r["civ_index"]].units
+fa = units[r["uu_id"]]
+# The Fire Archer's volley at buildings is a charge attack with its own art;
+# it kept the Fire Archer's while everything else was the Chu Ko Nu's.
+check("the second attack plays the look's attack, not the Fire Archer's",
+      fa.creatable.special_graphic == G[CHU_KO_NU].type_50.attack_graphic,
+      (fa.creatable.special_graphic, G[CHU_KO_NU].type_50.attack_graphic))
+check("the Elite Fire Archer wears the Elite Chu Ko Nu",
+      look(units[r["elite_uu_id"]]) == look(G[ELITE_CHU_KO_NU]))
+check("...and the base Fire Archer the Chu Ko Nu", look(fa) == look(G[CHU_KO_NU]))
+
 print("\n=== the choice survives saving and loading ===")
 schema = from_draft({"unique_unit": {"km_idx": 103, "appearance": ATTILA}})
 check("from_draft keeps it", schema["unique_unit"].get("appearance") == ATTILA, schema["unique_unit"])

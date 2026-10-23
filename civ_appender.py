@@ -1836,7 +1836,8 @@ def _button_picks(civ_def: dict) -> dict[tuple[int, int], int]:
 
 def _plan_button_layout(dat: DatFile, units, present: set[int],
                         runtime: dict[tuple[int, int], int], tech_ok,
-                        picks: dict[tuple[int, int], int]) -> dict:
+                        picks: dict[tuple[int, int], int],
+                        favoured: frozenset = frozenset()) -> dict:
     """Decide which lines keep page 1 and where the rest go.  Reads, never writes.
 
     Shared by the build (_resolve_button_collisions) and the wizard's preview
@@ -1847,6 +1848,10 @@ def _plan_button_layout(dat: DatFile, units, present: set[int],
       runtime  (unit, train-location index) -> building set by the civ's own techs
       tech_ok  tech id -> can this civ research it
       picks    (building, button) -> unit whose line keeps page 1
+      favoured unit ids whose line wins its slot by default — the civ's own
+               unique unit and Elite.  Without it the lowest unit id won, so a
+               UU built as a new unit (2752) lost Castle button 1 to a leftover
+               Huskarl node in the tree (41) and went to page 2 (QA, 2026-10-23).
 
     Returns {"conflicts": [...], "moves": [...]}: a conflict lists a slot's lines
     in page order (winner first) with the default winner; a move is one line
@@ -1890,7 +1895,7 @@ def _plan_button_layout(dat: DatFile, units, present: set[int],
 
         def rank(line):
             hits = [prio.index(u) for u in line if u in prio]
-            return (min(hits) if hits else len(prio), min(line))
+            return (0 if line & favoured else 1, min(hits) if hits else len(prio), min(line))
         return sorted(lines, key=rank)
 
     conflicts: list[dict] = []
@@ -2183,7 +2188,17 @@ def button_layout_preview(dat: DatFile, civ_def: dict, tree_techs: set[int]) -> 
         return tech.civ == -1 and tid not in unticked
 
     picks = _button_picks(civ_def)
-    plan = _plan_button_layout(dat, units, present, {}, tech_ok, picks)
+    # The civ's own UU wins its Castle slot, as in the build.  Only a vanilla
+    # UU exists in the template; a custom or scenario one is built later.
+    favoured = frozenset()
+    km = get_km_uu_index(civ_def)
+    if km in _KM_UU_TECHS:
+        make_avail = _KM_UU_TECHS[km][0]
+        if 0 <= make_avail < len(dat.techs) and dat.techs[make_avail].effect_id >= 0:
+            favoured = frozenset(int(c.a) for c in dat.effects[dat.techs[make_avail].effect_id].effect_commands
+                                 if c.type in (2, 3) and c.a >= 0)
+            favoured |= {m for u in favoured for m in _upgrade_neighbours(dat).get(u, ())}
+    plan = _plan_button_layout(dat, units, present, {}, tech_ok, picks, favoured)
     if not plan["conflicts"]:
         return []
 
@@ -2376,7 +2391,8 @@ def _place_hero(dat: DatFile, civ_index: int, civ_def: dict) -> None:
         loc.hot_key_id = HERO_CASTLE_HOTKEY
 
 
-def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict) -> list[dict]:
+def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict,
+                               favoured: frozenset = frozenset()) -> list[dict]:
     """Move colliding unit lines to the building's second page.  Returns a log.
 
     Runs after the tree and bonuses have enabled everything.  Only lines the civ
@@ -2428,7 +2444,7 @@ def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict) -> l
             return False
         return t.civ in (-1, civ_index) and tid not in disabled
 
-    plan = _plan_button_layout(dat, units, present, runtime, tech_ok, _button_picks(civ_def))
+    plan = _plan_button_layout(dat, units, present, runtime, tech_ok, _button_picks(civ_def), favoured)
     if not plan["moves"]:
         return []
 
@@ -6539,6 +6555,33 @@ def copy_unit_look(src, dst) -> None:
     dst.type_50.graphic_displacement = src.type_50.graphic_displacement
     if src.creatable is not None and dst.creatable is not None:
         dst.creatable.idle_attack_graphic = src.creatable.idle_attack_graphic
+        # A second attack (the Fire Archer's volley at buildings is a charge
+        # attack) plays creatable.special_graphic.  Left alone it kept the
+        # UU's own art mid-look (QA 2026-10-23); a look with no special attack
+        # of its own lends its normal one.
+        if dst.creatable.special_graphic >= 0:
+            dst.creatable.special_graphic = (src.creatable.special_graphic
+                                             if src.creatable.special_graphic >= 0
+                                             else src.type_50.attack_graphic)
+
+
+def look_elite(dat: DatFile, src_id: int) -> int | None:
+    """The Elite of a look, if the game has one: a unit the look upgrades to
+    whose display name is "Elite <its name>" (Chu Ko Nu -> Elite Chu Ko Nu,
+    Qizilbash Warrior -> Elite Qizilbash Warrior).  Heroes have none."""
+    units = dat.civs[0].units
+    name = _string_table().get(units[src_id].language_dll_name) if units[src_id] else None
+    if not name:
+        return None
+    want = f"Elite {name}"
+    for tech in dat.techs:
+        if 0 <= tech.effect_id < len(dat.effects):
+            for c in dat.effects[tech.effect_id].effect_commands:
+                if c.type == EC_UPGRADE and int(c.a) == src_id and 0 <= c.b < len(units):
+                    b = units[int(c.b)]
+                    if b is not None and _string_table().get(b.language_dll_name) == want:
+                        return int(c.b)
+    return None
 
 
 def _apply_uu_appearance(dat: DatFile, civ_index: int, civ_def: dict,
@@ -6550,8 +6593,15 @@ def _apply_uu_appearance(dat: DatFile, civ_index: int, civ_def: dict,
     template = dat.civs[0].units                 # Gaia: never a build target
     src = template[src_id] if 0 <= src_id < len(template) else None
     units = dat.civs[civ_index].units
-    for uid in uu_ids:
+    # The Elite wears the look's own Elite when the game has one (the user's
+    # call, QA 2026-10-23), so it changes at the upgrade as vanilla units do.
+    elite_src_id = look_elite(dat, src_id) if src is not None else None
+    for n, uid in enumerate(uu_ids):
         dst = units[uid] if 0 <= uid < len(units) else None
+        if n == 1 and elite_src_id is not None and appearance_ok(template[elite_src_id], dst):
+            copy_unit_look(template[elite_src_id], dst)
+            print(f"       UU appearance: {unit_label(dat, civ_index, uid)} wears {unit_label(dat, 0, elite_src_id)}")
+            continue
         if not appearance_ok(src, dst):
             msg = (f"Unique unit appearance {unit_label(dat, 0, src_id)} doesn't fit "
                    f"{unit_label(dat, civ_index, uid)} (not the same kind and size) — kept its own look")
@@ -7116,7 +7166,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # 7c. Two lines on one training button: keep one, move the rest to page 2.
     #     Last, so every unit the tree and bonuses enabled is already in place.
     _place_hero(dat, civ_index, civ_def)
-    button_layout = _resolve_button_collisions(dat, civ_index, civ_def)
+    button_layout = _resolve_button_collisions(
+        dat, civ_index, civ_def,
+        frozenset(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0))
     for _entry in button_layout:
         if _entry["to"] is None:
             # A player-visible warning, not just a log line: the unit silently

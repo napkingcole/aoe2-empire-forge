@@ -74,7 +74,10 @@ QA = [
         custom_bonuses=[{"targets": [{"type": "group", "id": "archers"}],
                          "effects": [{"attr": "accuracy", "op": "add", "value": 30}]}],
         hero_unit={"base_unit_id": WALLACE, "name": "William Wallace", "description": "", "overrides": {}, "flags": {}},
-        tree=tree_from("BRITONS.json"),
+        # The Britons don't get Crop Rotation in current DE (their tree marks it
+        # NotAvailable), so the first QA round never saw it at all: add it.
+        tree={**tree_from("BRITONS.json"),
+              "techs": tree_from("BRITONS.json")["techs"] + [12]},
     )),
     ("franks", civ(
         "QA Bandits", "Bandits",
