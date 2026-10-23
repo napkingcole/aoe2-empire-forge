@@ -1100,6 +1100,13 @@ function _wirePreviewButtons(container) {
   });
 }
 
+// The loader: a Villager hammering at a foundation, beside what is loading
+// (.ef-loader in plaster.css; its size is --ef-loader-size).
+function _loaderHtml(text, center = false) {
+  return `<div class="ef-loader${center ? " ef-loader-center" : ""}" role="status">
+    <img src="/static/img/villager-building.webp" alt=""><span>${_esc(text)}</span></div>`;
+}
+
 let _previewModal = null;
 let _groundRaf = null;
 
@@ -1145,7 +1152,7 @@ function openUnitPreview(unitId, name) {
     stage.style.backgroundPosition = "0 0";
     el.querySelectorAll("[data-preview-kind]").forEach(b =>
       b.classList.toggle("active", b.dataset.previewKind === kind));
-    status.textContent = "Rendering from your game…";
+    status.innerHTML = _loaderHtml("Rendering from your game…", true);
     status.classList.remove("d-none");
     img.classList.add("d-none");
     img.onload = () => {
@@ -2941,7 +2948,7 @@ function renderUTGrid(step) {
   const grid = document.getElementById(`${prefix}-vanilla-grid`);
   if (!grid) return;
   if (!_castleUtCatalog.length && !_imperialUtCatalog.length) {
-    grid.innerHTML = '<div class="text-muted small fst-italic py-2">Loading…</div>';
+    grid.innerHTML = _loaderHtml("Loading…");
     return;
   }
 
@@ -3188,8 +3195,7 @@ async function renderFuStats() {
   const req = ++_fuReq;
   const snapshot = JSON.stringify(draft);
   btn.disabled = true;
-  body.innerHTML = `<div class="text-muted small mt-3">
-    <span class="spinner-border spinner-border-sm me-2"></span>Building your civ and researching everything…</div>`;
+  body.innerHTML = `<div class="mt-3">${_loaderHtml("Building your civ and researching everything…")}</div>`;
   let data;
   try {
     const r = await fetch("/api/builder/fu-stats", {
@@ -3268,8 +3274,7 @@ async function renderButtonLayout(retries = 30) {
   if (req !== _layoutReq) return;          // a newer request has taken over
   if (data.status === "loading") {
     card.classList.remove("d-none");
-    body.innerHTML = `<div class="text-muted small">
-      <span class="spinner-border spinner-border-sm me-2"></span>Reading the game data…</div>`;
+    body.innerHTML = _loaderHtml("Reading the game data…");
     if (retries > 0) {
       setTimeout(() => { if (req === _layoutReq) renderButtonLayout(retries - 1); }, 2000);
     }
@@ -3746,7 +3751,7 @@ async function openUUAppearancePicker() {
   _appearanceModal = _appearanceModal || new bootstrap.Modal(el);
   const grid = document.getElementById("uu-appearance-grid");
   const search = document.getElementById("uu-appearance-search");
-  grid.innerHTML = `<div class="text-muted small">Loading…</div>`;
+  grid.innerHTML = _loaderHtml("Loading…");
   _appearanceModal.show();
   const looks = await _loadUULooks();
   const draw = () => {

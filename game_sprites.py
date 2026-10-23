@@ -271,7 +271,13 @@ def unit_frames(dat, dat_path, unit, kind: str, angle: int = SOUTH_WEST,
     """Every frame of one of a unit's animations at one facing, as RGBA images
     cropped to what any frame draws, and the frame time in ms at Normal speed.
     `still` stops after the first frame.  None when the game has no sprite."""
-    graphic_id = unit_graphic(unit, kind)
+    return graphic_frames(dat, dat_path, unit_graphic(unit, kind), angle, still)
+
+
+def graphic_frames(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST,
+                   still: bool = False) -> tuple[list[Image.Image], int] | None:
+    """unit_frames for any DAT graphic — one a unit's task plays (a Villager
+    building), not only its idle, walk and attack."""
     parts = []
     for gid, ox, oy in _layers(dat, graphic_id):
         g = dat.graphics[gid]
@@ -325,8 +331,13 @@ def still_webp(dat, dat_path, unit) -> bytes | None:
 
 def animation_webp(dat, dat_path, unit, kind: str) -> bytes | None:
     """A looping animated WebP of one of the unit's ANIMATIONS."""
+    return graphic_webp(dat, dat_path, unit_graphic(unit, kind))
+
+
+def graphic_webp(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST) -> bytes | None:
+    """A looping animated WebP of any DAT graphic."""
     import io
-    got = unit_frames(dat, dat_path, unit, kind)
+    got = graphic_frames(dat, dat_path, graphic_id, angle)
     if got is None:
         return None
     frames, ms = got

@@ -2296,3 +2296,14 @@ details.card.cb-fold:not([open]) > summary.card-header { border-bottom: 0; }
   background-repeat: repeat;
 }
 .unit-preview-stage img { max-width: 100%; max-height: 360px; }
+
+/* Loading: a Villager hammering at a foundation (static/img/villager-building.webp,
+   from scripts/extract_loading_villager.py) beside what is loading.  One
+   size for every loader: change --ef-loader-size. */
+:root { --ef-loader-size: 56px; }
+.ef-loader {
+  display: flex; align-items: center; gap: .6rem;
+  color: var(--bs-secondary-color, #6c757d); font-size: .875rem; padding: .5rem 0;
+}
+.ef-loader img { height: var(--ef-loader-size); width: auto; flex: none; image-rendering: auto; }
+.ef-loader.ef-loader-center { flex-direction: column; justify-content: center; text-align: center; }
