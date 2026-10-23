@@ -2715,6 +2715,25 @@ def _render_scene_art(dat_path: str, slot: str, value: int, wait: bool = False) 
     return write(cached, data) if data is not None else None
 
 
+@app.route("/api/scene-art/<slot>/<int:value>/size")
+def api_scene_art_size(slot: str, value: int):
+    """{"w", "h"} of a scene slot's art before it is drawn, so the scene can
+    reserve the spot: the saved picture's size when there is one, else read
+    from the sprite headers (game_sprites.scene_size)."""
+    import game_sprites
+    from PIL import Image
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if slot not in game_sprites.SCENE_SLOTS or not dat_path:
+        return jsonify({})
+    for kind in (f"scene-{slot}", f"scene-{slot}-still"):
+        cached = _preview_path(dat_path, value, kind)
+        if cached.exists():
+            with Image.open(cached) as im:
+                return jsonify({"w": im.width, "h": im.height})
+    size = game_sprites.scene_size(_get_dat(dat_path), dat_path, slot, value)
+    return jsonify({"w": size[0], "h": size[1]} if size else {})
+
+
 @app.route("/api/scene-art/<slot>/<int:value>")
 def api_scene_art(slot: str, value: int):
     """Step 1's scene, drawn from the player's game: a Town Center by

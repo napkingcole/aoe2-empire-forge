@@ -539,6 +539,8 @@ function renderScene() {
       };
       img.onload = () => {
         btn.classList.remove("is-loading");
+        delete img.dataset.rw;
+        delete img.dataset.rh;
         if (!usedFallback) {
           img.dataset.game = "1";
           _awaitSceneAnimation(img, src);
@@ -553,6 +555,18 @@ function renderScene() {
             '<img class="scene-loader" src="/static/img/villager-building.webp" alt="" aria-hidden="true">');
         }
         btn.classList.add("is-loading");
+        // Reserve the building's footprint while it renders, so the Villager
+        // works where it will stand (sizes from the sprite headers).
+        delete img.dataset.rw;
+        delete img.dataset.rh;
+        if (src.startsWith("/api/scene-art/")) {
+          fetch(`/api/scene-art/${key}/${value}/size${_datQuery()}`).then(r => r.json()).then(sz => {
+            if (img.src !== new URL(src, location.href).href || !btn.classList.contains("is-loading") || !sz.w) return;
+            img.dataset.rw = sz.w;
+            img.dataset.rh = sz.h;
+            _sizeScene();
+          }).catch(() => {});
+        }
       }
       img.src = src;
       img.alt = label;
@@ -592,10 +606,13 @@ function _sizeScene() {
   const stage = document.getElementById("identity-scene");
   if (!stage || !stage.clientWidth) return;
   const imgOf = k => document.getElementById(`scene-img-${k}`);
-  const shown = img => img && img.style.display !== "none" && img.naturalWidth;
-  const nat = (img, dim) => img[dim] / (_SCENE_BUILDINGS.some(k => imgOf(k) === img) ? _SCENE_BUILDING_SCALE : 1);
+  // A slot still loading counts at its reserved size (renderScene).
+  const reserved = img => !img.naturalWidth && img.dataset.rw;
+  const shown = img => img && img.style.display !== "none" && (img.naturalWidth || reserved(img));
+  const raw = (img, dim) => reserved(img) ? +img.dataset[dim === "naturalWidth" ? "rw" : "rh"] : img[dim];
+  const nat = (img, dim) => raw(img, dim) / (_SCENE_BUILDINGS.some(k => imgOf(k) === img) ? _SCENE_BUILDING_SCALE : 1);
   const buildings = _SCENE_BUILDINGS.map(imgOf).filter(shown);
-  const game = buildings.filter(i => i.dataset.game);
+  const game = buildings.filter(i => i.dataset.game || reserved(i));
   const row = stage.querySelector(".scene-row");
   const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
   const pad = parseFloat(getComputedStyle(stage).paddingLeft) + parseFloat(getComputedStyle(stage).paddingRight);
@@ -613,6 +630,15 @@ function _sizeScene() {
   const boost = parseFloat(css.getPropertyValue("--scene-unit-boost")) || 3;
   const size = (img, scale) => {
     if (!img) return;
+    const slot = img.closest(".scene-slot");
+    if (reserved(img)) {
+      // Nothing to draw yet: hold the spot the building will take.
+      slot.style.minWidth = `${Math.round(nat(img, "naturalWidth") * scale)}px`;
+      slot.style.minHeight = `${Math.round(Math.min(nat(img, "naturalHeight") * scale,
+                                                   img === imgOf("wonder") ? _SCENE_WONDER_H : Infinity))}px`;
+      return;
+    }
+    slot.style.minWidth = slot.style.minHeight = "";
     if (img.dataset.game && img.naturalWidth) {
       img.style.width = `${Math.round(nat(img, "naturalWidth") * scale)}px`;
       img.style.height = "auto";
@@ -628,7 +654,7 @@ function _sizeScene() {
   const wonder = imgOf("wonder");
   const slot = wonder?.closest(".scene-slot");
   if (slot) {
-    const clip = wonder.dataset.game && nat(wonder, "naturalHeight") * k > _SCENE_WONDER_H;
+    const clip = wonder.dataset.game && wonder.naturalWidth && nat(wonder, "naturalHeight") * k > _SCENE_WONDER_H;
     slot.classList.toggle("is-clipped", Boolean(clip));
     slot.style.height = clip ? `${_SCENE_WONDER_H}px` : "";
   }

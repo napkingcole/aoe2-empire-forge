@@ -120,6 +120,21 @@ def frame_index(data: bytes) -> list[dict]:
     return out
 
 
+def _drawn_box(data: bytes, fr: dict) -> tuple | None:
+    """The canvas box a frame's main and shadow layers cover, from their
+    headers alone (the frame's own w/h is the whole, mostly empty, canvas)."""
+    p, box = fr["offset"] + 12, None
+    for bit, name, has_box in _ORDER:
+        if not fr["type"] & bit:
+            continue
+        (length,) = struct.unpack_from("<I", data, p)
+        if name == "main":
+            b = struct.unpack_from("<HHHH", data, p + 4)
+            box = b if box is None else (min(box[0], b[0]), min(box[1], b[1]), max(box[2], b[2]), max(box[3], b[3]))
+        p += (length + 3) & ~3
+    return box
+
+
 def _decode(data: bytes, fr: dict, prev: dict) -> dict:
     p, layers, main_box = fr["offset"] + 12, {}, None
     for bit, name, has_box in _ORDER:
@@ -447,6 +462,42 @@ def _scene_graphic(dat, slot: str, value: int) -> tuple:
     else:
         return None, ()
     return gid, under
+
+
+def scene_size(dat, dat_path, slot: str, value: int) -> tuple[int, int] | None:
+    """Roughly the (width, height) scene_webp will have, from the sprites'
+    frame headers alone — no pixels decoded — so the scene can reserve a
+    building's footprint while it renders (the Villager works on the spot).
+    Exact but for the solid-pixel crop, which only ever makes it smaller."""
+    gid, under = _scene_graphic(dat, slot, value)
+    if gid is None:
+        return None
+    box = None
+    for g2, ox, oy in (*under, *_layers(dat, gid)):
+        g = dat.graphics[g2]
+        path = find_sprite(dat_path, g.file_name)
+        if path is None:
+            continue
+        try:
+            data = path.read_bytes()
+            frames = frame_index(data)
+            per = max(1, g.frame_count)
+            angles = max(1, len(frames) // per)
+            f = frames[(round(SOUTH_WEST * angles / 16) % angles) * per]
+            drawn = _drawn_box(data, f)
+        except (ValueError, struct.error):
+            continue
+        if drawn is None:
+            continue
+        hx, hy = f["hot"]
+        b = (ox - hx + drawn[0], oy - hy + drawn[1], ox - hx + drawn[2], oy - hy + drawn[3])
+        box = b if box is None else (min(box[0], b[0]), min(box[1], b[1]), max(box[2], b[2]), max(box[3], b[3]))
+    if box is None:
+        return None
+    w, h = box[2] - box[0] + 16, box[3] - box[1] + 16
+    if slot in SCENE_BUILDINGS:
+        w, h = round(w * SCENE_BUILDING_SCALE), round(h * SCENE_BUILDING_SCALE)
+    return w, h
 
 
 def scene_webp(dat, dat_path, slot: str, value: int, still: bool = False) -> bytes | None:

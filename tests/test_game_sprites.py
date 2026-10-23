@@ -171,6 +171,16 @@ else:
           gs.scene_still(dat, dat_path, "castle", 0).size[0] < 600
           and gs.scene_still(dat, dat_path, "monk_skin", 1).size == gs.unit_frames(
               dat, dat_path, dat.civs[1].units[125], "idle", still=True)[0][0].size)
+    # The scene reserves each building's spot while it renders, sized from the
+    # sprite headers alone: close to the real art, never far off.
+    off = []
+    for slot, value in (("wonder", 0), ("wonder", 7), ("architecture", 2), ("architecture", 12),
+                        ("castle", 14), ("monastery_skin_building", 12), ("monk_skin", 1),
+                        ("starting_scout", 1755)):
+        est, real = gs.scene_size(dat, dat_path, slot, value), gs.scene_still(dat, dat_path, slot, value).size
+        if any(abs(e - r) > max(10, 0.1 * r) for e, r in zip(est, real)):
+            off.append((slot, value, est, real))
+    check("the reserved size is within 10% of the art", not off, off)
     check("the Tupi wonder and the shrine are known to move; a castle doesn't",
           gs.scene_animated(dat, "wonder", [c.name for c in dat.civs].index("Tupi") - 1)
           and gs.scene_animated(dat, "monastery_skin_building", 12)

@@ -117,6 +117,8 @@
   gap: 4px;
 }
 .scene-slot.is-loading img.scene-loader { display: block; }
+/* The Villager crouches at the bottom right of the reserved footprint
+   (builder.js reserves the building's size while it loads). */
 /* Room for the Villager in a slot whose art hasn't arrived yet. */
 .scene-slot.is-loading { min-width: 60px; min-height: 100px; }
 
