@@ -18,7 +18,7 @@
   --scene-unit-boost:  3;
   /* The Monastery drawn this many times the other buildings' scale: beside a
      Town Center and a Castle it reads too small at the game's own. */
-  --scene-monastery-boost: 1.4;
+  --scene-monastery-boost: 1.2;
   /* Space between the buildings; the scale shrinks to fit it. */
   --scene-building-gap: clamp(14px, 3.5vw, 44px);
 
@@ -74,10 +74,12 @@
   transition: transform .16s ease, filter .16s ease, opacity .16s ease;
 }
 
+/* No percentage max-width: a slot's width comes from its own image, so
+   "100% of the slot" is circular and a browser may settle it at zero — a
+   wonder or Town Center that never showed.  _sizeScene fits the widths. */
 .scene-slot img {
   display: block;
   width: auto;
-  max-width: 100%;
   filter: drop-shadow(0 6px 10px rgba(0,0,0,.38));
   transition: inherit;
 }
@@ -96,18 +98,27 @@
 .scene-slot--castle img { height: clamp( 78px, 20vw, 270px); }
 
 /* Loading: the hammering Villager beside the slot (builder.js renderScene). */
-.scene-slot .scene-loader { display: none; }
+/* img.scene-loader, so the unit slots' own image sizes (.scene-slot--unit
+   img: width, max-height) don't shrink the Villager beside the Monk. */
+.scene-slot img.scene-loader {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  display: none;
+  width: auto;
+  height: 100px;
+  max-width: none;
+  max-height: none;
+  filter: none;
+}
 .scene-slot.is-loading {
   display: flex;
   align-items: flex-end;
   gap: 4px;
 }
-.scene-slot.is-loading .scene-loader {
-  display: block;
-  width: auto;
-  height: 56px;
-  filter: none;
-}
+.scene-slot.is-loading img.scene-loader { display: block; }
+/* Room for the Villager in a slot whose art hasn't arrived yet. */
+.scene-slot.is-loading { min-width: 60px; min-height: 100px; }
 
 /* Units stand in front of the buildings, overlapping the row above */
 .scene-units {
