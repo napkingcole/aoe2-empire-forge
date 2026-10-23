@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bonus 105 moves EVERY eco upgrade it discounts one age earlier.  DAT-gated.
 
-"Economic upgrades cost -33% food and available one age earlier" borrows the
+"Economic upgrades cost -40% food and available one age earlier" borrows the
 Burgundians' route: each upgrade lists a Burgundian-gated, effectless shim tech
 as an alternative prerequisite, and _apply_early_eco_shims copies those shims
 for our civ.  The list of shims was hand-written and missed two — 766 (Crop
@@ -53,6 +53,14 @@ print("every discounted upgrade's Burgundian shim is in the list")
 for tid in ECO:
     missing = burgundian_shims(tid) - set(_EARLY_ECO_SHIM_TECHS)
     check(f"{tid} {dat.techs[tid].name}", not missing, f"missing shim(s) {sorted(missing)}")
+
+print("the discount matches the game's Burgundians")
+# The card said -33% (x0.667) after the game had moved the Burgundians to -40%
+# (x0.6); matched 2026-10-23.  Read the game's own Burgundian tech tree effect.
+burg_tt = dat.effects[dat.civs[next(i for i, c in enumerate(dat.civs) if c.name == "Burgundians")].tech_tree_id]
+game = {int(c.a): round(c.d, 3) for c in burg_tt.effect_commands if c.type == 101 and int(c.a) in ECO and int(c.b) == 0}
+ours = {int(ec["A"]): round(ec["D"], 3) for e in civ_bonus_ec_list(105) for ec in e["ecs"]}
+check("every upgrade's food multiplier is the game's", ours == game, f"ours {ours}\n       game {game}")
 
 print("a civ with bonus 105 gets its own route to each")
 civ_def = {

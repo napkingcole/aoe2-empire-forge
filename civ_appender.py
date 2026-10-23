@@ -5607,9 +5607,10 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                 _apply_ec_list_entry(dat, civ_index, ec_entry, multiplier)
             applied += len(ec_entries)
             # Bonus 105 is half catalog, half structural: the ec_list carries the
-            # -33% food, but "one age earlier" is a prerequisite rewrite no
-            # EffectCommand can express, so only the discount ever landed
-            # (issue #26).
+            # -40% food (x0.6, the game's Burgundian value — it was -33%
+            # until the user matched it, 2026-10-23), but "one age earlier" is
+            # a prerequisite rewrite no EffectCommand can express, so only the
+            # discount ever landed (issue #26).
             if bonus_id == _EARLY_ECO_BONUS:
                 _apply_early_eco_shims(dat, civ_index)
             continue
@@ -5851,7 +5852,7 @@ def _apply_elephant_extensions(dat: DatFile, civ_index: int, techs, multiplier: 
         print(f"       Elephants: tech {tid} extended with {len(cmds)} commands")
 
 
-# Bonus 105 — "Economic upgrades cost -33% food and available one age earlier".
+# Bonus 105 — "Economic upgrades cost -40% food and available one age earlier".
 # The catalog's ec_list covers the discount; the other half is structural.
 _EARLY_ECO_BONUS = 105
 

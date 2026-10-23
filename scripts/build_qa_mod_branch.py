@@ -4,7 +4,7 @@
 
   QA Range     (over Britons)  Fire Archer wearing the Chu Ko Nu's look, moved to
                                the Archery Range by Ambuscade (#81); eco bonus 105
-                               (#80: Crop Rotation, Caravan); +30% accuracy on
+                               (#80: Crop Rotation, Caravan); -50% accuracy on
                                archers (#86); William Wallace as hero (new heroes)
   QA Bandits   (over Franks)   Bandit (scenario UU, 100 food — the fixed "full"
                                cost path, so population) wearing the Teutonic
@@ -66,13 +66,15 @@ B = lambda *ids: [{"id": i, "multiplier": 1} for i in ids]                   # n
 QA = [
     ("britons", civ(
         "QA Range", "Range",
-        share_description="Branch test: Ambuscade, Fire Archer in Chu Ko Nu's look, eco 105, +30% archer accuracy, William Wallace.",
+        share_description="Branch test: Ambuscade, Fire Archer in Chu Ko Nu's look, eco 105, -50% archer accuracy, William Wallace.",
         unique_unit={"km_idx": 84, "name": "", "description": "", "appearance": CHU_KO_NU},  # Fire Archer
         castle_ut=preset(68, "castle"),                            # Ambuscade
         imperial_ut=preset(0, "imperial"),                         # Garland Wars (anything)
         bonuses=B(105),
+        # -50 (not +30) so misses are obvious: +30 only topped archers up to
+        # 100%, which the user couldn't judge by eye (round 1, 2026-10-23).
         custom_bonuses=[{"targets": [{"type": "group", "id": "archers"}],
-                         "effects": [{"attr": "accuracy", "op": "add", "value": 30}]}],
+                         "effects": [{"attr": "accuracy", "op": "add", "value": -50}]}],
         hero_unit={"base_unit_id": WALLACE, "name": "William Wallace", "description": "", "overrides": {}, "flags": {}},
         # The Britons don't get Crop Rotation in current DE (their tree marks it
         # NotAvailable), so the first QA round never saw it at all: add it.
