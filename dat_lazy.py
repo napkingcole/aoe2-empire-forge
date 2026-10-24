@@ -283,8 +283,14 @@ def _cache_path(digest: str) -> Path:
 
 def _read_cache(digest: str) -> dict | None:
     try:
-        d = json.loads(_cache_path(digest).read_text(encoding="utf-8"))
-        return d if d.get("version") == CACHE_VERSION else None
+        p = _cache_path(digest)
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if d.get("version") != CACHE_VERSION:
+            return None
+        # mtime = last use, so app.prune_caches keeps the player's game DAT
+        # (read every launch) over the output DATs of builds long past.
+        os.utime(p)
+        return d
     except (OSError, ValueError):
         return None
 

@@ -59,6 +59,17 @@ from version import __version__
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
+# The browser revalidates every static file (a cheap 304 from a local server)
+# instead of guessing a freshness time from Last-Modified: an update otherwise
+# ran the new app with last version's builder.js (a player saw old assets on
+# first launch of 2.7.0-preview.1).  The ?v= below makes the swap immediate.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+
+@app.url_defaults
+def _static_version(endpoint, values):
+    if endpoint == "static":
+        values.setdefault("v", __version__)
 
 SESSIONS_DIR = Path(tempfile.gettempdir()) / "aoe2civbuilder"
 SESSIONS_DIR.mkdir(exist_ok=True)
@@ -224,6 +235,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Your unique unit keeps Castle button 1</strong>, page 1, even over a leftover unit from the civ it replaced",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Several custom unique units <strong>trained for 0 population</strong>",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> A destroyed <strong>Monastery left Britons rubble</strong> whatever the architecture",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Old pictures after an update.</strong> Your browser could keep showing the previous version's pages and unit pictures; it now checks for new ones every time. Empire Forge also clears out the caches older versions left behind (up to a few hundred MB)",
     ],
     "2.6.2": [
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Fully-upgraded stats.</strong> On the Review step, Preview stats shows every unit and building as it would be in a Post-Imperial game, with each number broken down into the techs, bonuses and unique techs behind it. It also lists which of your bonuses don't reach a unit, so you can check combinations before building the mod",
@@ -2646,10 +2658,11 @@ def api_unit_icon(unit_id: int):
         # The alpha channel is the player-colour mask: painted Player 1 Blue.
         game_art.icon_rgb(src).save(tmp, "WEBP", quality=85)
         tmp.replace(cached)
-    return send_file(cached, mimetype="image/webp", max_age=86400)
+    return send_file(cached, mimetype="image/webp", max_age=0)
 
 
-_PREVIEW_VERSION = "v4"        # bump when game_sprites' output changes
+_PREVIEW_VERSION = "v4"        # bump when game_sprites' output changes;
+                               # prune_caches() deletes the older folders
                                # (v2: kept blocks across a moved box — square holes;
                                #  v3: frames under 20 ms dropped — browsers slowed them)
 _PREVIEWS_WARMED: set[str] = set()
@@ -2773,7 +2786,7 @@ def api_scene_art(slot: str, value: int):
     # A still standing in for an animation mustn't be cached by the browser,
     # and says so: the scene asks again until the animation is ready.
     still = "-still_" in path.name
-    resp = send_file(path, mimetype="image/webp", max_age=0 if still else 86400)
+    resp = send_file(path, mimetype="image/webp", max_age=0)
     if still:
         resp.headers["X-Scene-Still"] = "1"
     return resp
@@ -2849,7 +2862,7 @@ def api_unit_preview(unit_id: int, kind: str):
     path = _render_preview(dat_path, unit_id, kind)
     if path is None:
         return ("", 404)
-    return send_file(path, mimetype="image/webp", max_age=86400)
+    return send_file(path, mimetype="image/webp", max_age=0)
 
 
 def _warm_previews(dat_path: str) -> None:
@@ -3378,6 +3391,38 @@ _startup_prewarm()
 
 # ── Dev server entry point ────────────────────────────────────────────────────
 
+# Cache folders the current code writes.  Each was renamed when its contents
+# changed (icons -> icons-rgb -> icons-blue, previews-v1..v4), so any other
+# name is a dead copy from an older version.
+_CACHE_DIR_PREFIXES = ("icons", "previews-")
+_DAT_CACHE_KEEP = 8      # parsed-DAT indexes, newest first (one per DAT ever loaded)
+
+
+def prune_caches() -> list[str]:
+    """Delete what older versions left in the per-user cache; returns the names.
+
+    Never raises: a cache that can't be cleaned is only wasted space."""
+    import shutil
+    from dat_lazy import _cache_path
+    removed = []
+    current = {"icons-blue", f"previews-{_PREVIEW_VERSION}"}
+    try:
+        for d in _cache_dir().iterdir():
+            if d.is_dir() and d.name.startswith(_CACHE_DIR_PREFIXES) and d.name not in current:
+                shutil.rmtree(d, ignore_errors=True)
+                removed.append(d.name)
+    except OSError:
+        pass
+    try:
+        files = sorted(_cache_path("x").parent.glob("*"), key=lambda f: f.stat().st_mtime, reverse=True)
+        for f in [f for f in files if f.suffix == ".tmp"] + [f for f in files if f.suffix == ".json"][_DAT_CACHE_KEEP:]:
+            f.unlink(missing_ok=True)
+            removed.append(f"dat_cache/{f.name}")
+    except OSError:
+        pass
+    return removed
+
+
 if __name__ == "__main__":
     import webbrowser
 
@@ -3418,4 +3463,5 @@ if __name__ == "__main__":
 
     threading.Timer(1.0, _open_browser).start()
     threading.Thread(target=_run_update_check, daemon=True).start()
+    threading.Thread(target=prune_caches, daemon=True).start()
     app.run(debug=False, port=port, threaded=True)

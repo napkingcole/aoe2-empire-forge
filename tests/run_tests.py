@@ -42,6 +42,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("in-game tech tree (python)",      "test_civtechtrees.py",         "data"),
     ("civ_def formats (python)",        "test_civ_def_formats.py",      "data"),
     ("no direct civ_def reads",         "test_no_direct_civdef_reads.py", "data"),
+    ("cache hygiene (startup prune, browser)", "test_cache_hygiene.py", "data"),
     ("catalog resource ids",            "test_resource_ids.py",         "data"),
     ("civ roster",                      "test_civ_roster.py",           "data"),
     ("game strings + exe bundle",       "test_game_strings.py",         "data"),
