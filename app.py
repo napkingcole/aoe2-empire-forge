@@ -213,6 +213,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Unique unit appearance.</strong> Give your unique unit the look of a hero or another unit of the same kind and size, keeping its own stats. Its Elite wears the look's Elite when the game has one",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>The Appearance scene, drawn from your game.</strong> Every wonder, castle, Town Center, Monk and starting scout is the game's own art, at one scale, including the wonders we never had pictures for. The Tupi wonder's waterfall moves",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Choose your Monastery.</strong> Its look is separate from the architecture, like the Monk's: pick any of 16, or keep the architecture's own",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Wooden Castles</strong>, a civ bonus card: your Castles are the campaign Wooden Fort from the Mapuche, Tupi and Muisca DLC. 250 stone + 500 wood, built in 175 seconds, 3000 HP, with the Castle's arrows",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Ambuscade</strong>, a Castle unique tech: your unique unit also trains at the Archery Range",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Accuracy</strong> as a custom bonus effect (\"Archers +20% accuracy\"), never past 100%",
         "<strong class=\"color-accent-2\">NEW:</strong> A <strong>notice for retired bonus cards</strong> an older civ still carries, with where each went and a button to remove them",

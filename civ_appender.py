@@ -4218,6 +4218,47 @@ _COMBAT_ABILITY_ATTR = 63
 _AURA_ENABLE_BIT = 32
 
 
+# Wooden Castles (card 460, the user's design 2026-10-24): the civ's Castle
+# wears the campaign Wooden Fort (unit 2600, added with the Mapuche/Tupi/Muisca
+# DLC; scenario-only, no civ builds it) and is cheaper in stone, weaker, and
+# quicker to build.  It stays unit 82, so the UU, unique techs, Trebuchets,
+# Castle bonuses and the AI all still find it.  Same 4x4 footprint.
+_WOODEN_CASTLE_BONUS = 460
+_WOODEN_FORT = 2600
+_WOODEN_CASTLE_HP = 3000
+_WOODEN_CASTLE_COST = ((2, 250), (1, 500))    # stone, wood
+_WOODEN_CASTLE_BUILD_TIME = 175
+
+
+def _wooden_castle(dat: DatFile, civ_index: int) -> bool:
+    """Card 460 on this civ's own Castle: the Fort's art, the card's numbers.
+    False when this game has no Wooden Fort, or it is not a 4x4 like the Castle."""
+    units = dat.civs[civ_index].units
+    fort = dat.civs[0].units[_WOODEN_FORT] if _WOODEN_FORT < len(dat.civs[0].units) else None
+    castle = units[BUILDING_CASTLE] if BUILDING_CASTLE < len(units) else None
+    if fort is None or castle is None or fort.type != 80 or fort.clearance_size != castle.clearance_size:
+        return False
+    # Every picture the Fort has: standing, damaged, destroyed, its rubble (an
+    # undead graphic over the generic 4x4 rubble unit, where the Castle has its
+    # own rubble unit), snow and garrisoned.  The construction site is shared.
+    castle.standing_graphic   = fort.standing_graphic
+    castle.dying_graphic      = fort.dying_graphic
+    castle.undead_graphic     = fort.undead_graphic
+    castle.dead_unit_id       = fort.dead_unit_id
+    castle.damage_graphics    = deepcopy(fort.damage_graphics)
+    castle.building.snow_graphic_id = fort.building.snow_graphic_id
+    castle.creatable.garrison_graphic = fort.creatable.garrison_graphic
+    castle.hit_points = _WOODEN_CASTLE_HP
+    # A complete replacement, not a merge (quirk 14): the Castle's two
+    # spendable slots become stone + wood; the third (no population) stays.
+    costs = castle.creatable.resource_costs
+    for slot, (res, amount) in zip(costs, _WOODEN_CASTLE_COST):
+        slot.type, slot.amount, slot.flag = res, amount, 1
+    for loc in castle.creatable.train_locations:
+        loc.train_time = _WOODEN_CASTLE_BUILD_TIME
+    return True
+
+
 def _thracian_civ(dat: DatFile) -> int | None:
     return next((i for i, c in enumerate(dat.civs) if c.name == "Thracians"), None)
 
@@ -4257,6 +4298,7 @@ HANDLED_BONUS_IDS = {
     403,   # Settlement unlock (handled via Step 5b of _apply_tree_wiring)
     404,   # Mining Camp techs free (Bohemians)
     _ELEVATION_BONUS, _FORT_AURA_BONUS,   # 458/459: Thracians (Chronicles, #74)
+    _WOODEN_CASTLE_BONUS,                 # 460: the Castle is the campaign Wooden Fort
     *_UNLOCK_UNIT_BONUSES,   # 405-416: regional / second unique unit unlocks
     *_UNIT_SKIN_BONUSES,     # 457: Palintonon (Chronicles skin of the Trebuchet)
 }
@@ -4396,6 +4438,14 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             name="C-Bonus 459, castle/tower aura on")
         print(f"       Work-rate aura: {len(src)} tasks (+{src[0].work_value_1 * mult:.0%} in "
               f"{src[0].work_range:g} tiles) on {added} buildings, aura bit {_AURA_ENABLE_BIT} added")
+        return True
+
+    if bonus_id == _WOODEN_CASTLE_BONUS:  # Wooden Castles (the user's design, 2026-10-24)
+        if _wooden_castle(dat, civ_index):
+            print(f"       Wooden Castles: the Wooden Fort's look, {_WOODEN_CASTLE_HP} HP, "
+                  f"250 stone + 500 wood, {_WOODEN_CASTLE_BUILD_TIME} s")
+        else:
+            print("       WARNING: bonus 460: no 4x4 Wooden Fort (unit 2600) in this game's data — skipped")
         return True
 
     if bonus_id == 404:          # Mining Camp technologies free (Bohemians)

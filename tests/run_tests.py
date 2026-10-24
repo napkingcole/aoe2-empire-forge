@@ -85,6 +85,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("bonus 105: every eco upgrade one age earlier", "test_early_eco_shims.py", "build"),
     ("retired cards are listed for removal (#78)", "test_retired_cards.py", "build"),
     ("Thracian bonuses 458/459",        "test_thracian_bonuses.py",     "build"),
+    ("card 460: Wooden Castles",        "test_wooden_castle.py",        "build"),
     ("KM import tree gaps",             "test_km_import_gaps.py",       "build"),
     ("elephant bonuses",                "test_elephant_bonuses.py",     "build"),
     ("monk voice gender",               "test_monk_voice.py",           "build"),
