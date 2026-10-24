@@ -321,7 +321,10 @@ for _i, _c in enumerate(_probe_dat.civs):
     _u = _c.units[125] if _c.units and len(_c.units) > 125 else None
     if _u:
         _monk_groups.setdefault(_u.standing_graphic, []).append(_i)
-_offered_monks = {o["value"] for o in meta["monk_skins"]}
+# Scenario Monks (Priest, Pagan Priest) are unit ids, not civs: checked apart.
+from civ_appender import SCENARIO_MONK_SKINS, monk_skin_units   # noqa: E402
+_offered_scenario = {o["value"] for o in meta["monk_skins"]} & set(SCENARIO_MONK_SKINS)
+_offered_monks = {o["value"] for o in meta["monk_skins"]} - _offered_scenario
 _CHRONICLES = {46, 47, 48, 54, 55, 56}
 _unoffered = [m for m in _monk_groups.values() if not (_offered_monks & set(m))]
 check("every Monk partition is offered except the Chronicles one",
@@ -332,7 +335,8 @@ check("...and each offered Monk covers a distinct partition",
            for m in _monk_groups.values() if o in m}) == len(_offered_monks),
       f"{len(_offered_monks)} options collapse to fewer partitions")
 check("...and no Monk option is offered that this DAT cannot supply",
-      all(any(o in m for m in _monk_groups.values()) for o in _offered_monks))
+      all(any(o in m for m in _monk_groups.values()) for o in _offered_monks)
+      and all(monk_skin_units(_probe_dat, o) is not None for o in _offered_scenario))
 
 print("\n=== /api/builder/meta never parses a DAT ===")
 # init() in the wizard AWAITS this route before anything renders, so if it is

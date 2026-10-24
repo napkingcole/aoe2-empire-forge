@@ -223,6 +223,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Every hero in your game</strong> on the Heroes tab (over 200), with search and filters, read from your game so new ones appear when the game adds them",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Unique unit appearance.</strong> Give your unique unit the look of a hero or another unit of the same kind and size, keeping its own stats. Its Elite wears the look's Elite when the game has one",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>The Appearance scene, drawn from your game.</strong> Every wonder, castle, Town Center, Monk and starting scout is the game's own art, at one scale, including the wonders we never had pictures for. The Tupi wonder's waterfall moves",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Priest and Pagan Priest Monks.</strong> The scenario editor's two priests are Monk looks now, carrying relics and falling in their own robes",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Choose your Monastery.</strong> Its look is separate from the architecture, like the Monk's: pick any of 16, or keep the architecture's own",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Wooden Castles</strong>, a civ bonus card: your Castles are the campaign Wooden Fort from the Mapuche, Tupi and Muisca DLC. 250 stone + 500 wood, built in 175 seconds, 3000 HP, with the Castle's arrows",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Ambuscade</strong>, a Castle unique tech: your unique unit also trains at the Archery Range",
@@ -1380,6 +1381,7 @@ def api_builder_meta():
     # the wizard.  Falls back to the bundled copy on its own.
     from build_civ import civ_roster
     from civ_appender import (_UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS,
+                              SCENARIO_MONK_SKINS, monk_skin_units,
                               _ARCH_REP_CIVS)
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     roster = civ_roster(dat_path) or []
@@ -1428,6 +1430,10 @@ def api_builder_meta():
             _claimed: set = set()
             monk_options = []
             for _o in MONK_SKIN_OPTIONS:
+                if _o["value"] in SCENARIO_MONK_SKINS:     # a scenario Monk: if this game has it
+                    if monk_skin_units(_pd, _o["value"]) is not None:
+                        monk_options.append(_o)
+                    continue
                 _g = _monk_of(_o["value"])
                 if _g is None or _g in _claimed:
                     continue

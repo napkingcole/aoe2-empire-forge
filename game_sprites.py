@@ -410,7 +410,8 @@ def scene_still(dat, dat_path, slot: str, value: int) -> Image.Image | None:
     """One scene slot's art, facing south-west in Player 1 Blue.  Values are
     the wizard's: architecture = civ.icon_set; wonder and castle = DAT civ
     index - 1 (KM's convention); monk_skin and monastery_skin_building = DAT
-    civ index; starting_scout and building = unit id."""
+    civ index (a scenario Monk's unit id past the civs); starting_scout and
+    building = unit id."""
     got = _scene_frames(dat, dat_path, slot, value, still=True)
     return got[0][0] if got else None
 
@@ -450,6 +451,12 @@ def _scene_graphic(dat, slot: str, value: int) -> tuple:
         back = civ.units[_TC_BACK].standing_graphic[0]
         under = tuple(layer for layer in _layers(dat, back) if layer[0] != back)
         gid = civ.units[_TC_PREVIEW].standing_graphic[0]
+    elif slot == "monk_skin" and value >= len(civs):
+        # A scenario Monk (civ_appender.SCENARIO_MONK_SKINS): value is its unit id.
+        units = civs[0].units
+        if value >= len(units) or units[value] is None or units[value].class_ != 18:
+            return None, ()
+        gid = units[value].standing_graphic[0]
     elif slot in ("wonder", "castle", "monk_skin", "monastery_skin_building"):
         idx = value if slot in ("monk_skin", "monastery_skin_building") else value + 1
         if not 1 <= idx < len(civs):

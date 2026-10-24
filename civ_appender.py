@@ -139,7 +139,41 @@ MONK_SKIN_OPTIONS: list[dict] = [
     # DAT predates the DLC.  The only other unoffered Monk belongs to the
     # Chronicles civs, which are deliberately blacklisted.
     {"value": 11, "label": "Nordic",        "example": "Vikings, Varangians, Danes"},
+    # Scenario-editor Monks (2026-10-24, a player's request): value = the
+    # Monk's unit id, never a civ index (those stop near 60).  Each has the
+    # Monk's full trio — see SCENARIO_MONK_SKINS.
+    {"value": 1023, "label": "Priest",        "example": "scenario editor"},
+    {"value": 1940, "label": "Pagan Priest",  "example": "scenario editor"},
 ]
+# Monk-skin value -> its units in _MONK_SKIN_UNITS order: the Monk, its corpse,
+# the Monk carrying a relic.  Both priests leave the Priest's corpse (1024); the
+# Pagan Priest draws its own decay over it (an undead graphic, copied with it).
+# Same 30-task layout as the Monk, so the heal/convert graphics line up.
+SCENARIO_MONK_SKINS: dict[int, tuple[int, int, int]] = {
+    1023: (1023, 1024, 1025),     # PRIEST, PRIEST_D, RPRIEST
+    1940: (1940, 1024, 1941),     # PGPRIEST, PRIEST_D, RPGPRIEST
+}
+
+
+def monk_skin_units(dat: DatFile, value) -> list | None:
+    """The source units for a Monk-skin value, in _MONK_SKIN_UNITS order, or
+    None when this game doesn't have them: a scenario Monk's (SCENARIO_MONK_
+    SKINS, from civ 0 — scenario units are the same for every civ) or a vanilla
+    civ's own Monk, Monk corpse and Monk with a relic, as shipped."""
+    if not isinstance(value, int):
+        return None
+    if value in SCENARIO_MONK_SKINS:
+        units = dat.civs[0].units
+        ids = SCENARIO_MONK_SKINS[value]
+        got = [units[i] if i < len(units) else None for i in ids]
+        # The Monk, its corpse and the relic carrier, or nothing.
+        if any(u is None for u in got) or [u.class_ for u in got] != [18, 11, 43]:
+            return None
+        return got
+    if 0 < value < len(dat.civs):
+        units = _original_civ(dat, value).units
+        return [units[i] if i < len(units) else None for i in _MONK_SKIN_UNITS]
+    return None
 
 # ── Monastery skin ────────────────────────────────────────────────────────────
 # The Monastery is its own axis too: its art is per civ, not per architecture
@@ -6665,14 +6699,15 @@ def _female_monk_civs(dat: DatFile) -> set[int]:
     return cached
 
 
-def _match_monk_voice(dat: DatFile, dst_civ, skin_idx: int | None,
+def _match_monk_voice(dat: DatFile, dst_civ, skin_units: list | None,
                       voice_idx: int | None) -> None:
     """Give a Monk skin whose gender the voice civ lacks the villager lines of
-    its own gender.  Indices are vanilla civs; genders come from the cache."""
-    if skin_idx is None or voice_idx is None:
+    its own gender.  The skin's gender is its Monk's own select sound; the
+    voice civ's comes from the cache of vanilla civs."""
+    if not skin_units or skin_units[0] is None or voice_idx is None:
         return
-    female = _female_monk_civs(dat)
-    skin_f, voice_f = skin_idx in female, voice_idx in female
+    skin_f = skin_units[0].selection_sound == _PRIESTESS_SELECT
+    voice_f = voice_idx in _female_monk_civs(dat)
     if skin_f == voice_f:
         return
     src = dst_civ.units[_VILLAGER_BY_GENDER[skin_f]]
@@ -6691,8 +6726,9 @@ def _match_monk_voice(dat: DatFile, dst_civ, skin_idx: int | None,
           f"Monks — using the {g} villager lines")
 
 
-def _copy_monk_skin(src_civ, dst_civ) -> None:
-    """Copy the three Monk-appearance units from one civ to another.
+def _copy_monk_skin(src_units: list, dst_civ) -> None:
+    """Copy the three Monk-appearance units onto a civ.  `src_units` is
+    monk_skin_units(): a vanilla civ's Monk trio, or a scenario Monk's.
 
     Runs after _copy_architecture, which sets a Monk matching the architecture
     set; this overrides it when the user picked a Monk skin explicitly.
@@ -6717,12 +6753,9 @@ def _copy_monk_skin(src_civ, dst_civ) -> None:
     skin representatives, but they belong to the voice axis that
     assign_all_languages owns, and to naming — copying them here would fight it.
     """
-    src_units = src_civ.units
     dst_units = dst_civ.units
-    for i in _MONK_SKIN_UNITS:
-        if i >= len(src_units) or i >= len(dst_units):
-            continue
-        src, dst = src_units[i], dst_units[i]
+    for i, src in zip(_MONK_SKIN_UNITS, src_units):
+        dst = dst_units[i] if i < len(dst_units) else None
         if src is None or dst is None:
             continue
         dst.standing_graphic = src.standing_graphic
@@ -7019,9 +7052,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                     if arch_src is not None and arch_src < len(dat.civs) else None)
 
     monk_src = civ_def.get("monk_skin", -1)
-    monk_src_civ = (_original_civ(dat, monk_src)
-                    if isinstance(monk_src, int) and 0 < monk_src < len(dat.civs)
-                    else None)
+    monk_src_units = monk_skin_units(dat, monk_src)
+    if monk_src not in (-1, None) and monk_src_units is None:
+        print(f"       WARNING: Monk skin {monk_src} isn't in this game — the architecture's Monk instead")
     monastery_src = civ_def.get("monastery_skin_building", -1)
     monastery_src_civ = (_original_civ(dat, monastery_src)
                          if isinstance(monastery_src, int) and 0 < monastery_src < len(dat.civs)
@@ -7048,15 +7081,15 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # That fallback still goes through _copy_monk_skin rather than relying on
     # _copy_architecture alone, because the Monastery button icon is the one
     # per-skin field the architecture pass deliberately leaves alone.
-    _monk_from = monk_src_civ if monk_src_civ is not None else arch_src_civ
+    _monk_from = (monk_src_units if monk_src_units is not None
+                  else monk_skin_units(dat, arch_src) if arch_src_civ is not None else None)
     if _monk_from is not None:
         _copy_monk_skin(_monk_from, dat.civs[civ_index])
-        if monk_src_civ is not None:
-            print(f"       Monk skin: from DAT civ {monk_src} ({monk_src_civ.name!r})")
+        if monk_src_units is not None:
+            print(f"       Monk skin: {monk_src} ({_monk_from[0].name!r})")
         else:
-            print(f"       Monk skin: architecture default ({_monk_from.name!r})")
-        _match_monk_voice(dat, dat.civs[civ_index],
-                          monk_src if monk_src_civ is not None else arch_src, _voice_idx)
+            print(f"       Monk skin: architecture default ({arch_src_civ.name!r})")
+        _match_monk_voice(dat, dat.civs[civ_index], _monk_from, _voice_idx)
 
     # Monastery: independent of architecture too (MONASTERY_SKIN_OPTIONS).
     _monastery_from = monastery_src_civ if monastery_src_civ is not None else arch_src_civ
