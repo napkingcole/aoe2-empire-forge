@@ -180,6 +180,16 @@ def _apply(u, typ: int, attr: int, d: float, slot: int = 0) -> dict | None:
                 costs[i] = type(rc)(type=rc.type, amount=new, flag=rc.flag)
                 cr.resource_costs = tuple(costs)
                 return {"old": rc.amount, "new": new}
+        if typ == SET and d > 0:
+            # A resource the unit doesn't cost yet, after an earlier command
+            # zeroed one: Hussite Reforms sets the Monk's gold to 0, then food
+            # to 100, and the Monk costs 100 food.  Modelled as taking over the
+            # emptied slot (inferred from that, not seen slot by slot).
+            for i, rc in enumerate(costs):
+                if rc.flag == 1 and rc.type in _COST_ATTRS.values() and rc.amount == 0:
+                    costs[i] = type(rc)(type=res, amount=int(d), flag=1)
+                    cr.resource_costs = tuple(costs)
+                    return {"old": 0, "new": int(d)}
         return None
     return {"unmodelled": True}
 

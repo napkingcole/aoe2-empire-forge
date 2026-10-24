@@ -239,6 +239,13 @@ ATTRS: dict[str, dict] = {
     "train_speed":   {"label": "train speed",      "ops": ("mul",),       "fields": [101], "faster": True, "kinds": ("unit",)},
     "build_speed":   {"label": "build speed",      "ops": ("mul",),       "fields": [101], "faster": True, "kinds": ("building",)},
     "cost":          {"label": "cost",             "ops": ("mul",),       "fields": [103, 104, 105, 106], "kinds": ("unit", "building")},
+    # What a unit costs, replaced (2026-10-24, a player's request): one effect
+    # per resource, at most two (_COST_SET_MAX), the way the game's own do it —
+    # Corvinian Army (Magyar Huszar gold -> food) and Hussite Reforms (Monk
+    # gold -> food) EC_SET the old resource's cost to 0 first, then the new.
+    # The build zeroes every resource the card doesn't name (_plain_commands).
+    "cost_set":      {"label": "cost, replaced",   "ops": ("set",), "positive": True, "max": 2000,
+                      "fields": [], "kinds": ("unit", "building")},
     "regen":         {"label": "HP regeneration per minute", "ops": ("add",), "fields": [109], "kinds": ("unit", "building")},
     # On a building, attribute 13 is how fast it trains and researches — as
     # Conscription, Chivalry, Perfusion and the Goths', Huns' and Britons' team
@@ -352,6 +359,9 @@ TRIGGER_BUILDINGS: dict[int, tuple[str, int]] = {
 }
 
 COST_RESOURCES = ("all", *_RES_COST)
+# A unit has three cost slots, one usually population (quirk 14): two
+# resources at most, as every vanilla unit.
+_COST_SET_MAX = 2
 
 # Alternate forms of one unit that no EC_UPGRADE connects — packing, stance
 # switches and dismounting swap the unit for a different id.  A card on one form
@@ -468,6 +478,9 @@ _CAPABLE = {
     "attack_speed":  lambda u: bool(u.type_50) and u.type_50.reload_time > 0
                                and any(a.amount > 0 for a in u.type_50.attacks),
     "carry":         _moves_resources,
+    # Something to replace: it costs a resource now.
+    "cost_set":      lambda u: bool(u.creatable) and any(
+                         r.flag and r.type in (0, 1, 2, 3) and r.amount > 0 for r in u.creatable.resource_costs),
     "pop_space":     pop_space_ok,
     "min_range":     lambda u: bool(u.type_50) and u.type_50.min_range > 0,
     "no_min_range":  lambda u: bool(u.type_50) and u.type_50.min_range > 0,
@@ -693,6 +706,17 @@ def _norm_card(raw) -> dict | None:
     norm_eff = _norm_stepped_effect if when.get("steps") else _norm_effect
     effects = [e for e in (norm_eff(x) for x in (raw.get("effects") or []))
                if e and kinds <= set(ATTRS[e["attr"]]["kinds"])]
+    # A replaced cost: one effect per resource (the last wins), at most
+    # _COST_SET_MAX, and not on a card that grows — "costs 60 food" has no
+    # running total to step.
+    if when.get("steps"):
+        effects = [e for e in effects if e["attr"] != "cost_set"]
+    named: dict[str, int] = {}
+    for i, e in enumerate(effects):
+        if e["attr"] == "cost_set":
+            named[e["resource"]] = i
+    keep = set(sorted(named.values())[:_COST_SET_MAX])
+    effects = [e for i, e in enumerate(effects) if e["attr"] != "cost_set" or i in keep]
     if when.get("steps") and not any("steps" in e for e in effects):
         when.pop("steps")                   # nothing left that grows
     if family == "civ" and (when.get("age") or when.get("building")):
@@ -833,6 +857,10 @@ def _norm_effect(raw) -> dict | None:
     if raw["attr"] in ("cost", "tech_cost"):
         res = raw.get("resource", "all")
         out["resource"] = res if res in COST_RESOURCES else "all"
+    if raw["attr"] == "cost_set":
+        if raw.get("resource") not in _RES_COST:
+            return None                  # a replaced cost names its resource
+        out["resource"] = raw["resource"]
     if spec.get("max") and not spec.get("positive") and raw["attr"] != "resources":
         value = max(-spec["max"], min(spec["max"], value))
         if value == 0:
@@ -959,7 +987,9 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
     def bare(unit: str = "") -> str:
         return "/".join(f"{_fmt_num(abs(x))}{unit}" for x in vals)
 
-    if eff["attr"] in ("tech_cost", "cost"):
+    if eff["attr"] == "cost_set":
+        text = f"costs {_fmt_num(v)} {eff['resource']}"
+    elif eff["attr"] in ("tech_cost", "cost"):
         res = eff.get("resource", "all")
         text = f"{signed(pct)} {'cost' if res == 'all' else f'{res} cost'}"
     elif eff["attr"] == "research_speed":
@@ -1184,11 +1214,30 @@ def card_text(card: dict) -> str:
         return ", ".join(_civ_effect_text(e, when.get("age"), bool(when.get("building")))
                          for e in card["effects"]) + gate_text(card)
     subject = _join([target_subject(t) for t in targets])
+    effects = _merge_cost_set(card["effects"])
     # A job's own word for work rate ("gather rate") only when it is the only
     # target; a building's ("train and research faster") when all are buildings.
     named = (targets[0] if len(targets) == 1 or all(target_kind(t) == "building" for t in targets)
              else None)
-    return f"{subject}: " + ", ".join(effect_text(e, named) for e in card["effects"]) + gate_text(card)
+    return f"{subject}: " + ", ".join(e if isinstance(e, str) else effect_text(e, named)
+                                      for e in effects) + gate_text(card)
+
+
+def _merge_cost_set(effects: list[dict]) -> list:
+    """A card's effects with its replaced costs as one phrase, where the first
+    stood: "costs 60 food + 20 gold"."""
+    sets = [e for e in effects if e["attr"] == "cost_set"]
+    if not sets:
+        return effects
+    phrase = "costs " + " + ".join(f"{_fmt_num(e['value'])} {e['resource']}" for e in sets)
+    out, done = [], False
+    for e in effects:
+        if e["attr"] != "cost_set":
+            out.append(e)
+        elif not done:
+            out.append(phrase)
+            done = True
+    return out
 
 
 def target_subject(t: dict) -> str:
@@ -1370,9 +1419,19 @@ def _plain_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
         return cmds
     sel = _selectors(card, line_of, resolve)
     cmds: list[EffectCommand] = []
+    named = [e["resource"] for e in card["effects"] if e["attr"] == "cost_set"]
+    if named:
+        # Every resource the card doesn't name goes to 0 first, as Corvinian
+        # Army and Hussite Reforms do before they set the new one.
+        for res, c in _RES_COST.items():
+            if res not in named:
+                cmds.extend(EffectCommand(type=EC_SET, a=a, b=b, c=c, d=0.0) for a, b in sel)
     for eff in card["effects"]:
         spec = ATTRS[eff["attr"]]
-        if spec.get("unit_field"):
+        if eff["attr"] == "cost_set":
+            cmds.extend(EffectCommand(type=EC_SET, a=a, b=b, c=_RES_COST[eff["resource"]], d=float(eff["value"]))
+                        for a, b in sel)
+        elif spec.get("unit_field"):
             # Per unit, only units that have the stat (see _CAPABLE).  An ADD,
             # so cards and bonuses stack as vanilla's do; a reduction takes at
             # most what the unit has, so it never goes below 0.  "No minimum
