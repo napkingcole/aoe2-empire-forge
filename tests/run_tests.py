@@ -80,6 +80,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("age-shift cards 221/247",         "test_age_shift_cards.py",      "build"),
     ("UT enable not misread as UU",     "test_ut_enable_misread.py",    "build"),
     ("Ambuscade: UU at the Archery Range", "test_ambuscade.py",         "build"),
+    ("Wooden Castles unique tech",      "test_wooden_castles_ut.py",    "build"),
     ("scenario units as UUs",           "test_scenario_uus.py",         "build"),
     ("custom UUs cost population",      "test_preset_population.py",    "build"),
     ("UU appearance (another's look)",  "test_uu_appearance.py",        "build"),

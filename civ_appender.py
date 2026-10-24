@@ -4289,17 +4289,20 @@ _WOODEN_CASTLE_COST = ((2, 250), (1, 500))    # stone, wood
 _WOODEN_CASTLE_BUILD_TIME = 175
 
 
-def _wooden_castle(dat: DatFile, civ_index: int) -> bool:
-    """Card 460 on this civ's own Castle: the Fort's art, the card's numbers.
-    False when this game has no Wooden Fort, or it is not a 4x4 like the Castle."""
-    units = dat.civs[civ_index].units
-    fort = dat.civs[0].units[_WOODEN_FORT] if _WOODEN_FORT < len(dat.civs[0].units) else None
-    castle = units[BUILDING_CASTLE] if BUILDING_CASTLE < len(units) else None
-    if fort is None or castle is None or fort.type != 80 or fort.clearance_size != castle.clearance_size:
-        return False
-    # Every picture the Fort has: standing, damaged, destroyed, its rubble (an
-    # undead graphic over the generic 4x4 rubble unit, where the Castle has its
-    # own rubble unit), snow and garrisoned.  The construction site is shared.
+def _wooden_fort(dat: DatFile):
+    """The campaign Wooden Fort, or None when this game has no 4x4 one."""
+    units = dat.civs[0].units
+    fort = units[_WOODEN_FORT] if _WOODEN_FORT < len(units) else None
+    if fort is None or fort.type != 80 or fort.clearance_size != units[BUILDING_CASTLE].clearance_size:
+        return None
+    return fort
+
+
+def _wear_wooden_fort(castle, fort) -> None:
+    """Every picture the Fort has, on a Castle: standing, damaged, destroyed,
+    its rubble (an undead graphic over the generic 4x4 rubble unit, where the
+    Castle has its own rubble unit), snow and garrisoned.  The construction
+    site is shared."""
     castle.standing_graphic   = fort.standing_graphic
     castle.dying_graphic      = fort.dying_graphic
     castle.undead_graphic     = fort.undead_graphic
@@ -4307,15 +4310,77 @@ def _wooden_castle(dat: DatFile, civ_index: int) -> bool:
     castle.damage_graphics    = deepcopy(fort.damage_graphics)
     castle.building.snow_graphic_id = fort.building.snow_graphic_id
     castle.creatable.garrison_graphic = fort.creatable.garrison_graphic
-    castle.hit_points = _WOODEN_CASTLE_HP
-    # A complete replacement, not a merge (quirk 14): the Castle's two
-    # spendable slots become stone + wood; the third (no population) stays.
-    costs = castle.creatable.resource_costs
-    for slot, (res, amount) in zip(costs, _WOODEN_CASTLE_COST):
+
+
+def _wooden_castle_cost(castle) -> None:
+    """A complete replacement, not a merge (quirk 14): the Castle's two
+    spendable slots become stone + wood; the third (no population) stays."""
+    for slot, (res, amount) in zip(castle.creatable.resource_costs, _WOODEN_CASTLE_COST):
         slot.type, slot.amount, slot.flag = res, amount, 1
+
+
+def _wooden_castle(dat: DatFile, civ_index: int) -> bool:
+    """Card 460 on this civ's own Castle: the Fort's art, the card's numbers.
+    False when this game has no Wooden Fort, or it is not a 4x4 like the Castle."""
+    units = dat.civs[civ_index].units
+    fort = _wooden_fort(dat)
+    castle = units[BUILDING_CASTLE] if BUILDING_CASTLE < len(units) else None
+    if fort is None or castle is None:
+        return False
+    _wear_wooden_fort(castle, fort)
+    castle.hit_points = _WOODEN_CASTLE_HP
+    _wooden_castle_cost(castle)
     for loc in castle.creatable.train_locations:
         loc.train_time = _WOODEN_CASTLE_BUILD_TIME
     return True
+
+
+# Wooden Castles, the unique tech (Castle preset 69; the user's idea, 2026-10-24,
+# after the Slavs' Detinets): on research every Castle — built and to come —
+# becomes a Wooden Fort costing 250 stone + 500 wood, with the Castle's HP,
+# arrows and build time.  The Thracians' own bonus is the precedent: it
+# upgrades the Castle (EC_UPGRADE 82 -> 2418) into a Castle copy, and units and
+# techs still train and research at "82" — as at every age-up's building
+# upgrade (Barracks 12 -> 498 -> 20).  The copy is per civ: this civ's own
+# Castle as it stands (its castle pick, its cards), wearing the Fort.
+_WOODEN_CASTLE_UT = 69
+
+
+def _wooden_castle_ut_cmds(dat: DatFile, civ_index: int) -> list:
+    fort = _wooden_fort(dat)
+    if fort is None:
+        print("       WARNING: Wooden Castles: no 4x4 Wooden Fort (unit 2600) in this game — the tech does nothing")
+        return []
+    new_id = getattr(dat, "_ef_wooden_castle_unit", None)
+    if new_id is None:
+        new_id = len(dat.civs[0].units)
+        for civ in _every_civ(dat):
+            u = deepcopy(civ.units[BUILDING_CASTLE])
+            u.id = u.base_id = u.copy_id = new_id
+            u.enabled = 0
+            civ.units.append(u)
+        dat.unit_headers.append(deepcopy(dat.unit_headers[BUILDING_CASTLE]))
+        dat._ef_wooden_castle_unit = new_id
+    units = dat.civs[civ_index].units
+    u = deepcopy(units[BUILDING_CASTLE])
+    u.id = u.base_id = u.copy_id = new_id
+    u.enabled = 0
+    _wear_wooden_fort(u, fort)
+    _wooden_castle_cost(u)
+    units[new_id] = u
+    return [EffectCommand(type=EC_UPGRADE, a=BUILDING_CASTLE, b=new_id, c=-1, d=0.0)]
+
+
+# Presets built here rather than copied from a vanilla tech: (tier, preset) ->
+#   cmds       function(dat, civ_index) -> the effect commands
+#   available  function(dat) -> whether this game can do it (the catalog asks)
+#   like       the vanilla tech it stands in for where one is needed (the
+#              picker's cost display, the research hotkey): Detinets, 455
+_UT_BUILT: dict[tuple[str, int], dict] = {
+    ("castle", _WOODEN_CASTLE_UT): {"cmds": _wooden_castle_ut_cmds,
+                                    "available": lambda dat: _wooden_fort(dat) is not None,
+                                    "like": 455},
+}
 
 
 def _thracian_civ(dat: DatFile) -> int | None:
@@ -5693,9 +5758,17 @@ def _norm_ut_entry(e, default_tier: str) -> list | None:
 
 
 def ut_source_tech(bonus_id: int, tier: str) -> int | None:
-    """The vanilla tech a UT preset copies, from its own pool."""
+    """The vanilla tech a UT preset copies, from its own pool.  None for a
+    preset built here (_UT_BUILT) — ut_like_tech names its stand-in."""
     pool = _KM_CASTLE_UT_TECHS if tier == "castle" else _KM_IMP_UT_TECHS
     return pool.get(int(bonus_id))
+
+
+def ut_like_tech(bonus_id: int, tier: str) -> int | None:
+    """The vanilla tech a preset is, or stands in for: its source, or a built
+    preset's `like` (its hotkey, the picker's cost)."""
+    built = _UT_BUILT.get((tier, int(bonus_id)))
+    return built["like"] if built else ut_source_tech(bonus_id, tier)
 
 
 def get_ut_entries(civ_def: dict, which: str) -> list:
@@ -7771,7 +7844,7 @@ def _donjon_like_keep(cmds: list) -> list:
 
 
 def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
-                          default_tier: str) -> tuple[list, list, list]:
+                          default_tier: str, civ_index: int | None = None) -> tuple[list, list, list]:
     """Collect effect commands for a UT's bonus entries.
 
     `entries` is get_ut_entries' [id, mult, tier]; each preset is looked up in
@@ -7804,6 +7877,11 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         if entry is None:
             continue
         bonus_id, multiplier, tier = entry
+        built = _UT_BUILT.get((tier, int(bonus_id)))
+        if built is not None:
+            if civ_index is not None:
+                cmds.extend(built["cmds"](dat, civ_index))
+            continue
         tech_id    = ut_source_tech(bonus_id, tier)
         if tech_id is None:
             print(f"       {label} bonus {bonus_id} ({tier} pool): not in UT catalog — skipped")
@@ -7984,7 +8062,7 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
             pending_base_subs_per_slot.append([])
             continue
         cmds, pending_uu_subs, pending_base_uu_subs = _build_ut_effect_cmds(
-            dat, entries, label, "castle" if btn == 7 else "imperial")
+            dat, entries, label, "castle" if btn == 7 else "imperial", civ_index)
         eff_id = _append_effect(dat, Effect(name=f"{alias} {label}", effect_commands=cmds))
         pending_subs_per_slot.append([(eff_id, ec) for ec in pending_uu_subs])
         pending_base_subs_per_slot.append([(eff_id, ec) for ec in pending_base_uu_subs])
@@ -7992,7 +8070,7 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         hotkey = -1
         first = _norm_ut_entry(entries[0], "castle" if btn == 7 else "imperial") if entries else None
         if first is not None:
-            src_tid  = ut_source_tech(first[0], first[2])
+            src_tid  = ut_like_tech(first[0], first[2])
             if src_tid is not None and 0 <= src_tid < len(dat.techs):
                 src_locs = getattr(dat.techs[src_tid], 'research_locations', [])
                 if src_locs:

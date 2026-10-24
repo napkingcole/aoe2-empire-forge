@@ -228,6 +228,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Priest and Pagan Priest Monks.</strong> The scenario editor's two priests are Monk looks now, carrying relics and falling in their own robes",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Choose your Monastery.</strong> Its look is separate from the architecture, like the Monk's: pick any of 16, or keep the architecture's own",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Wooden Castles</strong>, a civ bonus card: your Castles are the campaign Wooden Fort from the Mapuche, Tupi and Muisca DLC. 250 stone + 500 wood, built in 175 seconds, 3000 HP, with the Castle's arrows",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Wooden Castles</strong>, a Castle unique tech after the Slavs' Detinets: once researched, every Castle you have and build becomes a Wooden Fort costing 250 stone + 500 wood, as strong as before",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Ambuscade</strong>, a Castle unique tech: your unique unit also trains at the Archery Range",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Buildings that work faster</strong> as a custom bonus effect: \"Military buildings train and research 20% faster\", the way Conscription and the Goths' team bonus do it",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Accuracy</strong> as a custom bonus effect (\"Archers +20% accuracy\"), never past 100%",
@@ -2574,7 +2575,7 @@ def _split_ut_label(label: str) -> tuple[str, str]:
 
 @app.route("/api/builder/ut/catalog")
 def api_builder_ut_catalog():
-    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
+    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS, _UT_BUILT
 
     # A preset is only offered if the PLAYER's OWN DAT implements its source
     # tech, because the preset works by cloning that tech's effect commands.
@@ -2589,10 +2590,13 @@ def api_builder_ut_catalog():
     # the catalog is also used for browsing, and hiding the whole list because
     # we could not find a DAT would be worse than listing one dud.
     has_effect = None
+    built_ok = lambda tier, i: True                                  # noqa: E731
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if dat_path and Path(dat_path).exists():
         try:
             dat = _get_dat(dat_path)
+            # A preset built here (no vanilla source) says itself whether this game can.
+            built_ok = lambda tier, i: _UT_BUILT[(tier, i)]["available"](dat)   # noqa: E731
 
             def has_effect(tech_id: int) -> bool:       # noqa: F811
                 if tech_id >= len(dat.techs):
@@ -2603,20 +2607,24 @@ def api_builder_ut_catalog():
         except Exception:
             has_effect = None
 
-    def _entries(strings, table):
+    def _entries(strings, table, tier):
         out = []
         for i, label in enumerate(strings):
-            tech_id = table.get(i)
-            if tech_id is None:
-                continue
-            if has_effect is not None and not has_effect(tech_id):
-                continue
+            if (tier, i) in _UT_BUILT:
+                if not built_ok(tier, i):
+                    continue
+            else:
+                tech_id = table.get(i)
+                if tech_id is None:
+                    continue
+                if has_effect is not None and not has_effect(tech_id):
+                    continue
             name, desc = _split_ut_label(label)
             out.append({"id": i, "label": label, "name": name, "desc": desc})
         return out
 
-    return jsonify({"castle":   _entries(_UNIQUE_CASTLE_STRINGS, _KM_CASTLE_UT_TECHS),
-                    "imperial": _entries(_UNIQUE_IMP_STRINGS, _KM_IMP_UT_TECHS)})
+    return jsonify({"castle":   _entries(_UNIQUE_CASTLE_STRINGS, _KM_CASTLE_UT_TECHS, "castle"),
+                    "imperial": _entries(_UNIQUE_IMP_STRINGS, _KM_IMP_UT_TECHS, "imperial")})
 
 
 _HERO_CATALOG_CACHE: dict[str, list] = {}
@@ -2922,7 +2930,7 @@ def _uu_preview_units(dat) -> dict[int, int]:
 @app.route("/api/builder/ut/costs")
 def api_builder_ut_costs():
     """Return vanilla tech research costs (from DAT) for all UT catalog entries."""
-    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
+    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS, _UT_BUILT
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path or not Path(dat_path).exists():
         return jsonify({"castle": {}, "imperial": {}})
@@ -2944,7 +2952,9 @@ def api_builder_ut_costs():
                           if t.research_locations else 60)
                 return {"cost": cost, "time": int(time_s)}
 
-            castle   = {str(k): v for k, tid in _KM_CASTLE_UT_TECHS.items()
+            castle   = {str(k): v for k, tid in (*_KM_CASTLE_UT_TECHS.items(),
+                                                  *((i, b["like"]) for (t, i), b in _UT_BUILT.items()
+                                                    if t == "castle"))
                         if (v := _tech_cost(tid)) is not None}
             imperial = {str(k): v for k, tid in _KM_IMP_UT_TECHS.items()
                         if (v := _tech_cost(tid)) is not None}

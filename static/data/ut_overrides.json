@@ -16,6 +16,7 @@
     "12": { "multiplier": false, "_label": "Anarchy — EC_SET + EC_ENABLE (unit unlock)" },
     "13": { "multiplier": false, "_label": "Marauders — EC_SET + EC_ENABLE (unit unlock)" },
     "68": { "multiplier": false, "_label": "Ambuscade — Marauders at the Archery Range (unit unlock)" },
+    "69": { "multiplier": false, "_label": "Wooden Castles — EC_UPGRADE of the Castle, idempotent" },
     "21": { "multiplier": false, "_label": "Corvinian Army — EC_SET cost conversion, idempotent" },
     "22": { "multiplier": false, "_label": "Thalassocracy — EC_UPGRADE unit swap, idempotent" },
     "25": { "multiplier": false, "_label": "Nomads — EC_UPGRADE house remove, idempotent" },

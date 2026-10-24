@@ -138,7 +138,8 @@ def unsupported_unique_techs(castle: bool) -> list[dict]:
     from build_all import _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS
 
     table = _UNIQUE_CASTLE_STRINGS if castle else _UNIQUE_IMP_STRINGS
-    covered = set((ca._KM_CASTLE_UT_TECHS if castle else ca._KM_IMP_UT_TECHS).keys())
+    covered = set((ca._KM_CASTLE_UT_TECHS if castle else ca._KM_IMP_UT_TECHS).keys()) | {
+        i for (tier, i) in ca._UT_BUILT if tier == ("castle" if castle else "imperial")}
     return [{"id": i, "name": name} for i, name in enumerate(table) if i not in covered]
 
 

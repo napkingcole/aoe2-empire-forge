@@ -220,6 +220,9 @@ from civ_appender import (_KM_CASTLE_UT_TECHS,    # noqa: E402
                           _KM_UU_TECHS as _KM_UU_TECHS_FOR_TEST,
                           _KM_UU_NAMES as _KM_UU_NAMES_FOR_TEST)
 expected = {i for i, t in _KM_CASTLE_UT_TECHS.items() if tech_has_effect(dat_path, t)}
+# ...plus the presets built here (Wooden Castles), each offered when this game can.
+from civ_appender import _UT_BUILT                    # noqa: E402
+expected |= {i for (tier, i), b in _UT_BUILT.items() if tier == "castle" and b["available"](_probe_dat)}
 check("every preset whose tech is implemented is still offered", ids == expected,
       f"missing: {sorted(expected - ids)}  unexpected: {sorted(ids - expected)}")
 
