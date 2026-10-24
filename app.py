@@ -68,7 +68,9 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 @app.url_defaults
 def _static_version(endpoint, values):
-    if endpoint == "static":
+    # Pages only: an API answer's icon URLs are data the scripts compare and
+    # build on, and max-age=0 already keeps them fresh.
+    if endpoint == "static" and not request.path.startswith("/api/"):
         values.setdefault("v", __version__)
 
 SESSIONS_DIR = Path(tempfile.gettempdir()) / "aoe2civbuilder"
