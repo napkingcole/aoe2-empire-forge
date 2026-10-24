@@ -198,6 +198,9 @@ function _cbEffectText(e, target) {
     text = `${signed(pct)} ${res === "all" ? "cost" : res + " cost"}`;
   } else if (_CB_FASTER[e.attr]) {
     text = `${_CB_FASTER[e.attr]} ${bare("%")} ${v > 0 ? "faster" : "slower"}`;
+  } else if (e.attr === "work_rate" && target && _cbTargetKind(target) === "building") {
+    // A building's work rate is its training and research speed.
+    text = `train and research ${bare("%")} ${v > 0 ? "faster" : "slower"}`;
   } else {
     // A job names its work rate: "gather rate", "build speed", "repair speed".
     const label = e.attr === "work_rate" && target?.type === "job" ? (_cbJob(target.id)?.work || a.label) : a.label;
@@ -247,8 +250,9 @@ function cbCardText(card) {
     }).join(", ") + _cbGateText(card);
   }
   const subject = _cbJoin(targets.map(_cbSubject));
-  // A job's own word for work rate ("gather rate") only when it's the only target.
-  const named = targets.length === 1 ? targets[0] : null;
+  // A job's own word for work rate ("gather rate") only when it's the only
+  // target; a building's ("train and research faster") when all are buildings.
+  const named = (targets.length === 1 || targets.every(t => _cbTargetKind(t) === "building")) ? targets[0] : null;
   const parts = (card.effects || []).map(e => _cbEffectText(e, named)).filter(Boolean);
   return parts.length ? `${subject}: ${parts.join(", ")}${_cbGateText(card)}` : subject;
 }
@@ -367,6 +371,10 @@ function _cbHeadline(e, target) {
     const res = e.resource || "all";
     const pct = e.attr === "cost" || e.op === "mul" ? "%" : "";
     return { heading: signed(pct), stat: res === "all" ? "cost" : `${res} cost` };
+  }
+  if (e.attr === "work_rate" && target && _cbTargetKind(target) === "building") {
+    return { heading: vals.map(x => `${_cbNum(Math.abs(x))}%`).join("/"),
+             stat: `train and research ${v > 0 ? "faster" : "slower"}` };
   }
   const label = e.attr === "work_rate" && target?.type === "job" ? (_cbJob(target.id)?.work || a.label) : a.label;
   return { heading: signed(e.op === "mul" || a.pct ? "%" : ""), stat: label };
@@ -836,7 +844,10 @@ function _cbRenderEffects() {
     const a = _cbAttr(e.attr);
     const only = _cbWork.targets.length === 1 ? _cbWork.targets[0] : null;
     const job = only?.type === "job" ? _cbJob(only.id) : null;
-    const nameOf = x => (x.id === "work_rate" && job) ? job.work : x.label;   // "build speed"
+    const buildings = _cbWork.targets.length && _cbWork.targets.every(t => _cbTargetKind(t) === "building");
+    const nameOf = x => x.id !== "work_rate" ? x.label
+                      : job ? job.work                                     // "build speed"
+                      : buildings ? "training and research speed" : x.label;
     const attrOpts = attrs.map(x => {
       const n = nameOf(x);
       return `<option value="${x.id}"${x.id === e.attr ? " selected" : ""}>${cbEsc(n.charAt(0).toUpperCase() + n.slice(1))}</option>`;

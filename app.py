@@ -226,6 +226,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Choose your Monastery.</strong> Its look is separate from the architecture, like the Monk's: pick any of 16, or keep the architecture's own",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Wooden Castles</strong>, a civ bonus card: your Castles are the campaign Wooden Fort from the Mapuche, Tupi and Muisca DLC. 250 stone + 500 wood, built in 175 seconds, 3000 HP, with the Castle's arrows",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Ambuscade</strong>, a Castle unique tech: your unique unit also trains at the Archery Range",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Buildings that work faster</strong> as a custom bonus effect: \"Military buildings train and research 20% faster\", the way Conscription and the Goths' team bonus do it",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Accuracy</strong> as a custom bonus effect (\"Archers +20% accuracy\"), never past 100%",
         "<strong class=\"color-accent-2\">NEW:</strong> A <strong>notice for retired bonus cards</strong> an older civ still carries, with where each went and a button to remove them",
         "<strong class=\"color-accent-2\">NEW:</strong> Empire Forge now reads <strong>everything from your own game files</strong>: civ descriptions, tech trees, unit icons and the greyed \"later age\" buttons, so they match your game after every patch",

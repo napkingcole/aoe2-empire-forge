@@ -240,7 +240,10 @@ ATTRS: dict[str, dict] = {
     "build_speed":   {"label": "build speed",      "ops": ("mul",),       "fields": [101], "faster": True, "kinds": ("building",)},
     "cost":          {"label": "cost",             "ops": ("mul",),       "fields": [103, 104, 105, 106], "kinds": ("unit", "building")},
     "regen":         {"label": "HP regeneration per minute", "ops": ("add",), "fields": [109], "kinds": ("unit", "building")},
-    "work_rate":     {"label": "work rate",        "ops": ("mul",),       "fields": [13],        "kinds": ("unit", "job")},
+    # On a building, attribute 13 is how fast it trains and researches — as
+    # Conscription, Chivalry, Perfusion and the Goths', Huns' and Britons' team
+    # bonuses write it, on every age form of the building.
+    "work_rate":     {"label": "work rate",        "ops": ("mul",),       "fields": [13],        "kinds": ("unit", "job", "building")},
     "carry":         {"label": "carry capacity",   "ops": ("add",),       "fields": [14],        "kinds": ("unit", "job")},
     "garrison":      {"label": "garrison space",   "ops": ("add",),       "fields": [2],         "kinds": ("unit", "building")},
     # Population a building supports (#64): attribute 21, the amount of its
@@ -510,10 +513,19 @@ def allowed_attrs(dat, entries: list[tuple[str, str, int]]) -> dict[str, list[st
                     if any(l.unit_id == g["trained_at"] for l in u.creatable.train_locations)}
         return ids
 
+    # A building works if something trains or is researched there.
+    workplaces = ({l.unit_id for _, u in trainable for l in u.creatable.train_locations}
+                  | {r.location_id for t in dat.techs for r in (getattr(t, "research_locations", None) or ())})
+
+    def capable(k, kind, u, uid) -> bool:
+        if k == "work_rate" and kind == "building":
+            return uid in workplaces
+        return _CAPABLE[k](u)
+
     def allowed(kind, ids) -> list[str]:
-        us = [u for u in map(real, ids) if u is not None] if ids is not None else None
+        us = [(u, i) for i in ids if (u := real(i)) is not None] if ids is not None else None
         return [k for k, a in ATTRS.items() if kind in a["kinds"]
-                and (k not in _CAPABLE or us is None or any(_CAPABLE[k](u) for u in us))]
+                and (k not in _CAPABLE or us is None or any(capable(k, kind, u, i) for u, i in us))]
 
     out = {key: allowed(kind, with_forms(set(tid) if isinstance(tid, (set, frozenset, list, tuple))
                                          else {tid}))
@@ -957,6 +969,10 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
         text = f"{verb} {bare('%')} {'faster' if v > 0 else 'slower'}"
     else:
         label = spec["label"]
+        if eff["attr"] == "work_rate" and target and target_kind(target) == "building":
+            # A building's work rate is its training and research speed.
+            return (f"train and research {bare('%')} {'faster' if v > 0 else 'slower'}"
+                    + _steps_suffix(steps))
         if eff["attr"] == "work_rate" and target and target["type"] == "job":
             label = JOBS[target["id"]]["work"]          # "gather rate", "build speed"
         text = f"{signed(pct)} {label}"
@@ -1168,8 +1184,10 @@ def card_text(card: dict) -> str:
         return ", ".join(_civ_effect_text(e, when.get("age"), bool(when.get("building")))
                          for e in card["effects"]) + gate_text(card)
     subject = _join([target_subject(t) for t in targets])
-    # A job's own word for work rate ("gather rate") only when it is the only target.
-    named = targets[0] if len(targets) == 1 else None
+    # A job's own word for work rate ("gather rate") only when it is the only
+    # target; a building's ("train and research faster") when all are buildings.
+    named = (targets[0] if len(targets) == 1 or all(target_kind(t) == "building" for t in targets)
+             else None)
     return f"{subject}: " + ", ".join(effect_text(e, named) for e in card["effects"]) + gate_text(card)
 
 
