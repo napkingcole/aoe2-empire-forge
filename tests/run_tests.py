@@ -91,6 +91,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("elephant bonuses",                "test_elephant_bonuses.py",     "build"),
     ("monk voice gender",               "test_monk_voice.py",           "build"),
     ("monastery skin",                  "test_monastery_skin.py",       "build"),
+    ("building rubble follows architecture", "test_building_rubble.py", "build"),
     ("scenario Monk skins (Priest, Pagan Priest)", "test_scenario_monk_skins.py", "build"),
     ("replaced civ leftovers",          "test_replaced_civ_leftovers.py", "build"),
     ("custom bonus targets",            "test_custom_bonus_targets.py", "build"),

@@ -236,7 +236,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Greyed Castle buttons before the Castle Age</strong> showed the replaced civ's unique unit on maps that start with a Castle",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Your unique unit keeps Castle button 1</strong>, page 1, even over a leftover unit from the civ it replaced",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Several custom unique units <strong>trained for 0 population</strong>",
-        "<strong class=\"color-accent-2\">BUG FIX:</strong> A destroyed <strong>Monastery left Britons rubble</strong> whatever the architecture",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Destroyed buildings left Western European rubble</strong> whatever the architecture: Barracks, Town Centers, towers, gates and the rest now leave their own, and the Castle and Wonder leave their picks' rubble",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Old pictures after an update.</strong> Your browser could keep showing the previous version's pages and unit pictures; it now checks for new ones every time. Empire Forge also clears out the caches older versions left behind (up to a few hundred MB)",
     ],
     "2.6.2": [

@@ -205,6 +205,31 @@ MONASTERY_SKIN_OPTIONS: list[dict] = [
 ]
 
 
+# A destroyed building leaves its rubble: a separate unit (its dead_unit_id,
+# class 14, or 11 for a few Dark Age ones) whose art is per civ like the
+# building's.  No class filter reaches it, so until 2026-10-24 every custom civ
+# left the template's (Western European) rubble for every building — the
+# Monastery's was found first and fixed on its own (1421).
+_RUBBLE_CLASSES = frozenset({11, 14})
+
+
+def _copy_rubble(src_units, dst_units, building_ids, skip=frozenset()) -> None:
+    """Give each building's rubble the source civ's art, except the rubble
+    units in `skip`."""
+    for b in building_ids:
+        src = src_units[b] if b < len(src_units) else None
+        if src is None or not 0 <= src.dead_unit_id < min(len(src_units), len(dst_units)):
+            continue
+        if src.dead_unit_id in skip:
+            continue
+        r_src, r_dst = src_units[src.dead_unit_id], dst_units[src.dead_unit_id]
+        if r_src is None or r_dst is None or r_src.class_ not in _RUBBLE_CLASSES:
+            continue
+        r_dst.standing_graphic = r_src.standing_graphic
+        r_dst.dying_graphic    = r_src.dying_graphic
+        r_dst.undead_graphic   = r_src.undead_graphic
+
+
 def _copy_monastery_skin(src_civ, dst_civ) -> None:
     """Copy the Monastery's look (MONASTERY_SKIN_OPTIONS) from one civ to
     another: the same fields _copy_architecture copies for a building, on the
@@ -6585,6 +6610,7 @@ def _copy_architecture(src_civ, dst_civ) -> None:
     """
     src_units = src_civ.units
     dst_units = dst_civ.units
+    buildings = []
 
     for i, (src, dst) in enumerate(zip(src_units, dst_units)):
         if src is None or dst is None:
@@ -6592,6 +6618,7 @@ def _copy_architecture(src_civ, dst_civ) -> None:
         cls = src.class_
 
         if cls in _ARCH_BUILDING_CLASSES and i != BUILDING_CASTLE and i != BUILDING_WONDER:
+            buildings.append(i)
             dst.standing_graphic = src.standing_graphic
             dst.dying_graphic    = src.dying_graphic
             dst.undead_graphic   = src.undead_graphic
@@ -6615,6 +6642,12 @@ def _copy_architecture(src_civ, dst_civ) -> None:
                 elif cls == 18:
                     for st, dt in zip(src.bird.tasks, dst.bird.tasks):
                         dt.proceeding_graphic_id = st.proceeding_graphic_id
+
+    # The Castle's and Wonder's rubble follow their own picks, copied before
+    # this pass — and the Castle's (1430) is shared with the Thracian Fort,
+    # which this pass does copy.
+    own = {u.dead_unit_id for u in (dst_units[BUILDING_CASTLE], dst_units[BUILDING_WONDER]) if u is not None}
+    _copy_rubble(src_units, dst_units, buildings, skip=own)
 
     # Units with regional art that no class filter reaches (see _ARCH_EXTRA_UNITS).
     for i in _ARCH_EXTRA_UNITS:
@@ -7031,6 +7064,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         print(f"       Castle: copying from DAT civ {castle_src} ({castle_civ_name!r}) [{origin}]")
         if len(src_units) > 82 and src_units[82] is not None:
             new_civ.units[82] = deepcopy(src_units[82])
+            _copy_rubble(src_units, new_civ.units, (82,))
 
     # Wonder graphic: copy units[276] from the chosen source civ.
     wonder_raw = civ_def.get("wonder") if "wonder" in civ_def else civ_def.get("wonder_model", -1)
@@ -7042,6 +7076,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
               f"({_original_civ(dat, wonder_src).name!r}) [{origin}]")
         if len(src_units) > 276 and src_units[276] is not None:
             new_civ.units[276] = deepcopy(src_units[276])
+            _copy_rubble(src_units, new_civ.units, (276,))
 
     # Graphic sources are the vanilla civs as shipped (_original_civ), captured
     # BEFORE this slot is overwritten below — "replace Byzantines and choose
