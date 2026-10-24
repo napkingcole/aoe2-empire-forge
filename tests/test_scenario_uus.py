@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scenario units as unique units (km 103-124); KM's custom ones retired.  DAT-gated.
+"""Scenario units as unique units (km 103-124); KM's custom ones offered beside them.  DAT-gated.
 
 km_custom_uu.SCENARIO_UUS offers fifteen units the scenario editor can place
 but no civ trains: the UU is the game's own unit as it stands, the Elite is the
@@ -113,25 +113,33 @@ check("but not the other scenario units' icons", not others, others[:3])
 strings = uz.read(next(n for n in uz.namelist() if n.endswith("key-value-modded-strings-utf8.txt") and "/en/" in n)).decode()
 check("the UU and its Elite are named", '"Qizilbash Warrior"' in strings and "Elite Qizilbash Warrior" in strings)
 
-print("\n=== KM's custom units are retired, not deleted ===")
-# 2026-10-22, the user's call: KM's 36 (re-tuned game units, or invented units
-# wearing a hero's model) leave the picker; a civ that has one still builds it.
+print("\n=== KM's custom units are offered; a scenario unit of the same name wins ===")
+# 2026-10-22 all 36 KM custom units left the picker; 2026-10-24 they came back
+# (players build civs on them — the Headhunter, the Jaridah).  Retired are only
+# those whose game unit the picker already offers under the same name.
 from civ_schema import RETIRED_UUS                                # noqa: E402
 import app as webapp                                              # noqa: E402
-check("all 36 KM custom units are retired", RETIRED_UUS == frozenset(
-    i for i, p in kcu.PRESETS.items() if p["mode"] != "scenario") and len(RETIRED_UUS) == 36)
+scenario_names = {name for name, _, _ in kcu.SCENARIO_UUS.values()}
+km = {i for i, p in kcu.PRESETS.items() if p["mode"] != "scenario"}
+check("retired = exactly the KM units a scenario unit shares a name with",
+      RETIRED_UUS == {i for i in km if kcu.PRESETS[i]["name"] in scenario_names},
+      sorted(RETIRED_UUS))
+check("...seven of them", len(RETIRED_UUS) == 7, len(RETIRED_UUS))
 with webapp.app.test_request_context("/api/builder/uu/catalog"):
     entries = webapp._uu_catalog_entries()
-check("the picker marks every one retired", all(e["retired"] == (e["km_idx"] in RETIRED_UUS) for e in entries))
+check("the picker marks only those retired", all(e["retired"] == (e["km_idx"] in RETIRED_UUS) for e in entries))
+check("...offers the other 29 KM units", km - RETIRED_UUS <= {e["km_idx"] for e in entries if not e["retired"]},
+      sorted(km - RETIRED_UUS - {e["km_idx"] for e in entries}))
 check("...and offers every scenario unit", {e["km_idx"] for e in entries if e["scenario"]} == set(kcu.SCENARIO_UUS))
 from civ_appender import apply_civ                                # noqa: E402
-old = {"format": FORMAT_KEY, "alias": "Wololo Probe", "architecture": 2, "language": 0, "bonuses": [],
-       "unique_unit": {"km_idx": 39},        # Crusader Knight, as Unhinged Empires' Wololo Warlords
-       "tree": {"units": [83], "buildings": [109, 82], "techs": [101, 102, 103]}}
-with contextlib.redirect_stdout(io.StringIO()):
-    r = apply_civ(dat, old, target_slot=4)
-check("a civ that already has a retired one still builds it",
-      r.get("uu_id", -1) >= 0 and r.get("km_uu_make_avail_tech_id", -1) >= 0, {k: r.get(k) for k in ("uu_id", "elite_uu_id")})
+for idx, what in ((63, "a KM unit (Headhunter)"), (42, "a retired one (KM's Ninja)")):
+    old = {"format": FORMAT_KEY, "alias": "Wololo Probe", "architecture": 2, "language": 0, "bonuses": [],
+           "unique_unit": {"km_idx": idx},
+           "tree": {"units": [83], "buildings": [109, 82], "techs": [101, 102, 103]}}
+    with contextlib.redirect_stdout(io.StringIO()):
+        r = apply_civ(dat, old, target_slot=4)
+    check(f"a civ with {what} builds it",
+          r.get("uu_id", -1) >= 0 and r.get("km_uu_make_avail_tech_id", -1) >= 0, {k: r.get(k) for k in ("uu_id", "elite_uu_id")})
 
 print("\n=== the civ's own UU keeps Castle button 1 ===")
 # QA 2026-10-23: QA Qizilbash copied the Goths' tree, Huskarl node and all.

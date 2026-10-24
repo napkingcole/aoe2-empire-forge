@@ -49,20 +49,16 @@ RETIRED_UU_FLAGS = frozenset({"ignore_armor"})
 #     RETIRED_INTO_TREE): it still does what it says, but it has a better home.
 RETIRED_CIV_BONUSES = frozenset({333, 51})
 
-# KM's 36 custom unique units (km_custom_uu.PRESETS 39-77), retired from the
-# picker 2026-10-22 (the user's call).  Ten were real game units KM had re-tuned
-# by hand — the game's own are scenario units now (118-124), or heroes on the
-# Heroes tab (Crusader Knight, Saboteur, Sosso Guard); 24 were invented units
-# wearing a real hero's model (the Jaridah is Attila's) with hand-typed stats,
-# where the 28-preset population bug lived; the Swiss Pikeman is the Heavy
-# Pikeman (scenario 109).  Hidden, not deleted: a saved civ or KM import that
-# carries one still builds it, as Unhinged Empires' Wololo Warlords does.
-def _km_custom_uu_ids() -> frozenset:
-    import km_custom_uu
-    return frozenset(i for i, p in km_custom_uu.PRESETS.items() if p["mode"] != "scenario")
-
-
-RETIRED_UUS = _km_custom_uu_ids()
+# KM's custom unique units (km_custom_uu.PRESETS 39-77) were all retired from
+# the picker 2026-10-22 and brought back 2026-10-24 (the user's call, after
+# players asked for them — the Headhunter, the Jaridah and the rest are what
+# their civs were built on).  Retired now are only the seven whose game unit
+# the picker already offers under the same name, as a scenario unit with the
+# game's own stats (118-124): there the game's version wins.  Hidden, not
+# deleted: a saved civ or KM import that carries one still builds it.
+#   40 Xolotl Warrior, 42 Ninja, 43 Flamethrower, 44 Photonman,
+#   48 Amazon Warrior, 49 Amazon Archer, 50 Iroquois Warrior
+RETIRED_UUS = frozenset({40, 42, 43, 44, 48, 49, 50})
 
 # Cards whose choice moved into the tech tree.  A civ that picked one reads as
 # if its tree held `add` and not `remove`, derived on every read (as the Unlock

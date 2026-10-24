@@ -3765,7 +3765,7 @@ function renderUUGrid() {
       ? `<span class="uu-badge uu-badge-scenario" title="Scenario unit">S</span>`
       : u.vanilla
       ? `<span class="uu-badge uu-badge-vanilla">V</span>`
-      : `<span class="uu-badge uu-badge-custom">C</span>`;
+      : `<span class="uu-badge uu-badge-custom" title="Custom unit, from Krakenmeister's civ builder">C</span>`;
     const sel = u.km_idx === selectedIdx ? " selected" : "";
     return `
       <div class="uu-card${sel}" data-km-idx="${u.km_idx}">
@@ -3829,7 +3829,7 @@ function selectUU(kmIdx) {
   document.getElementById("uu-selected-type").textContent =
     unit.retired ? "Retired — still builds for this civ, but is no longer offered"
     : unit.chronicles ? "Chronicles unit" : unit.scenario ? "Scenario unit"
-    : unit.vanilla ? "Vanilla base unit" : "Custom base unit";
+    : unit.vanilla ? "Vanilla base unit" : "Custom unit, from Krakenmeister's civ builder";
 
   document.getElementById("uu-name-override").value = draft.unique_unit.name       || "";
   document.getElementById("uu-description").value   = draft.unique_unit.description || "";

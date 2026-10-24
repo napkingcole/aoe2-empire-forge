@@ -106,11 +106,11 @@ _ARCH_REP_CIVS = [3, 1, 5, 8, 15, 7, 20, 22, 25, 28, 33, 21, 11]
 # Viking Sagas — before it the Vikings were Central European (icon_set 1).
 _ARCH_BUILDING_CLASSES = frozenset({3, 52, 27, 39})   # Building, Wall, Gate, Tower
 _ARCH_MOBILE_CLASSES   = frozenset({59, 18, 43, 19, 22})
-# Units the class filters miss but that still carry regional art.  Unit 134 is
-# the Monk-carrying-a-relic pose: its class (11) is shared with projectiles, so
-# it can't be swept in by class.  Without it the Monk changes with the
-# architecture set but reverts to the European pose the moment it picks up a
-# relic — visible in-game for every non-European civ.
+# Units the class filters miss but that still carry regional art.  Unit 134
+# (MONKX_D) is the dead Monk's corpse, left by both the Monk (125) and the Monk
+# carrying a relic (286, class 43, swept in by class): its class (11) is shared
+# with projectiles, so it can't be swept in by class.  Without it a fallen Monk
+# leaves the replaced civ's body behind, whatever the Monk looked like alive.
 _ARCH_EXTRA_UNITS = (134,)
 
 # ── Monk skin ─────────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ _ARCH_EXTRA_UNITS = (134,)
 # a Monk but not an architecture; Byzantines and Slavs share a Monk but not an
 # architecture either).  Exactly three units carry it — verified by comparing
 # every unit's per-civ graphic partition against the Monk's.
-_MONK_SKIN_UNITS = (125, 134, 286)   # Monk, Monk w/ relic, RMONK
+_MONK_SKIN_UNITS = (125, 134, 286)   # Monk, its corpse (MONKX_D), Monk with a relic (RMONK)
 # value = the DAT civ index whose Monk art is copied.  Chronicles civs have a
 # 12th skin but are excluded from the catalogue entirely (see memory).
 MONK_SKIN_OPTIONS: list[dict] = [

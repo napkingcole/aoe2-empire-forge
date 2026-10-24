@@ -707,7 +707,7 @@ SCENARIO_UUS: dict[int, tuple[str, int, int | None]] = {
     116: ("Sharkatzor",             1222, None),
     117: ("War Penguin",             639, None),
     # Real game units KM had re-tuned by hand (presets 40-50); the game's own
-    # versions replace them (2026-10-22, the user's call — see civ_schema.RETIRED_UUS).
+    # versions replace them in the picker (the user's call — see civ_schema.RETIRED_UUS).
     118: ("Xolotl Warrior",         1570, None),
     119: ("Ninja",                  1145, None),
     120: ("Flamethrower",            188, None),
