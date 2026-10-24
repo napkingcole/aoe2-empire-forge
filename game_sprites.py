@@ -388,13 +388,16 @@ def graphic_webp(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST) -> byt
 # player's game like the previews, so every piece is at the game's own scale
 # and a civ a patch adds has art at once.  The images in static/img/scene are
 # only the fallback for when the game isn't found.
-SCENE_SLOTS = ("architecture", "wonder", "castle", "monastery_skin_building", "monk_skin", "starting_scout")
+# "building" is any building by unit id, for a card that changes how one looks
+# (card 460 draws its Castle as the Wooden Fort, 2600).
+SCENE_SLOTS = ("architecture", "wonder", "castle", "monastery_skin_building", "monk_skin", "starting_scout",
+               "building")
 _CASTLE, _WONDER, _MONK, _MONASTERY = 82, 276, 125, 104
 # Buildings are stored at half the sprite's size: the scene shows them at about
 # a quarter, so half is still sharp on a 2x screen, and an animated one (the
 # Tupi waterfall) stays a few MB rather than tens.  builder.js
 # _SCENE_BUILDING_SCALE undoes it, so every slot keeps the game's one scale.
-SCENE_BUILDINGS = ("architecture", "wonder", "castle", "monastery_skin_building")
+SCENE_BUILDINGS = ("architecture", "wonder", "castle", "monastery_skin_building", "building")
 SCENE_BUILDING_SCALE = 0.5
 _SCENE_MIN_FRAME_MS = 66
 # A Town Center is four units (back, main, centre, front — the annexes); the
@@ -407,7 +410,7 @@ def scene_still(dat, dat_path, slot: str, value: int) -> Image.Image | None:
     """One scene slot's art, facing south-west in Player 1 Blue.  Values are
     the wizard's: architecture = civ.icon_set; wonder and castle = DAT civ
     index - 1 (KM's convention); monk_skin and monastery_skin_building = DAT
-    civ index; starting_scout = unit id."""
+    civ index; starting_scout and building = unit id."""
     got = _scene_frames(dat, dat_path, slot, value, still=True)
     return got[0][0] if got else None
 
@@ -454,9 +457,11 @@ def _scene_graphic(dat, slot: str, value: int) -> tuple:
         unit = civs[idx].units[{"wonder": _WONDER, "castle": _CASTLE, "monk_skin": _MONK,
                                 "monastery_skin_building": _MONASTERY}[slot]]
         gid = unit.standing_graphic[0]
-    elif slot == "starting_scout":
+    elif slot in ("starting_scout", "building"):
         units = civs[0].units
         if not 0 <= value < len(units) or units[value] is None:
+            return None, ()
+        if slot == "building" and units[value].type != 80:
             return None, ()
         gid = units[value].standing_graphic[0]
     else:

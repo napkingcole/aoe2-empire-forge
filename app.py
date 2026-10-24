@@ -2880,12 +2880,13 @@ def _warm_previews(dat_path: str) -> None:
         for uid in sorted(ids):
             _render_preview(dat_path, uid, "still")
         # The identity scene, every option of every slot (the pickers show them all).
-        from civ_appender import MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS
+        from civ_appender import MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS, _WOODEN_FORT
         scene = [("architecture", v) for v in sorted({c.icon_set for c in dat.civs[1:]})]
         scene += [("monastery_skin_building", o["value"]) for o in MONASTERY_SKIN_OPTIONS]
         scene += [(s, i - 1) for i in range(1, len(dat.civs)) for s in ("wonder", "castle")]
         scene += [("monk_skin", o["value"]) for o in MONK_SKIN_OPTIONS]
         scene += [("starting_scout", o["value"]) for o in _SCOUT_OPTIONS]
+        scene += [("building", _WOODEN_FORT)]                         # card 460's Castle
         # Moving buildings last: the Tupi waterfall alone takes about a minute.
         scene.sort(key=lambda sv: game_sprites.scene_animated(dat, *sv))
         for slot, value in scene:
