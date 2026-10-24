@@ -97,6 +97,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("replaced civ leftovers",          "test_replaced_civ_leftovers.py", "build"),
     ("custom bonus targets",            "test_custom_bonus_targets.py", "build"),
     ("custom bonus: replace a unit's cost", "test_cost_set_bonus.py",     "build"),
+    ("custom bonus: generating buildings", "test_trickle_bonus.py",     "build"),
     ("multi-target, team & UT cards",   "test_custom_bonus_multi.py",   "build"),
     ("UT preset pools",                 "test_ut_pools.py",             "build"),
     ("elite upgrade cost",              "test_elite_upgrade_cost.py",   "build"),

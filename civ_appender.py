@@ -3763,6 +3763,69 @@ def _upgrade_line(neighbours: dict[int, set[int]], unit_id: int) -> set[int]:
     return seen
 
 
+# ── Generating buildings (custom effect "trickle") ───────────────────────────
+# The Feitoria generates with action-151 tasks, each scaled by a civ resource
+# (205-208): a civ whose resource is 0 makes nothing.  Generate tasks only run
+# if they are on civ 0, in unit_headers AND on every civ's unit
+# (llm/known_limitations.md), so they can't belong to one civ — the resource
+# does.  A card's buildings get one task per resource, scaled by a resource of
+# their own from _TRICKLE_RESOURCES, at 1 per minute; the card ADDS its rate
+# to that resource for its own civ (a team bonus: for each ally).  Civs that
+# give the same buildings different rates each set their own.
+#
+# The rate assumes work_value_1 is per second, from the Mint in Unhinged
+# Empires' build.py (0.333 x resource 1.0 ~= 20 gold a minute) — unmeasured
+# here; in-game check owed.
+#
+# "Unused Resource 103-133" in the UGC guide's table: unreferenced by any
+# effect, task, cost or storage in the shipped DAT and 0 for every civ
+# (checked 2026-10-24; re-checked per build below).
+_TRICKLE_RESOURCES = tuple(range(103, 134))
+_GENERATE_ACTION = 151
+_FEITORIA = 1021
+
+
+def _trickle_rate_resource(dat: DatFile, building_ids: set[int], res_index: int) -> int | None:
+    """The resource that scales `building_ids`' generate task for `res_index`
+    (0 food, 1 wood, 2 stone, 3 gold), adding the task the first time."""
+    reg = getattr(dat, "_ef_trickle", None)
+    if reg is None:
+        reg = dat._ef_trickle = {}
+    key = (frozenset(building_ids), res_index)
+    if key in reg:
+        return reg[key]
+    taken = set(reg.values())
+    free = [r for r in _TRICKLE_RESOURCES if r not in taken
+            and all(r < len(c.resources) and c.resources[r] == 0 for c in dat.civs)]
+    template = next((t for t in (dat.civs[0].units[_FEITORIA].bird.tasks
+                                 if _FEITORIA < len(dat.civs[0].units) and dat.civs[0].units[_FEITORIA]
+                                 and dat.civs[0].units[_FEITORIA].bird else ())
+                     if t.action_type == _GENERATE_ACTION), None)
+    if not free or template is None:
+        print("       WARNING: generating building: no free rate resource or no Feitoria task to copy — skipped")
+        return None
+    rate_res = free[0]
+
+    def task_for(tasks):
+        t = deepcopy(template)
+        t.id = len(tasks)
+        t.resource_out = res_index
+        t.resource_multiplier = rate_res
+        t.work_value_1 = 1.0 / 60.0          # x the resource = per minute
+        return t
+
+    for uid in sorted(building_ids):
+        for civ in _every_civ(dat):
+            u = civ.units[uid] if uid < len(civ.units) else None
+            if u is not None and u.bird is not None:
+                u.bird.tasks.append(task_for(u.bird.tasks))
+        if uid < len(dat.unit_headers) and dat.unit_headers[uid] is not None:
+            hdr = dat.unit_headers[uid]
+            hdr.task_list = [*(hdr.task_list or []), task_for(hdr.task_list or [])]
+    reg[key] = rate_res
+    return rate_res
+
+
 def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
                            uu_ids: tuple[int, ...] = (), ut_ids: tuple = (),
                            team: bool = False):
@@ -3862,6 +3925,15 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
                 out.append((uid, float(getattr(u.type_50, spec["unit_field"]))))
         return out
 
+    # A generating building (custom effect "trickle"): the buildings the
+    # selectors reach get a generate task, and the resource that scales it.
+    def trickle_resource(selectors, res: str):
+        ids = {a for a, _ in selectors if a >= 0}
+        classes = {b for a, b in selectors if a < 0 and b >= 0}
+        ids |= {i for i, u in enumerate(units) if u is not None and u.type == 80 and u.class_ in classes}
+        ids = {i for i in ids if i < n_units and units[i] is not None and units[i].type == 80}
+        return _trickle_rate_resource(dat, ids, custom_bonus._RES_INDEX[res]) if ids else None
+
     # Build-time answers the library can't know: what this civ trains at a
     # building, and which unit is its UU.  Both keep alternate forms.
     present = _civ_present_units(civ_def, dat, civ_index) | {u for u in uu_ids if u >= 0}
@@ -3890,6 +3962,8 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
             return up_of(arg)
         if kind == "pop_space":
             return [] if team else pop_space_units(arg)
+        if kind == "trickle":
+            return trickle_resource(*arg)
         if kind == "unit_values":
             return unit_values(*arg)
         if kind == "units":

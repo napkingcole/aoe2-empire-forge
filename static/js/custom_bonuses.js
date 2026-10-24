@@ -61,8 +61,10 @@ async function cbLoadLibrary() {
 const _CB_FASTER = { attack_speed: "attack", train_speed: "train", build_speed: "build", research_speed: "research" };
 const _CB_COST    = new Set(["cost", "tech_cost"]);    // attrs with a resource picker
 // A replaced cost names one resource per effect, never "all" (custom_bonus
-// ATTRS["cost_set"]); the card reads "costs 60 food + 20 gold".
+// ATTRS["cost_set"]); the card reads "costs 60 food + 20 gold".  So does a
+// generating building ("trickle"): "generate 10 gold per minute".
 const _CB_SET_RESOURCES = ["food", "wood", "gold", "stone"];
+const _CB_ONE_RESOURCE  = new Set(["cost_set", "trickle"]);
 
 function _cbAttr(id)  { return (_cbCatalog?.attrs || []).find(a => a.id === id); }
 function _cbGroup(id) { return (_cbCatalog?.groups || []).find(g => g.id === id); }
@@ -198,6 +200,8 @@ function _cbEffectText(e, target) {
   let text;
   if (e.attr === "cost_set") {
     text = `costs ${_cbNum(v)} ${e.resource || "food"}`;
+  } else if (e.attr === "trickle") {
+    text = `generate ${_cbNum(v)} ${e.resource || "food"} per minute`;
   } else if (_CB_COST.has(e.attr)) {
     const res = e.resource || "all";
     text = `${signed(pct)} ${res === "all" ? "cost" : res + " cost"}`;
@@ -340,6 +344,7 @@ function cbCardCategory(card) {
   if (all(_CB_COST_ATTRS)) return "cost";
   if (ts.length && ts.every(_cbIsEconomy)) return "economy";
   if (all(_CB_SPEED_ATTRS)) return "speed";
+  if (fx.some(e => e.attr === "trickle")) return "economy";
   if (fx.some(e => _CB_COMBAT_ATTRS.has(e.attr))) return "combat";
   if (ts.length && ts.every(t => _cbTargetKind(t) === "building")) return "building";
   return "general";
@@ -381,6 +386,7 @@ function _cbHeadline(e, target) {
   if (_CB_FASTER[e.attr]) return { heading: vals.map(x => `${_cbNum(Math.abs(x))}%`).join("/"),
                                    stat: `${_CB_FASTER[e.attr]} ${v > 0 ? "faster" : "slower"}` };
   if (e.attr === "cost_set") return { heading: _cbNum(v), stat: `${e.resource || "food"} cost` };
+  if (e.attr === "trickle") return { heading: `+${_cbNum(v)}`, stat: `${e.resource || "food"} per minute` };
   if (_CB_COST.has(e.attr)) {
     const res = e.resource || "all";
     const pct = e.attr === "cost" || e.op === "mul" ? "%" : "";
@@ -851,7 +857,7 @@ function _cbRenderEffects() {
   // never swaps that effect for another one silently.
   const stepped = !!_cbWork.when?.steps;
   // A replaced cost doesn't grow each age (the server drops it from such a card).
-  const offered = _cbAttrsForAll(_cbWork.targets).filter(a => !(stepped && a.id === "cost_set"));
+  const offered = _cbAttrsForAll(_cbWork.targets).filter(a => !(stepped && _CB_ONE_RESOURCE.has(a.id)));
   const kept = _cbWork.effects.map(e => e.attr)
     .filter(id => !offered.some(a => a.id === id)).map(_cbAttr).filter(Boolean);
   const attrs = [...offered, ...kept];
@@ -867,7 +873,8 @@ function _cbRenderEffects() {
       const n = nameOf(x);
       return `<option value="${x.id}"${x.id === e.attr ? " selected" : ""}>${cbEsc(n.charAt(0).toUpperCase() + n.slice(1))}</option>`;
     }).join("");
-    const unitLabel = op => op === "set" ? "" : op === "add" ? "flat" : (_CB_FASTER[e.attr] ? "% faster" : "%");
+    const unitLabel = op => e.attr === "trickle" ? "per minute"
+                          : op === "set" ? "" : op === "add" ? "flat" : (_CB_FASTER[e.attr] ? "% faster" : "%");
     if (a?.novalue) {
       // Free / instant take no amount; on a growing card they come with the first step.
       return `<div class="cb-effect" data-idx="${i}">
@@ -883,7 +890,7 @@ function _cbRenderEffects() {
     const resCtl = e.attr === "resources"
       ? `<select class="form-select form-select-sm cb-res">${(_cbCatalog.civ_resources || []).map(r =>
           `<option value="${r}"${r === (e.resource || "gold") ? " selected" : ""}>${r === "each" ? "each resource" : r}</option>`).join("")}</select>`
-      : e.attr === "cost_set"
+      : _CB_ONE_RESOURCE.has(e.attr)
       ? `<select class="form-select form-select-sm cb-res">${_CB_SET_RESOURCES.map(r =>
           `<option value="${r}"${r === (e.resource || "food") ? " selected" : ""}>${r}</option>`).join("")}</select>`
       : _CB_COST.has(e.attr)
@@ -918,7 +925,7 @@ function _cbRenderEffects() {
       const a = _cbAttr(e.attr);
       if (!a.ops.includes(e.op)) e.op = a.ops[0];
       if (e.attr === "resources") e.resource = e.resource && e.resource !== "all" ? e.resource : "gold";
-      else if (e.attr === "cost_set") e.resource = _CB_SET_RESOURCES.includes(e.resource) ? e.resource : "food";
+      else if (_CB_ONE_RESOURCE.has(e.attr)) e.resource = _CB_SET_RESOURCES.includes(e.resource) ? e.resource : (e.attr === "trickle" ? "gold" : "food");
       else if (!_CB_COST.has(e.attr)) delete e.resource;
       if (a.novalue) delete e.value;
       _cbRenderEffects();
@@ -982,7 +989,7 @@ function _cbNewEffect() {
   const a = attrs.find(x => !used.has(x.id)) || attrs[0];
   return { attr: a.id, op: a.id === "hp" ? "mul" : a.ops[0], value: null,
            ...(_cbWork.when?.steps && !a.novalue ? { steps: {} } : {}),
-           ...(a.id === "resources" ? { resource: "gold" } : a.id === "cost_set" ? { resource: "food" } : {}) };
+           ...(a.id === "resources" || a.id === "trickle" ? { resource: "gold" } : a.id === "cost_set" ? { resource: "food" } : {}) };
 }
 
 // ── When: always / from an age / grows each age, and an optional building ──
@@ -1189,7 +1196,7 @@ async function _cbSave() {
         out.value = _cbVals(out)[0];
       }
       if (_CB_COST.has(e.attr)) out.resource = e.resource || "all";
-      if (e.attr === "cost_set") out.resource = e.resource || "food";
+      if (_CB_ONE_RESOURCE.has(e.attr)) out.resource = e.resource || "food";
       // Without this every one-time resources card saved as gold.
       if (e.attr === "resources") out.resource = e.resource || "gold";
       return out;

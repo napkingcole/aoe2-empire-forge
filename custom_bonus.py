@@ -51,6 +51,7 @@ from genieutils.effect import EffectCommand
 _ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 EC_SET       = 0
+EC_RESOURCE  = 1
 EC_ADD       = 4
 EC_MULTIPLY  = 5
 EC_TECH_COST = 101    # a=tech, b=resource (0 food 1 wood 2 stone 3 gold, -1 all), c=mode, d
@@ -246,6 +247,12 @@ ATTRS: dict[str, dict] = {
     # The build zeroes every resource the card doesn't name (_plain_commands).
     "cost_set":      {"label": "cost, replaced",   "ops": ("set",), "positive": True, "max": 2000,
                       "fields": [], "kinds": ("unit", "building")},
+    # A building that generates a resource, as the Feitoria does (2026-10-24,
+    # a player's request): N per minute, one resource per effect.  The build
+    # gives the buildings a generate task and this civ the rate (see the
+    # "trickle" resolver in civ_appender); other civs' copies make nothing.
+    "trickle":       {"label": "generates per minute", "ops": ("add",), "positive": True, "max": 300,
+                      "fields": [], "kinds": ("building",)},
     "regen":         {"label": "HP regeneration per minute", "ops": ("add",), "fields": [109], "kinds": ("unit", "building")},
     # On a building, attribute 13 is how fast it trains and researches — as
     # Conscription, Chivalry, Perfusion and the Goths', Huns' and Britons' team
@@ -708,9 +715,10 @@ def _norm_card(raw) -> dict | None:
                if e and kinds <= set(ATTRS[e["attr"]]["kinds"])]
     # A replaced cost: one effect per resource (the last wins), at most
     # _COST_SET_MAX, and not on a card that grows — "costs 60 food" has no
-    # running total to step.
+    # running total to step.  Nor a generating building, whose rate is built
+    # as a single add.
     if when.get("steps"):
-        effects = [e for e in effects if e["attr"] != "cost_set"]
+        effects = [e for e in effects if e["attr"] not in ("cost_set", "trickle")]
     named: dict[str, int] = {}
     for i, e in enumerate(effects):
         if e["attr"] == "cost_set":
@@ -857,9 +865,9 @@ def _norm_effect(raw) -> dict | None:
     if raw["attr"] in ("cost", "tech_cost"):
         res = raw.get("resource", "all")
         out["resource"] = res if res in COST_RESOURCES else "all"
-    if raw["attr"] == "cost_set":
+    if raw["attr"] in ("cost_set", "trickle"):
         if raw.get("resource") not in _RES_COST:
-            return None                  # a replaced cost names its resource
+            return None                  # a replaced cost or a trickle names its resource
         out["resource"] = raw["resource"]
     if spec.get("max") and not spec.get("positive") and raw["attr"] != "resources":
         value = max(-spec["max"], min(spec["max"], value))
@@ -989,6 +997,8 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
 
     if eff["attr"] == "cost_set":
         text = f"costs {_fmt_num(v)} {eff['resource']}"
+    elif eff["attr"] == "trickle":
+        text = f"generate {_fmt_num(v)} {eff['resource']} per minute"
     elif eff["attr"] in ("tech_cost", "cost"):
         res = eff.get("resource", "all")
         text = f"{signed(pct)} {'cost' if res == 'all' else f'{res} cost'}"
@@ -1431,6 +1441,13 @@ def _plain_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
         if eff["attr"] == "cost_set":
             cmds.extend(EffectCommand(type=EC_SET, a=a, b=b, c=_RES_COST[eff["resource"]], d=float(eff["value"]))
                         for a, b in sel)
+        elif eff["attr"] == "trickle":
+            # The buildings get a generate task scaled by a civ resource of its
+            # own; this card adds its rate to that resource (an add, so two
+            # cards on the same buildings stack).  Only a build can do it.
+            rate_res = resolve("trickle", (sel, eff["resource"])) if resolve else None
+            if rate_res is not None:
+                cmds.append(EffectCommand(type=EC_RESOURCE, a=rate_res, b=1, c=-1, d=float(eff["value"])))
         elif spec.get("unit_field"):
             # Per unit, only units that have the stat (see _CAPABLE).  An ADD,
             # so cards and bonuses stack as vanilla's do; a reduction takes at

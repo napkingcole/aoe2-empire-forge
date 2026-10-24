@@ -106,7 +106,7 @@ check("...nor the Farms group", "work_rate" not in wr["group:farms"])
 check("Military buildings are", "work_rate" in wr["group:military_buildings"])
 from civ_appender import _custom_bonus_resolver                    # noqa: E402
 line_of, resolve = _custom_bonus_resolver(dat, 1, {})
-card = {"targets": [{"type": "building", "id": 12, "kind": "building", "name": "Barracks"}],
+card = {"targets": [{"type": "unit", "id": 12, "kind": "building", "name": "Barracks"}],
         "effects": [{"attr": "work_rate", "op": "mul", "value": 20}]}
 cmds = cb.card_commands(card, line_of, resolve)
 vanilla = {int(c.a) for c in dat.effects[405].effect_commands if c.type == 5 and int(c.c) == 13}  # Goths team bonus
