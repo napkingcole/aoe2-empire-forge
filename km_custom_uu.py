@@ -411,7 +411,11 @@ PRESETS: dict[int, dict] = {
         "armors": ([(4, 1), (3, 0), (8, 0), (19, 0)], [(4, 1), (3, 0), (8, 0), (19, 0)]),
         "displayed_attack": (None, None), "displayed_melee_armor": (None, None),
         "displayed_pierce_armor": (None, None),
-        "extra": {"name_internal": ("BOUNTY", "EBOUNTY")},
+        # KM's kidnapper (civbuilder.cpp:2768): takes villagers, 1 at a time
+        # (Elite 2).  KM did it with a second, swappable form; ours is one unit
+        # with the Scythian Scout's kidnap task beside its attack, as vanilla's
+        # kidnappers (852, 575, 577) have it.  Not yet seen working in game.
+        "extra": {"name_internal": ("BOUNTY", "EBOUNTY"), "kidnap": {"garrison": (1, 2)}},
     },
     # 64 — Teulu
     64: {
@@ -843,6 +847,42 @@ BESPOKE_TASKS: dict[int, list[dict]] = {
 }
 
 
+KIDNAPPER = 852          # Scythian Scout: a vanilla unit that kidnaps (task 135)
+KIDNAP_ACTION = 135
+
+
+def _add_kidnap(dat: DatFile, unit_ids: tuple[int, int], uu_unit, elite_unit, spec: dict) -> None:
+    """Give both tiers the Scythian Scout's kidnap task and room to carry.
+
+    The task goes on every civ's copy and the shared header, like a generating
+    building's (llm/known_limitations.md): the engine reads tasks from both.
+    """
+    from civ_appender import _every_civ
+    src = dat.civs[0].units[KIDNAPPER]
+    task = next((t for t in (src.bird.tasks if src is not None and src.bird else ())
+                 if t.action_type == KIDNAP_ACTION), None)
+    if task is None:
+        print("       WARNING: kidnap: no Scythian Scout kidnap task in this game — skipped")
+        return
+
+    def add(tasks):
+        if any(t.action_type == KIDNAP_ACTION for t in tasks):
+            return tasks
+        t = deepcopy(task)
+        t.id = len(tasks)
+        return [*tasks, t]
+
+    for uid in unit_ids:
+        for civ in _every_civ(dat):
+            u = civ.units[uid] if uid < len(civ.units) else None
+            if u is not None and u.bird is not None:
+                u.bird.tasks = add(u.bird.tasks)
+        if uid < len(dat.unit_headers) and dat.unit_headers[uid] is not None:
+            hdr = dat.unit_headers[uid]
+            hdr.task_list = add(hdr.task_list or [])
+    uu_unit.garrison_capacity, elite_unit.garrison_capacity = spec["garrison"]
+
+
 def _apply_bespoke_tasks(dat: DatFile, uu_unit, elite_unit, km_uu_index: int) -> None:
     for spec in BESPOKE_TASKS.get(km_uu_index, []):
         source = dat.civs[0].units[spec["source_unit"]]
@@ -1254,6 +1294,8 @@ def append_km_custom_uu(dat: DatFile, civ_index: int, km_uu_index: int,
     elite_unit = dat.civs[civ_index].units[elite_id]
     _apply_preset_stats(uu_unit, elite_unit, preset)
     _apply_bespoke_tasks(dat, uu_unit, elite_unit, km_uu_index)
+    if "kidnap" in preset["extra"]:
+        _add_kidnap(dat, (uu_id, elite_id), uu_unit, elite_unit, preset["extra"]["kidnap"])
 
     # Fresh name/help/creation strings for the units themselves — without
     # this, both tiers keep showing their cloned base unit's original name
