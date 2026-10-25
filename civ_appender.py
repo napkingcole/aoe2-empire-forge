@@ -1259,6 +1259,44 @@ def _team_revived_techs(dat: DatFile) -> set[int]:
     return out
 
 
+def _global_default_resources(dat: DatFile, tech_id: int) -> set[int]:
+    """Resources a free, global default tech sets; empty for anything else.
+
+    "Free global default" = civ -1, researched nowhere (auto-fire), and an
+    effect made only of EC_RESOURCE commands: Monk Ranged Heal 407 today.
+    """
+    if not 0 <= tech_id < len(dat.techs):
+        return set()
+    t = dat.techs[tech_id]
+    if t.civ != -1 or any(r.location_id >= 0 for r in t.research_locations):
+        return set()
+    if not 0 <= t.effect_id < len(dat.effects):
+        return set()
+    cmds = dat.effects[t.effect_id].effect_commands
+    if not cmds or any(c.type != 1 for c in cmds):
+        return set()
+    return {int(c.a) for c in cmds}
+
+
+def _bonus_resource_writes(dat: DatFile, civ_def: dict) -> set[int]:
+    """Resources this civ's cards set or add (EC_RESOURCE), vanilla techs and KM lists."""
+    from bonus_catalog import civ_bonus_techs, civ_bonus_ec_list
+    out: set[int] = set()
+    for entry in get_civ_bonuses(civ_def):
+        bid = entry[0] if isinstance(entry, (list, tuple)) else entry
+        try:
+            bid = int(bid)
+        except (TypeError, ValueError):
+            continue
+        for tid in civ_bonus_techs(bid):
+            if 0 <= tid < len(dat.techs) and 0 <= dat.techs[tid].effect_id < len(dat.effects):
+                out |= {int(c.a) for c in dat.effects[dat.techs[tid].effect_id].effect_commands
+                        if c.type == 1}
+        for block in civ_bonus_ec_list(bid):
+            out |= {int(e["A"]) for e in block.get("ecs", []) if e.get("type") == 1}
+    return out
+
+
 def _editor_nodes() -> dict[str, set[int]]:
     """Return {'techs','units','buildings'} — the ids FULL.json draws as nodes."""
     global _editor_nodes_cache
@@ -1561,6 +1599,21 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     # the sweep wrote it into every civ without the unit, where no team bonus
     # can undo it: allies of a civ with the card never got the upgrade (#62).
     all_disableable -= _team_revived_techs(dat)
+
+    # ── Step 1d: ...nor a free global default some vanilla civ replaces.
+    #
+    # Monk Ranged Heal 407 is an auto-fire civ=-1 tech that sets the heal range
+    # (resource 90) to 4 for everyone.  It reached the pool only because the
+    # Teutons disable it, so it cannot overwrite their own range of 8 (tech 347,
+    # card 11).  It is no editor node, so no tree could ever keep it, and every
+    # custom civ lost ranged healing: Monks walked up to heal (players' report,
+    # on 2.6.x too, 2026-10-25).  Such a default stays on unless this civ's own
+    # cards set the same resource, which is exactly the Teutons' reason.
+    _own_res = _bonus_resource_writes(dat, civ_def)
+    for _tid in all_disableable - nodes["techs"]:
+        _res = _global_default_resources(dat, _tid)
+        if _res and not (_res & _own_res):
+            all_disableable.discard(_tid)
 
     # ── Step 2: Build reverse maps from effect inspection of each disableable tech.
     # enable_map:  unit/building_id → [tech_ids that make it available via EC_ENABLE b=1]
