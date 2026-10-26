@@ -1429,18 +1429,26 @@ def _plain_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
         return cmds
     sel = _selectors(card, line_of, resolve)
     cmds: list[EffectCommand] = []
-    named = [e["resource"] for e in card["effects"] if e["attr"] == "cost_set"]
+    named = {e["resource"]: float(e["value"]) for e in card["effects"] if e["attr"] == "cost_set"}
+    cost_sel = sel
     if named:
+        # The engine only writes a cost slot that already holds that resource
+        # (the Monk ships a 0-food slot for Hussite Reforms to fill): a SET of
+        # a resource the unit has no slot for is lost, so the build readies the
+        # slots and drops units it can't (resolve "cost_slots").  Without it,
+        # nothing — a Knight zeroed to free was the in-game result, 2026-10-26.
+        gated = bool((card.get("when") or {}).get("age") or (card.get("when") or {}).get("building"))
+        cost_sel = resolve("cost_slots", (sel, named, gated)) if resolve else []
         # Every resource the card doesn't name goes to 0 first, as Corvinian
         # Army and Hussite Reforms do before they set the new one.
         for res, c in _RES_COST.items():
             if res not in named:
-                cmds.extend(EffectCommand(type=EC_SET, a=a, b=b, c=c, d=0.0) for a, b in sel)
+                cmds.extend(EffectCommand(type=EC_SET, a=a, b=b, c=c, d=0.0) for a, b in cost_sel)
     for eff in card["effects"]:
         spec = ATTRS[eff["attr"]]
         if eff["attr"] == "cost_set":
             cmds.extend(EffectCommand(type=EC_SET, a=a, b=b, c=_RES_COST[eff["resource"]], d=float(eff["value"]))
-                        for a, b in sel)
+                        for a, b in cost_sel)
         elif eff["attr"] == "trickle":
             # The buildings get a generate task scaled by a civ resource of its
             # own; this card adds its rate to that resource (an add, so two

@@ -223,7 +223,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Krakenmeister's custom unique units stay</strong>, beside the new scenario units: the Headhunter, Jaridah, Gendarme and the rest, marked C. Where the game has the same unit (the Ninja, Photonman, Amazon Archer and four more), the picker offers the game's own; civs that already use KM's version still build it",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>The Headhunter kidnaps villagers</strong>, as it did in Krakenmeister's builder: right-click an enemy villager to carry it off, one at a time. It still fights everything else",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>See units as they look in the game.</strong> Hover a hero or unique unit for a picture, or press its play button to watch it idle, walk and attack, drawn from your own game files in Player 1 Blue",
-        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Every hero in your game</strong> on the Heroes tab (over 200), with search and filters, read from your game so new ones appear when the game adds them",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Every hero in your game</strong> on the Heroes tab (almost 200), with search and filters, read from your game so new ones appear when the game adds them. Units that can't fight or heal, like Emperor in a Barrel or the Ox Cart, are left out",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Unique unit appearance.</strong> Give your unique unit the look of a hero or another unit of the same kind and size, keeping its own stats. Its Elite wears the look's Elite when the game has one",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>The Appearance scene, drawn from your game.</strong> Every wonder, castle, Town Center, Monk and starting scout is the game's own art, at one scale, including the wonders we never had pictures for. The Tupi wonder's waterfall moves",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Priest and Pagan Priest Monks.</strong> The scenario editor's two priests are Monk looks now, carrying relics and falling in their own robes",
@@ -232,7 +232,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Wooden Castles</strong>, a Castle unique tech after the Slavs' Detinets: once researched, every Castle you have and build becomes a Wooden Fort costing 300 stone + 500 wood, as strong as before",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Ambuscade</strong>, a Castle unique tech: your unique unit also trains at the Archery Range",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Buildings that work faster</strong> as a custom bonus effect: \"Military buildings train and research 20% faster\", the way Conscription and the Goths' team bonus do it",
-        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Change what a unit costs</strong> as a custom bonus effect, like Corvinian Army: \"Militia line costs 60 food + 20 wood\", up to two resources",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Change what a unit costs</strong> as a custom bonus effect, like Corvinian Army: \"Militia line costs 60 food + 20 wood\", up to two resources. From the start of the game any cost works; from an age, in a unique tech or as a team bonus, a unit can only switch to a resource it has a spare cost slot for, and the build tells you when one can't",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Buildings that generate resources</strong> as a custom bonus effect, like the Feitoria: \"Military buildings generate 10 gold per minute\". Several civs in one mod can each have their own rates and buildings",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Accuracy</strong> as a custom bonus effect (\"Archers +20% accuracy\"), never past 100%",
         "<strong class=\"color-accent-2\">NEW:</strong> A <strong>notice for retired bonus cards</strong> an older civ still carries, with where each went and a button to remove them",
@@ -509,7 +509,10 @@ def _km_civ_name(km_index: int) -> str:
     return str(km_index)
 
 def _arch_name(arch_val: int) -> str:
-    """Friendly name for a 1-based KM architecture value."""
+    """The architecture set's name ("Western European"), as the wizard shows it."""
+    label = next((o["label"] for o in _ARCH_OPTIONS if o["value"] == arch_val), None)
+    if label:
+        return label
     if 1 <= arch_val <= len(_ARCH_REP_CIVS):
         dat_idx = _ARCH_REP_CIVS[arch_val - 1]
         names = _civ_names_by_dat_index()
@@ -632,8 +635,9 @@ def upload():
                 "name": (data.get("alias") or data.get("name")
                          or Path(f.filename).stem),
                 "bonus_count": len(bonus_list),
-                "castle_name":  _km_civ_name(data["castle"])  if "castle"       in data else None,
-                "wonder_name":  _km_civ_name(data["wonder"])  if "wonder"       in data else None,
+                # -1 = the architecture's own (the wizard's "Architecture Default").
+                "castle_name":  _km_civ_name(data["castle"])  if data.get("castle", -1) >= 0 else None,
+                "wonder_name":  _km_civ_name(data["wonder"])  if data.get("wonder", -1) >= 0 else None,
                 "arch_name":    _arch_name(data["architecture"]) if "architecture" in data else None,
             })
         except Exception as e:

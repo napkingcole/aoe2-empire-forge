@@ -915,7 +915,13 @@ function _cbRenderEffects() {
       ${resCtl}
       <button type="button" class="btn btn-sm btn-link text-danger cb-effect-remove" title="Remove effect"><i class="fa-solid fa-xmark"></i></button>
     </div>`;
-  }).join("");
+  }).join("") + (_cbWork.effects.some(e => e.attr === "cost_set")
+    // The engine fills only a cost slot that already exists (civ_appender cost_slots).
+    ? `<div class="form-text mt-1">From the start of the game, any cost works. From an age or a building, in a unique tech
+        or as a team bonus, a unit can only take a resource it has a spare slot for. Most units cost two resources and
+        have none: a Knight (food + gold) can change its amounts or drop one, but not switch to wood. The build warns
+        and leaves such a unit at its normal cost.</div>`
+    : "");
 
   wrap.querySelectorAll(".cb-effect").forEach(row => {
     const idx = parseInt(row.dataset.idx, 10);

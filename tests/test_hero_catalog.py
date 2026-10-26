@@ -54,13 +54,19 @@ notes = {int(k): v for k, v in json.loads(
     (ROOT / "static/data/hero_notes.json").read_text(encoding="utf-8")).items() if not k.startswith("_")}
 
 print("=== the catalog ===")
-check("about two hundred heroes", len(cat) >= 200, f"{len(cat)}")
+check("about two hundred heroes", len(cat) >= 190, f"{len(cat)}")   # 198 once the non-fighters went, 2026-10-26
 check("every hero in the notes is offered", set(notes) <= set(by_id), sorted(set(notes) - set(by_id)))
 check("the three multiplayer heroes come first",
       [h["category"] for h in cat[:3]] == ["multiplayer"] * 3, [h["name"] for h in cat[:3]])
 check("no two heroes share a name", len({h["name"] for h in cat}) == len(cat))
 check("no animals", not [h for h in cat if units[h["id"]].class_ == 10])
 check("no ships", not [h for h in cat if units[h["id"]].class_ == 22])
+# The user's call (2026-10-26): nothing that can't fight or do a Monk's work.
+check("no hero that can't fight or heal/convert", all(heroes.can_fight(units[h["id"]]) for h in cat),
+      [h["name"] for h in cat if not heroes.can_fight(units[h["id"]])])
+check("Emperor in a Barrel, the Litter, Merchant, Ox Cart and Ox Wagon are gone",
+      not {733, 1988, 1572, 1271, 1273} & set(by_id), sorted({733, 1988, 1572, 1271, 1273} & set(by_id)))
+check("a Monk hero (heals, no attack) stays", any(units[h["id"]].class_ == 18 for h in cat))
 check("every hero has a train slot to move to the Castle",
       all(units[h["id"]].creatable and units[h["id"]].creatable.train_locations for h in cat))
 

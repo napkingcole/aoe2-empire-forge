@@ -180,16 +180,10 @@ def _apply(u, typ: int, attr: int, d: float, slot: int = 0) -> dict | None:
                 costs[i] = type(rc)(type=rc.type, amount=new, flag=rc.flag)
                 cr.resource_costs = tuple(costs)
                 return {"old": rc.amount, "new": new}
-        if typ == SET and d > 0:
-            # A resource the unit doesn't cost yet, after an earlier command
-            # zeroed one: Hussite Reforms sets the Monk's gold to 0, then food
-            # to 100, and the Monk costs 100 food.  Modelled as taking over the
-            # emptied slot (inferred from that, not seen slot by slot).
-            for i, rc in enumerate(costs):
-                if rc.flag == 1 and rc.type in _COST_ATTRS.values() and rc.amount == 0:
-                    costs[i] = type(rc)(type=res, amount=int(d), flag=1)
-                    cr.resource_costs = tuple(costs)
-                    return {"old": 0, "new": int(d)}
+        # A resource with no slot of its own is lost: the engine never retypes
+        # a slot (a Knight set from food + gold to wood + stone came out free,
+        # in game 2026-10-26).  Hussite Reforms works because the Monk ships a
+        # 0-food slot; the build readies slots the same way (cost_slots).
         return None
     return {"unmodelled": True}
 

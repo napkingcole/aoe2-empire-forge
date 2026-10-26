@@ -6,7 +6,10 @@ a real display name and a train slot for civ_appender._place_hero to point at
 the Castle.  That is ~200 units — the 30 the tab hand-listed until 2026-10-22,
 and every campaign and scenario hero besides, including any a DLC adds.
 
-Two kinds are left out:
+Three kinds are left out:
+  - units that can't fight or do a Monk's work: the regicide Kings, Emperor in
+    a Barrel, the Merchant, Ox Cart, Zhuge Liang (an aura only) and the like
+    (the user's call, 2026-10-26);
   - animals (class 10): Ornlu the Wolf and the Iron Boar are heroes to the
     game, but not people a civ would train (the user's call, 2026-10-21);
   - ships (class 22): every hero trains at the Castle, so Admiral Yi or Leif
@@ -22,6 +25,7 @@ from pathlib import Path
 _NOTES_PATH = Path(__file__).parent / "static" / "data" / "hero_notes.json"
 
 _ANIMAL_CLASS, _SHIP_CLASS = 10, 22
+_ATTACK, _CONVERT, _HEAL = 7, 104, 105        # task action types
 _KIND_BY_CLASS = {
     6: "infantry", 12: "cavalry",
     0: "archers", 36: "archers",              # foot archers, cavalry archers
@@ -34,13 +38,21 @@ def _notes() -> dict[int, dict]:
     return {int(k): v for k, v in raw.items() if not k.startswith("_")}
 
 
+def can_fight(unit) -> bool:
+    """An attack that does damage, or a Monk's convert or heal."""
+    acts = {t.action_type for t in (unit.bird.tasks if unit.bird else ())}
+    hits = bool(unit.type_50) and any(a.amount > 0 for a in unit.type_50.attacks)
+    return (_ATTACK in acts and hits) or bool(acts & {_CONVERT, _HEAL})
+
+
 def is_hero(unit) -> bool:
     """A placeable hero the Castle can train (see the module docstring)."""
     cr = getattr(unit, "creatable", None)
     return bool(unit is not None and unit.type == 70 and cr is not None and cr.hero_mode
                 and not unit.hide_in_editor and unit.hit_points > 0
                 and cr.train_locations
-                and unit.class_ not in (_ANIMAL_CLASS, _SHIP_CLASS))
+                and unit.class_ not in (_ANIMAL_CLASS, _SHIP_CLASS)
+                and can_fight(unit))
 
 
 def hero_catalog(dat, stats_of, name_of) -> list[dict]:

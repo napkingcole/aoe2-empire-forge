@@ -3879,9 +3879,16 @@ def _trickle_rate_resource(dat: DatFile, building_ids: set[int], res_index: int)
     return rate_res
 
 
+def _cost_slot_warning(text: str, names: list[str]) -> str:
+    """A replaced-cost card that some units couldn't take (resolve "cost_slots")."""
+    return (f"Custom bonus \"{text}\": {', '.join(sorted(set(names)))} can't change to that cost "
+            "mid-game — a unit has only two cost slots, and a new resource needs one that is "
+            "empty. Left at its normal cost. From the start of the game it would work.")
+
+
 def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
                            uu_ids: tuple[int, ...] = (), ut_ids: tuple = (),
-                           team: bool = False):
+                           team: bool = False, timed: bool = False):
     """(line_of, resolve) — the build-time answers custom_bonus.card_commands
     needs for this civ.  `uu_ids` is this civ's unique unit, base and elite, for
     the "Unique unit" group; `ut_ids` its Castle and Imperial unique techs, for
@@ -3891,6 +3898,10 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
     means everything trained there, not just what THIS civ trains, and nothing
     is resolved to our own unique unit or readied on our own buildings
     (custom_bonus.team_problem keeps those cards out in the first place).
+
+    `timed` builds for a unique tech: its cards take effect mid-game, not from
+    the start.  `resolve.problems` collects what a card couldn't do, for the
+    caller to warn about.
     """
     import custom_bonus
     neighbours = _upgrade_neighbours(dat)
@@ -3987,6 +3998,69 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
         ids = {i for i in ids if i < n_units and units[i] is not None and units[i].type == 80}
         return _trickle_rate_resource(dat, ids, custom_bonus._RES_INDEX[res]) if ids else None
 
+    # A replaced cost (custom effect "cost_set").  The engine only writes a
+    # cost slot that already holds the resource — Hussite Reforms works because
+    # the Monk ships (gold 100, food 0, pop 1) — and a unit has 3 slots, one
+    # usually population.  From the start, the build simply writes the new
+    # cost.  Mid-game (an age, a building, a unique tech, an ally's team bonus)
+    # the unit keeps its old cost until then, so each new resource needs a slot
+    # that is empty or holds a 0: retyped here to that resource at 0, as the
+    # Monk's food is.  A unit with no room is left out: the Knight (food, gold,
+    # pop) can't go mid-game to wood + stone, and zeroing it made it free.
+    problems: list[str] = []
+
+    def cost_slots(selectors, named: dict, gated: bool):
+        want = {custom_bonus._RES_INDEX[r]: v for r, v in named.items()}
+        mid_game = gated or timed or team
+        civs = _every_civ(dat) if team else [dat.civs[civ_index]]
+
+        def plan(u):
+            """The unit's new cost tuple, or None when it can't take the card."""
+            costs = list(u.creatable.resource_costs)
+            spend = [i for i, r in enumerate(costs) if r.type == -1 or 0 <= r.type <= 3]
+            if not mid_game:
+                if len(spend) < len(want):
+                    return None
+                Cost = type(costs[0])
+                fill = list(want.items())
+                for n, i in enumerate(spend):
+                    costs[i] = (Cost(type=fill[n][0], amount=int(fill[n][1]), flag=1) if n < len(fill)
+                                else Cost(type=-1, amount=0, flag=0))
+                return tuple(costs)
+            have = {r.type for r in costs}
+            free = [i for i in spend if costs[i].type == -1
+                    or (costs[i].amount == 0 and costs[i].type not in want)]
+            need = [res for res in want if res not in have]
+            if len(need) > len(free):
+                return None
+            for res, i in zip(need, free):
+                costs[i] = type(costs[i])(type=res, amount=0, flag=1)
+            return tuple(costs)
+
+        out = []
+        for a, b in selectors:
+            uids = ([a] if a >= 0 else
+                    [i for i, u in enumerate(units) if u is not None and u.class_ == b and u.creatable])
+            fits, bad = [], []
+            for uid in uids:
+                plans = [(c.units[uid], plan(c.units[uid])) for c in civs
+                         if uid < len(c.units) and c.units[uid] is not None and c.units[uid].creatable]
+                if not plans:
+                    continue
+                if any(p is None for _, p in plans):
+                    bad.append(uid)
+                    continue
+                for u, p in plans:
+                    u.creatable.resource_costs = p
+                fits.append(uid)
+            if bad:
+                problems.extend(unit_label(dat, civ_index, uid) for uid in bad)
+            if a < 0 and not bad:
+                out.append((a, b))
+            else:
+                out.extend((uid, -1) for uid in fits)
+        return out
+
     # Build-time answers the library can't know: what this civ trains at a
     # building, and which unit is its UU.  Both keep alternate forms.
     present = _civ_present_units(civ_def, dat, civ_index) | {u for u in uu_ids if u >= 0}
@@ -4019,6 +4093,8 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
             return trickle_resource(*arg)
         if kind == "unit_values":
             return unit_values(*arg)
+        if kind == "cost_slots":
+            return cost_slots(*arg)
         if kind == "units":
             return {u for u in custom_bonus.with_forms(set(arg))
                     if u < n_units and units[u] is not None}
@@ -4068,6 +4144,7 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
             out |= by_name.get((t.name, t.language_dll_name), set())
         return out
 
+    resolve.problems = problems
     return line_of, resolve
 
 
@@ -4092,7 +4169,12 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     applied = 0
     for card in cards:
         text = custom_bonus.card_text(card)
+        n_problems = len(resolve.problems)
         steps = custom_bonus.card_steps(card, line_of, resolve)
+        if len(resolve.problems) > n_problems:
+            _msg = _cost_slot_warning(text, resolve.problems[n_problems:])
+            print(f"  WARNING: {_msg}")
+            warnings.append(_msg)
         if not steps:
             _msg = _empty_card_message("Custom bonus", card)
             print(f"  WARNING: {_msg}")
@@ -4260,10 +4342,15 @@ def _apply_placed_cards(dat: DatFile, civ_index: int, civ_def: dict, warnings: l
             continue
         if tid is None or not (0 <= tid < len(dat.techs)):
             continue                      # no UT tech — _append_unique_tech_stubs makes one for cards
-        line_of, resolve = _custom_bonus_resolver(dat, civ_index, civ_def, uu_ids, ut_ids)
+        line_of, resolve = _custom_bonus_resolver(dat, civ_index, civ_def, uu_ids, ut_ids, timed=True)
         eff = dat.effects[dat.techs[tid].effect_id]
         for card in cards:
+            n_problems = len(resolve.problems)
             cmds = custom_bonus.card_commands(card, line_of, resolve)
+            if len(resolve.problems) > n_problems:
+                _msg = _cost_slot_warning(custom_bonus.card_text(card), resolve.problems[n_problems:])
+                print(f"  WARNING: {_msg}")
+                warnings.append(_msg)
             if not cmds:
                 _msg = _empty_card_message(f"{label} bonus", card)
                 print(f"  WARNING: {_msg}")
@@ -4280,7 +4367,12 @@ def _apply_placed_cards(dat: DatFile, civ_index: int, civ_def: dict, warnings: l
         eff = dat.effects[tb_eff_id]
         for card in cards:
             text = custom_bonus.card_text(card)
+            n_problems = len(resolve.problems)
             cmds = custom_bonus.card_commands(card, line_of, resolve)
+            if len(resolve.problems) > n_problems:
+                _msg = _cost_slot_warning(text, resolve.problems[n_problems:])
+                print(f"  WARNING: {_msg}")
+                warnings.append(_msg)
             if not cmds:
                 _msg = _empty_card_message("Team bonus", card)
                 print(f"  WARNING: {_msg}")

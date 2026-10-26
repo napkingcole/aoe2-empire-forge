@@ -3143,7 +3143,7 @@ function renderUTGrid(step) {
     const cost = _utCostOf(tier, t.id);
     const tip = [
       t.desc,
-      cost ? `Cost: ${_formatCostStr(cost.cost, cost.time)}` : "",
+      cost ? `Research cost: ${_formatCostStr(cost.cost, cost.time)}` : "",   // the tech's, not what it changes
       tier === own ? `${ageName} Age tech.`
                    : `Originally ${tier === "imperial" ? "an" : "a"} ${ageName} Age tech — here it takes effect when this tech is researched.`,
     ].filter(Boolean).join("\n");
