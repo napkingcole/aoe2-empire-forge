@@ -4171,14 +4171,16 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         text = custom_bonus.card_text(card)
         n_problems = len(resolve.problems)
         steps = custom_bonus.card_steps(card, line_of, resolve)
-        if len(resolve.problems) > n_problems:
+        cost_skipped = len(resolve.problems) > n_problems
+        if cost_skipped:
             _msg = _cost_slot_warning(text, resolve.problems[n_problems:])
             print(f"  WARNING: {_msg}")
             warnings.append(_msg)
         if not steps:
-            _msg = _empty_card_message("Custom bonus", card)
-            print(f"  WARNING: {_msg}")
-            warnings.append(_msg)
+            if not cost_skipped:          # already said why: one warning per card
+                _msg = _empty_card_message("Custom bonus", card)
+                print(f"  WARNING: {_msg}")
+                warnings.append(_msg)
             continue
         if any(-1 in step["reqs"] for step in steps):
             # The building has no "built" marker in this game version.
@@ -4347,14 +4349,16 @@ def _apply_placed_cards(dat: DatFile, civ_index: int, civ_def: dict, warnings: l
         for card in cards:
             n_problems = len(resolve.problems)
             cmds = custom_bonus.card_commands(card, line_of, resolve)
-            if len(resolve.problems) > n_problems:
+            cost_skipped = len(resolve.problems) > n_problems
+            if cost_skipped:
                 _msg = _cost_slot_warning(custom_bonus.card_text(card), resolve.problems[n_problems:])
                 print(f"  WARNING: {_msg}")
                 warnings.append(_msg)
             if not cmds:
-                _msg = _empty_card_message(f"{label} bonus", card)
-                print(f"  WARNING: {_msg}")
-                warnings.append(_msg)
+                if not cost_skipped:
+                    _msg = _empty_card_message(f"{label} bonus", card)
+                    print(f"  WARNING: {_msg}")
+                    warnings.append(_msg)
                 continue
             # Civ-gated by the tech itself: only this civ researches it.
             eff.effect_commands = [*eff.effect_commands, *cmds]
@@ -4369,14 +4373,16 @@ def _apply_placed_cards(dat: DatFile, civ_index: int, civ_def: dict, warnings: l
             text = custom_bonus.card_text(card)
             n_problems = len(resolve.problems)
             cmds = custom_bonus.card_commands(card, line_of, resolve)
-            if len(resolve.problems) > n_problems:
+            cost_skipped = len(resolve.problems) > n_problems
+            if cost_skipped:
                 _msg = _cost_slot_warning(text, resolve.problems[n_problems:])
                 print(f"  WARNING: {_msg}")
                 warnings.append(_msg)
             if not cmds:
-                _msg = _empty_card_message("Team bonus", card)
-                print(f"  WARNING: {_msg}")
-                warnings.append(_msg)
+                if not cost_skipped:
+                    _msg = _empty_card_message("Team bonus", card)
+                    print(f"  WARNING: {_msg}")
+                    warnings.append(_msg)
                 continue
             have = len(eff.effect_commands)
             if have + len(cmds) > soft_limit:

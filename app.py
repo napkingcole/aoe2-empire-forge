@@ -35,7 +35,7 @@ from build_all import (_build_combined_data_zip, _build_combined_ui_zip, dat_jso
                        _ut_name, _ut_source, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS,
                        _kv_text, ut_name_and_desc, ut_selection_text, ut_research_label,
-                       hero_string_lines)
+                       hero_string_lines, civ_tip_lines)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
@@ -235,6 +235,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Change what a unit costs</strong> as a custom bonus effect, like Corvinian Army: \"Militia line costs 60 food + 20 wood\", up to two resources. From the start of the game any cost works; from an age, in a unique tech or as a team bonus, a unit can only switch to a resource it has a spare cost slot for, and the build tells you when one can't",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Buildings that generate resources</strong> as a custom bonus effect, like the Feitoria: \"Military buildings generate 10 gold per minute\". Several civs in one mod can each have their own rates and buildings",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Accuracy</strong> as a custom bonus effect (\"Archers +20% accuracy\"), never past 100%",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Loading-screen tips for your civ.</strong> The four tips the game shows while a match loads now name your civ's bonus, unique unit and unique techs, instead of the replaced civ's",
         "<strong class=\"color-accent-2\">NEW:</strong> A <strong>notice for retired bonus cards</strong> an older civ still carries, with where each went and a button to remove them",
         "<strong class=\"color-accent-2\">NEW:</strong> Empire Forge now reads <strong>everything from your own game files</strong>: civ descriptions, tech trees, unit icons and the greyed \"later age\" buttons, so they match your game after every patch",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Economic upgrades one age earlier</strong> now include Crop Rotation and Caravan, at -40% food as the game's Burgundians have it",
@@ -966,6 +967,13 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 for txt in _tb_texts:
                     desc_parts.append(f"• {txt} \\n")
             full_desc = "".join(desc_parts)
+            # Loading-screen tips (build_all.civ_tip_lines, all three routes).
+            _bonus_texts = [_BONUS_NAMES[str(e[0])] + (f" [x{e[1]}]" if len(e) > 1 and e[1] > 1 else "")
+                            for e in civ_bonuses if isinstance(e, list) and _BONUS_NAMES.get(str(e[0]))]
+            _bonus_texts += [custom_bonus.card_text(c) for c in card_homes(civ_def)["civ"]]
+            hero_lines += civ_tip_lines(slot, _bonus_texts, uu_display,
+                                        [(castle_ut_name_short, castle_ut_desc_text),
+                                         (imp_ut_name_short, imp_ut_desc_text)], _tb_texts)
 
             for lang in LANGUAGES:
                 string_lines[lang].append(f'{name_sid} "{alias_kv}"')

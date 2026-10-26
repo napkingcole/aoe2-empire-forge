@@ -129,6 +129,7 @@ zeroes = [c for c in dat.effects[ut.effect_id].effect_commands if int(c.a) in KN
 check("the UT writes no Knight cost at all (it would be free)", not zeroes, [(c.a, c.c, c.d) for c in zeroes])
 check("the Knight still costs 60 food + 75 gold", costs_of(dat.civs[7].units[38]) == [(0, 60), (3, 75)])
 check("the player is told", any("can't change to that cost" in w and "Knight" in w for w in r["warnings"]), r["warnings"])
+check("and told only once (not also \"targets nothing\")", not any("targets nothing" in w for w in r["warnings"]), r["warnings"])
 
 print("mid-game with room: Monks to wood from the Castle Age (the Monk's 0-food slot)")
 monk_card = {"targets": [{"type": "unit", "id": 125, "name": "Monk", "kind": "unit"}], "when": {"age": 102},
