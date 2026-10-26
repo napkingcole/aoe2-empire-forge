@@ -412,9 +412,8 @@ PRESETS: dict[int, dict] = {
         "displayed_attack": (None, None), "displayed_melee_armor": (None, None),
         "displayed_pierce_armor": (None, None),
         # KM's kidnapper (civbuilder.cpp:2768): takes villagers, 1 at a time
-        # (Elite 2).  KM did it with a second, swappable form; ours is one unit
-        # with the Scythian Scout's kidnap task beside its attack, as vanilla's
-        # kidnappers (852, 575, 577) have it.  Not yet seen working in game.
+        # (Elite 2).  Kidnap AFTER the attack only attacked (in game,
+        # 2026-10-25); "first" vs KM's "twin" is the open probe — see _add_kidnap.
         "extra": {"name_internal": ("BOUNTY", "EBOUNTY"), "kidnap": {"garrison": (1, 2)}},
     },
     # 64 — Teulu
@@ -851,11 +850,17 @@ KIDNAPPER = 852          # Scythian Scout: a vanilla unit that kidnaps (task 135
 KIDNAP_ACTION = 135
 
 
-def _add_kidnap(dat: DatFile, unit_ids: tuple[int, int], uu_unit, elite_unit, spec: dict) -> None:
-    """Give both tiers the Scythian Scout's kidnap task and room to carry.
+def _add_kidnap(dat: DatFile, unit_ids: tuple[int, int], uu_unit, elite_unit, spec: dict):
+    """Let both tiers take villagers, with room to carry 1 (Elite 2).
 
-    The task goes on every civ's copy and the shared header, like a generating
-    building's (llm/known_limitations.md): the engine reads tasks from both.
+    Round 1 put the Scythian Scout's kidnap task AFTER the attack, as 852 has
+    it, and the Headhunter only attacked villagers (in game, 2026-10-25): an
+    enemy villager matches the attack first.  spec["mode"] picks the probe:
+      "first"  the kidnap task goes ahead of the attack;
+      "twin"   KM's way (civbuilder.cpp:2768): an extra form with no attack and
+               the kidnap task, in the same task-swap group as the unit.
+    Tasks go on every civ's copy and the shared header where the unit has one.
+    Returns the twin ids (form, elite form) in "twin" mode, else None.
     """
     from civ_appender import _every_civ
     src = dat.civs[0].units[KIDNAPPER]
@@ -864,22 +869,58 @@ def _add_kidnap(dat: DatFile, unit_ids: tuple[int, int], uu_unit, elite_unit, sp
     if task is None:
         print("       WARNING: kidnap: no Scythian Scout kidnap task in this game — skipped")
         return
+    mode = spec.get("mode", "first")
+
+    def renumber(tasks):
+        for i, t in enumerate(tasks):
+            t.id = i
+        return tasks
 
     def add(tasks):
         if any(t.action_type == KIDNAP_ACTION for t in tasks):
             return tasks
-        t = deepcopy(task)
-        t.id = len(tasks)
-        return [*tasks, t]
+        return renumber([deepcopy(task), *tasks])
 
-    for uid in unit_ids:
-        for civ in _every_civ(dat):
-            u = civ.units[uid] if uid < len(civ.units) else None
-            if u is not None and u.bird is not None:
-                u.bird.tasks = add(u.bird.tasks)
-        if uid < len(dat.unit_headers) and dat.unit_headers[uid] is not None:
-            hdr = dat.unit_headers[uid]
-            hdr.task_list = add(hdr.task_list or [])
+    def kidnapper(tasks):
+        return renumber([deepcopy(task), *(deepcopy(t) for t in tasks if t.action_type != 7)])
+
+    civs = _every_civ(dat)
+    if mode == "twin":
+        # Fresh swap groups: vanilla uses 1-2 (villagers) and 3 (fishing ships),
+        # which KM's 3/4 now collide with.
+        used = {u.bird.task_swap_group for c in civs for u in c.units if u is not None and u.bird}
+        g1 = max(used) + 1
+        twins = []
+        for uid, group in zip(unit_ids, (g1, g1 + 1)):
+            twin_id = len(dat.civs[0].units)
+            for civ in civs:
+                u = civ.units[uid]
+                t = deepcopy(u)
+                t.id = t.base_id = t.copy_id = twin_id
+                t.enabled = 0
+                if t.creatable is not None:       # a form, not a trainable unit
+                    for loc in t.creatable.train_locations:
+                        loc.unit_id, loc.button_id = -1, 0
+                t.bird.tasks = kidnapper(t.bird.tasks)
+                t.bird.task_swap_group = group
+                u.bird.task_swap_group = group
+                civ.units.append(t)
+            twins.append(twin_id)
+        print(f"       kidnap twin forms {twins}, swap groups {g1}/{g1 + 1}")
+        uu_unit.garrison_capacity, elite_unit.garrison_capacity = spec["garrison"]
+        for civ in civs:
+            for tid, cap in zip(twins, spec["garrison"]):
+                civ.units[tid].garrison_capacity = cap
+        return twins
+    else:
+        for uid in unit_ids:
+            for civ in civs:
+                u = civ.units[uid] if uid < len(civ.units) else None
+                if u is not None and u.bird is not None:
+                    u.bird.tasks = add(u.bird.tasks)
+            if uid < len(dat.unit_headers) and dat.unit_headers[uid] is not None:
+                hdr = dat.unit_headers[uid]
+                hdr.task_list = add(hdr.task_list or [])
     uu_unit.garrison_capacity, elite_unit.garrison_capacity = spec["garrison"]
 
 
@@ -1294,8 +1335,6 @@ def append_km_custom_uu(dat: DatFile, civ_index: int, km_uu_index: int,
     elite_unit = dat.civs[civ_index].units[elite_id]
     _apply_preset_stats(uu_unit, elite_unit, preset)
     _apply_bespoke_tasks(dat, uu_unit, elite_unit, km_uu_index)
-    if "kidnap" in preset["extra"]:
-        _add_kidnap(dat, (uu_id, elite_id), uu_unit, elite_unit, preset["extra"]["kidnap"])
 
     # Fresh name/help/creation strings for the units themselves — without
     # this, both tiers keep showing their cloned base unit's original name
@@ -1368,7 +1407,15 @@ def append_km_custom_uu(dat: DatFile, civ_index: int, km_uu_index: int,
                 elite_krepost_tl.unit_id = BUILDING_KREPOST
                 elite_unit.creatable.train_locations.append(elite_krepost_tl)
 
+    # Last, so a twin form is copied from the finished unit (names, costs).
+    twins = None
+    if "kidnap" in preset["extra"]:
+        twins = _add_kidnap(dat, (uu_id, elite_id), uu_unit, elite_unit, preset["extra"]["kidnap"])
+
     make_avail_id = _make_avail_tech(dat, civ_index, preset["name"], uu_id)
     elite_tech_id = _elite_tech(dat, civ_index, preset["name"], uu_id, elite_id,
                                 make_avail_id, preset, elite_name_sid, elite_desc_sid)
+    if twins:   # the elite upgrade also turns a kidnapper-form Headhunter elite
+        dat.effects[dat.techs[elite_tech_id].effect_id].effect_commands.append(
+            EffectCommand(type=EC_UPGRADE, a=twins[0], b=twins[1], c=-1, d=0.0))
     return uu_id, elite_id, make_avail_id, elite_tech_id
