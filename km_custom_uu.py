@@ -411,9 +411,11 @@ PRESETS: dict[int, dict] = {
         "armors": ([(4, 1), (3, 0), (8, 0), (19, 0)], [(4, 1), (3, 0), (8, 0), (19, 0)]),
         "displayed_attack": (None, None), "displayed_melee_armor": (None, None),
         "displayed_pierce_armor": (None, None),
-        # KM's kidnapper (civbuilder.cpp:2768): takes villagers, 1 at a time
-        # (Elite 2), through a swappable kidnapper form — see _add_kidnap.
-        "extra": {"name_internal": ("BOUNTY", "EBOUNTY"), "kidnap": {"garrison": (1, 2)}},
+        # KM's kidnapper (civbuilder.cpp:2768): takes villagers, 1 at a time,
+        # through a swappable kidnapper form — see _add_kidnap.  KM's Elite
+        # carried 2, but sending a loaded one for another dropped the first
+        # (in game, 2026-10-26), so both tiers carry 1.
+        "extra": {"name_internal": ("BOUNTY", "EBOUNTY"), "kidnap": {"garrison": (1, 1)}},
     },
     # 64 — Teulu
     64: {
@@ -850,7 +852,7 @@ KIDNAP_ACTION = 135
 
 
 def _add_kidnap(dat: DatFile, unit_ids: tuple[int, int], uu_unit, elite_unit, spec: dict) -> list[int] | None:
-    """Let both tiers take villagers, carrying 1 (Elite 2), KM's way
+    """Let both tiers take villagers, carrying 1, KM's way
     (civbuilder.cpp:2768): each tier gets a twin form with no attack and the
     Scythian Scout's kidnap task, in a task-swap group shared with the unit.
 

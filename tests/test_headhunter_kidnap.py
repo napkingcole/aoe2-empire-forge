@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """The KM Headhunter kidnaps villagers, as in KM's builder.  DAT-gated.
 
-The Scythian Scout's kidnap task (852, action 135, class 4 = villagers) after
-the attack only attacked in game (2026-10-25), so mode "first" puts it ahead of
-the attack; mode "twin" is KM's swappable kidnapper form (civbuilder.cpp:2768).
-Both carry 1 (Elite 2).  Tasks must be on every civ's copy (and the shared
-header for a unit that has one), so this saves the DAT and reads it back.
+KM's way (civbuilder.cpp:2768): each tier has a twin form with no attack and
+the Scythian Scout's kidnap task (852, action 135, class 4 = villagers), in a
+fresh task-swap group shared with the unit.  A unit with an attack only attacks
+villagers, whatever the task order (in game, 2026-10-25/26).  Both tiers carry
+1: an Elite carrying 2 dropped its villager when sent for the next (2026-10-26).
+Tasks must be on every civ's copy, so this saves the DAT and reads it back.
 
     venv/bin/python tests/test_headhunter_kidnap.py
 """
@@ -75,7 +76,7 @@ def kidnaps(tasks):
 print("Headhunter (read back from the saved DAT)")
 up = [(c.a, c.b) for c in back.effects[back.techs[r["km_uu_elite_tech_id"]].effect_id].effect_commands
       if c.type == 3]
-for uid, twin, tier, cap in ((uu, uu + 2, "Headhunter", 1), (elite, uu + 3, "Elite Headhunter", 2)):
+for uid, twin, tier, cap in ((uu, uu + 2, "Headhunter", 1), (elite, uu + 3, "Elite Headhunter", 1)):
     for ci, where in ((SLOT, "its civ"), (0, "civ 0")):
         u, f = back.civs[ci].units[uid], back.civs[ci].units[twin]
         check(f"{tier} ({where}) fights and has no kidnap task",
