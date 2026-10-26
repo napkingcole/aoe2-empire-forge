@@ -2,8 +2,9 @@
 """Probe mod: does the KM Headhunter kidnap villagers?  Built through build_all.
 
 Round 1 (kidnap task after the attack, with and without resource 95) only
-attacked villagers, 2026-10-25.  Round 2 (both kidnapped; "first" shipped, the
-twin mode removed after a3cff91 — this script needs that commit to rebuild):
+attacked villagers, 2026-10-25.  Round 2: First only attacked, Twin kidnapped,
+so the twin is now the only path and both civs build it (the mode switch below
+is inert; a3cff91 has the "first" mode).  Round 2 was:
 
   QA Kidnap First  (over Britons)  the kidnap task ahead of the attack
   QA Kidnap Twin   (over Franks)   KM's way: a second form with no attack and
