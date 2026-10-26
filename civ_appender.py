@@ -4412,7 +4412,7 @@ _AURA_ENABLE_BIT = 32
 _WOODEN_CASTLE_BONUS = 460
 _WOODEN_FORT = 2600
 _WOODEN_CASTLE_HP = 3000
-_WOODEN_CASTLE_COST = ((2, 250), (1, 500))    # stone, wood
+_WOODEN_CASTLE_COST = ((2, 300), (1, 500))    # stone, wood
 _WOODEN_CASTLE_BUILD_TIME = 175
 
 
@@ -4464,7 +4464,7 @@ def _wooden_castle(dat: DatFile, civ_index: int) -> bool:
 
 # Wooden Castles, the unique tech (Castle preset 69; the user's idea, 2026-10-24,
 # after the Slavs' Detinets): on research every Castle — built and to come —
-# becomes a Wooden Fort costing 250 stone + 500 wood, with the Castle's HP,
+# becomes a Wooden Fort costing 300 stone + 500 wood, with the Castle's HP,
 # arrows and build time.  The Thracians' own bonus is the precedent: it
 # upgrades the Castle (EC_UPGRADE 82 -> 2418) into a Castle copy, and units and
 # techs still train and research at "82" — as at every age-up's building
@@ -4694,7 +4694,7 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
     if bonus_id == _WOODEN_CASTLE_BONUS:  # Wooden Castles (the user's design, 2026-10-24)
         if _wooden_castle(dat, civ_index):
             print(f"       Wooden Castles: the Wooden Fort's look, {_WOODEN_CASTLE_HP} HP, "
-                  f"250 stone + 500 wood, {_WOODEN_CASTLE_BUILD_TIME} s")
+                  f"300 stone + 500 wood, {_WOODEN_CASTLE_BUILD_TIME} s")
         else:
             print("       WARNING: bonus 460: no 4x4 Wooden Fort (unit 2600) in this game's data — skipped")
         return True

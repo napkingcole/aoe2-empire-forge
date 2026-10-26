@@ -130,7 +130,7 @@ _UNIQUE_CASTLE_STRINGS = [
     # Ours (issue #81): Marauders pointed at the Archery Range.
     "Ambuscade (create Unique Unit at Archery Ranges)",
     # Ours (2026-10-24, after Detinets): civ_appender._UT_BUILT, no vanilla source.
-    "Wooden Castles (Castles become Wooden Forts costing 250 stone + 500 wood)",
+    "Wooden Castles (Castles become Wooden Forts costing 300 stone + 500 wood)",
 ]
 
 _UNIQUE_IMP_STRINGS = [

@@ -2,7 +2,7 @@
 """Wooden Castles, a Castle unique tech (preset 69).  DAT-gated.
 
 The user's idea after the Slavs' Detinets (2026-10-24): on research every
-Castle, built and to come, becomes a Wooden Fort costing 250 stone + 500 wood,
+Castle, built and to come, becomes a Wooden Fort costing 300 stone + 500 wood,
 keeping the Castle's HP, arrows and build time.  No vanilla tech does it, so it
 is built (civ_appender._UT_BUILT): a copy of this civ's Castle wearing the Fort,
 and EC_UPGRADE 82 -> that copy — the Thracians' own bonus upgrades their Castle
@@ -78,8 +78,8 @@ for slot in (SLOT, SLOT2):
     check(f"slot {slot}: wears the Wooden Fort", (w.standing_graphic, w.dying_graphic, w.undead_graphic,
           w.dead_unit_id, w.building.snow_graphic_id) == (fort.standing_graphic, fort.dying_graphic,
           fort.undead_graphic, fort.dead_unit_id, fort.building.snow_graphic_id))
-    check(f"slot {slot}: costs 250 stone + 500 wood",
-          [(r.type, r.amount) for r in w.creatable.resource_costs if r.flag][:2] == [(2, 250), (1, 500)])
+    check(f"slot {slot}: costs 300 stone + 500 wood",
+          [(r.type, r.amount) for r in w.creatable.resource_costs if r.flag][:2] == [(2, 300), (1, 500)])
     check(f"slot {slot}: keeps this civ's Castle HP, arrows, build time and button",
           (w.hit_points, w.type_50.displayed_attack, [(t.unit_id, t.button_id, t.train_time) for t in w.creatable.train_locations])
           == (c.hit_points, c.type_50.displayed_attack, [(t.unit_id, t.button_id, t.train_time) for t in c.creatable.train_locations]))

@@ -3,7 +3,7 @@
 
 The user's design (2026-10-24): the Wooden Fort's look (unit 2600, scenario
 only, added with the Mapuche/Tupi/Muisca DLC) on the civ's own Castle (82),
-which costs 250 stone + 500 wood instead of 650 stone, has 3000 HP instead of
+which costs 300 stone + 500 wood instead of 650 stone, has 3000 HP instead of
 4800, builds in 175 s instead of 200, and keeps the Castle's arrows.  It stays
 unit 82, so everything that names the Castle still finds it.
 
@@ -83,7 +83,7 @@ for slot, what in ((SLOT, "architecture's castle"), (SLOT_PICKED, "picked castle
           and c.creatable.garrison_graphic == fort.creatable.garrison_graphic)
     check("3000 HP", c.hit_points == 3000, c.hit_points)
     costs = [(r.type, r.amount, r.flag) for r in c.creatable.resource_costs]
-    check("costs 250 stone + 500 wood, nothing else", costs[:2] == [(2, 250, 1), (1, 500, 1)]
+    check("costs 300 stone + 500 wood, nothing else", costs[:2] == [(2, 300, 1), (1, 500, 1)]
           and all(r.flag == 0 or r.amount == 0 for r in c.creatable.resource_costs[2:]), costs)
     check("builds in 175 s", [t.train_time for t in c.creatable.train_locations] == [175])
     check("still built by the Villager on the Castle's button",

@@ -3582,7 +3582,7 @@
   "460": {
     "category": "building",
     "heading": "Wooden",
-    "stat": "Castles are Wooden Forts: 250 stone + 500 wood, built in 175 s, with 3000 HP and the same arrows",
+    "stat": "Castles are Wooden Forts: 300 stone + 500 wood, built in 175 s, with 3000 HP and the same arrows",
     "entity": "castle",
     "description": "Castles",
     "multiplier": false
