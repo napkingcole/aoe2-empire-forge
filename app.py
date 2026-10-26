@@ -35,7 +35,7 @@ from build_all import (_build_combined_data_zip, _build_combined_ui_zip, dat_jso
                        _ut_name, _ut_source, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS,
                        _kv_text, ut_name_and_desc, ut_selection_text, ut_research_label,
-                       hero_string_lines)
+                       hero_string_lines, civ_tip_lines)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
@@ -59,6 +59,19 @@ from version import __version__
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
+# The browser revalidates every static file (a cheap 304 from a local server)
+# instead of guessing a freshness time from Last-Modified: an update otherwise
+# ran the new app with last version's builder.js (a player saw old assets on
+# first launch of 2.7.0-preview.1).  The ?v= below makes the swap immediate.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+
+@app.url_defaults
+def _static_version(endpoint, values):
+    # Pages only: an API answer's icon URLs are data the scripts compare and
+    # build on, and max-age=0 already keeps them fresh.
+    if endpoint == "static" and not request.path.startswith("/api/"):
+        values.setdefault("v", __version__)
 
 SESSIONS_DIR = Path(tempfile.gettempdir()) / "aoe2civbuilder"
 SESSIONS_DIR.mkdir(exist_ok=True)
@@ -207,13 +220,22 @@ def _run_update_check():
 CHANGELOG: dict[str, list[str]] = {
     "2.7.0": [
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Scenario units as unique units.</strong> 22 units the scenario editor can place but no civ trains, among them the Qizilbash Warrior, War Dog, Ninja, Photonman and Amazon Archer. Each gets an Elite: the game's own where one exists, otherwise +15% HP and a little more attack, armour or range",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Krakenmeister's custom unique units stay</strong>, beside the new scenario units: the Headhunter, Jaridah, Gendarme and the rest, marked C. Where the game has the same unit (the Ninja, Photonman, Amazon Archer and four more), the picker offers the game's own; civs that already use KM's version still build it",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>The Headhunter kidnaps villagers</strong>, as it did in Krakenmeister's builder: right-click an enemy villager to carry it off, one at a time. It still fights everything else",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>See units as they look in the game.</strong> Hover a hero or unique unit for a picture, or press its play button to watch it idle, walk and attack, drawn from your own game files in Player 1 Blue",
-        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Every hero in your game</strong> on the Heroes tab (over 200), with search and filters, read from your game so new ones appear when the game adds them",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Every hero in your game</strong> on the Heroes tab (almost 200), with search and filters, read from your game so new ones appear when the game adds them. Units that can't fight or heal, like Emperor in a Barrel or the Ox Cart, are left out",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Unique unit appearance.</strong> Give your unique unit the look of a hero or another unit of the same kind and size, keeping its own stats. Its Elite wears the look's Elite when the game has one",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>The Appearance scene, drawn from your game.</strong> Every wonder, castle, Town Center, Monk and starting scout is the game's own art, at one scale, including the wonders we never had pictures for. The Tupi wonder's waterfall moves",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Priest and Pagan Priest Monks.</strong> The scenario editor's two priests are Monk looks now, carrying relics and falling in their own robes",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Choose your Monastery.</strong> Its look is separate from the architecture, like the Monk's: pick any of 16, or keep the architecture's own",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Wooden Castles</strong>, a civ bonus card: your Castles are the campaign Wooden Fort from the Mapuche, Tupi and Muisca DLC. 300 stone + 500 wood, built in 175 seconds, 3000 HP, with the Castle's arrows",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Wooden Castles</strong>, a Castle unique tech after the Slavs' Detinets: once researched, every Castle you have and build becomes a Wooden Fort costing 300 stone + 500 wood, as strong as before",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Ambuscade</strong>, a Castle unique tech: your unique unit also trains at the Archery Range",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Buildings that work faster</strong> as a custom bonus effect: \"Military buildings train and research 20% faster\", the way Conscription and the Goths' team bonus do it",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Change what a unit costs</strong> as a custom bonus effect, like Corvinian Army: \"Militia line costs 60 food + 20 wood\", up to two resources. From the start of the game any cost works; from an age, in a unique tech or as a team bonus, a unit can only switch to a resource it has a spare cost slot for, and the build tells you when one can't",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Buildings that generate resources</strong> as a custom bonus effect, like the Feitoria: \"Military buildings generate 10 gold per minute\". Several civs in one mod can each have their own rates and buildings",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Accuracy</strong> as a custom bonus effect (\"Archers +20% accuracy\"), never past 100%",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Loading-screen tips for your civ.</strong> The four tips the game shows while a match loads now name your civ's bonus, unique unit and unique techs, instead of the replaced civ's",
         "<strong class=\"color-accent-2\">NEW:</strong> A <strong>notice for retired bonus cards</strong> an older civ still carries, with where each went and a button to remove them",
         "<strong class=\"color-accent-2\">NEW:</strong> Empire Forge now reads <strong>everything from your own game files</strong>: civ descriptions, tech trees, unit icons and the greyed \"later age\" buttons, so they match your game after every patch",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Economic upgrades one age earlier</strong> now include Crop Rotation and Caravan, at -40% food as the game's Burgundians have it",
@@ -221,7 +243,9 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Greyed Castle buttons before the Castle Age</strong> showed the replaced civ's unique unit on maps that start with a Castle",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Your unique unit keeps Castle button 1</strong>, page 1, even over a leftover unit from the civ it replaced",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> Several custom unique units <strong>trained for 0 population</strong>",
-        "<strong class=\"color-accent-2\">BUG FIX:</strong> A destroyed <strong>Monastery left Britons rubble</strong> whatever the architecture",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Monks walked up to heal</strong> instead of healing from range, on every custom civ with a tech tree: the tree quietly switched off the game's free Monk Ranged Heal. It now stays on, except with the Monks double healing range card, which sets its own range as the Teutons' does",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Destroyed buildings left Western European rubble</strong> whatever the architecture: Barracks, Town Centers, towers, gates and the rest now leave their own, and the Castle and Wonder leave their picks' rubble",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Old pictures after an update.</strong> Your browser could keep showing the previous version's pages and unit pictures; it now checks for new ones every time. Empire Forge also clears out the caches older versions left behind (up to a few hundred MB)",
     ],
     "2.6.2": [
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Fully-upgraded stats.</strong> On the Review step, Preview stats shows every unit and building as it would be in a Post-Imperial game, with each number broken down into the techs, bonuses and unique techs behind it. It also lists which of your bonuses don't reach a unit, so you can check combinations before building the mod",
@@ -486,7 +510,10 @@ def _km_civ_name(km_index: int) -> str:
     return str(km_index)
 
 def _arch_name(arch_val: int) -> str:
-    """Friendly name for a 1-based KM architecture value."""
+    """The architecture set's name ("Western European"), as the wizard shows it."""
+    label = next((o["label"] for o in _ARCH_OPTIONS if o["value"] == arch_val), None)
+    if label:
+        return label
     if 1 <= arch_val <= len(_ARCH_REP_CIVS):
         dat_idx = _ARCH_REP_CIVS[arch_val - 1]
         names = _civ_names_by_dat_index()
@@ -609,8 +636,9 @@ def upload():
                 "name": (data.get("alias") or data.get("name")
                          or Path(f.filename).stem),
                 "bonus_count": len(bonus_list),
-                "castle_name":  _km_civ_name(data["castle"])  if "castle"       in data else None,
-                "wonder_name":  _km_civ_name(data["wonder"])  if "wonder"       in data else None,
+                # -1 = the architecture's own (the wizard's "Architecture Default").
+                "castle_name":  _km_civ_name(data["castle"])  if data.get("castle", -1) >= 0 else None,
+                "wonder_name":  _km_civ_name(data["wonder"])  if data.get("wonder", -1) >= 0 else None,
                 "arch_name":    _arch_name(data["architecture"]) if "architecture" in data else None,
             })
         except Exception as e:
@@ -939,6 +967,13 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 for txt in _tb_texts:
                     desc_parts.append(f"• {txt} \\n")
             full_desc = "".join(desc_parts)
+            # Loading-screen tips (build_all.civ_tip_lines, all three routes).
+            _bonus_texts = [_BONUS_NAMES[str(e[0])] + (f" [x{e[1]}]" if len(e) > 1 and e[1] > 1 else "")
+                            for e in civ_bonuses if isinstance(e, list) and _BONUS_NAMES.get(str(e[0]))]
+            _bonus_texts += [custom_bonus.card_text(c) for c in card_homes(civ_def)["civ"]]
+            hero_lines += civ_tip_lines(slot, _bonus_texts, uu_display,
+                                        [(castle_ut_name_short, castle_ut_desc_text),
+                                         (imp_ut_name_short, imp_ut_desc_text)], _tb_texts)
 
             for lang in LANGUAGES:
                 string_lines[lang].append(f'{name_sid} "{alias_kv}"')
@@ -1365,6 +1400,7 @@ def api_builder_meta():
     # the wizard.  Falls back to the bundled copy on its own.
     from build_civ import civ_roster
     from civ_appender import (_UNLOCK_UNIT_BONUSES, MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS,
+                              SCENARIO_MONK_SKINS, monk_skin_units,
                               _ARCH_REP_CIVS)
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     roster = civ_roster(dat_path) or []
@@ -1413,6 +1449,10 @@ def api_builder_meta():
             _claimed: set = set()
             monk_options = []
             for _o in MONK_SKIN_OPTIONS:
+                if _o["value"] in SCENARIO_MONK_SKINS:     # a scenario Monk: if this game has it
+                    if monk_skin_units(_pd, _o["value"]) is not None:
+                        monk_options.append(_o)
+                    continue
                 _g = _monk_of(_o["value"])
                 if _g is None or _g in _claimed:
                     continue
@@ -2551,7 +2591,7 @@ def _split_ut_label(label: str) -> tuple[str, str]:
 
 @app.route("/api/builder/ut/catalog")
 def api_builder_ut_catalog():
-    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
+    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS, _UT_BUILT
 
     # A preset is only offered if the PLAYER's OWN DAT implements its source
     # tech, because the preset works by cloning that tech's effect commands.
@@ -2566,10 +2606,13 @@ def api_builder_ut_catalog():
     # the catalog is also used for browsing, and hiding the whole list because
     # we could not find a DAT would be worse than listing one dud.
     has_effect = None
+    built_ok = lambda tier, i: True                                  # noqa: E731
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if dat_path and Path(dat_path).exists():
         try:
             dat = _get_dat(dat_path)
+            # A preset built here (no vanilla source) says itself whether this game can.
+            built_ok = lambda tier, i: _UT_BUILT[(tier, i)]["available"](dat)   # noqa: E731
 
             def has_effect(tech_id: int) -> bool:       # noqa: F811
                 if tech_id >= len(dat.techs):
@@ -2580,20 +2623,24 @@ def api_builder_ut_catalog():
         except Exception:
             has_effect = None
 
-    def _entries(strings, table):
+    def _entries(strings, table, tier):
         out = []
         for i, label in enumerate(strings):
-            tech_id = table.get(i)
-            if tech_id is None:
-                continue
-            if has_effect is not None and not has_effect(tech_id):
-                continue
+            if (tier, i) in _UT_BUILT:
+                if not built_ok(tier, i):
+                    continue
+            else:
+                tech_id = table.get(i)
+                if tech_id is None:
+                    continue
+                if has_effect is not None and not has_effect(tech_id):
+                    continue
             name, desc = _split_ut_label(label)
             out.append({"id": i, "label": label, "name": name, "desc": desc})
         return out
 
-    return jsonify({"castle":   _entries(_UNIQUE_CASTLE_STRINGS, _KM_CASTLE_UT_TECHS),
-                    "imperial": _entries(_UNIQUE_IMP_STRINGS, _KM_IMP_UT_TECHS)})
+    return jsonify({"castle":   _entries(_UNIQUE_CASTLE_STRINGS, _KM_CASTLE_UT_TECHS, "castle"),
+                    "imperial": _entries(_UNIQUE_IMP_STRINGS, _KM_IMP_UT_TECHS, "imperial")})
 
 
 _HERO_CATALOG_CACHE: dict[str, list] = {}
@@ -2644,10 +2691,11 @@ def api_unit_icon(unit_id: int):
         # The alpha channel is the player-colour mask: painted Player 1 Blue.
         game_art.icon_rgb(src).save(tmp, "WEBP", quality=85)
         tmp.replace(cached)
-    return send_file(cached, mimetype="image/webp", max_age=86400)
+    return send_file(cached, mimetype="image/webp", max_age=0)
 
 
-_PREVIEW_VERSION = "v4"        # bump when game_sprites' output changes
+_PREVIEW_VERSION = "v4"        # bump when game_sprites' output changes;
+                               # prune_caches() deletes the older folders
                                # (v2: kept blocks across a moved box — square holes;
                                #  v3: frames under 20 ms dropped — browsers slowed them)
 _PREVIEWS_WARMED: set[str] = set()
@@ -2771,7 +2819,7 @@ def api_scene_art(slot: str, value: int):
     # A still standing in for an animation mustn't be cached by the browser,
     # and says so: the scene asks again until the animation is ready.
     still = "-still_" in path.name
-    resp = send_file(path, mimetype="image/webp", max_age=0 if still else 86400)
+    resp = send_file(path, mimetype="image/webp", max_age=0)
     if still:
         resp.headers["X-Scene-Still"] = "1"
     return resp
@@ -2847,7 +2895,7 @@ def api_unit_preview(unit_id: int, kind: str):
     path = _render_preview(dat_path, unit_id, kind)
     if path is None:
         return ("", 404)
-    return send_file(path, mimetype="image/webp", max_age=86400)
+    return send_file(path, mimetype="image/webp", max_age=0)
 
 
 def _warm_previews(dat_path: str) -> None:
@@ -2865,12 +2913,13 @@ def _warm_previews(dat_path: str) -> None:
         for uid in sorted(ids):
             _render_preview(dat_path, uid, "still")
         # The identity scene, every option of every slot (the pickers show them all).
-        from civ_appender import MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS
+        from civ_appender import MONK_SKIN_OPTIONS, MONASTERY_SKIN_OPTIONS, _WOODEN_FORT
         scene = [("architecture", v) for v in sorted({c.icon_set for c in dat.civs[1:]})]
         scene += [("monastery_skin_building", o["value"]) for o in MONASTERY_SKIN_OPTIONS]
         scene += [(s, i - 1) for i in range(1, len(dat.civs)) for s in ("wonder", "castle")]
         scene += [("monk_skin", o["value"]) for o in MONK_SKIN_OPTIONS]
         scene += [("starting_scout", o["value"]) for o in _SCOUT_OPTIONS]
+        scene += [("building", _WOODEN_FORT)]                         # card 460's Castle
         # Moving buildings last: the Tupi waterfall alone takes about a minute.
         scene.sort(key=lambda sv: game_sprites.scene_animated(dat, *sv))
         for slot, value in scene:
@@ -2897,7 +2946,7 @@ def _uu_preview_units(dat) -> dict[int, int]:
 @app.route("/api/builder/ut/costs")
 def api_builder_ut_costs():
     """Return vanilla tech research costs (from DAT) for all UT catalog entries."""
-    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
+    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS, _UT_BUILT
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path or not Path(dat_path).exists():
         return jsonify({"castle": {}, "imperial": {}})
@@ -2919,7 +2968,9 @@ def api_builder_ut_costs():
                           if t.research_locations else 60)
                 return {"cost": cost, "time": int(time_s)}
 
-            castle   = {str(k): v for k, tid in _KM_CASTLE_UT_TECHS.items()
+            castle   = {str(k): v for k, tid in (*_KM_CASTLE_UT_TECHS.items(),
+                                                  *((i, b["like"]) for (t, i), b in _UT_BUILT.items()
+                                                    if t == "castle"))
                         if (v := _tech_cost(tid)) is not None}
             imperial = {str(k): v for k, tid in _KM_IMP_UT_TECHS.items()
                         if (v := _tech_cost(tid)) is not None}
@@ -3376,6 +3427,38 @@ _startup_prewarm()
 
 # ── Dev server entry point ────────────────────────────────────────────────────
 
+# Cache folders the current code writes.  Each was renamed when its contents
+# changed (icons -> icons-rgb -> icons-blue, previews-v1..v4), so any other
+# name is a dead copy from an older version.
+_CACHE_DIR_PREFIXES = ("icons", "previews-")
+_DAT_CACHE_KEEP = 8      # parsed-DAT indexes, newest first (one per DAT ever loaded)
+
+
+def prune_caches() -> list[str]:
+    """Delete what older versions left in the per-user cache; returns the names.
+
+    Never raises: a cache that can't be cleaned is only wasted space."""
+    import shutil
+    from dat_lazy import _cache_path
+    removed = []
+    current = {"icons-blue", f"previews-{_PREVIEW_VERSION}"}
+    try:
+        for d in _cache_dir().iterdir():
+            if d.is_dir() and d.name.startswith(_CACHE_DIR_PREFIXES) and d.name not in current:
+                shutil.rmtree(d, ignore_errors=True)
+                removed.append(d.name)
+    except OSError:
+        pass
+    try:
+        files = sorted(_cache_path("x").parent.glob("*"), key=lambda f: f.stat().st_mtime, reverse=True)
+        for f in [f for f in files if f.suffix == ".tmp"] + [f for f in files if f.suffix == ".json"][_DAT_CACHE_KEEP:]:
+            f.unlink(missing_ok=True)
+            removed.append(f"dat_cache/{f.name}")
+    except OSError:
+        pass
+    return removed
+
+
 if __name__ == "__main__":
     import webbrowser
 
@@ -3416,4 +3499,5 @@ if __name__ == "__main__":
 
     threading.Timer(1.0, _open_browser).start()
     threading.Thread(target=_run_update_check, daemon=True).start()
+    threading.Thread(target=prune_caches, daemon=True).start()
     app.run(debug=False, port=port, threaded=True)

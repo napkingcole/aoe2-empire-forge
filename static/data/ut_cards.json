@@ -63,7 +63,8 @@
     "65": { "icon": "monk.png",              "category": "monk"      },
     "66": { "icon": "knight.png",            "category": "cavalry"   },
     "67": { "icon": "infantry.png",          "category": "infantry"  },
-    "68": { "icon": "archery_range.png",     "category": "unique"    }
+    "68": { "icon": "archery_range.png",     "category": "unique"    },
+    "69": { "icon": "castle.png",            "category": "building"  }
   },
   "imperial": {
     "0":  { "icon": "infantry.png",         "category": "infantry"  },

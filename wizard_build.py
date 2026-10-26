@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 
 from build_all import (
-    _kv_text, hero_string_lines,
+    _kv_text, hero_string_lines, civ_tip_lines,
     ut_name_and_desc, ut_selection_text, ut_research_label,
     _build_combined_data_zip, dat_json_files,
     _build_combined_ui_zip,
@@ -309,6 +309,9 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
 
     # Hero name / tooltips: one helper for all three routes (build_all).
     hero_lines = hero_string_lines(dat, slot, draft.get("hero_unit"))
+    hero_lines += civ_tip_lines(slot, [b[2:] for b in bullets], uu_display,
+                                [ut_name_and_desc(castle_ut_name, castle_ut_desc_text),
+                                 ut_name_and_desc(imp_ut_name, imp_ut_desc_text)], tb_lines)
 
     for lang in LANGUAGES:
         # Civ name + click-to-play + description

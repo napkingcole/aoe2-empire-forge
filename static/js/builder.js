@@ -128,6 +128,7 @@ function showStep(n) {
         .catch(console.error);
     }
   }
+  if (n === 1) renderScene();      // a card picked since (460) can change it
   if (n === 2) { renderLRSPicker(); renderDemoShipNotice(); }
   if (n === 6 || n === 7) initUTPanel(n);
 
@@ -410,6 +411,11 @@ const SCENE_SLOTS = {
     name:    _civLabel,
     caption: v => `${_civLabel(v)} Castle`,
     defaultable: true,
+    // Card 460 builds every Castle as the campaign Wooden Fort, so the scene
+    // shows that over the pick (the pick still sets the civ's other castle data).
+    override: () => _hasCivBonus(WOODEN_CASTLES_CARD)
+      ? { src: _sceneArt("building", WOODEN_FORT_UNIT), label: "Wooden Castle (bonus card)" }
+      : null,
   },
   monastery_skin_building: {
     title:   "Select Monastery",
@@ -454,6 +460,13 @@ const SCENE_SLOTS = {
   },
 };
 
+const WOODEN_CASTLES_CARD = 460;
+const WOODEN_FORT_UNIT    = 2600;
+
+function _hasCivBonus(id) {
+  return (draft.bonuses || []).some(b => Number(b.id ?? b[0]) === id);
+}
+
 function _civLabel(v) {
   return (window._metaCivs || []).find(o => o.value === v)?.label || `#${v}`;
 }
@@ -491,11 +504,13 @@ function renderScene() {
 
     const value = _sceneDrawValue(key);
     const blank = (value === null || value === undefined);
-    const src   = blank ? null : slot.art(value);
+    const over  = slot.override?.();
+    const src   = over ? over.src : blank ? null : slot.art(value);
     // A slot on "architecture default" may borrow art without claiming the
     // civ actually chose it — the Monk draws European but stays captioned
     // "Architecture Default", since in-game the default follows architecture.
-    const label = blank ? ""
+    const label = over ? over.label
+                : blank ? ""
                 : (_isDefaulted(key) && slot.defaultCaption) ? slot.defaultCaption
                 : slot.name(value);
 
@@ -526,7 +541,9 @@ function renderScene() {
       // generic icon for skins whose art hasn't been captured yet.
       let usedFallback = false;
       img.onerror = () => {
-        const fb = _resolveFallback(slot.fallback, value);
+        // An override has no bundled stand-in: a stone castle captioned
+        // "Wooden Castle" would be wrong, the labelled placeholder isn't.
+        const fb = over ? null : _resolveFallback(slot.fallback, value);
         if (fb && !usedFallback) {
           usedFallback = true;
           delete img.dataset.game;
@@ -562,7 +579,7 @@ function renderScene() {
         delete img.dataset.rw;
         delete img.dataset.rh;
         if (src.startsWith("/api/scene-art/")) {
-          fetch(`/api/scene-art/${key}/${value}/size${_datQuery()}`).then(r => r.json()).then(sz => {
+          fetch(`${src.split("?")[0]}/size${_datQuery()}`).then(r => r.json()).then(sz => {
             if (!_sameSceneArt(img.src, src) || !btn.classList.contains("is-loading") || !sz.w) return;
             img.dataset.rw = sz.w;
             img.dataset.rh = sz.h;
@@ -698,7 +715,9 @@ function updateSceneCaption(key) {
   if (key && SCENE_SLOTS[key]) {
     const slot = SCENE_SLOTS[key];
     const v = _sceneDrawValue(key);
-    el.textContent = (v === null || v === undefined) ? ""
+    const over = slot.override?.();
+    el.textContent = over ? over.label
+                   : (v === null || v === undefined) ? ""
                    : (_isDefaulted(key) && slot.defaultCaption) ? slot.defaultCaption
                    : slot.caption(v);
     return;
@@ -3124,7 +3143,7 @@ function renderUTGrid(step) {
     const cost = _utCostOf(tier, t.id);
     const tip = [
       t.desc,
-      cost ? `Cost: ${_formatCostStr(cost.cost, cost.time)}` : "",
+      cost ? `Research cost: ${_formatCostStr(cost.cost, cost.time)}` : "",   // the tech's, not what it changes
       tier === own ? `${ageName} Age tech.`
                    : `Originally ${tier === "imperial" ? "an" : "a"} ${ageName} Age tech — here it takes effect when this tech is researched.`,
     ].filter(Boolean).join("\n");
@@ -3765,7 +3784,7 @@ function renderUUGrid() {
       ? `<span class="uu-badge uu-badge-scenario" title="Scenario unit">S</span>`
       : u.vanilla
       ? `<span class="uu-badge uu-badge-vanilla">V</span>`
-      : `<span class="uu-badge uu-badge-custom">C</span>`;
+      : `<span class="uu-badge uu-badge-custom" title="Custom unit, from Krakenmeister's civ builder">C</span>`;
     const sel = u.km_idx === selectedIdx ? " selected" : "";
     return `
       <div class="uu-card${sel}" data-km-idx="${u.km_idx}">
@@ -3829,7 +3848,7 @@ function selectUU(kmIdx) {
   document.getElementById("uu-selected-type").textContent =
     unit.retired ? "Retired — still builds for this civ, but is no longer offered"
     : unit.chronicles ? "Chronicles unit" : unit.scenario ? "Scenario unit"
-    : unit.vanilla ? "Vanilla base unit" : "Custom base unit";
+    : unit.vanilla ? "Vanilla base unit" : "Custom unit, from Krakenmeister's civ builder";
 
   document.getElementById("uu-name-override").value = draft.unique_unit.name       || "";
   document.getElementById("uu-description").value   = draft.unique_unit.description || "";

@@ -220,6 +220,9 @@ from civ_appender import (_KM_CASTLE_UT_TECHS,    # noqa: E402
                           _KM_UU_TECHS as _KM_UU_TECHS_FOR_TEST,
                           _KM_UU_NAMES as _KM_UU_NAMES_FOR_TEST)
 expected = {i for i, t in _KM_CASTLE_UT_TECHS.items() if tech_has_effect(dat_path, t)}
+# ...plus the presets built here (Wooden Castles), each offered when this game can.
+from civ_appender import _UT_BUILT                    # noqa: E402
+expected |= {i for (tier, i), b in _UT_BUILT.items() if tier == "castle" and b["available"](_probe_dat)}
 check("every preset whose tech is implemented is still offered", ids == expected,
       f"missing: {sorted(expected - ids)}  unexpected: {sorted(ids - expected)}")
 
@@ -321,7 +324,10 @@ for _i, _c in enumerate(_probe_dat.civs):
     _u = _c.units[125] if _c.units and len(_c.units) > 125 else None
     if _u:
         _monk_groups.setdefault(_u.standing_graphic, []).append(_i)
-_offered_monks = {o["value"] for o in meta["monk_skins"]}
+# Scenario Monks (Priest, Pagan Priest) are unit ids, not civs: checked apart.
+from civ_appender import SCENARIO_MONK_SKINS, monk_skin_units   # noqa: E402
+_offered_scenario = {o["value"] for o in meta["monk_skins"]} & set(SCENARIO_MONK_SKINS)
+_offered_monks = {o["value"] for o in meta["monk_skins"]} - _offered_scenario
 _CHRONICLES = {46, 47, 48, 54, 55, 56}
 _unoffered = [m for m in _monk_groups.values() if not (_offered_monks & set(m))]
 check("every Monk partition is offered except the Chronicles one",
@@ -332,7 +338,8 @@ check("...and each offered Monk covers a distinct partition",
            for m in _monk_groups.values() if o in m}) == len(_offered_monks),
       f"{len(_offered_monks)} options collapse to fewer partitions")
 check("...and no Monk option is offered that this DAT cannot supply",
-      all(any(o in m for m in _monk_groups.values()) for o in _offered_monks))
+      all(any(o in m for m in _monk_groups.values()) for o in _offered_monks)
+      and all(monk_skin_units(_probe_dat, o) is not None for o in _offered_scenario))
 
 print("\n=== /api/builder/meta never parses a DAT ===")
 # init() in the wizard AWAITS this route before anything renders, so if it is

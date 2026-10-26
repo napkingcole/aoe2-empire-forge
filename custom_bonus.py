@@ -51,6 +51,7 @@ from genieutils.effect import EffectCommand
 _ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 EC_SET       = 0
+EC_RESOURCE  = 1
 EC_ADD       = 4
 EC_MULTIPLY  = 5
 EC_TECH_COST = 101    # a=tech, b=resource (0 food 1 wood 2 stone 3 gold, -1 all), c=mode, d
@@ -239,8 +240,24 @@ ATTRS: dict[str, dict] = {
     "train_speed":   {"label": "train speed",      "ops": ("mul",),       "fields": [101], "faster": True, "kinds": ("unit",)},
     "build_speed":   {"label": "build speed",      "ops": ("mul",),       "fields": [101], "faster": True, "kinds": ("building",)},
     "cost":          {"label": "cost",             "ops": ("mul",),       "fields": [103, 104, 105, 106], "kinds": ("unit", "building")},
+    # What a unit costs, replaced (2026-10-24, a player's request): one effect
+    # per resource, at most two (_COST_SET_MAX), the way the game's own do it —
+    # Corvinian Army (Magyar Huszar gold -> food) and Hussite Reforms (Monk
+    # gold -> food) EC_SET the old resource's cost to 0 first, then the new.
+    # The build zeroes every resource the card doesn't name (_plain_commands).
+    "cost_set":      {"label": "cost, replaced",   "ops": ("set",), "positive": True, "max": 2000,
+                      "fields": [], "kinds": ("unit", "building")},
+    # A building that generates a resource, as the Feitoria does (2026-10-24,
+    # a player's request): N per minute, one resource per effect.  The build
+    # gives the buildings a generate task and this civ the rate (see the
+    # "trickle" resolver in civ_appender); other civs' copies make nothing.
+    "trickle":       {"label": "generates per minute", "ops": ("add",), "positive": True, "max": 300,
+                      "fields": [], "kinds": ("building",)},
     "regen":         {"label": "HP regeneration per minute", "ops": ("add",), "fields": [109], "kinds": ("unit", "building")},
-    "work_rate":     {"label": "work rate",        "ops": ("mul",),       "fields": [13],        "kinds": ("unit", "job")},
+    # On a building, attribute 13 is how fast it trains and researches — as
+    # Conscription, Chivalry, Perfusion and the Goths', Huns' and Britons' team
+    # bonuses write it, on every age form of the building.
+    "work_rate":     {"label": "work rate",        "ops": ("mul",),       "fields": [13],        "kinds": ("unit", "job", "building")},
     "carry":         {"label": "carry capacity",   "ops": ("add",),       "fields": [14],        "kinds": ("unit", "job")},
     "garrison":      {"label": "garrison space",   "ops": ("add",),       "fields": [2],         "kinds": ("unit", "building")},
     # Population a building supports (#64): attribute 21, the amount of its
@@ -349,6 +366,9 @@ TRIGGER_BUILDINGS: dict[int, tuple[str, int]] = {
 }
 
 COST_RESOURCES = ("all", *_RES_COST)
+# A unit has three cost slots, one usually population (quirk 14): two
+# resources at most, as every vanilla unit.
+_COST_SET_MAX = 2
 
 # Alternate forms of one unit that no EC_UPGRADE connects — packing, stance
 # switches and dismounting swap the unit for a different id.  A card on one form
@@ -465,6 +485,9 @@ _CAPABLE = {
     "attack_speed":  lambda u: bool(u.type_50) and u.type_50.reload_time > 0
                                and any(a.amount > 0 for a in u.type_50.attacks),
     "carry":         _moves_resources,
+    # Something to replace: it costs a resource now.
+    "cost_set":      lambda u: bool(u.creatable) and any(
+                         r.flag and r.type in (0, 1, 2, 3) and r.amount > 0 for r in u.creatable.resource_costs),
     "pop_space":     pop_space_ok,
     "min_range":     lambda u: bool(u.type_50) and u.type_50.min_range > 0,
     "no_min_range":  lambda u: bool(u.type_50) and u.type_50.min_range > 0,
@@ -510,10 +533,19 @@ def allowed_attrs(dat, entries: list[tuple[str, str, int]]) -> dict[str, list[st
                     if any(l.unit_id == g["trained_at"] for l in u.creatable.train_locations)}
         return ids
 
+    # A building works if something trains or is researched there.
+    workplaces = ({l.unit_id for _, u in trainable for l in u.creatable.train_locations}
+                  | {r.location_id for t in dat.techs for r in (getattr(t, "research_locations", None) or ())})
+
+    def capable(k, kind, u, uid) -> bool:
+        if k == "work_rate" and kind == "building":
+            return uid in workplaces
+        return _CAPABLE[k](u)
+
     def allowed(kind, ids) -> list[str]:
-        us = [u for u in map(real, ids) if u is not None] if ids is not None else None
+        us = [(u, i) for i in ids if (u := real(i)) is not None] if ids is not None else None
         return [k for k, a in ATTRS.items() if kind in a["kinds"]
-                and (k not in _CAPABLE or us is None or any(_CAPABLE[k](u) for u in us))]
+                and (k not in _CAPABLE or us is None or any(capable(k, kind, u, i) for u, i in us))]
 
     out = {key: allowed(kind, with_forms(set(tid) if isinstance(tid, (set, frozenset, list, tuple))
                                          else {tid}))
@@ -681,6 +713,18 @@ def _norm_card(raw) -> dict | None:
     norm_eff = _norm_stepped_effect if when.get("steps") else _norm_effect
     effects = [e for e in (norm_eff(x) for x in (raw.get("effects") or []))
                if e and kinds <= set(ATTRS[e["attr"]]["kinds"])]
+    # A replaced cost: one effect per resource (the last wins), at most
+    # _COST_SET_MAX, and not on a card that grows — "costs 60 food" has no
+    # running total to step.  Nor a generating building, whose rate is built
+    # as a single add.
+    if when.get("steps"):
+        effects = [e for e in effects if e["attr"] not in ("cost_set", "trickle")]
+    named: dict[str, int] = {}
+    for i, e in enumerate(effects):
+        if e["attr"] == "cost_set":
+            named[e["resource"]] = i
+    keep = set(sorted(named.values())[:_COST_SET_MAX])
+    effects = [e for i, e in enumerate(effects) if e["attr"] != "cost_set" or i in keep]
     if when.get("steps") and not any("steps" in e for e in effects):
         when.pop("steps")                   # nothing left that grows
     if family == "civ" and (when.get("age") or when.get("building")):
@@ -821,6 +865,10 @@ def _norm_effect(raw) -> dict | None:
     if raw["attr"] in ("cost", "tech_cost"):
         res = raw.get("resource", "all")
         out["resource"] = res if res in COST_RESOURCES else "all"
+    if raw["attr"] in ("cost_set", "trickle"):
+        if raw.get("resource") not in _RES_COST:
+            return None                  # a replaced cost or a trickle names its resource
+        out["resource"] = raw["resource"]
     if spec.get("max") and not spec.get("positive") and raw["attr"] != "resources":
         value = max(-spec["max"], min(spec["max"], value))
         if value == 0:
@@ -947,7 +995,11 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
     def bare(unit: str = "") -> str:
         return "/".join(f"{_fmt_num(abs(x))}{unit}" for x in vals)
 
-    if eff["attr"] in ("tech_cost", "cost"):
+    if eff["attr"] == "cost_set":
+        text = f"costs {_fmt_num(v)} {eff['resource']}"
+    elif eff["attr"] == "trickle":
+        text = f"generate {_fmt_num(v)} {eff['resource']} per minute"
+    elif eff["attr"] in ("tech_cost", "cost"):
         res = eff.get("resource", "all")
         text = f"{signed(pct)} {'cost' if res == 'all' else f'{res} cost'}"
     elif eff["attr"] == "research_speed":
@@ -957,6 +1009,10 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
         text = f"{verb} {bare('%')} {'faster' if v > 0 else 'slower'}"
     else:
         label = spec["label"]
+        if eff["attr"] == "work_rate" and target and target_kind(target) == "building":
+            # A building's work rate is its training and research speed.
+            return (f"train and research {bare('%')} {'faster' if v > 0 else 'slower'}"
+                    + _steps_suffix(steps))
         if eff["attr"] == "work_rate" and target and target["type"] == "job":
             label = JOBS[target["id"]]["work"]          # "gather rate", "build speed"
         text = f"{signed(pct)} {label}"
@@ -1168,9 +1224,30 @@ def card_text(card: dict) -> str:
         return ", ".join(_civ_effect_text(e, when.get("age"), bool(when.get("building")))
                          for e in card["effects"]) + gate_text(card)
     subject = _join([target_subject(t) for t in targets])
-    # A job's own word for work rate ("gather rate") only when it is the only target.
-    named = targets[0] if len(targets) == 1 else None
-    return f"{subject}: " + ", ".join(effect_text(e, named) for e in card["effects"]) + gate_text(card)
+    effects = _merge_cost_set(card["effects"])
+    # A job's own word for work rate ("gather rate") only when it is the only
+    # target; a building's ("train and research faster") when all are buildings.
+    named = (targets[0] if len(targets) == 1 or all(target_kind(t) == "building" for t in targets)
+             else None)
+    return f"{subject}: " + ", ".join(e if isinstance(e, str) else effect_text(e, named)
+                                      for e in effects) + gate_text(card)
+
+
+def _merge_cost_set(effects: list[dict]) -> list:
+    """A card's effects with its replaced costs as one phrase, where the first
+    stood: "costs 60 food + 20 gold"."""
+    sets = [e for e in effects if e["attr"] == "cost_set"]
+    if not sets:
+        return effects
+    phrase = "costs " + " + ".join(f"{_fmt_num(e['value'])} {e['resource']}" for e in sets)
+    out, done = [], False
+    for e in effects:
+        if e["attr"] != "cost_set":
+            out.append(e)
+        elif not done:
+            out.append(phrase)
+            done = True
+    return out
 
 
 def target_subject(t: dict) -> str:
@@ -1352,9 +1429,34 @@ def _plain_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
         return cmds
     sel = _selectors(card, line_of, resolve)
     cmds: list[EffectCommand] = []
+    named = {e["resource"]: float(e["value"]) for e in card["effects"] if e["attr"] == "cost_set"}
+    cost_sel = sel
+    if named:
+        # The engine only writes a cost slot that already holds that resource
+        # (the Monk ships a 0-food slot for Hussite Reforms to fill): a SET of
+        # a resource the unit has no slot for is lost, so the build readies the
+        # slots and drops units it can't (resolve "cost_slots").  Without it,
+        # nothing — a Knight zeroed to free was the in-game result, 2026-10-26.
+        gated = bool((card.get("when") or {}).get("age") or (card.get("when") or {}).get("building"))
+        cost_sel = resolve("cost_slots", (sel, named, gated)) if resolve else []
+        # Every resource the card doesn't name goes to 0 first, as Corvinian
+        # Army and Hussite Reforms do before they set the new one.
+        for res, c in _RES_COST.items():
+            if res not in named:
+                cmds.extend(EffectCommand(type=EC_SET, a=a, b=b, c=c, d=0.0) for a, b in cost_sel)
     for eff in card["effects"]:
         spec = ATTRS[eff["attr"]]
-        if spec.get("unit_field"):
+        if eff["attr"] == "cost_set":
+            cmds.extend(EffectCommand(type=EC_SET, a=a, b=b, c=_RES_COST[eff["resource"]], d=float(eff["value"]))
+                        for a, b in cost_sel)
+        elif eff["attr"] == "trickle":
+            # The buildings get a generate task scaled by a civ resource of its
+            # own; this card adds its rate to that resource (an add, so two
+            # cards on the same buildings stack).  Only a build can do it.
+            rate_res = resolve("trickle", (sel, eff["resource"])) if resolve else None
+            if rate_res is not None:
+                cmds.append(EffectCommand(type=EC_RESOURCE, a=rate_res, b=1, c=-1, d=float(eff["value"])))
+        elif spec.get("unit_field"):
             # Per unit, only units that have the stat (see _CAPABLE).  An ADD,
             # so cards and bonuses stack as vanilla's do; a reduction takes at
             # most what the unit has, so it never goes below 0.  "No minimum

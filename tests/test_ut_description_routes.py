@@ -126,7 +126,7 @@ with tempfile.TemporaryDirectory() as tmp:
     sp = next(n for n in uz.namelist()
               if n.endswith("key-value-modded-strings-utf8.txt") and "/en/" in n)
     lines = uz.read(sp).decode("utf-8").splitlines()
-    texts = [m.group(1) for ln in lines if (m := re.match(r'^\d+\s+"(.*)"$', ln.strip()))]
+    texts = [m.group(1) for ln in lines if (m := re.match(r'^(?:\d+|IDS_[A-Z0-9_]+)\s+"(.*)"$', ln.strip()))]
     bl_lines = lines
     ai_files = [n for n in uz.namelist() if n.startswith("resources/_common/ai/")]
 
@@ -143,14 +143,16 @@ def raw_lines_of(zip_path: Path) -> list[str]:
 
 def strings_of(zip_path: Path) -> list[str]:
     return [m.group(1) for ln in raw_lines_of(zip_path)
-            if (m := re.match(r'^\d+\s+"(.*)"$', ln.strip()))]
+            if (m := re.match(r'^(?:\d+|IDS_[A-Z0-9_]+)\s+"(.*)"$', ln.strip()))]
 
 
 def well_formed(route: str, lines: list[str]) -> None:
     """Every line is `ID "text"`: a stray line means user text broke the file."""
-    bad = [ln for ln in lines if ln.strip() and not re.match(r'^\d+\s+".*"$', ln.strip())]
+    bad = [ln for ln in lines if ln.strip() and not re.match(r'^(?:\d+|IDS_[A-Z0-9_]+)\s+".*"$', ln.strip())]
     check(f"[{route}] every strings line is ID \"text\" (multi-line UU description escaped)",
           not bad, bad[:3])
+    tips = sorted(ln.split(" ", 1)[0] for ln in lines if ln.startswith("IDS_CIVTIPS_"))
+    check(f"[{route}] four loading-screen tips for the civ's slot", tips == [f"IDS_CIVTIPS_1_{i}" for i in range(4)], tips)
 
 
 def route_checks(route: str, texts: list[str]) -> None:

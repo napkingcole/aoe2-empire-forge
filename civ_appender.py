@@ -106,11 +106,11 @@ _ARCH_REP_CIVS = [3, 1, 5, 8, 15, 7, 20, 22, 25, 28, 33, 21, 11]
 # Viking Sagas — before it the Vikings were Central European (icon_set 1).
 _ARCH_BUILDING_CLASSES = frozenset({3, 52, 27, 39})   # Building, Wall, Gate, Tower
 _ARCH_MOBILE_CLASSES   = frozenset({59, 18, 43, 19, 22})
-# Units the class filters miss but that still carry regional art.  Unit 134 is
-# the Monk-carrying-a-relic pose: its class (11) is shared with projectiles, so
-# it can't be swept in by class.  Without it the Monk changes with the
-# architecture set but reverts to the European pose the moment it picks up a
-# relic — visible in-game for every non-European civ.
+# Units the class filters miss but that still carry regional art.  Unit 134
+# (MONKX_D) is the dead Monk's corpse, left by both the Monk (125) and the Monk
+# carrying a relic (286, class 43, swept in by class): its class (11) is shared
+# with projectiles, so it can't be swept in by class.  Without it a fallen Monk
+# leaves the replaced civ's body behind, whatever the Monk looked like alive.
 _ARCH_EXTRA_UNITS = (134,)
 
 # ── Monk skin ─────────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ _ARCH_EXTRA_UNITS = (134,)
 # a Monk but not an architecture; Byzantines and Slavs share a Monk but not an
 # architecture either).  Exactly three units carry it — verified by comparing
 # every unit's per-civ graphic partition against the Monk's.
-_MONK_SKIN_UNITS = (125, 134, 286)   # Monk, Monk w/ relic, RMONK
+_MONK_SKIN_UNITS = (125, 134, 286)   # Monk, its corpse (MONKX_D), Monk with a relic (RMONK)
 # value = the DAT civ index whose Monk art is copied.  Chronicles civs have a
 # 12th skin but are excluded from the catalogue entirely (see memory).
 MONK_SKIN_OPTIONS: list[dict] = [
@@ -139,7 +139,41 @@ MONK_SKIN_OPTIONS: list[dict] = [
     # DAT predates the DLC.  The only other unoffered Monk belongs to the
     # Chronicles civs, which are deliberately blacklisted.
     {"value": 11, "label": "Nordic",        "example": "Vikings, Varangians, Danes"},
+    # Scenario-editor Monks (2026-10-24, a player's request): value = the
+    # Monk's unit id, never a civ index (those stop near 60).  Each has the
+    # Monk's full trio — see SCENARIO_MONK_SKINS.
+    {"value": 1023, "label": "Priest",        "example": "scenario editor"},
+    {"value": 1940, "label": "Pagan Priest",  "example": "scenario editor"},
 ]
+# Monk-skin value -> its units in _MONK_SKIN_UNITS order: the Monk, its corpse,
+# the Monk carrying a relic.  Both priests leave the Priest's corpse (1024); the
+# Pagan Priest draws its own decay over it (an undead graphic, copied with it).
+# Same 30-task layout as the Monk, so the heal/convert graphics line up.
+SCENARIO_MONK_SKINS: dict[int, tuple[int, int, int]] = {
+    1023: (1023, 1024, 1025),     # PRIEST, PRIEST_D, RPRIEST
+    1940: (1940, 1024, 1941),     # PGPRIEST, PRIEST_D, RPGPRIEST
+}
+
+
+def monk_skin_units(dat: DatFile, value) -> list | None:
+    """The source units for a Monk-skin value, in _MONK_SKIN_UNITS order, or
+    None when this game doesn't have them: a scenario Monk's (SCENARIO_MONK_
+    SKINS, from civ 0 — scenario units are the same for every civ) or a vanilla
+    civ's own Monk, Monk corpse and Monk with a relic, as shipped."""
+    if not isinstance(value, int):
+        return None
+    if value in SCENARIO_MONK_SKINS:
+        units = dat.civs[0].units
+        ids = SCENARIO_MONK_SKINS[value]
+        got = [units[i] if i < len(units) else None for i in ids]
+        # The Monk, its corpse and the relic carrier, or nothing.
+        if any(u is None for u in got) or [u.class_ for u in got] != [18, 11, 43]:
+            return None
+        return got
+    if 0 < value < len(dat.civs):
+        units = _original_civ(dat, value).units
+        return [units[i] if i < len(units) else None for i in _MONK_SKIN_UNITS]
+    return None
 
 # ── Monastery skin ────────────────────────────────────────────────────────────
 # The Monastery is its own axis too: its art is per civ, not per architecture
@@ -169,6 +203,31 @@ MONASTERY_SKIN_OPTIONS: list[dict] = [
     {"value": 15, "label": "Mesoamerican",     "example": "Aztecs, Mayans"},
     {"value": 21, "label": "Andean",           "example": "Incas, Muisca, Mapuche, Tupi"},
 ]
+
+
+# A destroyed building leaves its rubble: a separate unit (its dead_unit_id,
+# class 14, or 11 for a few Dark Age ones) whose art is per civ like the
+# building's.  No class filter reaches it, so until 2026-10-24 every custom civ
+# left the template's (Western European) rubble for every building — the
+# Monastery's was found first and fixed on its own (1421).
+_RUBBLE_CLASSES = frozenset({11, 14})
+
+
+def _copy_rubble(src_units, dst_units, building_ids, skip=frozenset()) -> None:
+    """Give each building's rubble the source civ's art, except the rubble
+    units in `skip`."""
+    for b in building_ids:
+        src = src_units[b] if b < len(src_units) else None
+        if src is None or not 0 <= src.dead_unit_id < min(len(src_units), len(dst_units)):
+            continue
+        if src.dead_unit_id in skip:
+            continue
+        r_src, r_dst = src_units[src.dead_unit_id], dst_units[src.dead_unit_id]
+        if r_src is None or r_dst is None or r_src.class_ not in _RUBBLE_CLASSES:
+            continue
+        r_dst.standing_graphic = r_src.standing_graphic
+        r_dst.dying_graphic    = r_src.dying_graphic
+        r_dst.undead_graphic   = r_src.undead_graphic
 
 
 def _copy_monastery_skin(src_civ, dst_civ) -> None:
@@ -1200,6 +1259,44 @@ def _team_revived_techs(dat: DatFile) -> set[int]:
     return out
 
 
+def _global_default_resources(dat: DatFile, tech_id: int) -> set[int]:
+    """Resources a free, global default tech sets; empty for anything else.
+
+    "Free global default" = civ -1, researched nowhere (auto-fire), and an
+    effect made only of EC_RESOURCE commands: Monk Ranged Heal 407 today.
+    """
+    if not 0 <= tech_id < len(dat.techs):
+        return set()
+    t = dat.techs[tech_id]
+    if t.civ != -1 or any(r.location_id >= 0 for r in t.research_locations):
+        return set()
+    if not 0 <= t.effect_id < len(dat.effects):
+        return set()
+    cmds = dat.effects[t.effect_id].effect_commands
+    if not cmds or any(c.type != 1 for c in cmds):
+        return set()
+    return {int(c.a) for c in cmds}
+
+
+def _bonus_resource_writes(dat: DatFile, civ_def: dict) -> set[int]:
+    """Resources this civ's cards set or add (EC_RESOURCE), vanilla techs and KM lists."""
+    from bonus_catalog import civ_bonus_techs, civ_bonus_ec_list
+    out: set[int] = set()
+    for entry in get_civ_bonuses(civ_def):
+        bid = entry[0] if isinstance(entry, (list, tuple)) else entry
+        try:
+            bid = int(bid)
+        except (TypeError, ValueError):
+            continue
+        for tid in civ_bonus_techs(bid):
+            if 0 <= tid < len(dat.techs) and 0 <= dat.techs[tid].effect_id < len(dat.effects):
+                out |= {int(c.a) for c in dat.effects[dat.techs[tid].effect_id].effect_commands
+                        if c.type == 1}
+        for block in civ_bonus_ec_list(bid):
+            out |= {int(e["A"]) for e in block.get("ecs", []) if e.get("type") == 1}
+    return out
+
+
 def _editor_nodes() -> dict[str, set[int]]:
     """Return {'techs','units','buildings'} — the ids FULL.json draws as nodes."""
     global _editor_nodes_cache
@@ -1502,6 +1599,21 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     # the sweep wrote it into every civ without the unit, where no team bonus
     # can undo it: allies of a civ with the card never got the upgrade (#62).
     all_disableable -= _team_revived_techs(dat)
+
+    # ── Step 1d: ...nor a free global default some vanilla civ replaces.
+    #
+    # Monk Ranged Heal 407 is an auto-fire civ=-1 tech that sets the heal range
+    # (resource 90) to 4 for everyone.  It reached the pool only because the
+    # Teutons disable it, so it cannot overwrite their own range of 8 (tech 347,
+    # card 11).  It is no editor node, so no tree could ever keep it, and every
+    # custom civ lost ranged healing: Monks walked up to heal (players' report,
+    # on 2.6.x too, 2026-10-25).  Such a default stays on unless this civ's own
+    # cards set the same resource, which is exactly the Teutons' reason.
+    _own_res = _bonus_resource_writes(dat, civ_def)
+    for _tid in all_disableable - nodes["techs"]:
+        _res = _global_default_resources(dat, _tid)
+        if _res and not (_res & _own_res):
+            all_disableable.discard(_tid)
 
     # ── Step 2: Build reverse maps from effect inspection of each disableable tech.
     # enable_map:  unit/building_id → [tech_ids that make it available via EC_ENABLE b=1]
@@ -3704,9 +3816,79 @@ def _upgrade_line(neighbours: dict[int, set[int]], unit_id: int) -> set[int]:
     return seen
 
 
+# ── Generating buildings (custom effect "trickle") ───────────────────────────
+# The Feitoria generates with action-151 tasks, each scaled by a civ resource
+# (205-208): a civ whose resource is 0 makes nothing.  Generate tasks only run
+# if they are on civ 0, in unit_headers AND on every civ's unit
+# (llm/known_limitations.md), so they can't belong to one civ — the resource
+# does.  A card's buildings get one task per resource, scaled by a resource of
+# their own from _TRICKLE_RESOURCES, at 1 per minute; the card ADDS its rate
+# to that resource for its own civ (a team bonus: for each ally).  Civs that
+# give the same buildings different rates each set their own.
+#
+# The rate assumes work_value_1 is per second, from the Mint in Unhinged
+# Empires' build.py (0.333 x resource 1.0 ~= 20 gold a minute) — unmeasured
+# here; in-game check owed.
+#
+# "Unused Resource 103-133" in the UGC guide's table: unreferenced by any
+# effect, task, cost or storage in the shipped DAT and 0 for every civ
+# (checked 2026-10-24; re-checked per build below).
+_TRICKLE_RESOURCES = tuple(range(103, 134))
+_GENERATE_ACTION = 151
+_FEITORIA = 1021
+
+
+def _trickle_rate_resource(dat: DatFile, building_ids: set[int], res_index: int) -> int | None:
+    """The resource that scales `building_ids`' generate task for `res_index`
+    (0 food, 1 wood, 2 stone, 3 gold), adding the task the first time."""
+    reg = getattr(dat, "_ef_trickle", None)
+    if reg is None:
+        reg = dat._ef_trickle = {}
+    key = (frozenset(building_ids), res_index)
+    if key in reg:
+        return reg[key]
+    taken = set(reg.values())
+    free = [r for r in _TRICKLE_RESOURCES if r not in taken
+            and all(r < len(c.resources) and c.resources[r] == 0 for c in dat.civs)]
+    template = next((t for t in (dat.civs[0].units[_FEITORIA].bird.tasks
+                                 if _FEITORIA < len(dat.civs[0].units) and dat.civs[0].units[_FEITORIA]
+                                 and dat.civs[0].units[_FEITORIA].bird else ())
+                     if t.action_type == _GENERATE_ACTION), None)
+    if not free or template is None:
+        print("       WARNING: generating building: no free rate resource or no Feitoria task to copy — skipped")
+        return None
+    rate_res = free[0]
+
+    def task_for(tasks):
+        t = deepcopy(template)
+        t.id = len(tasks)
+        t.resource_out = res_index
+        t.resource_multiplier = rate_res
+        t.work_value_1 = 1.0 / 60.0          # x the resource = per minute
+        return t
+
+    for uid in sorted(building_ids):
+        for civ in _every_civ(dat):
+            u = civ.units[uid] if uid < len(civ.units) else None
+            if u is not None and u.bird is not None:
+                u.bird.tasks.append(task_for(u.bird.tasks))
+        if uid < len(dat.unit_headers) and dat.unit_headers[uid] is not None:
+            hdr = dat.unit_headers[uid]
+            hdr.task_list = [*(hdr.task_list or []), task_for(hdr.task_list or [])]
+    reg[key] = rate_res
+    return rate_res
+
+
+def _cost_slot_warning(text: str, names: list[str]) -> str:
+    """A replaced-cost card that some units couldn't take (resolve "cost_slots")."""
+    return (f"Custom bonus \"{text}\": {', '.join(sorted(set(names)))} can't change to that cost "
+            "mid-game — a unit has only two cost slots, and a new resource needs one that is "
+            "empty. Left at its normal cost. From the start of the game it would work.")
+
+
 def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
                            uu_ids: tuple[int, ...] = (), ut_ids: tuple = (),
-                           team: bool = False):
+                           team: bool = False, timed: bool = False):
     """(line_of, resolve) — the build-time answers custom_bonus.card_commands
     needs for this civ.  `uu_ids` is this civ's unique unit, base and elite, for
     the "Unique unit" group; `ut_ids` its Castle and Imperial unique techs, for
@@ -3716,6 +3898,10 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
     means everything trained there, not just what THIS civ trains, and nothing
     is resolved to our own unique unit or readied on our own buildings
     (custom_bonus.team_problem keeps those cards out in the first place).
+
+    `timed` builds for a unique tech: its cards take effect mid-game, not from
+    the start.  `resolve.problems` collects what a card couldn't do, for the
+    caller to warn about.
     """
     import custom_bonus
     neighbours = _upgrade_neighbours(dat)
@@ -3803,6 +3989,78 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
                 out.append((uid, float(getattr(u.type_50, spec["unit_field"]))))
         return out
 
+    # A generating building (custom effect "trickle"): the buildings the
+    # selectors reach get a generate task, and the resource that scales it.
+    def trickle_resource(selectors, res: str):
+        ids = {a for a, _ in selectors if a >= 0}
+        classes = {b for a, b in selectors if a < 0 and b >= 0}
+        ids |= {i for i, u in enumerate(units) if u is not None and u.type == 80 and u.class_ in classes}
+        ids = {i for i in ids if i < n_units and units[i] is not None and units[i].type == 80}
+        return _trickle_rate_resource(dat, ids, custom_bonus._RES_INDEX[res]) if ids else None
+
+    # A replaced cost (custom effect "cost_set").  The engine only writes a
+    # cost slot that already holds the resource — Hussite Reforms works because
+    # the Monk ships (gold 100, food 0, pop 1) — and a unit has 3 slots, one
+    # usually population.  From the start, the build simply writes the new
+    # cost.  Mid-game (an age, a building, a unique tech, an ally's team bonus)
+    # the unit keeps its old cost until then, so each new resource needs a slot
+    # that is empty or holds a 0: retyped here to that resource at 0, as the
+    # Monk's food is.  A unit with no room is left out: the Knight (food, gold,
+    # pop) can't go mid-game to wood + stone, and zeroing it made it free.
+    problems: list[str] = []
+
+    def cost_slots(selectors, named: dict, gated: bool):
+        want = {custom_bonus._RES_INDEX[r]: v for r, v in named.items()}
+        mid_game = gated or timed or team
+        civs = _every_civ(dat) if team else [dat.civs[civ_index]]
+
+        def plan(u):
+            """The unit's new cost tuple, or None when it can't take the card."""
+            costs = list(u.creatable.resource_costs)
+            spend = [i for i, r in enumerate(costs) if r.type == -1 or 0 <= r.type <= 3]
+            if not mid_game:
+                if len(spend) < len(want):
+                    return None
+                Cost = type(costs[0])
+                fill = list(want.items())
+                for n, i in enumerate(spend):
+                    costs[i] = (Cost(type=fill[n][0], amount=int(fill[n][1]), flag=1) if n < len(fill)
+                                else Cost(type=-1, amount=0, flag=0))
+                return tuple(costs)
+            have = {r.type for r in costs}
+            free = [i for i in spend if costs[i].type == -1
+                    or (costs[i].amount == 0 and costs[i].type not in want)]
+            need = [res for res in want if res not in have]
+            if len(need) > len(free):
+                return None
+            for res, i in zip(need, free):
+                costs[i] = type(costs[i])(type=res, amount=0, flag=1)
+            return tuple(costs)
+
+        out = []
+        for a, b in selectors:
+            uids = ([a] if a >= 0 else
+                    [i for i, u in enumerate(units) if u is not None and u.class_ == b and u.creatable])
+            fits, bad = [], []
+            for uid in uids:
+                plans = [(c.units[uid], plan(c.units[uid])) for c in civs
+                         if uid < len(c.units) and c.units[uid] is not None and c.units[uid].creatable]
+                if not plans:
+                    continue
+                if any(p is None for _, p in plans):
+                    bad.append(uid)
+                    continue
+                for u, p in plans:
+                    u.creatable.resource_costs = p
+                fits.append(uid)
+            if bad:
+                problems.extend(unit_label(dat, civ_index, uid) for uid in bad)
+            if a < 0 and not bad:
+                out.append((a, b))
+            else:
+                out.extend((uid, -1) for uid in fits)
+        return out
+
     # Build-time answers the library can't know: what this civ trains at a
     # building, and which unit is its UU.  Both keep alternate forms.
     present = _civ_present_units(civ_def, dat, civ_index) | {u for u in uu_ids if u >= 0}
@@ -3831,8 +4089,12 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
             return up_of(arg)
         if kind == "pop_space":
             return [] if team else pop_space_units(arg)
+        if kind == "trickle":
+            return trickle_resource(*arg)
         if kind == "unit_values":
             return unit_values(*arg)
+        if kind == "cost_slots":
+            return cost_slots(*arg)
         if kind == "units":
             return {u for u in custom_bonus.with_forms(set(arg))
                     if u < n_units and units[u] is not None}
@@ -3882,6 +4144,7 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
             out |= by_name.get((t.name, t.language_dll_name), set())
         return out
 
+    resolve.problems = problems
     return line_of, resolve
 
 
@@ -3906,11 +4169,18 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     applied = 0
     for card in cards:
         text = custom_bonus.card_text(card)
+        n_problems = len(resolve.problems)
         steps = custom_bonus.card_steps(card, line_of, resolve)
-        if not steps:
-            _msg = _empty_card_message("Custom bonus", card)
+        cost_skipped = len(resolve.problems) > n_problems
+        if cost_skipped:
+            _msg = _cost_slot_warning(text, resolve.problems[n_problems:])
             print(f"  WARNING: {_msg}")
             warnings.append(_msg)
+        if not steps:
+            if not cost_skipped:          # already said why: one warning per card
+                _msg = _empty_card_message("Custom bonus", card)
+                print(f"  WARNING: {_msg}")
+                warnings.append(_msg)
             continue
         if any(-1 in step["reqs"] for step in steps):
             # The building has no "built" marker in this game version.
@@ -4074,14 +4344,21 @@ def _apply_placed_cards(dat: DatFile, civ_index: int, civ_def: dict, warnings: l
             continue
         if tid is None or not (0 <= tid < len(dat.techs)):
             continue                      # no UT tech — _append_unique_tech_stubs makes one for cards
-        line_of, resolve = _custom_bonus_resolver(dat, civ_index, civ_def, uu_ids, ut_ids)
+        line_of, resolve = _custom_bonus_resolver(dat, civ_index, civ_def, uu_ids, ut_ids, timed=True)
         eff = dat.effects[dat.techs[tid].effect_id]
         for card in cards:
+            n_problems = len(resolve.problems)
             cmds = custom_bonus.card_commands(card, line_of, resolve)
-            if not cmds:
-                _msg = _empty_card_message(f"{label} bonus", card)
+            cost_skipped = len(resolve.problems) > n_problems
+            if cost_skipped:
+                _msg = _cost_slot_warning(custom_bonus.card_text(card), resolve.problems[n_problems:])
                 print(f"  WARNING: {_msg}")
                 warnings.append(_msg)
+            if not cmds:
+                if not cost_skipped:
+                    _msg = _empty_card_message(f"{label} bonus", card)
+                    print(f"  WARNING: {_msg}")
+                    warnings.append(_msg)
                 continue
             # Civ-gated by the tech itself: only this civ researches it.
             eff.effect_commands = [*eff.effect_commands, *cmds]
@@ -4094,11 +4371,18 @@ def _apply_placed_cards(dat: DatFile, civ_index: int, civ_def: dict, warnings: l
         eff = dat.effects[tb_eff_id]
         for card in cards:
             text = custom_bonus.card_text(card)
+            n_problems = len(resolve.problems)
             cmds = custom_bonus.card_commands(card, line_of, resolve)
-            if not cmds:
-                _msg = _empty_card_message("Team bonus", card)
+            cost_skipped = len(resolve.problems) > n_problems
+            if cost_skipped:
+                _msg = _cost_slot_warning(text, resolve.problems[n_problems:])
                 print(f"  WARNING: {_msg}")
                 warnings.append(_msg)
+            if not cmds:
+                if not cost_skipped:
+                    _msg = _empty_card_message("Team bonus", card)
+                    print(f"  WARNING: {_msg}")
+                    warnings.append(_msg)
                 continue
             have = len(eff.effect_commands)
             if have + len(cmds) > soft_limit:
@@ -4218,6 +4502,112 @@ _COMBAT_ABILITY_ATTR = 63
 _AURA_ENABLE_BIT = 32
 
 
+# Wooden Castles (card 460, the user's design 2026-10-24): the civ's Castle
+# wears the campaign Wooden Fort (unit 2600, added with the Mapuche/Tupi/Muisca
+# DLC; scenario-only, no civ builds it) and is cheaper in stone, weaker, and
+# quicker to build.  It stays unit 82, so the UU, unique techs, Trebuchets,
+# Castle bonuses and the AI all still find it.  Same 4x4 footprint.
+_WOODEN_CASTLE_BONUS = 460
+_WOODEN_FORT = 2600
+_WOODEN_CASTLE_HP = 3000
+_WOODEN_CASTLE_COST = ((2, 300), (1, 500))    # stone, wood
+_WOODEN_CASTLE_BUILD_TIME = 175
+
+
+def _wooden_fort(dat: DatFile):
+    """The campaign Wooden Fort, or None when this game has no 4x4 one."""
+    units = dat.civs[0].units
+    fort = units[_WOODEN_FORT] if _WOODEN_FORT < len(units) else None
+    if fort is None or fort.type != 80 or fort.clearance_size != units[BUILDING_CASTLE].clearance_size:
+        return None
+    return fort
+
+
+def _wear_wooden_fort(castle, fort) -> None:
+    """Every picture the Fort has, on a Castle: standing, damaged, destroyed,
+    its rubble (an undead graphic over the generic 4x4 rubble unit, where the
+    Castle has its own rubble unit), snow and garrisoned.  The construction
+    site is shared."""
+    castle.standing_graphic   = fort.standing_graphic
+    castle.dying_graphic      = fort.dying_graphic
+    castle.undead_graphic     = fort.undead_graphic
+    castle.dead_unit_id       = fort.dead_unit_id
+    castle.damage_graphics    = deepcopy(fort.damage_graphics)
+    castle.building.snow_graphic_id = fort.building.snow_graphic_id
+    castle.creatable.garrison_graphic = fort.creatable.garrison_graphic
+
+
+def _wooden_castle_cost(castle) -> None:
+    """A complete replacement, not a merge (quirk 14): the Castle's two
+    spendable slots become stone + wood; the third (no population) stays."""
+    for slot, (res, amount) in zip(castle.creatable.resource_costs, _WOODEN_CASTLE_COST):
+        slot.type, slot.amount, slot.flag = res, amount, 1
+
+
+def _wooden_castle(dat: DatFile, civ_index: int) -> bool:
+    """Card 460 on this civ's own Castle: the Fort's art, the card's numbers.
+    False when this game has no Wooden Fort, or it is not a 4x4 like the Castle."""
+    units = dat.civs[civ_index].units
+    fort = _wooden_fort(dat)
+    castle = units[BUILDING_CASTLE] if BUILDING_CASTLE < len(units) else None
+    if fort is None or castle is None:
+        return False
+    _wear_wooden_fort(castle, fort)
+    castle.hit_points = _WOODEN_CASTLE_HP
+    _wooden_castle_cost(castle)
+    for loc in castle.creatable.train_locations:
+        loc.train_time = _WOODEN_CASTLE_BUILD_TIME
+    return True
+
+
+# Wooden Castles, the unique tech (Castle preset 69; the user's idea, 2026-10-24,
+# after the Slavs' Detinets): on research every Castle — built and to come —
+# becomes a Wooden Fort costing 300 stone + 500 wood, with the Castle's HP,
+# arrows and build time.  The Thracians' own bonus is the precedent: it
+# upgrades the Castle (EC_UPGRADE 82 -> 2418) into a Castle copy, and units and
+# techs still train and research at "82" — as at every age-up's building
+# upgrade (Barracks 12 -> 498 -> 20).  The copy is per civ: this civ's own
+# Castle as it stands (its castle pick, its cards), wearing the Fort.
+_WOODEN_CASTLE_UT = 69
+
+
+def _wooden_castle_ut_cmds(dat: DatFile, civ_index: int) -> list:
+    fort = _wooden_fort(dat)
+    if fort is None:
+        print("       WARNING: Wooden Castles: no 4x4 Wooden Fort (unit 2600) in this game — the tech does nothing")
+        return []
+    new_id = getattr(dat, "_ef_wooden_castle_unit", None)
+    if new_id is None:
+        new_id = len(dat.civs[0].units)
+        for civ in _every_civ(dat):
+            u = deepcopy(civ.units[BUILDING_CASTLE])
+            u.id = u.base_id = u.copy_id = new_id
+            u.enabled = 0
+            civ.units.append(u)
+        dat.unit_headers.append(deepcopy(dat.unit_headers[BUILDING_CASTLE]))
+        dat._ef_wooden_castle_unit = new_id
+    units = dat.civs[civ_index].units
+    u = deepcopy(units[BUILDING_CASTLE])
+    u.id = u.base_id = u.copy_id = new_id
+    u.enabled = 0
+    _wear_wooden_fort(u, fort)
+    _wooden_castle_cost(u)
+    units[new_id] = u
+    return [EffectCommand(type=EC_UPGRADE, a=BUILDING_CASTLE, b=new_id, c=-1, d=0.0)]
+
+
+# Presets built here rather than copied from a vanilla tech: (tier, preset) ->
+#   cmds       function(dat, civ_index) -> the effect commands
+#   available  function(dat) -> whether this game can do it (the catalog asks)
+#   like       the vanilla tech it stands in for where one is needed (the
+#              picker's cost display, the research hotkey): Detinets, 455
+_UT_BUILT: dict[tuple[str, int], dict] = {
+    ("castle", _WOODEN_CASTLE_UT): {"cmds": _wooden_castle_ut_cmds,
+                                    "available": lambda dat: _wooden_fort(dat) is not None,
+                                    "like": 455},
+}
+
+
 def _thracian_civ(dat: DatFile) -> int | None:
     return next((i for i, c in enumerate(dat.civs) if c.name == "Thracians"), None)
 
@@ -4257,6 +4647,7 @@ HANDLED_BONUS_IDS = {
     403,   # Settlement unlock (handled via Step 5b of _apply_tree_wiring)
     404,   # Mining Camp techs free (Bohemians)
     _ELEVATION_BONUS, _FORT_AURA_BONUS,   # 458/459: Thracians (Chronicles, #74)
+    _WOODEN_CASTLE_BONUS,                 # 460: the Castle is the campaign Wooden Fort
     *_UNLOCK_UNIT_BONUSES,   # 405-416: regional / second unique unit unlocks
     *_UNIT_SKIN_BONUSES,     # 457: Palintonon (Chronicles skin of the Trebuchet)
 }
@@ -4396,6 +4787,14 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
             name="C-Bonus 459, castle/tower aura on")
         print(f"       Work-rate aura: {len(src)} tasks (+{src[0].work_value_1 * mult:.0%} in "
               f"{src[0].work_range:g} tiles) on {added} buildings, aura bit {_AURA_ENABLE_BIT} added")
+        return True
+
+    if bonus_id == _WOODEN_CASTLE_BONUS:  # Wooden Castles (the user's design, 2026-10-24)
+        if _wooden_castle(dat, civ_index):
+            print(f"       Wooden Castles: the Wooden Fort's look, {_WOODEN_CASTLE_HP} HP, "
+                  f"300 stone + 500 wood, {_WOODEN_CASTLE_BUILD_TIME} s")
+        else:
+            print("       WARNING: bonus 460: no 4x4 Wooden Fort (unit 2600) in this game's data — skipped")
         return True
 
     if bonus_id == 404:          # Mining Camp technologies free (Bohemians)
@@ -5584,9 +5983,17 @@ def _norm_ut_entry(e, default_tier: str) -> list | None:
 
 
 def ut_source_tech(bonus_id: int, tier: str) -> int | None:
-    """The vanilla tech a UT preset copies, from its own pool."""
+    """The vanilla tech a UT preset copies, from its own pool.  None for a
+    preset built here (_UT_BUILT) — ut_like_tech names its stand-in."""
     pool = _KM_CASTLE_UT_TECHS if tier == "castle" else _KM_IMP_UT_TECHS
     return pool.get(int(bonus_id))
+
+
+def ut_like_tech(bonus_id: int, tier: str) -> int | None:
+    """The vanilla tech a preset is, or stands in for: its source, or a built
+    preset's `like` (its hotkey, the picker's cost)."""
+    built = _UT_BUILT.get((tier, int(bonus_id)))
+    return built["like"] if built else ut_source_tech(bonus_id, tier)
 
 
 def get_ut_entries(civ_def: dict, which: str) -> list:
@@ -6501,6 +6908,7 @@ def _copy_architecture(src_civ, dst_civ) -> None:
     """
     src_units = src_civ.units
     dst_units = dst_civ.units
+    buildings = []
 
     for i, (src, dst) in enumerate(zip(src_units, dst_units)):
         if src is None or dst is None:
@@ -6508,6 +6916,7 @@ def _copy_architecture(src_civ, dst_civ) -> None:
         cls = src.class_
 
         if cls in _ARCH_BUILDING_CLASSES and i != BUILDING_CASTLE and i != BUILDING_WONDER:
+            buildings.append(i)
             dst.standing_graphic = src.standing_graphic
             dst.dying_graphic    = src.dying_graphic
             dst.undead_graphic   = src.undead_graphic
@@ -6531,6 +6940,12 @@ def _copy_architecture(src_civ, dst_civ) -> None:
                 elif cls == 18:
                     for st, dt in zip(src.bird.tasks, dst.bird.tasks):
                         dt.proceeding_graphic_id = st.proceeding_graphic_id
+
+    # The Castle's and Wonder's rubble follow their own picks, copied before
+    # this pass — and the Castle's (1430) is shared with the Thracian Fort,
+    # which this pass does copy.
+    own = {u.dead_unit_id for u in (dst_units[BUILDING_CASTLE], dst_units[BUILDING_WONDER]) if u is not None}
+    _copy_rubble(src_units, dst_units, buildings, skip=own)
 
     # Units with regional art that no class filter reaches (see _ARCH_EXTRA_UNITS).
     for i in _ARCH_EXTRA_UNITS:
@@ -6615,14 +7030,15 @@ def _female_monk_civs(dat: DatFile) -> set[int]:
     return cached
 
 
-def _match_monk_voice(dat: DatFile, dst_civ, skin_idx: int | None,
+def _match_monk_voice(dat: DatFile, dst_civ, skin_units: list | None,
                       voice_idx: int | None) -> None:
     """Give a Monk skin whose gender the voice civ lacks the villager lines of
-    its own gender.  Indices are vanilla civs; genders come from the cache."""
-    if skin_idx is None or voice_idx is None:
+    its own gender.  The skin's gender is its Monk's own select sound; the
+    voice civ's comes from the cache of vanilla civs."""
+    if not skin_units or skin_units[0] is None or voice_idx is None:
         return
-    female = _female_monk_civs(dat)
-    skin_f, voice_f = skin_idx in female, voice_idx in female
+    skin_f = skin_units[0].selection_sound == _PRIESTESS_SELECT
+    voice_f = voice_idx in _female_monk_civs(dat)
     if skin_f == voice_f:
         return
     src = dst_civ.units[_VILLAGER_BY_GENDER[skin_f]]
@@ -6641,8 +7057,9 @@ def _match_monk_voice(dat: DatFile, dst_civ, skin_idx: int | None,
           f"Monks — using the {g} villager lines")
 
 
-def _copy_monk_skin(src_civ, dst_civ) -> None:
-    """Copy the three Monk-appearance units from one civ to another.
+def _copy_monk_skin(src_units: list, dst_civ) -> None:
+    """Copy the three Monk-appearance units onto a civ.  `src_units` is
+    monk_skin_units(): a vanilla civ's Monk trio, or a scenario Monk's.
 
     Runs after _copy_architecture, which sets a Monk matching the architecture
     set; this overrides it when the user picked a Monk skin explicitly.
@@ -6667,12 +7084,9 @@ def _copy_monk_skin(src_civ, dst_civ) -> None:
     skin representatives, but they belong to the voice axis that
     assign_all_languages owns, and to naming — copying them here would fight it.
     """
-    src_units = src_civ.units
     dst_units = dst_civ.units
-    for i in _MONK_SKIN_UNITS:
-        if i >= len(src_units) or i >= len(dst_units):
-            continue
-        src, dst = src_units[i], dst_units[i]
+    for i, src in zip(_MONK_SKIN_UNITS, src_units):
+        dst = dst_units[i] if i < len(dst_units) else None
         if src is None or dst is None:
             continue
         dst.standing_graphic = src.standing_graphic
@@ -6948,6 +7362,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         print(f"       Castle: copying from DAT civ {castle_src} ({castle_civ_name!r}) [{origin}]")
         if len(src_units) > 82 and src_units[82] is not None:
             new_civ.units[82] = deepcopy(src_units[82])
+            _copy_rubble(src_units, new_civ.units, (82,))
 
     # Wonder graphic: copy units[276] from the chosen source civ.
     wonder_raw = civ_def.get("wonder") if "wonder" in civ_def else civ_def.get("wonder_model", -1)
@@ -6959,6 +7374,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
               f"({_original_civ(dat, wonder_src).name!r}) [{origin}]")
         if len(src_units) > 276 and src_units[276] is not None:
             new_civ.units[276] = deepcopy(src_units[276])
+            _copy_rubble(src_units, new_civ.units, (276,))
 
     # Graphic sources are the vanilla civs as shipped (_original_civ), captured
     # BEFORE this slot is overwritten below — "replace Byzantines and choose
@@ -6969,9 +7385,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                     if arch_src is not None and arch_src < len(dat.civs) else None)
 
     monk_src = civ_def.get("monk_skin", -1)
-    monk_src_civ = (_original_civ(dat, monk_src)
-                    if isinstance(monk_src, int) and 0 < monk_src < len(dat.civs)
-                    else None)
+    monk_src_units = monk_skin_units(dat, monk_src)
+    if monk_src not in (-1, None) and monk_src_units is None:
+        print(f"       WARNING: Monk skin {monk_src} isn't in this game — the architecture's Monk instead")
     monastery_src = civ_def.get("monastery_skin_building", -1)
     monastery_src_civ = (_original_civ(dat, monastery_src)
                          if isinstance(monastery_src, int) and 0 < monastery_src < len(dat.civs)
@@ -6998,15 +7414,15 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # That fallback still goes through _copy_monk_skin rather than relying on
     # _copy_architecture alone, because the Monastery button icon is the one
     # per-skin field the architecture pass deliberately leaves alone.
-    _monk_from = monk_src_civ if monk_src_civ is not None else arch_src_civ
+    _monk_from = (monk_src_units if monk_src_units is not None
+                  else monk_skin_units(dat, arch_src) if arch_src_civ is not None else None)
     if _monk_from is not None:
         _copy_monk_skin(_monk_from, dat.civs[civ_index])
-        if monk_src_civ is not None:
-            print(f"       Monk skin: from DAT civ {monk_src} ({monk_src_civ.name!r})")
+        if monk_src_units is not None:
+            print(f"       Monk skin: {monk_src} ({_monk_from[0].name!r})")
         else:
-            print(f"       Monk skin: architecture default ({_monk_from.name!r})")
-        _match_monk_voice(dat, dat.civs[civ_index],
-                          monk_src if monk_src_civ is not None else arch_src, _voice_idx)
+            print(f"       Monk skin: architecture default ({arch_src_civ.name!r})")
+        _match_monk_voice(dat, dat.civs[civ_index], _monk_from, _voice_idx)
 
     # Monastery: independent of architecture too (MONASTERY_SKIN_OPTIONS).
     _monastery_from = monastery_src_civ if monastery_src_civ is not None else arch_src_civ
@@ -7653,7 +8069,7 @@ def _donjon_like_keep(cmds: list) -> list:
 
 
 def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
-                          default_tier: str) -> tuple[list, list, list]:
+                          default_tier: str, civ_index: int | None = None) -> tuple[list, list, list]:
     """Collect effect commands for a UT's bonus entries.
 
     `entries` is get_ut_entries' [id, mult, tier]; each preset is looked up in
@@ -7686,6 +8102,11 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         if entry is None:
             continue
         bonus_id, multiplier, tier = entry
+        built = _UT_BUILT.get((tier, int(bonus_id)))
+        if built is not None:
+            if civ_index is not None:
+                cmds.extend(built["cmds"](dat, civ_index))
+            continue
         tech_id    = ut_source_tech(bonus_id, tier)
         if tech_id is None:
             print(f"       {label} bonus {bonus_id} ({tier} pool): not in UT catalog — skipped")
@@ -7866,7 +8287,7 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
             pending_base_subs_per_slot.append([])
             continue
         cmds, pending_uu_subs, pending_base_uu_subs = _build_ut_effect_cmds(
-            dat, entries, label, "castle" if btn == 7 else "imperial")
+            dat, entries, label, "castle" if btn == 7 else "imperial", civ_index)
         eff_id = _append_effect(dat, Effect(name=f"{alias} {label}", effect_commands=cmds))
         pending_subs_per_slot.append([(eff_id, ec) for ec in pending_uu_subs])
         pending_base_subs_per_slot.append([(eff_id, ec) for ec in pending_base_uu_subs])
@@ -7874,7 +8295,7 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         hotkey = -1
         first = _norm_ut_entry(entries[0], "castle" if btn == 7 else "imperial") if entries else None
         if first is not None:
-            src_tid  = ut_source_tech(first[0], first[2])
+            src_tid  = ut_like_tech(first[0], first[2])
             if src_tid is not None and 0 <= src_tid < len(dat.techs):
                 src_locs = getattr(dat.techs[src_tid], 'research_locations', [])
                 if src_locs:

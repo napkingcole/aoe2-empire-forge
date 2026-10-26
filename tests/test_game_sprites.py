@@ -157,6 +157,12 @@ else:
     check("the Town Center carries its shadow", tc.size[0] >= bare.size[0] and tc.getbbox() is not None
           and sum(tc.getchannel("A").histogram()[1:]) > sum(bare.getchannel("A").histogram()[1:]))
     check("an unknown value is no art, not a crash", gs.scene_still(dat, dat_path, "wonder", 999) is None)
+    # Card 460 draws the Castle as the Wooden Fort: the "building" slot, any
+    # building by unit id, at the buildings' scale; a unit that isn't one is none.
+    fort, castle = gs.scene_still(dat, dat_path, "building", 2600), gs.scene_still(dat, dat_path, "castle", 0)
+    check("the Wooden Fort draws, at a Castle's size", fort is not None and 0.6 < fort.size[0] / castle.size[0] < 1.6,
+          (fort and fort.size, castle.size))
+    check("...and a non-building in that slot is no art", gs.scene_still(dat, dat_path, "building", 83) is None)
     # Faint shadow specks hundreds of pixels below the Persian and Varangian
     # wonders (alpha <= 37) stretched the crop: the scene showed them mostly
     # empty grass.  The crop counts solid pixels only.

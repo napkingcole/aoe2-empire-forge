@@ -129,6 +129,8 @@ _UNIQUE_CASTLE_STRINGS = [
     "Hamask (Infantry deal more damage as they lose HP)",
     # Ours (issue #81): Marauders pointed at the Archery Range.
     "Ambuscade (create Unique Unit at Archery Ranges)",
+    # Ours (2026-10-24, after Detinets): civ_appender._UT_BUILT, no vanilla source.
+    "Wooden Castles (Castles become Wooden Forts costing 300 stone + 500 wood)",
 ]
 
 _UNIQUE_IMP_STRINGS = [
@@ -222,6 +224,35 @@ def _kv_text(text: str) -> str:
     """
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
     return re.sub(r'(?<!\\)"', r'\\"', text)
+
+
+def _tip(text: str) -> str:
+    text = _kv_text(text).replace("\\n", " ").strip()
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
+def civ_tip_lines(slot: int, bonus_texts: list[str], uu_name: str,
+                  uts: list[tuple[str, str]], team_texts: list[str]) -> list[str]:
+    """The four loading-screen tips for the civ in DAT slot `slot`.
+
+    The game keys them by civ slot, four per civ (IDS_CIVTIPS_1_0 is a Britons
+    tip).  They are named keys, not numeric ids like everything else we write,
+    and a mod overrides them like any id (confirmed in game 2026-10-26, with
+    vanilla civs keeping their own).  Without our lines the replaced civ's
+    own tips showed, so every slot is always filled: bonus, unique unit, Castle
+    UT, Imperial UT, with further bonuses and the team bonus standing in.
+    """
+    (c_name, c_desc), (i_name, i_desc) = uts
+    main = [f"Civilization bonus: {bonus_texts[0]}" if bonus_texts else None,
+            f"Your unique unit is the {uu_name}" if uu_name else None,
+            (f"Research {c_name} in your Castle" + (f": {c_desc}" if c_desc else "")) if c_name else None,
+            (f"Research {i_name} in your Castle in the Imperial Age" + (f": {i_desc}" if i_desc else ""))
+            if i_name else None]
+    spare = [f"Civilization bonus: {t}" for t in bonus_texts[1:]] + [f"Team bonus: {t}" for t in team_texts]
+    tips = [t if t else (spare.pop(0) if spare else None) for t in main]
+    have = [t for t in tips if t] or [f"Civilization bonus: {t}" for t in bonus_texts] or ["Build a strong economy."]
+    tips = [t or have[i % len(have)] for i, t in enumerate(tips)]
+    return [f'IDS_CIVTIPS_{slot}_{i} "{_tip(t)}"' for i, t in enumerate(tips)]
 
 
 def hero_string_lines(dat, slot: int, hero_raw: dict | None) -> list[str]:
@@ -453,10 +484,12 @@ def _build_combined_data_zip(dat,
     return buf.getvalue()
 
 
-_KV_ENTRY = re.compile(r'^(\d+)\s+"(.*)"\s*$', re.S)
+# An id is a number, or a named key such as the loading tips' IDS_CIVTIPS_1_0.
+_KV_ID = r'(\d+|IDS_[A-Z0-9_]+)'
+_KV_ENTRY = re.compile(r'^' + _KV_ID + r'\s+"(.*)"\s*$', re.S)
 
 
-def sanitize_kv_strings(content: str) -> tuple[str, list[int]]:
+def sanitize_kv_strings(content: str) -> tuple[str, list]:
     """The last line of defence for a key-value strings file: every entry `ID "text"`.
 
     Each route escapes player text with _kv_text where it builds a line, but a
@@ -468,17 +501,17 @@ def sanitize_kv_strings(content: str) -> tuple[str, list[int]]:
     the straggler instead of hiding it.
     """
     entries: list[str] = []
-    repaired: set[int] = set()
+    repaired: set = set()
     for raw in content.split("\n"):
         if not raw.strip():
             continue
-        if re.match(r'^\d+\s+"', raw) or not entries:
+        if re.match(_KV_ID + r'\s+"', raw) or not entries:
             entries.append(raw)
         else:
             entries[-1] += "\\n" + raw
-            m = re.match(r"^(\d+)", entries[-1])
+            m = re.match(_KV_ID, entries[-1])
             if m:
-                repaired.add(int(m.group(1)))
+                repaired.add(int(m.group(1)) if m.group(1).isdigit() else m.group(1))
     out = []
     for e in entries:
         m = _KV_ENTRY.match(e)
@@ -488,9 +521,9 @@ def sanitize_kv_strings(content: str) -> tuple[str, list[int]]:
         sid, text = m.groups()
         fixed = _kv_text(text)
         if fixed != text:
-            repaired.add(int(sid))
+            repaired.add(int(sid) if sid.isdigit() else sid)
         out.append(f'{sid} "{fixed}"')
-    return "\n".join(out) + ("\n" if content.endswith("\n") else ""), sorted(repaired)
+    return "\n".join(out) + ("\n" if content.endswith("\n") else ""), sorted(repaired, key=lambda x: (isinstance(x, str), str(x).zfill(12)))
 
 
 def _is_blank_png(data: bytes) -> bool:
@@ -875,9 +908,13 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
 
         # Strings: one line per civ per language (all langs get same English text).
         # Description string ID follows KM's offset: 120150 - 10271 = 109879 above name_sid.
+        tips = civ_tip_lines(slot, [b[2:] for b in bullet_lines], uu_display,
+                             [ut_name_and_desc(castle_ut_name, castle_ut_desc),
+                              ut_name_and_desc(imp_ut_name, imp_ut_desc)], tb_lines)
         for lang in LANGUAGES:
             string_lines[lang].append(f'{name_sid} "{alias_kv}"')
             string_lines[lang].extend(hero_lines)
+            string_lines[lang].extend(tips)
             string_lines[lang].append(
                 f'{name_sid + 80000} "Click to play as {alias_kv}."')
             string_lines[lang].append(

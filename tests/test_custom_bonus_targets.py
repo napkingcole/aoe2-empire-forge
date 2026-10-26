@@ -93,6 +93,28 @@ check("the Fortified Church is not offered blast radius (it did not show in game
 check("a Wonder (no attack) is not offered blast radius",
       "blast_radius" not in fm["building:276"], fm["building:276"])
 
+print("\n=== building work rate: train and research faster (2026-10-24) ===")
+# Attribute 13 on a building is its training and research speed: Conscription,
+# Chivalry, Perfusion and the Goths'/Huns'/Britons' team bonuses all write it on
+# every age form of the building.  Offered where something trains or researches.
+wr = cb.allowed_attrs(dat, [(f"building:{b}", "building", b) for b in (12, 84, 68, 70, 50)])
+check("Barracks, Market and Mill are offered work rate",
+      all("work_rate" in wr[f"building:{b}"] for b in (12, 84, 68)))
+check("a House and a Farm are not (nothing trains or researches there)",
+      not any("work_rate" in wr[f"building:{b}"] for b in (70, 50)))
+check("...nor the Farms group", "work_rate" not in wr["group:farms"])
+check("Military buildings are", "work_rate" in wr["group:military_buildings"])
+from civ_appender import _custom_bonus_resolver                    # noqa: E402
+line_of, resolve = _custom_bonus_resolver(dat, 1, {})
+card = {"targets": [{"type": "unit", "id": 12, "kind": "building", "name": "Barracks"}],
+        "effects": [{"attr": "work_rate", "op": "mul", "value": 20}]}
+cmds = cb.card_commands(card, line_of, resolve)
+vanilla = {int(c.a) for c in dat.effects[405].effect_commands if c.type == 5 and int(c.c) == 13}  # Goths team bonus
+check("the card multiplies attribute 13 by 1.2 on every Barracks the Goths' team bonus names",
+      {int(c.a) for c in cmds if c.type == 5 and int(c.c) == 13 and abs(c.d - 1.2) < 1e-6} >= vanilla
+      and vanilla, (sorted(vanilla), [(c.type, c.a, c.c, c.d) for c in cmds]))
+check("its text says what it does", cb.card_text(card) == "Barracks: train and research 20% faster", cb.card_text(card))
+
 print("\n=== the catalog endpoint ===")
 with contextlib.redirect_stdout(io.StringIO()):
     import app as A
