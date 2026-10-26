@@ -237,7 +237,8 @@ def civ_tip_lines(slot: int, bonus_texts: list[str], uu_name: str,
 
     The game keys them by civ slot, four per civ (IDS_CIVTIPS_1_0 is a Britons
     tip).  They are named keys, not numeric ids like everything else we write,
-    and unverified in game (2026-10-26).  Without our lines the replaced civ's
+    and a mod overrides them like any id (confirmed in game 2026-10-26, with
+    vanilla civs keeping their own).  Without our lines the replaced civ's
     own tips showed, so every slot is always filled: bonus, unique unit, Castle
     UT, Imperial UT, with further bonuses and the team bonus standing in.
     """
