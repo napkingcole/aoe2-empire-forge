@@ -191,11 +191,15 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
             u.speed = float(overrides[f"speed{sfx}"])
 
         if u.type_50 is not None:
+            # Each stat has a real field and a displayed one, and KM writes both.
+            # Writing only the displayed reload left the unit attacking at its
+            # vanilla speed (issues #98, #104); only max_range left the tooltip
+            # on the old range.
             if overrides.get(f"range{sfx}") is not None:
-                u.type_50.max_range = float(overrides[f"range{sfx}"])
+                u.type_50.max_range = u.type_50.displayed_range = float(overrides[f"range{sfx}"])
 
             if overrides.get(f"reload{sfx}") is not None:
-                u.type_50.displayed_reload_time = float(overrides[f"reload{sfx}"])
+                u.type_50.reload_time = u.type_50.displayed_reload_time = float(overrides[f"reload{sfx}"])
 
             if overrides.get(f"attack{sfx}") is not None:
                 v = int(overrides[f"attack{sfx}"])

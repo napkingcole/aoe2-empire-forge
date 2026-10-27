@@ -120,6 +120,18 @@ wrong = sorted(u for u in _ELEPHANT_UNITS if got[u] != got[1132])
 check("Howdah: every elephant matches the Battle Elephant", got[1132] and not wrong,
       f"ref={got[1132]} wrong={wrong}")
 
+# Tusk Swords, a Castle UT: "melee elephant units +3 attack" (#97).
+slot += 1
+km = {**km, "alias": "Tusk Swords", "bonuses": [[], [], [[18, 1]], [], []]}
+with contextlib.redirect_stdout(io.StringIO()):
+    apply_civ(dat, km, target_slot=slot)
+got = summary(slot)
+wrong = sorted(u for u in _MELEE_ELEPHANT_UNITS if got[u] != got[1132])
+check("Tusk Swords: every melee elephant matches the Battle Elephant (#97)", got[1132] and not wrong,
+      f"ref={got[1132]} wrong={wrong}")
+extra = sorted(u for u in _ELEPHANT_UNITS if u not in _MELEE_ELEPHANT_UNITS and got[u])
+check("Tusk Swords leaves the ranged elephants alone", not extra, f"{extra}")
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

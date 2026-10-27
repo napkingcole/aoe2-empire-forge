@@ -84,6 +84,12 @@ DELIBERATE DIVERGENCE FROM KM — do not "restore" these from his source:
     it.  `_apply_dropoff_discount` runs as a supplement after the tech branch,
     the same shape bonus 105 uses after its ec_list.
 
+  - 271 ("Scorpions train 50% faster", 2026-10-27, #92) — KM's list named
+    541, "Projectile SGY (Fire)", where the Heavy Scorpion is 542, so the Heavy
+    Scorpion trained at the normal speed.  A sweep of every ec_list for
+    projectile or corpse targets found only this one (227's cannon-projectile
+    commands are deliberate).
+
 TEAM BONUSES — two traps, both of which have bitten (2026-09-18):
 
   `team` holds EFFECT indices, not tech ids.  `_apply_bonuses` does

@@ -3540,6 +3540,32 @@ def format_unit_extended_tooltip(unit, name: str, tag: str = "", desc: str = "")
     return f"Create <b>{name}<b> (<cost>) \\n{line2}"
 
 
+# Attributes that place a unit on a button rather than change it: the Imperial
+# Scorpion takes the Heavy Scorpion's button through the upgrade already.
+_PLACEMENT_ATTRS = (42, 43, 158)
+
+
+def _extend_to_imperial_scorpion(dat: DatFile) -> int:
+    """Copy every stat command aimed at the Heavy Scorpion onto the Imperial
+    Scorpion, in the same effect.  Chemistry, Rocketry, Ballistas, Double
+    Crossbow and the gold discount all name 279 and 542 by id, so the upgrade
+    lost them (#92).  Global effects are safe to extend: only a civ that can
+    research the upgrade ever fields unit 1179.  Idempotent, so every civ
+    with the upgrade in a multi-civ build can run it."""
+    added = 0
+    for eid in sorted({t.effect_id for t in dat.techs if 0 <= t.effect_id < len(dat.effects)}):
+        eff = dat.effects[eid]
+        new = [EffectCommand(type=c.type, a=_IMP_SCORPION, b=c.b, c=c.c, d=c.d)
+               for c in eff.effect_commands
+               if c.type in (EC_SET, EC_ADD, EC_MULTIPLY) and int(c.a) == _HEAVY_SCORPION
+               and int(c.c) not in _PLACEMENT_ATTRS]
+        new = [c for c in new if not _already_targets(eff, c)]
+        if new:
+            eff.effect_commands = [*eff.effect_commands, *new]
+            added += len(new)
+    return added
+
+
 def _setup_imperial_scorpion_unit(dat: DatFile) -> None:
     """Write Imperial Scorpion unit data into slot 1179 for every civ.
 
@@ -6383,12 +6409,16 @@ def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> No
 #   846  card 292  bonus-damage and conversion resistance — every vanilla
 #                  elephant, not our Royal Battle Elephant or the Sannahya
 #   626  Howdah    +1/+1 armour          Battle and War Elephant (Burmese UT)
+#   622  Tusk Swords  +3 attack          Battle and War Elephant (Khmer UT); its
+#                  text says melee elephant units, so the Armored and Siege
+#                  Elephant too (#97)
 # Civ cards get a civ-owned auto-fire tech gated like the template (the
 # half-catalog pattern bonus 312 uses); Howdah's commands join the UT itself.
 _MELEE_ELEPHANT_UNITS = [239, 558, 1132, 1134, 1180, 1744, 1746, 2390, 2391]
 _ELEPHANT_EXTENSIONS: dict[int, list[int]] = {
     640: _ELEPHANT_UNITS, 672: _MELEE_ELEPHANT_UNITS, 662: _ELEPHANT_UNITS,
     663: _ELEPHANT_UNITS, 846: _ELEPHANT_UNITS, 626: _ELEPHANT_UNITS,
+    622: _MELEE_ELEPHANT_UNITS,
 }
 
 
@@ -7692,7 +7722,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 ec.a = elite_uu_id
             if ec.type == EC_SET and int(ec.c) == 42:
                 _ensure_anarchy_train_slot(elite_uu_id, int(ec.d))
-            dat.effects[eff_id].effect_commands.append(ec)
+            if not _already_targets(dat.effects[eff_id], ec):
+                dat.effects[eff_id].effect_commands.append(ec)
     if (castle_ut_pending_uu_subs or imp_ut_pending_uu_subs) and elite_uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own elite unique "
                "unit, but this civ has no UU defined — effect left as a no-op.")
@@ -7708,7 +7739,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             ec.a = uu_id
             if ec.type == EC_SET and int(ec.c) == 42:
                 _ensure_anarchy_train_slot(uu_id, int(ec.d))
-            dat.effects[eff_id].effect_commands.append(ec)
+            if not _already_targets(dat.effects[eff_id], ec):
+                dat.effects[eff_id].effect_commands.append(ec)
     if (castle_ut_pending_base_uu_subs or imp_ut_pending_base_uu_subs) and uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own base unique "
                "unit (e.g. Anarchy train-at-Barracks), but this civ has no "
@@ -7759,6 +7791,16 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     bonus_results["placed_cards"] = _apply_placed_cards(
         dat, civ_index, civ_def, warnings, (uu_id, elite_uu_id),
         (castle_ut_tech_id, imp_ut_tech_id), tb_eff_id, _EFFECT_COMMAND_SOFT_LIMIT)
+
+    # 7a'. The Imperial Scorpion is our unit, so no tech names it: give it
+    #      everything aimed at the Heavy Scorpion (#92).  After every bonus,
+    #      UT and card, so their copies of vanilla techs are covered too.
+    if any(c.type == EC_UPGRADE and int(c.b) == _IMP_SCORPION
+           for t in dat.techs if t.civ == civ_index and t.effect_id >= 0
+           for c in dat.effects[t.effect_id].effect_commands):
+        _n_imp = _extend_to_imperial_scorpion(dat)
+        if _n_imp:
+            print(f"       Imperial Scorpion: {_n_imp} Heavy Scorpion commands extended to it")
 
     # 8. Language audio is handled in a single batch call to assign_all_languages()
     #    after all civs are processed — see app.py / build_all.py.
@@ -7959,6 +8001,22 @@ _KM_IMP_UT_TECHS: dict[int, int] = {
 # (e.g. b=109 = Town Center, the same unit id for every civ) and are safe to
 # keep as-is once `a` is substituted with the CURRENT civ's own elite UU id.
 UU_SUBSTITUTION_TYPES = (7, 12)
+
+
+def _already_targets(effect, ec) -> bool:
+    """Does `effect` already change this unit's stat the way the retargeted
+    `ec` would?  A UT naming the source civ's UU, retargeted onto ours, doubled
+    up when ours is already in its list: Zealotry gave the Camel Archer +20 HP
+    twice, once as itself and once as the Mameluke (#99)."""
+    if ec.type not in (EC_SET, EC_ADD, EC_MULTIPLY):
+        return False
+
+    def key(c):
+        # Attack (9) and armour (8) pack the armour class into d: +2 melee and
+        # +2 pierce are two different changes.
+        part = int(c.d) >> 8 if int(c.c) in (8, 9) else None
+        return c.type, int(c.a), int(c.b), int(c.c), part
+    return any(key(c) == key(ec) for c in effect.effect_commands)
 
 # Unit enables a UT preset deliberately leaves out.  Timurid Siegecraft enables
 # the Flaming Camel; an enable alone shows the unit without making it trainable
