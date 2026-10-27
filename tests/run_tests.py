@@ -104,6 +104,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("UU reload and range edits are real", "test_uu_reload_override.py", "build"),
     ("UT retarget never doubles a unit",   "test_ut_uu_retarget.py",    "build"),
     ("scorpion techs reach every scorpion", "test_imperial_scorpion_techs.py", "build"),
+    ("Legionary and Savar replace upgrades", "test_upgrade_replacements.py", "build"),
     ("multi-target, team & UT cards",   "test_custom_bonus_multi.py",   "build"),
     ("UT preset pools",                 "test_ut_pools.py",             "build"),
     ("elite upgrade cost",              "test_elite_upgrade_cost.py",   "build"),

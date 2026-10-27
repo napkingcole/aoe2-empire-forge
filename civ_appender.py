@@ -3148,11 +3148,16 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
     414: {"name": "Warrior Priest",   "techs": (948,),       "units": (1811,)},
     415: {"name": "Thirisadai",       "techs": (841,),       "units": (1750,)},
     # Upgrade-only: these replace an existing line's button rather than claiming
-    # one of their own, so they can never collide.  Their prerequisites (Long
-    # Swordsman 207 / Cavalier 209) are global techs, so the unlock simply never
-    # fires for a civ whose tree lacks them — which is the right behaviour.
-    416: {"name": "Legionary",        "techs": (885,),       "units": (1793,)},
-    417: {"name": "Savar",            "techs": (526,),       "units": (1813,)},
+    # one of their own.  Their prerequisites (Long Swordsman 207 / Cavalier 209)
+    # are global techs, so the unlock simply never fires for a civ whose tree
+    # lacks them — which is the right behaviour.  The button is SHARED with the
+    # upgrade they replace (Legionary and Two-Handed Swordsman are both Barracks
+    # button 6, Savar and Paladin both Stable button 7) and the game shows only
+    # one, so each needs its civ's switch-off tech as well, as the Romans and
+    # Persians have it: 895 disables Two-Handed Swordsman and Champion, 527 the
+    # Paladin.  Without them the Legionary could never be researched (#91).
+    416: {"name": "Legionary",        "techs": (885, 895),   "units": (1793,)},
+    417: {"name": "Savar",            "techs": (526, 527),   "units": (1813,)},
     # Added 2026-09-20 to restore a unit that lost its only path.  Bonus 108
     # ("Farm upgrades +125% food") used to map techs 773/774 alongside its own
     # 772, so every civ taking a FARM bonus silently gained the Flemish Militia.

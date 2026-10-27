@@ -35,7 +35,7 @@ from build_all import (_build_combined_data_zip, _build_combined_ui_zip, dat_jso
                        _ut_name, _ut_source, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS,
                        _kv_text, ut_name_and_desc, ut_selection_text, ut_research_label,
-                       hero_string_lines, civ_tip_lines)
+                       hero_string_lines, civ_tip_lines, civ_description)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
@@ -247,6 +247,8 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Zealotry gave a Camel Archer unique unit +40 HP</strong> instead of +20: it counted once for the Camel Archer and again as the Mameluke it names (#99). Any unique tech that names another civ's unique unit had the same double-up",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Scorpions:</strong> the Imperial Scorpion upgrade lost Chemistry, Rocketry, Ballistas, Double Crossbow and the gold discount, and \"Scorpions train 50% faster\" left out the Heavy Scorpion (#92)",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Tusk Swords</strong> now reaches every melee elephant, the Armored and Siege Elephants too (#97)",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>The Legionary could never be researched</strong>: it shares its Barracks button with the Two-Handed Swordsman, which was never switched off, so players got Two-Handed Swordsmen and Champions (#91). The Savar had the same problem with the Paladin. Both now replace the upgrade, as for the Romans and Persians",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Empty civ panel on the selection screen</strong>: the Build Mod page wrote the civ description in a slightly different layout from the game's, and the panel's Features and Unique Techs came up empty (#96)",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Monks walked up to heal</strong> instead of healing from range, on every custom civ with a tech tree: the tree quietly switched off the game's free Monk Ranged Heal. It now stays on, except with the Monks double healing range card, which sets its own range as the Teutons' does",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Destroyed buildings left Western European rubble</strong> whatever the architecture: Barracks, Town Centers, towers, gates and the rest now leave their own, and the Castle and Wonder leave their picks' rubble",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Old pictures after an update.</strong> Your browser could keep showing the previous version's pages and unit pictures; it now checks for new ones every time. Empire Forge also clears out the caches older versions left behind (up to a few hundred MB)",
@@ -941,43 +943,21 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             alias_kv      = _kv_text(alias)
             civ_bonuses        = _bonuses_raw_normalized
             team_bonus_entries = _team_bonuses_raw_normalized
-            desc_parts = [f'{description} civilization' if description else f'{alias_kv} civilization']
-            desc_parts.append(" \\n\\n")
-            for entry in civ_bonuses:
-                if not isinstance(entry, list):
-                    continue
-                bid  = str(entry[0])
-                mult = entry[1] if len(entry) > 1 else 1
-                txt  = _BONUS_NAMES.get(bid, "")
-                if not txt:
-                    continue
-                suffix = f" [x{mult}]" if mult > 1 else ""
-                desc_parts.append(f"• {txt}{suffix} \\n")
+            _bonus_texts = [_BONUS_NAMES[str(e[0])] + (f" [x{e[1]}]" if len(e) > 1 and e[1] > 1 else "")
+                            for e in civ_bonuses if isinstance(e, list) and _BONUS_NAMES.get(str(e[0]))]
             # Custom bonus cards — the other two routes list them; this one didn't.
-            for _card in card_homes(civ_def)["civ"]:
-                desc_parts.append(f"• {_kv_text(custom_bonus.card_text(_card))} \\n")
-            desc_parts.append("\\n<b>Unique Unit:<b> \\n")
+            _bonus_texts += [custom_bonus.card_text(c) for c in card_homes(civ_def)["civ"]]
             uu_display = uu_override_name or (uu_info["name"] if uu_info else "Unique Unit")
-            desc_parts.append(f"{uu_display} \\n")
-            desc_parts.append("\\n<b>Unique Techs:<b> \\n")
-            desc_parts.append(f"• {ut_selection_text(castle_ut_name_short, castle_ut_desc_text)} \\n")
-            desc_parts.append(f"• {ut_selection_text(imp_ut_name_short, imp_ut_desc_text)} \\n")
             _tb_texts = [_TEAM_BONUS_NAMES.get(str(e[0]), "")
                          for e in team_bonus_entries if isinstance(e, list)]
             # Library cards picked as team bonuses (#54).
-            _tb_texts = [t for t in _tb_texts if t] + [_kv_text(t) for t in team_card_texts(civ_def)]
-            if _tb_texts:
-                desc_parts.append("\\n<b>Team Bonus:<b> \\n")
-                for txt in _tb_texts:
-                    desc_parts.append(f"• {txt} \\n")
-            full_desc = "".join(desc_parts)
+            _tb_texts = [t for t in _tb_texts if t] + team_card_texts(civ_def)
+            _uts = [(castle_ut_name_short, castle_ut_desc_text), (imp_ut_name_short, imp_ut_desc_text)]
+            # build_all.civ_description: this route used to put a space before
+            # every line break and end on a dangling \\n (#96).
+            full_desc = civ_description(description or alias_kv, _bonus_texts, uu_display, _uts, _tb_texts)
             # Loading-screen tips (build_all.civ_tip_lines, all three routes).
-            _bonus_texts = [_BONUS_NAMES[str(e[0])] + (f" [x{e[1]}]" if len(e) > 1 and e[1] > 1 else "")
-                            for e in civ_bonuses if isinstance(e, list) and _BONUS_NAMES.get(str(e[0]))]
-            _bonus_texts += [custom_bonus.card_text(c) for c in card_homes(civ_def)["civ"]]
-            hero_lines += civ_tip_lines(slot, _bonus_texts, uu_display,
-                                        [(castle_ut_name_short, castle_ut_desc_text),
-                                         (imp_ut_name_short, imp_ut_desc_text)], _tb_texts)
+            hero_lines += civ_tip_lines(slot, _bonus_texts, uu_display, _uts, _tb_texts)
 
             for lang in LANGUAGES:
                 string_lines[lang].append(f'{name_sid} "{alias_kv}"')
