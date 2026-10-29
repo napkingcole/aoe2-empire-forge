@@ -124,5 +124,5 @@ GPL-3.0 licensed: if you share your script, share it open source under the
 same license.
 
 Questions, or an idea that might belong in Empire Forge itself? Ask on the
-[Discord](https://discord.gg/CEXf9R6XJ) or open a
+[Discord](https://discord.com/invite/cQ5x7bfxDB) or open a
 [GitHub issue](https://github.com/napkingcole/aoe2-empire-forge/issues).
