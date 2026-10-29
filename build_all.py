@@ -226,6 +226,33 @@ def _kv_text(text: str) -> str:
     return re.sub(r'(?<!\\)"', r'\\"', text)
 
 
+def civ_description(head: str, bonus_texts: list[str], uu_name: str,
+                    uts: list[tuple[str, str]], team_texts: list[str]) -> str:
+    """The civ-selection description, in the game's own layout — one writer for
+    all three build routes (they had drifted: the web route put a space before
+    every line break and ended on a dangling \\n; the game accepts both).
+
+    Spaces appear only after a `<b>Section:<b>` tag; no trailing \\n:
+      `X civilization\\n\\n• Bonus 1\\n• Bonus 2\\n\\n<b>Unique Unit:<b> \\nUU
+      \\n\\n<b>Unique Techs:<b> \\n• UT 1\\n• UT 2\\n\\n<b>Team Bonus:<b> \\nTB`
+    Every argument is run through _kv_text, which is idempotent.  Team bonuses
+    are one line joined by "; ", as vanilla writes them.
+
+    The Team Bonus section is ALWAYS written ("None" without one): the panel
+    shows no Features or Unique Techs text at all for a description lacking
+    it, in either layout (#96, probe mod confirmed in game 2026-10-29)."""
+    text = (f"{_kv_text(head)} civilization\\n\\n"
+            + "\\n".join(f"• {_kv_text(t)}" for t in bonus_texts)
+            + f"\\n\\n<b>Unique Unit:<b> \\n{_kv_text(uu_name)}"
+            + "\\n\\n<b>Unique Techs:<b> \\n"
+            + "\\n".join("• " + _kv_text(ut_selection_text(*ut_name_and_desc(n, d))) for n, d in uts))
+    text += ("\\n\\n<b>Team Bonus:<b> \\n"
+             + ("; ".join(_kv_text(t) for t in team_texts) if team_texts else "None"))
+    while text.endswith("\\n") or text.endswith(" "):
+        text = text[:-2] if text.endswith("\\n") else text.rstrip()
+    return text
+
+
 def _tip(text: str) -> str:
     text = _kv_text(text).replace("\\n", " ").strip()
     return text if text.endswith((".", "!", "?")) else text + "."
@@ -847,70 +874,25 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         civ_bonuses        = get_civ_bonuses(civ_def)
         team_bonus_entries = get_team_bonuses(civ_def)
 
-        # Strict vanilla format (verified against game's key-value-strings-utf8.txt
-        # 2026-06-12): spaces appear ONLY after `<b>Section:<b>` tags before \n.
-        # No trailing space before any other \n. No trailing \n before closing ".
-        # Example: `civilization\n\n• Bonus 1\n• Bonus 2\n\n<b>Unique Unit:<b> \nUU
-        # name\n\n<b>Unique Techs:<b> \n• UT 1\n• UT 2\n\n<b>Team Bonus:<b> \nTB"`.
-        desc_parts = [f'{description} civilization' if description else f'{alias_kv} civilization']
-        desc_parts.append("\\n\\n")
-        bullet_lines = []
+        bonus_texts = []
         for entry in civ_bonuses:
             if not isinstance(entry, list):
                 continue
-            bid  = str(entry[0])
             mult = entry[1] if len(entry) > 1 else 1
-            txt  = _BONUS_NAMES.get(bid, "")
-            if not txt:
-                continue
-            suffix = f" [x{mult}]" if mult > 1 else ""
-            bullet_lines.append(f"• {txt}{suffix}")
-        for card in card_homes(civ_def)["civ"]:
-            bullet_lines.append("• " + custom_bonus.card_text(card).replace('"', "'"))
-        desc_parts.append("\\n".join(bullet_lines))
-        # Section break + UU
-        desc_parts.append(f"\\n\\n<b>Unique Unit:<b> \\n{uu_display}")
-        # Section break + UTs
-        desc_parts.append(
-            "\\n\\n<b>Unique Techs:<b> \\n"
-            + "\\n".join("• " + _kv_text(ut_selection_text(*ut_name_and_desc(nm, ds)))
-                         for nm, ds in ((castle_ut_name, castle_ut_desc),
-                                        (imp_ut_name, imp_ut_desc)))
-        )
-        tb_lines = []
-        for entry in team_bonus_entries:
-            if not isinstance(entry, list):
-                continue
-            bid = str(entry[0])
-            txt = _TEAM_BONUS_NAMES.get(bid, "")
-            if txt:
-                tb_lines.append(txt)
+            if txt := _BONUS_NAMES.get(str(entry[0]), ""):
+                bonus_texts.append(txt + (f" [x{mult}]" if mult > 1 else ""))
+        bonus_texts += [custom_bonus.card_text(card) for card in card_homes(civ_def)["civ"]]
+        tb_lines = [t for t in (_TEAM_BONUS_NAMES.get(str(e[0]), "")
+                                for e in team_bonus_entries if isinstance(e, list)) if t]
         # Library cards picked as team bonuses (#54).
-        tb_lines += [_kv_text(t) for t in team_card_texts(civ_def)]
-        if tb_lines:
-            # Vanilla format: no bullets in Team Bonus; multiple bonuses
-            # are joined by "; " into one line of plain text.
-            desc_parts.append("\\n\\n<b>Team Bonus:<b> \\n")
-            desc_parts.append("; ".join(tb_lines))
-        full_desc = "".join(desc_parts)
-        # Strip trailing escape sequences and whitespace before the closing
-        # quote. AoE2 DE's modded-strings parser rejects entries ending in a
-        # dangling \n (literal backslash-n), silently falling back to the base
-        # game string — confirmed via Discord community report 2026-06-12.
-        # NKC's working strings end cleanly with the last bullet's content;
-        # ours used to end with ` \n"` which broke the override for the
-        # picker description specifically.
-        while full_desc.endswith("\\n") or full_desc.endswith(" "):
-            if full_desc.endswith("\\n"):
-                full_desc = full_desc[:-2]
-            else:
-                full_desc = full_desc.rstrip()
+        tb_lines += team_card_texts(civ_def)
+        uts = [(castle_ut_name, castle_ut_desc), (imp_ut_name, imp_ut_desc)]
+        full_desc = civ_description(description or alias_kv, bonus_texts, uu_display, uts, tb_lines)
 
         # Strings: one line per civ per language (all langs get same English text).
         # Description string ID follows KM's offset: 120150 - 10271 = 109879 above name_sid.
-        tips = civ_tip_lines(slot, [b[2:] for b in bullet_lines], uu_display,
-                             [ut_name_and_desc(castle_ut_name, castle_ut_desc),
-                              ut_name_and_desc(imp_ut_name, imp_ut_desc)], tb_lines)
+        tips = civ_tip_lines(slot, bonus_texts, uu_display,
+                             [ut_name_and_desc(n, d) for n, d in uts], tb_lines)
         for lang in LANGUAGES:
             string_lines[lang].append(f'{name_sid} "{alias_kv}"')
             string_lines[lang].extend(hero_lines)

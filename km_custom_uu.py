@@ -1073,18 +1073,20 @@ def _apply_preset_stats(uu_unit, elite_unit, preset: dict) -> None:
         _apply_replace_combat(elite_unit, elite_attacks, elite_armors)
 
     extra = preset["extra"]
+    # The real field and the displayed one, as KM writes them: the displayed
+    # reload alone left these units on their base unit's attack speed (#104).
     if "max_range" in extra:
         u_r, e_r = extra["max_range"]
         if u_r is not None:
-            uu_unit.type_50.max_range = u_r
+            uu_unit.type_50.max_range = uu_unit.type_50.displayed_range = u_r
         if e_r is not None:
-            elite_unit.type_50.max_range = e_r
+            elite_unit.type_50.max_range = elite_unit.type_50.displayed_range = e_r
     if "reload_time" in extra:
         u_t, e_t = extra["reload_time"]
         if u_t is not None:
-            uu_unit.type_50.displayed_reload_time = u_t
+            uu_unit.type_50.reload_time = uu_unit.type_50.displayed_reload_time = u_t
         if e_t is not None:
-            elite_unit.type_50.displayed_reload_time = e_t
+            elite_unit.type_50.reload_time = elite_unit.type_50.displayed_reload_time = e_t
     if "bonus_damage_resistance" in extra:
         u_b, e_b = extra["bonus_damage_resistance"]
         if u_b is not None:

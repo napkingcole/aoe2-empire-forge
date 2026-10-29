@@ -3148,11 +3148,16 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
     414: {"name": "Warrior Priest",   "techs": (948,),       "units": (1811,)},
     415: {"name": "Thirisadai",       "techs": (841,),       "units": (1750,)},
     # Upgrade-only: these replace an existing line's button rather than claiming
-    # one of their own, so they can never collide.  Their prerequisites (Long
-    # Swordsman 207 / Cavalier 209) are global techs, so the unlock simply never
-    # fires for a civ whose tree lacks them — which is the right behaviour.
-    416: {"name": "Legionary",        "techs": (885,),       "units": (1793,)},
-    417: {"name": "Savar",            "techs": (526,),       "units": (1813,)},
+    # one of their own.  Their prerequisites (Long Swordsman 207 / Cavalier 209)
+    # are global techs, so the unlock simply never fires for a civ whose tree
+    # lacks them — which is the right behaviour.  The button is SHARED with the
+    # upgrade they replace (Legionary and Two-Handed Swordsman are both Barracks
+    # button 6, Savar and Paladin both Stable button 7) and the game shows only
+    # one, so each needs its civ's switch-off tech as well, as the Romans and
+    # Persians have it: 895 disables Two-Handed Swordsman and Champion, 527 the
+    # Paladin.  Without them the Legionary could never be researched (#91).
+    416: {"name": "Legionary",        "techs": (885, 895),   "units": (1793,)},
+    417: {"name": "Savar",            "techs": (526, 527),   "units": (1813,)},
     # Added 2026-09-20 to restore a unit that lost its only path.  Bonus 108
     # ("Farm upgrades +125% food") used to map techs 773/774 alongside its own
     # 772, so every civ taking a FARM bonus silently gained the Flemish Militia.
@@ -3538,6 +3543,32 @@ def format_unit_extended_tooltip(unit, name: str, tag: str = "", desc: str = "")
     if desc:
         line2 += f"\\n{desc}"
     return f"Create <b>{name}<b> (<cost>) \\n{line2}"
+
+
+# Attributes that place a unit on a button rather than change it: the Imperial
+# Scorpion takes the Heavy Scorpion's button through the upgrade already.
+_PLACEMENT_ATTRS = (42, 43, 158)
+
+
+def _extend_to_imperial_scorpion(dat: DatFile) -> int:
+    """Copy every stat command aimed at the Heavy Scorpion onto the Imperial
+    Scorpion, in the same effect.  Chemistry, Rocketry, Ballistas, Double
+    Crossbow and the gold discount all name 279 and 542 by id, so the upgrade
+    lost them (#92).  Global effects are safe to extend: only a civ that can
+    research the upgrade ever fields unit 1179.  Idempotent, so every civ
+    with the upgrade in a multi-civ build can run it."""
+    added = 0
+    for eid in sorted({t.effect_id for t in dat.techs if 0 <= t.effect_id < len(dat.effects)}):
+        eff = dat.effects[eid]
+        new = [EffectCommand(type=c.type, a=_IMP_SCORPION, b=c.b, c=c.c, d=c.d)
+               for c in eff.effect_commands
+               if c.type in (EC_SET, EC_ADD, EC_MULTIPLY) and int(c.a) == _HEAVY_SCORPION
+               and int(c.c) not in _PLACEMENT_ATTRS]
+        new = [c for c in new if not _already_targets(eff, c)]
+        if new:
+            eff.effect_commands = [*eff.effect_commands, *new]
+            added += len(new)
+    return added
 
 
 def _setup_imperial_scorpion_unit(dat: DatFile) -> None:
@@ -6170,7 +6201,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             # effectiveness, the buildings need commands vanilla never wrote.
             if bonus_id == _DROPOFF_DISCOUNT_BONUS:
                 _apply_dropoff_discount(dat, civ_index, multiplier)
-            _apply_elephant_extensions(dat, civ_index, tech_ids, multiplier)
+            _apply_unit_set_extensions(dat, civ_index, tech_ids, multiplier)
             continue
 
         ec_entries = civ_bonus_ec_list(bonus_id)
@@ -6372,7 +6403,7 @@ def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> No
     print(f"       Drop-off buildings: {len(cmds)} discounted to {factor:.4f}")
 
 
-# Elephant bonuses that DE wrote for one line.  The cards say elephant units
+# Unit-set bonuses that DE wrote for one line — mostly elephants.  The cards say elephant units
 # (or melee elephant units), and the user chose all of them (issue #60,
 # 2026-10-08), so each vanilla template tech below is extended to the rest of
 # its set: its per-unit commands are copied onto every unit it leaves out.
@@ -6383,23 +6414,37 @@ def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> No
 #   846  card 292  bonus-damage and conversion resistance — every vanilla
 #                  elephant, not our Royal Battle Elephant or the Sannahya
 #   626  Howdah    +1/+1 armour          Battle and War Elephant (Burmese UT)
+#   622  Tusk Swords  +3 attack          Battle and War Elephant (Khmer UT); its
+#                  text says melee elephant units, so the Armored and Siege
+#                  Elephant too (#97)
+# The same shape outside elephants:
+#   1068/1072  card 336  Siege Weapons and Siege Warships +10/15% speed — Shu's
+#                  own effect reaches the ships through the Lou Chuan alone,
+#                  the only one Shu has (#93)
 # Civ cards get a civ-owned auto-fire tech gated like the template (the
 # half-catalog pattern bonus 312 uses); Howdah's commands join the UT itself.
 _MELEE_ELEPHANT_UNITS = [239, 558, 1132, 1134, 1180, 1744, 1746, 2390, 2391]
-_ELEPHANT_EXTENSIONS: dict[int, list[int]] = {
+# "Siege Warships" as Siege Engineers (377) uses the term, limited to the ships a
+# civ here can have: Cannon Galleon line, Catapult Galleon, Dromon, Lou Chuan,
+# Turtle Ships.  Siege Engineers names Demolition units separately, so they
+# are not siege warships; the Chronicles and scenario ships are out of reach.
+_SIEGE_WARSHIP_UNITS = [1948, 420, 691, 2633, 1795, 831, 832]
+_UNIT_SET_EXTENSIONS: dict[int, list[int]] = {
     640: _ELEPHANT_UNITS, 672: _MELEE_ELEPHANT_UNITS, 662: _ELEPHANT_UNITS,
     663: _ELEPHANT_UNITS, 846: _ELEPHANT_UNITS, 626: _ELEPHANT_UNITS,
+    622: _MELEE_ELEPHANT_UNITS,
+    1068: _SIEGE_WARSHIP_UNITS, 1072: _SIEGE_WARSHIP_UNITS,
 }
 
 
-def _elephant_extension_cmds(dat: DatFile, template_tid: int,
+def _unit_set_extension_cmds(dat: DatFile, template_tid: int,
                              multiplier: int) -> list[EffectCommand]:
-    """The template's per-unit commands, copied onto the elephants it misses.
+    """The template's per-unit commands, copied onto the units of its set it misses.
 
     Every template here gives each of its units the same commands, so the
     first covered unit in the set is the pattern.  Scaled like the copy of the
     template itself, so a x2 card is x2 on every line."""
-    units = _ELEPHANT_EXTENSIONS[template_tid]
+    units = _UNIT_SET_EXTENSIONS[template_tid]
     by_unit: dict[int, list] = defaultdict(list)
     for c in dat.effects[dat.techs[template_tid].effect_id].effect_commands:
         if c.type in (EC_SET, EC_ADD, EC_MULTIPLY) and c.a >= 0:
@@ -6412,16 +6457,16 @@ def _elephant_extension_cmds(dat: DatFile, template_tid: int,
                 EffectCommand(type=c.type, a=uid, b=c.b, c=c.c, d=c.d), multiplier)]
 
 
-def _apply_elephant_extensions(dat: DatFile, civ_index: int, techs, multiplier: int) -> None:
+def _apply_unit_set_extensions(dat: DatFile, civ_index: int, techs, multiplier: int) -> None:
     """Civ cards: one auto-fire tech per extended template, same age gate."""
     for tid in techs:
-        if tid not in _ELEPHANT_EXTENSIONS:
+        if tid not in _UNIT_SET_EXTENSIONS:
             continue
-        cmds = _elephant_extension_cmds(dat, tid, multiplier)
+        cmds = _unit_set_extension_cmds(dat, tid, multiplier)
         age = next((r for r in dat.techs[tid].required_techs if r in (101, 102, 103)), -1)
         _add_auto_fire_tech(dat, civ_index, cmds, age_req=age,
-                            name=f"C-Bonus, all elephants ({tid})")
-        print(f"       Elephants: tech {tid} extended with {len(cmds)} commands")
+                            name=f"C-Bonus, whole unit set ({tid})")
+        print(f"       Unit set: tech {tid} extended with {len(cmds)} commands")
 
 
 # Bonus 105 — "Economic upgrades cost -40% food and available one age earlier".
@@ -7692,7 +7737,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 ec.a = elite_uu_id
             if ec.type == EC_SET and int(ec.c) == 42:
                 _ensure_anarchy_train_slot(elite_uu_id, int(ec.d))
-            dat.effects[eff_id].effect_commands.append(ec)
+            if not _already_targets(dat.effects[eff_id], ec):
+                dat.effects[eff_id].effect_commands.append(ec)
     if (castle_ut_pending_uu_subs or imp_ut_pending_uu_subs) and elite_uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own elite unique "
                "unit, but this civ has no UU defined — effect left as a no-op.")
@@ -7708,7 +7754,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             ec.a = uu_id
             if ec.type == EC_SET and int(ec.c) == 42:
                 _ensure_anarchy_train_slot(uu_id, int(ec.d))
-            dat.effects[eff_id].effect_commands.append(ec)
+            if not _already_targets(dat.effects[eff_id], ec):
+                dat.effects[eff_id].effect_commands.append(ec)
     if (castle_ut_pending_base_uu_subs or imp_ut_pending_base_uu_subs) and uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own base unique "
                "unit (e.g. Anarchy train-at-Barracks), but this civ has no "
@@ -7759,6 +7806,16 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     bonus_results["placed_cards"] = _apply_placed_cards(
         dat, civ_index, civ_def, warnings, (uu_id, elite_uu_id),
         (castle_ut_tech_id, imp_ut_tech_id), tb_eff_id, _EFFECT_COMMAND_SOFT_LIMIT)
+
+    # 7a'. The Imperial Scorpion is our unit, so no tech names it: give it
+    #      everything aimed at the Heavy Scorpion (#92).  After every bonus,
+    #      UT and card, so their copies of vanilla techs are covered too.
+    if any(c.type == EC_UPGRADE and int(c.b) == _IMP_SCORPION
+           for t in dat.techs if t.civ == civ_index and t.effect_id >= 0
+           for c in dat.effects[t.effect_id].effect_commands):
+        _n_imp = _extend_to_imperial_scorpion(dat)
+        if _n_imp:
+            print(f"       Imperial Scorpion: {_n_imp} Heavy Scorpion commands extended to it")
 
     # 8. Language audio is handled in a single batch call to assign_all_languages()
     #    after all civs are processed — see app.py / build_all.py.
@@ -7959,6 +8016,22 @@ _KM_IMP_UT_TECHS: dict[int, int] = {
 # (e.g. b=109 = Town Center, the same unit id for every civ) and are safe to
 # keep as-is once `a` is substituted with the CURRENT civ's own elite UU id.
 UU_SUBSTITUTION_TYPES = (7, 12)
+
+
+def _already_targets(effect, ec) -> bool:
+    """Does `effect` already change this unit's stat the way the retargeted
+    `ec` would?  A UT naming the source civ's UU, retargeted onto ours, doubled
+    up when ours is already in its list: Zealotry gave the Camel Archer +20 HP
+    twice, once as itself and once as the Mameluke (#99)."""
+    if ec.type not in (EC_SET, EC_ADD, EC_MULTIPLY):
+        return False
+
+    def key(c):
+        # Attack (9) and armour (8) pack the armour class into d: +2 melee and
+        # +2 pierce are two different changes.
+        part = int(c.d) >> 8 if int(c.c) in (8, 9) else None
+        return c.type, int(c.a), int(c.b), int(c.c), part
+    return any(key(c) == key(ec) for c in effect.effect_commands)
 
 # Unit enables a UT preset deliberately leaves out.  Timurid Siegecraft enables
 # the Flaming Camel; an enable alone shows the unit without making it trainable
@@ -8208,8 +8281,8 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
             cmds.extend(scaled)
         cmds.extend(_donjon_like_keep(cmds[entry_start:]))
         # Howdah reaches every elephant, not just the two lines DE wrote.
-        if tech_id in _ELEPHANT_EXTENSIONS:
-            cmds.extend(_elephant_extension_cmds(dat, tech_id, multiplier))
+        if tech_id in _UNIT_SET_EXTENSIONS:
+            cmds.extend(_unit_set_extension_cmds(dat, tech_id, multiplier))
     return cmds, pending_elite_uu_subs, pending_base_uu_subs
 
 

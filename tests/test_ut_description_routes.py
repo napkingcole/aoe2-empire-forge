@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from build_all import ut_name_and_desc, ut_selection_text   # noqa: E402
+from build_all import civ_description, ut_name_and_desc, ut_selection_text   # noqa: E402
 
 failures = 0
 
@@ -171,8 +171,17 @@ def route_checks(route: str, texts: list[str]) -> None:
           [t for t in texts if "Hero" in t][:4])
 
 
+DESCS = {}
+
+
+def desc_of(route: str, lines: list[str]) -> None:
+    """The civ-selection description, kept per route for the comparison below."""
+    DESCS[route] = next((ln.split(" ", 1)[1] for ln in lines if ln.startswith("120150 ")), None)
+
+
 route_checks("build_all", texts)
 well_formed("build_all", bl_lines)
+desc_of("build_all", bl_lines)
 nothing_repaired("build_all")
 # Only this mod's civ gets an AI entry — mods once shipped a whole folder of
 # stubs and an aiconfig.json from the Unhinged Empires mod ("Golden Bois", ...).
@@ -197,6 +206,7 @@ with tempfile.TemporaryDirectory() as tmp:
     if zips:
         route_checks("web", strings_of(zips[0]))
         well_formed("web", raw_lines_of(zips[0]))
+        desc_of("web", raw_lines_of(zips[0]))
     nothing_repaired("web")
 
 # ── The Builder's Build button (wizard_build.build_wizard_mod) ────────────────
@@ -208,9 +218,27 @@ with tempfile.TemporaryDirectory() as tmp:
     (Path(tmp) / "w.zip").write_bytes(zbytes)
     wiz = strings_of(Path(tmp) / "w.zip")
     well_formed("wizard", raw_lines_of(Path(tmp) / "w.zip"))
+    desc_of("wizard", raw_lines_of(Path(tmp) / "w.zip"))
     nothing_repaired("wizard")
     check("[wizard] the hero's name and 'Create' label are written",
           "Probe Hero" in wiz and "Create Probe Hero" in wiz, [t for t in wiz if "Hero" in t][:4])
+
+# ── One description, in the game's layout, from every route (#96) ─────────────
+# The routes had drifted apart in layout (the game accepts either). What the
+# panel actually needs is a Team Bonus section: without one it shows only the
+# yellow headings, Features and Unique Techs empty (probe mod, in game
+# 2026-10-29). This civ has no team bonus, so each route must write "None".
+_d = DESCS.get("build_all") or ""
+check("all three routes write the same civ description", len(set(DESCS.values())) == 1 and _d, DESCS)
+_spaced = [m.start() for m in re.finditer(r" \\n", _d) if not _d[:m.start()].endswith(":<b>")]
+check("a space comes before a line break only after a section tag", not _spaced,
+      [_d[max(0, i - 25):i + 3] for i in _spaced][:3])
+check("a civ without a team bonus still gets the Team Bonus section",
+      _d.rstrip('"').endswith("<b>Team Bonus:<b> \\nNone"), _d[-60:])
+_tb = civ_description("X", ["B"], "U", [("C", "c"), ("I", "i")], ["T1", "T2"])
+check("team bonuses are listed in the section, joined as vanilla does",
+      _tb.endswith("<b>Team Bonus:<b> \\nT1; T2"), _tb[-40:])
+check("the description doesn't end on a line break", _d and not _d.rstrip('"').endswith("\\n"), _d[-40:])
 
 # ── Every free-text field, hostile: a newline and a quote in each, all routes ──
 # The sweep the Safavids bug asked for: any field a route writes without

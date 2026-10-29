@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 
 from build_all import (
-    _kv_text, hero_string_lines, civ_tip_lines,
+    _kv_text, hero_string_lines, civ_tip_lines, civ_description,
     ut_name_and_desc, ut_selection_text, ut_research_label,
     _build_combined_data_zip, dat_json_files,
     _build_combined_ui_zip,
@@ -246,8 +246,6 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     civ_bonuses  = get_civ_bonuses(civ_def)
     team_entries = get_team_bonuses(civ_def)
 
-    desc_parts = [f"{tagline} civilization" if tagline else f"{alias_kv} civilization"]
-    desc_parts.append("\\n\\n")
     bullets = []
     for entry in civ_bonuses:
         if not isinstance(entry, list):
@@ -255,24 +253,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         txt  = _BONUS_NAMES.get(str(entry[0]), "")
         mult = entry[1] if len(entry) > 1 else 1
         if txt:
-            bullets.append(f"• {txt}" + (f" [x{mult}]" if mult > 1 else ""))
-    for card in card_homes(civ_def)["civ"]:
-        bullets.append(f"• {_kv_text(custom_bonus.card_text(card))}")
-    desc_parts.append("\\n".join(bullets))
-    desc_parts.append(f"\\n\\n<b>Unique Unit:<b> \\n{uu_display}")
-    # Name AND description.  This used to interpolate the two names alone, so the
-    # civ-selection screen said "Unique Techs: • Foo • Bar" and nothing about what
-    # they did (issue #36) — while the CLI door showed them, because build_all's
-    # castle_ut_name is KM's packed "Name (description)" string and this one is
-    # just the name.  Another instance of one field, two shapes, two readers.
-    desc_parts.append(
-        "\\n\\n<b>Unique Techs:<b> \\n"
-        + "\\n".join(
-            "• " + ut_selection_text(*ut_name_and_desc(nm, dsc))
-            for nm, dsc in ((castle_ut_name, castle_ut_desc_text),
-                            (imp_ut_name, imp_ut_desc_text))
-        )
-    )
+            bullets.append(txt + (f" [x{mult}]" if mult > 1 else ""))
+    bullets += [custom_bonus.card_text(card) for card in card_homes(civ_def)["civ"]]
     # Team bonus ids are their own namespace, not civ bonus ids — every one
     # of the 83 resolves to different text in _BONUS_NAMES, and none are
     # missing, so reading the civ table here printed a confidently wrong
@@ -281,12 +263,11 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         _TEAM_BONUS_NAMES.get(str(e[0]), "")
         for e in team_entries if isinstance(e, list)
     ]
-    tb_lines = [t for t in tb_lines if t] + [_kv_text(t) for t in team_card_texts(civ_def)]
-    if tb_lines:
-        desc_parts.append(f"\\n\\n<b>Team Bonus:<b> \\n{'; '.join(tb_lines)}")
-    full_desc = "".join(desc_parts)
-    while full_desc.endswith("\\n") or full_desc.endswith(" "):
-        full_desc = full_desc[:-2] if full_desc.endswith("\\n") else full_desc.rstrip()
+    tb_lines = [t for t in tb_lines if t] + team_card_texts(civ_def)
+    # Name AND description of each UT (issue #36); one writer for all routes.
+    full_desc = civ_description(tagline or alias_kv, bullets, uu_display,
+                                [(castle_ut_name, castle_ut_desc_text),
+                                 (imp_ut_name, imp_ut_desc_text)], tb_lines)
 
     castle_ut_sid      = civ_result["castle_ut_sid"]
     imp_ut_sid         = civ_result["imp_ut_sid"]
@@ -309,7 +290,7 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
 
     # Hero name / tooltips: one helper for all three routes (build_all).
     hero_lines = hero_string_lines(dat, slot, draft.get("hero_unit"))
-    hero_lines += civ_tip_lines(slot, [b[2:] for b in bullets], uu_display,
+    hero_lines += civ_tip_lines(slot, bullets, uu_display,
                                 [ut_name_and_desc(castle_ut_name, castle_ut_desc_text),
                                  ut_name_and_desc(imp_ut_name, imp_ut_desc_text)], tb_lines)
 
