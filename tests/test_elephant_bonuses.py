@@ -6,7 +6,7 @@ DE wrote several elephant bonuses for one line: card 303 (+1/+1 armour), 79
 (bonus-damage and conversion resistance) misses our Royal Battle Elephant and
 the Sannahya; the Howdah UT covers Battle and War Elephants.  The cards say
 elephant units (79: melee elephant units), and the user chose all of them
-(issue #60, 2026-10-08), so _ELEPHANT_EXTENSIONS copies each template's
+(issue #60, 2026-10-08), so _UNIT_SET_EXTENSIONS copies each template's
 per-unit commands onto the units it leaves out.
 
 Each check sums what the civ's own techs do to a unit — per attribute, command
@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from dat_reader import find_game_dat, load_dat              # noqa: E402
 from civ_appender import (apply_civ, _ELEPHANT_UNITS, _MELEE_ELEPHANT_UNITS,  # noqa: E402
-                          EC_ADD, EC_MULTIPLY, EC_SET)
+                          _SIEGE_WARSHIP_UNITS, EC_ADD, EC_MULTIPLY, EC_SET)
 from civ_schema import FORMAT_KEY                           # noqa: E402
 
 failures = 0
@@ -62,7 +62,7 @@ check("melee elephants are exactly the range-0 ones",
       f"ranged={sorted(ranged)}")
 
 
-def summary(slot):
+def summary(slot, among=_ELEPHANT_UNITS):
     """unit -> {(attr, type, age): combined value} over this civ's own techs."""
     out = defaultdict(dict)
     for t in dat.techs:
@@ -70,7 +70,7 @@ def summary(slot):
             continue
         age = next((r for r in t.required_techs if r in (101, 102, 103)), -1)
         for c in dat.effects[t.effect_id].effect_commands:
-            if c.type not in (EC_SET, EC_ADD, EC_MULTIPLY) or c.a not in _ELEPHANT_UNITS:
+            if c.type not in (EC_SET, EC_ADD, EC_MULTIPLY) or c.a not in among:
                 continue
             s = out[int(c.a)]
             if c.type == EC_ADD and int(c.c) in (8, 9):          # packed: per class
@@ -131,6 +131,22 @@ check("Tusk Swords: every melee elephant matches the Battle Elephant (#97)", got
       f"ref={got[1132]} wrong={wrong}")
 extra = sorted(u for u in _ELEPHANT_UNITS if u not in _MELEE_ELEPHANT_UNITS and got[u])
 check("Tusk Swords leaves the ranged elephants alone", not extra, f"{extra}")
+
+# Card 336, Shu: "Siege Weapons and Siege Warships move +10/15% faster" — the
+# Shu effect reaches ships through the Lou Chuan only, Shu's one siege ship (#93).
+DEMOLITION = [1104, 527, 528]
+for mult in (1, 2):
+    slot += 1
+    civ = {"format": FORMAT_KEY, "alias": f"S336x{mult}", "architecture": 2, "language": 0,
+           "bonuses": [{"id": 336, "multiplier": mult}], "tree": TREE}
+    with contextlib.redirect_stdout(io.StringIO()):
+        apply_civ(dat, civ, target_slot=slot)
+    got = summary(slot, _SIEGE_WARSHIP_UNITS + DEMOLITION)
+    wrong = sorted(u for u in _SIEGE_WARSHIP_UNITS if got[u] != got[1948])
+    check(f"card 336 x{mult}: every siege warship matches the Lou Chuan, Castle and Imperial (#93)",
+          len({k[2] for k in got[1948]}) == 2 and not wrong,
+          f"ref={got[1948]} wrong={wrong}")
+    check(f"card 336 x{mult} leaves Demolition ships alone", not any(got[u] for u in DEMOLITION))
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")

@@ -6201,7 +6201,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             # effectiveness, the buildings need commands vanilla never wrote.
             if bonus_id == _DROPOFF_DISCOUNT_BONUS:
                 _apply_dropoff_discount(dat, civ_index, multiplier)
-            _apply_elephant_extensions(dat, civ_index, tech_ids, multiplier)
+            _apply_unit_set_extensions(dat, civ_index, tech_ids, multiplier)
             continue
 
         ec_entries = civ_bonus_ec_list(bonus_id)
@@ -6403,7 +6403,7 @@ def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> No
     print(f"       Drop-off buildings: {len(cmds)} discounted to {factor:.4f}")
 
 
-# Elephant bonuses that DE wrote for one line.  The cards say elephant units
+# Unit-set bonuses that DE wrote for one line — mostly elephants.  The cards say elephant units
 # (or melee elephant units), and the user chose all of them (issue #60,
 # 2026-10-08), so each vanilla template tech below is extended to the rest of
 # its set: its per-unit commands are copied onto every unit it leaves out.
@@ -6417,24 +6417,34 @@ def _apply_dropoff_discount(dat: DatFile, civ_index: int, multiplier: int) -> No
 #   622  Tusk Swords  +3 attack          Battle and War Elephant (Khmer UT); its
 #                  text says melee elephant units, so the Armored and Siege
 #                  Elephant too (#97)
+# The same shape outside elephants:
+#   1068/1072  card 336  Siege Weapons and Siege Warships +10/15% speed — Shu's
+#                  own effect reaches the ships through the Lou Chuan alone,
+#                  the only one Shu has (#93)
 # Civ cards get a civ-owned auto-fire tech gated like the template (the
 # half-catalog pattern bonus 312 uses); Howdah's commands join the UT itself.
 _MELEE_ELEPHANT_UNITS = [239, 558, 1132, 1134, 1180, 1744, 1746, 2390, 2391]
-_ELEPHANT_EXTENSIONS: dict[int, list[int]] = {
+# "Siege Warships" as Siege Engineers (377) uses the term, limited to the ships a
+# civ here can have: Cannon Galleon line, Catapult Galleon, Dromon, Lou Chuan,
+# Turtle Ships.  Siege Engineers names Demolition units separately, so they
+# are not siege warships; the Chronicles and scenario ships are out of reach.
+_SIEGE_WARSHIP_UNITS = [1948, 420, 691, 2633, 1795, 831, 832]
+_UNIT_SET_EXTENSIONS: dict[int, list[int]] = {
     640: _ELEPHANT_UNITS, 672: _MELEE_ELEPHANT_UNITS, 662: _ELEPHANT_UNITS,
     663: _ELEPHANT_UNITS, 846: _ELEPHANT_UNITS, 626: _ELEPHANT_UNITS,
     622: _MELEE_ELEPHANT_UNITS,
+    1068: _SIEGE_WARSHIP_UNITS, 1072: _SIEGE_WARSHIP_UNITS,
 }
 
 
-def _elephant_extension_cmds(dat: DatFile, template_tid: int,
+def _unit_set_extension_cmds(dat: DatFile, template_tid: int,
                              multiplier: int) -> list[EffectCommand]:
-    """The template's per-unit commands, copied onto the elephants it misses.
+    """The template's per-unit commands, copied onto the units of its set it misses.
 
     Every template here gives each of its units the same commands, so the
     first covered unit in the set is the pattern.  Scaled like the copy of the
     template itself, so a x2 card is x2 on every line."""
-    units = _ELEPHANT_EXTENSIONS[template_tid]
+    units = _UNIT_SET_EXTENSIONS[template_tid]
     by_unit: dict[int, list] = defaultdict(list)
     for c in dat.effects[dat.techs[template_tid].effect_id].effect_commands:
         if c.type in (EC_SET, EC_ADD, EC_MULTIPLY) and c.a >= 0:
@@ -6447,16 +6457,16 @@ def _elephant_extension_cmds(dat: DatFile, template_tid: int,
                 EffectCommand(type=c.type, a=uid, b=c.b, c=c.c, d=c.d), multiplier)]
 
 
-def _apply_elephant_extensions(dat: DatFile, civ_index: int, techs, multiplier: int) -> None:
+def _apply_unit_set_extensions(dat: DatFile, civ_index: int, techs, multiplier: int) -> None:
     """Civ cards: one auto-fire tech per extended template, same age gate."""
     for tid in techs:
-        if tid not in _ELEPHANT_EXTENSIONS:
+        if tid not in _UNIT_SET_EXTENSIONS:
             continue
-        cmds = _elephant_extension_cmds(dat, tid, multiplier)
+        cmds = _unit_set_extension_cmds(dat, tid, multiplier)
         age = next((r for r in dat.techs[tid].required_techs if r in (101, 102, 103)), -1)
         _add_auto_fire_tech(dat, civ_index, cmds, age_req=age,
-                            name=f"C-Bonus, all elephants ({tid})")
-        print(f"       Elephants: tech {tid} extended with {len(cmds)} commands")
+                            name=f"C-Bonus, whole unit set ({tid})")
+        print(f"       Unit set: tech {tid} extended with {len(cmds)} commands")
 
 
 # Bonus 105 — "Economic upgrades cost -40% food and available one age earlier".
@@ -8271,8 +8281,8 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
             cmds.extend(scaled)
         cmds.extend(_donjon_like_keep(cmds[entry_start:]))
         # Howdah reaches every elephant, not just the two lines DE wrote.
-        if tech_id in _ELEPHANT_EXTENSIONS:
-            cmds.extend(_elephant_extension_cmds(dat, tech_id, multiplier))
+        if tech_id in _UNIT_SET_EXTENSIONS:
+            cmds.extend(_unit_set_extension_cmds(dat, tech_id, multiplier))
     return cmds, pending_elite_uu_subs, pending_base_uu_subs
 
 
