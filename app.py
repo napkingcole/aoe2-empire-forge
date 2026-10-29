@@ -248,7 +248,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Scorpions:</strong> the Imperial Scorpion upgrade lost Chemistry, Rocketry, Ballistas, Double Crossbow and the gold discount, and \"Scorpions train 50% faster\" left out the Heavy Scorpion (#92)",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Tusk Swords</strong> now reaches every melee elephant, the Armored and Siege Elephants too (#97)",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>The Legionary could never be researched</strong>: it shares its Barracks button with the Two-Handed Swordsman, which was never switched off, so players got Two-Handed Swordsmen and Champions (#91). The Savar had the same problem with the Paladin. Both now replace the upgrade, as for the Romans and Persians",
-        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Empty civ panel on the selection screen</strong>: the Build Mod page wrote the civ description in a slightly different layout from the game's, and the panel's Features and Unique Techs came up empty (#96)",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Empty civ panel on the selection screen</strong>: a civ without a team bonus showed only the yellow headings, with no Features or Unique Techs text. The game needs a Team Bonus section to show the panel at all, so a civ without one now reads <em>Team Bonus: None</em> (#96)",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Monks walked up to heal</strong> instead of healing from range, on every custom civ with a tech tree: the tree quietly switched off the game's free Monk Ranged Heal. It now stays on, except with the Monks double healing range card, which sets its own range as the Teutons' does",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Destroyed buildings left Western European rubble</strong> whatever the architecture: Barracks, Town Centers, towers, gates and the rest now leave their own, and the Castle and Wonder leave their picks' rubble",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Old pictures after an update.</strong> Your browser could keep showing the previous version's pages and unit pictures; it now checks for new ones every time. Empire Forge also clears out the caches older versions left behind (up to a few hundred MB)",
@@ -953,8 +953,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             # Library cards picked as team bonuses (#54).
             _tb_texts = [t for t in _tb_texts if t] + team_card_texts(civ_def)
             _uts = [(castle_ut_name_short, castle_ut_desc_text), (imp_ut_name_short, imp_ut_desc_text)]
-            # build_all.civ_description: this route used to put a space before
-            # every line break and end on a dangling \\n (#96).
+            # build_all.civ_description: one writer for all three routes; it
+            # always writes the Team Bonus section the panel needs (#96).
             full_desc = civ_description(description or alias_kv, _bonus_texts, uu_display, _uts, _tb_texts)
             # Loading-screen tips (build_all.civ_tip_lines, all three routes).
             hero_lines += civ_tip_lines(slot, _bonus_texts, uu_display, _uts, _tb_texts)

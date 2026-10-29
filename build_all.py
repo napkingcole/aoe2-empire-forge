@@ -230,20 +230,24 @@ def civ_description(head: str, bonus_texts: list[str], uu_name: str,
                     uts: list[tuple[str, str]], team_texts: list[str]) -> str:
     """The civ-selection description, in the game's own layout — one writer for
     all three build routes (they had drifted: the web route put a space before
-    every line break and ended on a dangling \\n, which the game rejects, #96).
+    every line break and ended on a dangling \\n; the game accepts both).
 
     Spaces appear only after a `<b>Section:<b>` tag; no trailing \\n:
       `X civilization\\n\\n• Bonus 1\\n• Bonus 2\\n\\n<b>Unique Unit:<b> \\nUU
       \\n\\n<b>Unique Techs:<b> \\n• UT 1\\n• UT 2\\n\\n<b>Team Bonus:<b> \\nTB`
     Every argument is run through _kv_text, which is idempotent.  Team bonuses
-    are one line joined by "; ", as vanilla writes them."""
+    are one line joined by "; ", as vanilla writes them.
+
+    The Team Bonus section is ALWAYS written ("None" without one): the panel
+    shows no Features or Unique Techs text at all for a description lacking
+    it, in either layout (#96, probe mod confirmed in game 2026-10-29)."""
     text = (f"{_kv_text(head)} civilization\\n\\n"
             + "\\n".join(f"• {_kv_text(t)}" for t in bonus_texts)
             + f"\\n\\n<b>Unique Unit:<b> \\n{_kv_text(uu_name)}"
             + "\\n\\n<b>Unique Techs:<b> \\n"
             + "\\n".join("• " + _kv_text(ut_selection_text(*ut_name_and_desc(n, d))) for n, d in uts))
-    if team_texts:
-        text += "\\n\\n<b>Team Bonus:<b> \\n" + "; ".join(_kv_text(t) for t in team_texts)
+    text += ("\\n\\n<b>Team Bonus:<b> \\n"
+             + ("; ".join(_kv_text(t) for t in team_texts) if team_texts else "None"))
     while text.endswith("\\n") or text.endswith(" "):
         text = text[:-2] if text.endswith("\\n") else text.rstrip()
     return text
