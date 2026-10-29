@@ -1165,7 +1165,14 @@ def patch_future_units(future: dict, base_civ_list: list[dict], civs_overrides: 
                     return None
                 item["ID"] = new
                 return item
+            if kind == "Tech" and tree_says(kind, item) is None and item.get("Name") in gone_units:
+                return None               # Elite Elephant Archer, its unit gone (#108)
             return item if available(kind, item) else None
+
+        # An upgrade tech has no tree node, so it is judged by its unit: the
+        # file names both alike (tech 481 and unit 875, "Elite Elephant Archer").
+        gone_units = {u.get("Name") for b in (*civ.get("Buildings", []), *full.values())
+                      for u in b.get("Units", []) if tree_says("Unit", u) == "NotAvailable"}
 
         buildings = []
         seen = set()
@@ -2475,6 +2482,7 @@ def button_layout_preview(dat: DatFile, civ_def: dict, tree_techs: set[int]) -> 
             favoured = frozenset(int(c.a) for c in dat.effects[dat.techs[make_avail].effect_id].effect_commands
                                  if c.type in (2, 3) and c.a >= 0)
             favoured |= {m for u in favoured for m in _upgrade_neighbours(dat).get(u, ())}
+    favoured |= _replacement_units(civ_def)
     plan = _plan_button_layout(dat, units, present, {}, tech_ok, picks, favoured)
     if not plan["conflicts"]:
         return []
@@ -3255,12 +3263,27 @@ def _apply_unit_replacements(units: set, civ_def: dict | None = None) -> set:
     Every reader of tree units goes through this, so the tree, the sweep and
     the F2 viewer agree."""
     out = set(units)
-    for bid in _raw_civ_bonus_ids(civ_def) & RETIRED_INTO_TREE.keys():
+    raw = _raw_civ_bonus_ids(civ_def)
+    for bid in raw & RETIRED_INTO_TREE.keys():
         out = (out - RETIRED_INTO_TREE[bid]["remove"]) | RETIRED_INTO_TREE[bid]["add"]
-    for spec in _UNLOCK_UNIT_BONUSES.values():
-        if spec.get("replaces") and out & set(spec["units"]):
+    for bid, spec in _UNLOCK_UNIT_BONUSES.items():
+        # From the tree or from the card itself: a card-only Scythian Horse
+        # Archer left the Cavalry Archer in the tree, where it held button 3
+        # though the card hides it (#108).
+        if spec.get("replaces") and (out & set(spec["units"]) or bid in raw):
             out -= set(spec["replaces"])
     return out
+
+
+def _replacement_units(civ_def: dict) -> frozenset:
+    """Units the civ has that replace another line (the Scythian Horse Archer
+    for the Cavalry Archer).  They take that line's button by default, as in
+    the game: over the Gurjaras the Elephant Archer kept Archery Range button 3
+    and the Scythian Horse Archer went to page 2, where nobody looked (#108)."""
+    tree = _tree_unit_ids(civ_def)          # drops the replaced line, keeps the replacement
+    raw = _raw_civ_bonus_ids(civ_def)
+    return frozenset(u for bid, spec in _UNLOCK_UNIT_BONUSES.items() if spec.get("replaces")
+                     and (tree & set(spec["units"]) or bid in raw) for u in spec["units"])
 
 
 def _rebuild_unlock_techs(dat: DatFile, civ_index: int, spec: dict) -> dict:
@@ -7832,7 +7855,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     _place_hero(dat, civ_index, civ_def)
     button_layout = _resolve_button_collisions(
         dat, civ_index, civ_def,
-        frozenset(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0))
+        frozenset(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0)
+        | _replacement_units(civ_def))
     for _entry in button_layout:
         if _entry["to"] is None:
             # A player-visible warning, not just a log line: the unit silently
