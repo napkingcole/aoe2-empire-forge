@@ -12,7 +12,7 @@ from genieutils.datfile import DatFile
 from genieutils.civ import Civ
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import Tech, ResearchLocation, ResearchResourceCost
-from genieutils.unit import TrainLocation, ResourceCost, ResourceStorage
+from genieutils.unit import AttackOrArmor, TrainLocation, ResourceCost, ResourceStorage
 from civ_schema import RETIRED_CIV_BONUSES, RETIRED_INTO_TREE
 
 from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list, team_bonus_ec_list
@@ -7075,6 +7075,53 @@ def _shipped_tech_civ(dat: DatFile, tid: int) -> int:
     return getattr(dat, "_ef_original_tech_civs", {}).get(tid, dat.techs[tid].civ)
 
 
+def _attack_classes_added(dat: DatFile, effect_ids) -> dict[int, set[int]]:
+    """unit -> the attack classes these effects change on it."""
+    out: dict[int, set[int]] = {}
+    for eid in effect_ids:
+        if not 0 <= eid < len(dat.effects):
+            continue
+        for ec in dat.effects[eid].effect_commands:
+            if ec.type in (EC_SET, EC_ADD, EC_MULTIPLY) and int(ec.c) == 9 and ec.a >= 0:
+                out.setdefault(int(ec.a), set()).add((abs(int(ec.d)) >> 8) & 0xFF)
+    return out
+
+
+def _add_missing_attack_classes(dat: DatFile, civ_index: int, team_eff_id: int) -> int:
+    """Give each unit a 0 entry for every attack class this civ's effects change.
+
+    The engine only changes an attack class the unit already has: "+1 vs
+    infantry" on a Skirmisher, which has no infantry entry, does nothing (card
+    243 at x4, reported 2026-10-30).  Vanilla never hits this because its
+    units carry 0-value entries for the classes their techs touch, and the one
+    vanilla bonus that targets a missing class (the Varangian team bonus, +1 vs
+    infantry for the Knight line) first creates it with attribute 161, "Add
+    Attack Type".  Ten cards target a missing class (206 213 243 253 254 255
+    256 263 268 275), so this runs after every bonus, UT and card rather than
+    in any one handler.
+
+    The team bonus reaches allies, whose units are any civ's, so its classes
+    go on every civ; a 0 attack entry adds no damage.  Armour is left alone:
+    a unit with no armour entry for a class takes no bonus damage from it at
+    all, and a 0 entry would make it vulnerable.
+    """
+    own = [dat.civs[civ_index].tech_tree_id]
+    own += [t.effect_id for t in dat.techs if t.civ == civ_index]
+    added = 0
+    for civs, classes in (([dat.civs[civ_index]], _attack_classes_added(dat, own)),
+                          (_every_civ(dat), _attack_classes_added(dat, [team_eff_id]))):
+        for civ in civs:
+            for uid, want in classes.items():
+                unit = civ.units[uid] if uid < len(civ.units) else None
+                if unit is None or unit.type_50 is None:
+                    continue
+                have = {a.class_ for a in unit.type_50.attacks}
+                for cls in sorted(want - have):
+                    unit.type_50.attacks.append(AttackOrArmor(class_=cls, amount=0))
+                    added += 1
+    return added
+
+
 def _every_civ(dat: DatFile) -> list:
     """Every civ's data for an edit that must reach ALL civs (a unit appended
     or a spare slot filled in each civ): the slots, plus the kept originals,
@@ -7839,6 +7886,11 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         _n_imp = _extend_to_imperial_scorpion(dat)
         if _n_imp:
             print(f"       Imperial Scorpion: {_n_imp} Heavy Scorpion commands extended to it")
+
+    # 7a''. An attack bonus only lands on a class the unit already has (#243).
+    _n_cls = _add_missing_attack_classes(dat, civ_index, tb_eff_id)
+    if _n_cls:
+        print(f"       Attack classes: {_n_cls} missing entries added at 0")
 
     # 8. Language audio is handled in a single batch call to assign_all_languages()
     #    after all civs are processed — see app.py / build_all.py.
