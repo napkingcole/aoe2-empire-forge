@@ -6,7 +6,8 @@ The engine only changes an attack class the unit already has.  Card 243
 has an infantry entry (reported 2026-10-30).  Vanilla units carry 0-value
 entries for the classes their techs touch; the one vanilla bonus that targets
 a missing class (the Varangian team bonus) creates it first with attribute
-161, "Add Attack Type".  Ten cards had the same flaw.
+161, "Add Attack Type".  Ten cards had the same flaw.  Two (206, 253) also
+needed the target side: no villager had armour class 10.
 
     venv/bin/python tests/test_attack_class_targets.py
 """
@@ -67,6 +68,35 @@ check("the Skirmisher has an infantry (class 1) entry", 1 in skirm, skirm)
 check("added at 0, so the card's +4 is the whole bonus", skirm.get(1) == 0, skirm)
 pierce = {a.class_: a.amount for a in dat.civs[2].units[7].type_50.attacks}
 check("another civ's Skirmisher is untouched", 1 not in pierce, pierce)
+
+print("\n=== cards 206 and 253: villagers can take bonus damage ===")
+# No unit had armour class 10, so "+attack vs villagers" never landed.
+
+
+def damage(attacker, target, uid=None):
+    """Per-hit damage; with `uid`, plus the attack adds this civ's techs make."""
+    att = {x.class_: x.amount for x in attacker.type_50.attacks}
+    if uid is not None:
+        for c in (c for t in dat.techs if t.civ == SLOT and 0 <= t.effect_id < len(dat.effects)
+                  for c in dat.effects[t.effect_id].effect_commands):
+            if c.type == EC_ADD and c.a == uid and int(c.c) == 9 and c.d > 0:
+                cls = int(c.d) >> 8
+                if cls in att:                       # the engine skips a missing class
+                    att[cls] += int(c.d) & 0xFF
+    arm = {x.class_: x.amount for x in target.type_50.armours}
+    return max(1, sum(max(0, v - arm[c]) for c, v in att.items() if c in arm))
+
+
+vils = [(ci, u.name) for ci, c in enumerate(_every_civ(dat)) for u in c.units
+        if u is not None and u.class_ == 4 and u.type_50 is not None
+        and 10 not in {a.class_ for a in u.type_50.armours}]
+check("every villager in every civ carries armour class 10", not vils, vils[:5])
+vil = dat.civs[2].units[83]
+check("at 0", {a.class_: a.amount for a in vil.type_50.armours}.get(10) == 0)
+plain = damage(dat.civs[2].units[4], vil)
+carded = damage(civ.units[4], vil, uid=4)
+check(f"an Archer with card 253 hits a villager for 1 more ({plain} -> {carded})", carded == plain + 1)
+check("a vanilla civ's Archer does not gain it", damage(dat.civs[3].units[4], vil) == plain)
 
 print("\n=== card 213: Mangonels cut trees the way Onagers do ===")
 # Trees are not combat units and have no armour, so the card's old +100 vs

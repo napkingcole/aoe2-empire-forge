@@ -7122,6 +7122,32 @@ def _add_missing_attack_classes(dat: DatFile, civ_index: int, team_eff_id: int) 
     return added
 
 
+_CIVILIAN_CLASS = 4            # unit.class_ of every villager variant (28 units)
+_VILLAGER_ARMOUR_CLASS = 10
+
+
+def _villager_armour_class(dat: DatFile) -> int:
+    """Give every civ's villagers a 0 armour entry for the villager class.
+
+    Bonus damage needs the target to carry the attacker's class, and no unit in
+    current DE has armour class 10: cards 206 and 253 ("+attack vs villagers")
+    could never land.  Nothing in vanilla attacks with class 10 either, so a 0
+    entry changes no vanilla matchup (the Gurjaras' mounted-unit multiplier
+    names class 10, but no cavalry has a class-10 attack).  Every civ and every
+    build, not only a civ with such a card: enemy villagers are any civ's, and
+    doing it always keeps the result independent of build order.
+    """
+    added = 0
+    for civ in _every_civ(dat):
+        for unit in civ.units:
+            if unit is None or unit.class_ != _CIVILIAN_CLASS or unit.type_50 is None:
+                continue
+            if not any(a.class_ == _VILLAGER_ARMOUR_CLASS for a in unit.type_50.armours):
+                unit.type_50.armours.append(AttackOrArmor(class_=_VILLAGER_ARMOUR_CLASS, amount=0))
+                added += 1
+    return added
+
+
 def _every_civ(dat: DatFile) -> list:
     """Every civ's data for an edit that must reach ALL civs (a unit appended
     or a spare slot filled in each civ): the slots, plus the kept originals,
@@ -7889,6 +7915,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
 
     # 7a''. An attack bonus only lands on a class the unit already has (#243).
     _n_cls = _add_missing_attack_classes(dat, civ_index, tb_eff_id)
+    _villager_armour_class(dat)
     if _n_cls:
         print(f"       Attack classes: {_n_cls} missing entries added at 0")
 
