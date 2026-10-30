@@ -133,6 +133,9 @@ for b, SLOT2 in zip(UNITS, range(2, 2 + len(UNITS))):
     elite = mine2.get(src_elite.name)
     check(f"{b} {spec['name']}: make-avail and elite techs are this civ's own copies",
           make is not None and elite is not None)
+    check(f"{b} {spec['name']}: no copy keeps a game-mode gate (full_tech_mode 0 or 1)",
+          all(t[1].full_tech_mode in (0, 1) for t in (make, elite) if t),
+          [t[1].full_tech_mode for t in (make, elite) if t])
     if make and elite:
         check(f"{b} {spec['name']}: unlocks in the standard Castle Age, elite in the standard Imperial Age",
               102 in make[1].required_techs and 103 in elite[1].required_techs)
@@ -158,6 +161,10 @@ for b in (455, 456):
     check(f"{b} {spec['name']}: both techs are civ-owned copies", len(own) == 2, [t.name for t in own])
     check(f"{b} {spec['name']}: no Chronicles-only prerequisite survives",
           not reqs & CHRONICLES_ONLY, sorted(reqs))
+    # 1336/1334 ship with full_tech_mode 13, the [SCEN] value: copied as it
+    # was, the unlock never fired in a normal game (#108, seen in game).
+    check(f"{b} {spec['name']}: the copies run in a normal game (full_tech_mode 1, not a scenario-only mode)",
+          own and all(t.full_tech_mode == 1 for t in own), [t.full_tech_mode for t in own])
     make = next((t for t in own if all(l.location_id == -1 for l in t.research_locations)), None)
     check(f"{b} {spec['name']}: the unlock fires on its own — no cost gate",
           make is not None and not [r for r in make.resource_costs if r.type >= 0 and r.amount > 0])

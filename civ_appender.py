@@ -3298,6 +3298,11 @@ def _rebuild_unlock_techs(dat: DatFile, civ_index: int, spec: dict) -> dict:
         dat.effects.append(eff)
         tech.effect_id = len(dat.effects) - 1
         tech.civ = civ_index
+        # The Scythian Horse Archer's techs ship with full_tech_mode 13, the
+        # value vanilla's [SCEN] techs carry: they never fire in a normal game,
+        # so the card unlocked nothing (#108).  1 is what every civ-owned
+        # unlock in the game uses (Hoplite 1136, the regional units).
+        tech.full_tech_mode = 1
         req = [made.get(r, r) for r in spec["rebuild"][tid]]
         tech.required_techs = tuple(req) + (-1,) * (6 - len(req))
         tech.required_tech_count = len(req)
