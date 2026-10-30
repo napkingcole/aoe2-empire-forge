@@ -68,6 +68,21 @@ check("added at 0, so the card's +4 is the whole bonus", skirm.get(1) == 0, skir
 pierce = {a.class_: a.amount for a in dat.civs[2].units[7].type_50.attacks}
 check("another civ's Skirmisher is untouched", 1 not in pierce, pierce)
 
+print("\n=== card 213: Mangonels cut trees the way Onagers do ===")
+# Trees are not combat units and have no armour, so the card's old +100 vs
+# class 18 could never land.  Onagers cut trees through their blast attack
+# level (1 reaches trees, the Mangonel's 2 does not).
+cmds = [c for t in dat.techs if t.civ == SLOT and 0 <= t.effect_id < len(dat.effects)
+        for c in dat.effects[t.effect_id].effect_commands if c.a == 280 and int(c.c) == 44]
+onager = dat.civs[2].units[550].type_50.blast_attack_level
+check("the card sets the Mangonel's blast attack level", len(cmds) == 1, cmds)
+check(f"to the Onager's ({onager})", cmds and cmds[0].type == 0 and cmds[0].d == onager,
+      [(c.type, c.d) for c in cmds])
+check("and no longer adds attack vs trees",
+      not any(c.a == 280 and int(c.c) == 9 and (int(c.d) >> 8) == 18
+              for t in dat.techs if t.civ == SLOT and 0 <= t.effect_id < len(dat.effects)
+              for c in dat.effects[t.effect_id].effect_commands))
+
 print("\n=== team bonus classes reach every civ ===")
 tb = civ.team_bonus_id
 ec = EffectCommand(type=EC_ADD, a=38, b=-1, c=9, d=float((21 << 8) | 2))   # Knight +2 vs class 21
