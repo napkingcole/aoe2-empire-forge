@@ -6219,6 +6219,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                     _copy = seen_bonus.get(_trigger)
                     if _copy is not None:
                         _wired += _add_alt_prereq(dat, _trigger, _copy)
+                if bonus_id == _FEUDAL_RAM_BONUS:
+                    _wired += _add_feudal_ram_trigger(dat, civ_index)
                 if _wired:
                     print(f"       Bonus {bonus_id}: {_wired} tech(s) re-pointed "
                           f"at this civ's copy of trigger {_triggers}")
@@ -6639,12 +6641,35 @@ def _gate_add(dat: DatFile, gate_tid: int, member_tid: int) -> None:
 #       trigger].  Without the re-point our civ only ever reaches 192 + 103, so
 #       the upgrade stayed Imperial-only and the card's headline did nothing.
 #       With it, the auto-fire copy of 1004 pairs with 192 in the Castle Age.
+#    99 "Siege Workshop and Battering Ram in the Feudal Age" — the Cumans'
+#       copies stood behind global techs naming the originals: Siege Workshop
+#       149 wants 2 of [102, 668 Blacksmith, 705], Capped Ram 96 wants 103 or
+#       706, and 135's Castle Age building count takes 1218, which wants 295 (a
+#       Siege Workshop counts).  So the card did nothing at all (#109).  The
+#       Ram is the odd one: 162 wants 102 or 711, and 711 is the Cumans' Feudal
+#       cavalry speed bonus, so it gets a trigger of its own (_FEUDAL_RAM_BONUS).
 _ALT_PREREQ_BONUSES: dict[int, tuple[tuple[int, ...], str]] = {
+    99: ((295, 705, 706),
+         "the Siege Workshop and Capped Ram keep their usual ages"),
     282: ((789, 788),   # Poles first — the catalog copies that one
           "the Hussar will be disabled with no replacement"),
     360: ((1004,),
           "the Heavy Cavalry Archer upgrade stays Imperial-only"),
 }
+
+# The Battering Ram's Feudal route in the game is tech 711, which is also the
+# Cumans' +5% cavalry speed; copying it would bring the speed along.  The card
+# gets an empty Feudal trigger that stands where 711 does instead.
+_FEUDAL_RAM_BONUS = 99
+_FEUDAL_RAM_TRIGGER = 711
+
+
+def _add_feudal_ram_trigger(dat: DatFile, civ_index: int) -> int:
+    """This civ's own Feudal Age trigger for the Battering Ram (162); returns
+    the number of techs it was wired into."""
+    dat.techs.append(_make_tech("EF Feudal Battering Ram", -1, civ_index, age_req=101))
+    return _add_alt_prereq(dat, _FEUDAL_RAM_TRIGGER, len(dat.techs) - 1, len(dat.techs) - 1)
+
 
 
 def _apply_early_eco_shims(dat: DatFile, civ_index: int) -> int:

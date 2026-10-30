@@ -106,6 +106,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("UT retarget never doubles a unit",   "test_ut_uu_retarget.py",    "build"),
     ("scorpion techs reach every scorpion", "test_imperial_scorpion_techs.py", "build"),
     ("attack bonuses reach a missing class", "test_attack_class_targets.py", "build"),
+    ("Feudal Siege Workshop and Ram (card 99)", "test_feudal_siege.py", "build"),
     ("Legionary and Savar replace upgrades", "test_upgrade_replacements.py", "build"),
     ("multi-target, team & UT cards",   "test_custom_bonus_multi.py",   "build"),
     ("UT preset pools",                 "test_ut_pools.py",             "build"),
