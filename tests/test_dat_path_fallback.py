@@ -21,10 +21,15 @@ notices a blank screen.
 
     venv/bin/python tests/test_dat_path_fallback.py
 """
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Accepting a path remembers it (dat_reader.remember_dat_path) — keep that out
+# of the real per-user settings file.
+os.environ.setdefault("EMPIREFORGE_DATA_DIR", tempfile.mkdtemp(prefix="ef_fallback_"))
 sys.path.insert(0, str(ROOT))
 
 from dat_reader import find_game_dat          # noqa: E402

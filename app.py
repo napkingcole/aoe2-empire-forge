@@ -53,7 +53,8 @@ from civ_appender import (assign_all_languages, button_layout_preview,
                           _ARCH_REP_CIVS,
                           get_civ_bonuses, get_team_bonuses, get_km_uu_index,
                           team_card_texts, card_homes, _KM_UU_NAMES)
-from dat_reader import find_game_dat, find_civtechtrees, load_civ_era_exclusions, load_dat
+from dat_reader import (find_game_dat, find_civtechtrees, load_civ_era_exclusions, load_dat,
+                         remember_dat_path)
 from update_check import check_for_update
 from version import __version__
 
@@ -265,6 +266,7 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Shu siege speed at sea</strong>: \"Siege Weapons and Siege Warships move faster\" sped up only the Lou Chuan among ships. It now reaches the Cannon Galleon line, Catapult Galleon, Dromon and Turtle Ships too (#93)",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Scythian Horse Archer hidden on page 2</strong>: beside a unit on the same Archery Range button (the Gurjaras' Elephant Archer), it lost the button to the other unit, and as a card it left the Cavalry Archer it replaces in the tree. It now takes the Cavalry Archer's button, and a greyed Elite Elephant Archer no longer shows for a civ without one (#108)",
         "<strong class=\"color-accent-2\">FIX:</strong> <strong>Pasting your DAT path</strong>: a path copied with Windows' <em>Copy as path</em> comes with quotes, and Empire Forge said it couldn't find the file. The quotes are now ignored, and a (?) beside the path fields explains where to find the DAT",
+        "<strong class=\"color-accent-2\">IMPROVED:</strong> <strong>Finding your game</strong>: Empire Forge now looks in Steam libraries on any drive and in Xbox app installs on any drive, and remembers a path you enter, so you only type it once",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Monks walked up to heal</strong> instead of healing from range, on every custom civ with a tech tree: the tree quietly switched off the game's free Monk Ranged Heal. It now stays on, except with the Monks double healing range card, which sets its own range as the Teutons' does",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Destroyed buildings left Western European rubble</strong> whatever the architecture: Barracks, Town Centers, towers, gates and the rest now leave their own, and the Castle and Wonder leave their picks' rubble",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Old pictures after an update.</strong> Your browser could keep showing the previous version's pages and unit pictures; it now checks for new ones every time. Empire Forge also clears out the caches older versions left behind (up to a few hundred MB)",
@@ -627,6 +629,8 @@ def upload():
     if not dat_path_obj.exists():
         flash(f"DAT file not found: {dat_path}", "error")
         return redirect(url_for("build_mod"))
+    if dat_path_obj.is_file():
+        remember_dat_path(dat_path_obj)
 
     # CivTechTrees path — optional; fall back to auto-detection from dat location.
     civtechtrees_path = _clean_path(request.form.get("civtechtrees_path"))
@@ -1380,6 +1384,7 @@ def api_builder_validate_dat():
                         "reason": f"That file is only {size_mb:.1f} MB — too small "
                                   f"to be the game DAT."})
 
+    remember_dat_path(p)
     ct = find_civtechtrees(p)
     return jsonify({"ok": True, "dat_path": str(p), "size_mb": round(size_mb, 1),
                     "civtechtrees_path": str(ct) if ct else "",

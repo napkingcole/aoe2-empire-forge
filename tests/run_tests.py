@@ -101,6 +101,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("Monks heal from range",              "test_monk_heal_range.py",   "build"),
     ("Headhunter kidnaps villagers",       "test_headhunter_kidnap.py", "build"),
     ("loading-screen civ tips",            "test_civ_tips.py",          "data"),
+    ("DAT install detection",              "test_dat_detection.py",     "data"),
     ("UU reload and range edits are real", "test_uu_reload_override.py", "build"),
     ("UT retarget never doubles a unit",   "test_ut_uu_retarget.py",    "build"),
     ("scorpion techs reach every scorpion", "test_imperial_scorpion_techs.py", "build"),

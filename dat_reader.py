@@ -5,7 +5,9 @@ Auto-detects the Steam/Xbox Game Pass/Microsoft Store installation on Mac and Wi
 Call load_dat() to get a DatFile object ready for modification.
 """
 
+import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -33,6 +35,124 @@ STEAM_DAT_CANDIDATES = [
 ]
 
 
+DAT_REL = Path("resources/_common/dat/empires2_x2_p1.dat")
+_SETTINGS = "settings.json"
+
+
+def _settings_path() -> Path:
+    from custom_bonus import data_dir          # lazy: custom_bonus is heavier
+    return data_dir() / _SETTINGS
+
+
+def saved_dat_path() -> Path | None:
+    """The DAT the player last pointed Empire Forge at, if it is still there."""
+    try:
+        raw = json.loads(_settings_path().read_text(encoding="utf-8")).get("dat_path")
+    except (OSError, ValueError, AttributeError):
+        return None
+    p = Path(raw) if isinstance(raw, str) and raw else None
+    return p if p is not None and p.is_file() else None
+
+
+def remember_dat_path(dat_path: str | Path) -> None:
+    """Keep a working DAT path for the next launch.
+
+    The session can't hold it: the secret key is new every launch, and a
+    browser draft lives on one port.  So a player whose install detection
+    misses typed the path again every time.  Best effort — failing to save
+    must never fail the page that called it.
+    """
+    try:
+        f = _settings_path()
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                data = {}
+        except (OSError, ValueError):
+            data = {}
+        if data.get("dat_path") == str(dat_path):
+            return
+        data["dat_path"] = str(dat_path)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _drive_roots() -> list[Path]:
+    """Every drive on Windows (C:\\, D:\\, ...); nothing elsewhere."""
+    if sys.platform != "win32":
+        return []
+    if hasattr(os, "listdrives"):                  # Python 3.12+
+        try:
+            return [Path(d) for d in os.listdrives()]
+        except OSError:
+            pass
+    return [Path(f"{c}:/") for c in "CDEFGHIJKLMNOPQRSTUVWXYZ" if Path(f"{c}:/").exists()]
+
+
+def _steam_roots() -> list[Path]:
+    """Where Steam itself is installed: the registry, then the defaults."""
+    roots: list[Path] = []
+    if sys.platform == "win32":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as k:
+                roots.append(Path(winreg.QueryValueEx(k, "SteamPath")[0]))
+        except OSError:
+            pass
+        roots += [Path("C:/Program Files (x86)/Steam"), Path("C:/Program Files/Steam")]
+    elif sys.platform == "darwin":
+        roots.append(Path.home() / "Library/Application Support/Steam")
+    return roots
+
+
+_VDF_PATH = re.compile(r'"path"\s+"([^"]*)"')
+
+
+def steam_library_dirs(steam_roots: list[Path]) -> list[Path]:
+    """Every Steam library, read from each root's steamapps/libraryfolders.vdf.
+
+    A library on a second drive (D:\\SteamLibrary) is listed only there.
+    """
+    out: list[Path] = []
+    for root in steam_roots:
+        out.append(root)
+        try:
+            text = (root / "steamapps" / "libraryfolders.vdf").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        out += [Path(m.replace("\\\\", "\\")) for m in _VDF_PATH.findall(text)]
+    seen, uniq = set(), []
+    for p in out:
+        key = str(p).lower()
+        if key not in seen:
+            seen.add(key)
+            uniq.append(p)
+    return uniq
+
+
+def install_candidates(drives: list[Path], steam_roots: list[Path]) -> list[Path]:
+    """Every DAT path worth checking, in the order they are tried.
+
+    Steam libraries first (the common case), then Xbox app installs, which go
+    to <drive>:\\XboxGames\\<game>\\Content on whichever drive the player chose,
+    then the old Microsoft Store location.
+    """
+    cands = [lib / "steamapps/common/AoE2DE" / DAT_REL for lib in steam_library_dirs(steam_roots)]
+    for d in drives:
+        xbox = d / "XboxGames"
+        if xbox.is_dir():
+            cands += sorted(xbox.glob(f"*/Content/{DAT_REL.as_posix()}"))
+    for d in drives:
+        apps = d / "Program Files" / "WindowsApps"
+        if apps.is_dir():
+            for rel in (f"Microsoft.MSPhoenix_*/{DAT_REL.as_posix()}",
+                        "Microsoft.MSPhoenix_*/resources_common/dat/empires2_x2_p1.dat"):
+                cands += sorted(apps.glob(rel), reverse=True)   # highest version first
+    return cands
+
+
 def find_game_dat() -> Path | None:
     """Return the path to the installed game DAT, or None if not found.
 
@@ -40,25 +160,28 @@ def find_game_dat() -> Path | None:
     pointed at a DAT that is not the installed one — a DLC build lands as a
     folder of files well before it is the copy on disk, and the interesting
     assertions are exactly the ones that differ between versions.
+
+    Then the path the player last gave us (`remember_dat_path`): with two
+    installs it says which one they meant, and with an install detection
+    misses it saves typing it every launch.
     """
     override = os.environ.get("EMPIREFORGE_DAT")
     if override:
         p = Path(override).expanduser()
         return p if p.exists() else None
 
+    saved = saved_dat_path()
+    if saved is not None:
+        return saved
     for candidate in STEAM_DAT_CANDIDATES:
         if candidate.exists():
             return candidate
-    # Microsoft Store: directory name contains a version string, so glob for it.
-    _winapps = Path("C:/Program Files/WindowsApps")
-    if _winapps.exists():
-        for rel in (
-            "Microsoft.MSPhoenix_*/resources/_common/dat/empires2_x2_p1.dat",
-            "Microsoft.MSPhoenix_*/resources_common/dat/empires2_x2_p1.dat",
-        ):
-            matches = sorted(_winapps.glob(rel))
-            if matches:
-                return matches[-1]  # pick highest-versioned dir if multiple
+    try:
+        for candidate in install_candidates(_drive_roots(), _steam_roots()):
+            if candidate.is_file():
+                return candidate
+    except OSError:
+        pass
     return None
 
 
