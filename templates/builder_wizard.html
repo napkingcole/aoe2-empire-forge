@@ -164,7 +164,7 @@
       </div>
       <div class="row g-3 mb-3">
         <div class="col-12">
-          <label class="form-label fw-semibold small" for="dat-path-input">DAT File Path <span class="text-danger">*</span></label>
+          <label class="form-label fw-semibold small" for="dat-path-input">DAT File Path <span class="text-danger">*</span> <span class="path-help" tabindex="0" data-tip-title="Can't find your DAT?" data-tip="In Steam, right-click Age of Empires II: Definitive Edition, then Manage, then Browse local files. From that folder, open resources, then _common, then dat.&#10;Click the File Explorer address bar and copy the folder, or right-click empires2_x2_p1.dat and choose Copy as path. Paste either one here. The quotes Copy as path adds are fine."><i class="fa-solid fa-circle-question" aria-hidden="true"></i></span></label>
           <div class="d-flex gap-2">
             <input type="text" id="dat-path-input" class="form-control form-control-sm font-monospace"
                    placeholder="Detecting…" autocomplete="off" spellcheck="false">
@@ -175,7 +175,7 @@
           <div id="dat-detect-status" class="form-text mt-1"></div>
         </div>
         <div class="col-12">
-          <label class="form-label fw-semibold small" for="civtechtrees-path-input">CivTechTrees Folder <span class="text-muted fw-normal">(auto-detected)</span></label>
+          <label class="form-label fw-semibold small" for="civtechtrees-path-input">CivTechTrees Folder <span class="text-muted fw-normal">(auto-detected)</span> <span class="path-help" tabindex="0" data-tip-title="CivTechTrees folder" data-tip="It sits beside the DAT, in resources, then _common, then dat. Leave it blank and Empire Forge finds it from the DAT path."><i class="fa-solid fa-circle-question" aria-hidden="true"></i></span></label>
           <input type="text" id="civtechtrees-path-input" class="form-control form-control-sm font-monospace"
                  placeholder="Detected automatically from DAT location" autocomplete="off" spellcheck="false">
           <div class="form-text">Folder containing per-civ tech tree JSON files.</div>

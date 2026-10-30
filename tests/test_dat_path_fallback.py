@@ -118,6 +118,25 @@ check("and says what it expected",
 blank = validate("")
 check("an empty path fails rather than 500ing", blank["ok"] is False, blank)
 
+# Windows' "Copy as path" wraps the path in double quotes; a player pasted one
+# and EF said it couldn't find a DAT they had just found themselves.
+quoted = validate(f'"{dat_path}"')
+check("a quoted path (Copy as path) validates", quoted["ok"] is True, quoted)
+check("and hands back the path without the quotes",
+      quoted.get("dat_path") == str(dat_path), quoted)
+qfolder = validate(f' "{Path(dat_path).parent}" ')
+check("a quoted folder with spaces around it validates", qfolder["ok"] is True, qfolder)
+
+for raw_in, want in [('"C:\\a b\\x.dat"', "C:\\a b\\x.dat"), ("'x.dat'", "x.dat"),
+                     ('  "x.dat"  ', "x.dat"), ('"x.dat', '"x.dat'), ("", ""), (None, "")]:
+    check(f"_clean_path({raw_in!r}) == {want!r}", appmod._clean_path(raw_in) == want,
+          repr(appmod._clean_path(raw_in)))
+
+res = client.post("/upload", data={"dat_path": f'"{dat_path}"'})
+with client.session_transaction() as sess:
+    flashes = [m for _, m in sess.get("_flashes", [])]
+check("Build Mod accepts a quoted DAT path", not any("not found" in m for m in flashes), flashes)
+
 print("\n=== the resolver prefers a real path over a broken one ===")
 with appmod.app.test_request_context():
     resolved = appmod._resolve_dat_path("/nonexistent/empires2_x2_p1.dat")
@@ -129,6 +148,9 @@ with appmod.app.test_request_context():
     resolved3 = appmod._resolve_dat_path(str(dat_path))
     check("an explicit valid path is honoured", resolved3 == str(dat_path),
           f"resolved to {resolved3!r}")
+    resolved4 = appmod._resolve_dat_path(f'"{dat_path}"')
+    check("a quoted path is honoured without its quotes", resolved4 == str(dat_path),
+          f"resolved to {resolved4!r}")
 
 print("\n=== every route reading dat_path goes through the resolver ===")
 # The bug was two routes disagreeing about where to look.  Keep them agreeing.
@@ -138,7 +160,7 @@ print("\n=== every route reading dat_path goes through the resolver ===")
 # session or to auto-detection would make it report success about a different
 # file entirely — a wrong path would come back "Game files found".  Validating a
 # candidate and consuming a DAT are opposite jobs; only the second one falls back.
-EXEMPT_MARKERS = ('.strip().strip(\'"\')',)   # the validate-dat read
+EXEMPT_MARKERS = ('raw = _clean_path(request.args.get("dat_path"))',)   # the validate-dat read
 src = (ROOT / "app.py").read_text(encoding="utf-8")
 raw = [ln.strip() for ln in src.splitlines()
        if 'request.args.get("dat_path"' in ln
