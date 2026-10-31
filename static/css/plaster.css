@@ -2312,3 +2312,6 @@ details.card.cb-fold:not([open]) > summary.card-header { border-bottom: 0; }
   color: #fff !important;
   text-shadow: 0 0 3px #000;
 }
+/* (?) beside a path input — the hover text is tooltip.js's data-tip */
+.path-help { color: var(--accent-2); cursor: help; margin-left: .25rem; font-weight: normal; }
+.path-help:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: 50%; }

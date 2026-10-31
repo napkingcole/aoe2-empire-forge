@@ -52,6 +52,7 @@
 
       <label for="dat_path" class="form-label small text-secondary">
         Path to <code>empires2_x2_p1.dat</code>
+        <span class="path-help" tabindex="0" data-tip-title="Can't find your DAT?" data-tip="In Steam, right-click Age of Empires II: Definitive Edition, then Manage, then Browse local files. From that folder, open resources, then _common, then dat.&#10;Click the File Explorer address bar and copy the folder, or right-click empires2_x2_p1.dat and choose Copy as path. Paste either one here. The quotes Copy as path adds are fine."><i class="fa-solid fa-circle-question" aria-hidden="true"></i></span>
         {% if dat_path %}
           <span class="badge bg-success-subtle text-success-emphasis ms-1">Auto-detected</span>
         {% endif %}
@@ -69,6 +70,7 @@
 
       <label for="civtechtrees_path" class="form-label small text-secondary">
         Path to <code>CivTechTrees</code> folder
+        <span class="path-help" tabindex="0" data-tip-title="CivTechTrees folder" data-tip="It sits beside the DAT, in resources, then _common, then dat. Leave it blank and Empire Forge finds it from the DAT path."><i class="fa-solid fa-circle-question" aria-hidden="true"></i></span>
         {% if civtechtrees_path %}
           <span class="badge bg-success-subtle text-success-emphasis ms-1">Auto-detected</span>
         {% else %}

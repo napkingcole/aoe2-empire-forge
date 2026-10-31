@@ -53,7 +53,8 @@ from civ_appender import (assign_all_languages, button_layout_preview,
                           _ARCH_REP_CIVS,
                           get_civ_bonuses, get_team_bonuses, get_km_uu_index,
                           team_card_texts, card_homes, _KM_UU_NAMES)
-from dat_reader import find_game_dat, find_civtechtrees, load_civ_era_exclusions, load_dat
+from dat_reader import (find_game_dat, find_civtechtrees, load_civ_era_exclusions, load_dat,
+                         remember_dat_path)
 from update_check import check_for_update
 from version import __version__
 
@@ -79,6 +80,19 @@ SESSIONS_DIR.mkdir(exist_ok=True)
 # Shared parsed DatFile objects — keyed by path; all endpoints share this cache
 # so the DAT is only parsed once regardless of which endpoint hits it first.
 _DAT_OBJ_CACHE: dict[str, Any] = {}
+
+def _clean_path(raw: str | None) -> str:
+    """A pasted path without surrounding whitespace or quotes.
+
+    Windows' "Copy as path" (right-click, or Ctrl+Shift+C) wraps the path in
+    double quotes, and a quoted path never exists on disk — the reported
+    "EF can't find my DAT" after the player had found it themselves.
+    """
+    s = (raw or "").strip()
+    while len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        s = s[1:-1].strip()
+    return s
+
 
 def _get_dat(dat_path: str):
     """Return cached DatFile; parse and cache on first call (shared across endpoints)."""
@@ -250,6 +264,14 @@ CHANGELOG: dict[str, list[str]] = {
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>The Legionary could never be researched</strong>: it shares its Barracks button with the Two-Handed Swordsman, which was never switched off, so players got Two-Handed Swordsmen and Champions (#91). The Savar had the same problem with the Paladin. Both now replace the upgrade, as for the Romans and Persians",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Empty civ panel on the selection screen</strong>: a civ without a team bonus showed only the yellow headings, with no Features or Unique Techs text. The game needs a Team Bonus section to show the panel at all, so a civ without one now reads <em>Team Bonus: None</em> (#96)",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Shu siege speed at sea</strong>: \"Siege Weapons and Siege Warships move faster\" sped up only the Lou Chuan among ships. It now reaches the Cannon Galleon line, Catapult Galleon, Dromon and Turtle Ships too (#93)",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Scythian Horse Archer hidden on page 2</strong>: beside a unit on the same Archery Range button (the Gurjaras' Elephant Archer), it lost the button to the other unit, and as a card it left the Cavalry Archer it replaces in the tree. It now takes the Cavalry Archer's button, and a greyed Elite Elephant Archer no longer shows for a civ without one (#108). As a card it also never trained at all outside the scenario editor: the game marks the Scythian Horse Archer's techs scenario-only, and the card now runs them in every game (#108)",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Siege Workshop and Battering Ram in the Feudal Age</strong> (the Cumans' bonus card) left both in the Castle Age. They now arrive in the Feudal Age, and the Feudal Siege Workshop counts toward the Castle Age (#109)",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Tower upgrades on the Fortified Church and Donjon</strong>: with the Armenians' Fortified Church card, the church got none of the arrow and armour upgrades, and with the Sicilians' Donjon card, Arrowslits never reached the Donjon. Both get them now",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Unique techs that power other techs</strong>: 18 game techs depend on a civ's own unique tech, like Svan Towers adding +2 arrows to the Fortified Church, Thalassocracy upgrading Harbors, or Paper Money's later levels. Picked as your civ's unique tech, these never fired. They now do",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Bonus attack against a new target now lands</strong>: the game only changes a unit's attack against a class it already attacks, so cards such as <em>Skirmishers +1 vs infantry</em> did nothing, at any multiplier. Ten cards were affected (Steppe Lancers and foot archers vs villagers, Mangonels vs trees, gunpowder vs camels, shock infantry and Scouts vs stone defences, Castles and Grenadiers vs buildings, Bombard Towers vs rams); the class is now added for them, and for any custom card or UT that does the same. The two villager cards also needed villagers to be hit-able that way: no villager carried that armour class any more, so every civ's villagers now do, which changes nothing else",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Mangonels cut trees</strong> now does: it gave Mangonels attack against trees, which have no armour for it to land on. Mangonels now splash trees the way Onagers do",
+        "<strong class=\"color-accent-2\">FIX:</strong> <strong>Pasting your DAT path</strong>: a path copied with Windows' <em>Copy as path</em> comes with quotes, and Empire Forge said it couldn't find the file. The quotes are now ignored, and a (?) beside the path fields explains where to find the DAT",
+        "<strong class=\"color-accent-2\">IMPROVED:</strong> <strong>Finding your game</strong>: Empire Forge now looks in Steam libraries on any drive and in Xbox app installs on any drive, and remembers a path you enter, so you only type it once",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Monks walked up to heal</strong> instead of healing from range, on every custom civ with a tech tree: the tree quietly switched off the game's free Monk Ranged Heal. It now stays on, except with the Monks double healing range card, which sets its own range as the Teutons' does",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Destroyed buildings left Western European rubble</strong> whatever the architecture: Barracks, Town Centers, towers, gates and the rest now leave their own, and the Castle and Wonder leave their picks' rubble",
         "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Old pictures after an update.</strong> Your browser could keep showing the previous version's pages and unit pictures; it now checks for new ones every time. Empire Forge also clears out the caches older versions left behind (up to a few hundred MB)",
@@ -598,7 +620,7 @@ def build_mod():
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    dat_path = request.form.get("dat_path", "").strip()
+    dat_path = _clean_path(request.form.get("dat_path"))
     dat_path_obj = Path(dat_path)
     if dat_path_obj.is_dir():
         # User pointed at the folder — try to find the DAT inside it.
@@ -612,9 +634,11 @@ def upload():
     if not dat_path_obj.exists():
         flash(f"DAT file not found: {dat_path}", "error")
         return redirect(url_for("build_mod"))
+    if dat_path_obj.is_file():
+        remember_dat_path(dat_path_obj)
 
     # CivTechTrees path — optional; fall back to auto-detection from dat location.
-    civtechtrees_path = request.form.get("civtechtrees_path", "").strip()
+    civtechtrees_path = _clean_path(request.form.get("civtechtrees_path"))
     if not civtechtrees_path:
         detected = find_civtechtrees(dat_path)
         civtechtrees_path = str(detected) if detected else ""
@@ -1330,7 +1354,7 @@ def api_builder_validate_dat():
     typo in the filename — and reports whether CivTechTrees was found alongside,
     which is the other half of a usable install.
     """
-    raw = (request.args.get("dat_path") or "").strip().strip('"')
+    raw = _clean_path(request.args.get("dat_path"))
     if not raw:
         return jsonify({"ok": False, "reason": "Enter the path to empires2_x2_p1.dat."})
 
@@ -1365,6 +1389,7 @@ def api_builder_validate_dat():
                         "reason": f"That file is only {size_mb:.1f} MB — too small "
                                   f"to be the game DAT."})
 
+    remember_dat_path(p)
     ct = find_civtechtrees(p)
     return jsonify({"ok": True, "dat_path": str(p), "size_mb": round(size_mb, 1),
                     "civtechtrees_path": str(ct) if ct else "",
@@ -2242,8 +2267,8 @@ def _resolve_dat_path(arg: str | None = None) -> str:
     mounted — falls through to the next one instead of being honoured into a
     blank screen.
     """
-    for candidate in ((arg or "").strip(),
-                      (session.get("dat_path") or "").strip(),
+    for candidate in (_clean_path(arg),
+                      _clean_path(session.get("dat_path")),
                       str(find_game_dat() or "")):
         if candidate and Path(candidate).exists():
             return candidate
@@ -3216,7 +3241,7 @@ def builder_build():
         return jsonify({"error": "Draft is missing an architecture selection."}), 400
 
     # Accept dat_path from POST body (wizard self-contained), fall back to session
-    dat_path = data.get("dat_path") or session.get("dat_path")
+    dat_path = _clean_path(data.get("dat_path")) or session.get("dat_path")
     if not dat_path or not Path(dat_path).exists():
         return jsonify({
             "error": (

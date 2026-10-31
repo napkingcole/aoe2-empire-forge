@@ -61,10 +61,28 @@ def build(steps):
     return dat
 
 
+def _sig(unit):
+    """A unit's repr without 0-value attack entries.
+
+    A team bonus that changes an attack class puts a 0 entry for it on every
+    civ (_add_missing_attack_classes: allies are any civ), so a civ built after
+    one with such a team bonus carries entries a civ built alone lacks.  They
+    add no damage, which is why vanilla units carry them too.
+    """
+    if unit is None or unit.type_50 is None:
+        return repr(unit)
+    keep = unit.type_50.attacks
+    unit.type_50.attacks = [x for x in keep if x.amount != 0]
+    try:
+        return repr(unit)
+    finally:
+        unit.type_50.attacks = keep
+
+
 def differences(a, b, slot):
     """Units of `slot` that differ between two builds (over the units both have)."""
     ua, ub = a.civs[slot].units, b.civs[slot].units
-    out = [ca.unit_label(b, slot, i) for i, (x, y) in enumerate(zip(ua, ub)) if repr(x) != repr(y)]
+    out = [ca.unit_label(b, slot, i) for i, (x, y) in enumerate(zip(ua, ub)) if _sig(x) != _sig(y)]
     for field in ("icon_set", "resources"):
         if repr(getattr(a.civs[slot], field)) != repr(getattr(b.civs[slot], field)):
             out.append(f"civ.{field}")

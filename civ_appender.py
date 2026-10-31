@@ -12,7 +12,7 @@ from genieutils.datfile import DatFile
 from genieutils.civ import Civ
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import Tech, ResearchLocation, ResearchResourceCost
-from genieutils.unit import TrainLocation, ResourceCost, ResourceStorage
+from genieutils.unit import AttackOrArmor, TrainLocation, ResourceCost, ResourceStorage
 from civ_schema import RETIRED_CIV_BONUSES, RETIRED_INTO_TREE
 
 from bonus_catalog import civ_bonus_techs, team_bonus_tech, civ_bonus_ec_list, team_bonus_ec_list
@@ -1165,7 +1165,14 @@ def patch_future_units(future: dict, base_civ_list: list[dict], civs_overrides: 
                     return None
                 item["ID"] = new
                 return item
+            if kind == "Tech" and tree_says(kind, item) is None and item.get("Name") in gone_units:
+                return None               # Elite Elephant Archer, its unit gone (#108)
             return item if available(kind, item) else None
+
+        # An upgrade tech has no tree node, so it is judged by its unit: the
+        # file names both alike (tech 481 and unit 875, "Elite Elephant Archer").
+        gone_units = {u.get("Name") for b in (*civ.get("Buildings", []), *full.values())
+                      for u in b.get("Units", []) if tree_says("Unit", u) == "NotAvailable"}
 
         buildings = []
         seen = set()
@@ -2475,6 +2482,7 @@ def button_layout_preview(dat: DatFile, civ_def: dict, tree_techs: set[int]) -> 
             favoured = frozenset(int(c.a) for c in dat.effects[dat.techs[make_avail].effect_id].effect_commands
                                  if c.type in (2, 3) and c.a >= 0)
             favoured |= {m for u in favoured for m in _upgrade_neighbours(dat).get(u, ())}
+    favoured |= _replacement_units(civ_def)
     plan = _plan_button_layout(dat, units, present, {}, tech_ok, picks, favoured)
     if not plan["conflicts"]:
         return []
@@ -3255,12 +3263,27 @@ def _apply_unit_replacements(units: set, civ_def: dict | None = None) -> set:
     Every reader of tree units goes through this, so the tree, the sweep and
     the F2 viewer agree."""
     out = set(units)
-    for bid in _raw_civ_bonus_ids(civ_def) & RETIRED_INTO_TREE.keys():
+    raw = _raw_civ_bonus_ids(civ_def)
+    for bid in raw & RETIRED_INTO_TREE.keys():
         out = (out - RETIRED_INTO_TREE[bid]["remove"]) | RETIRED_INTO_TREE[bid]["add"]
-    for spec in _UNLOCK_UNIT_BONUSES.values():
-        if spec.get("replaces") and out & set(spec["units"]):
+    for bid, spec in _UNLOCK_UNIT_BONUSES.items():
+        # From the tree or from the card itself: a card-only Scythian Horse
+        # Archer left the Cavalry Archer in the tree, where it held button 3
+        # though the card hides it (#108).
+        if spec.get("replaces") and (out & set(spec["units"]) or bid in raw):
             out -= set(spec["replaces"])
     return out
+
+
+def _replacement_units(civ_def: dict) -> frozenset:
+    """Units the civ has that replace another line (the Scythian Horse Archer
+    for the Cavalry Archer).  They take that line's button by default, as in
+    the game: over the Gurjaras the Elephant Archer kept Archery Range button 3
+    and the Scythian Horse Archer went to page 2, where nobody looked (#108)."""
+    tree = _tree_unit_ids(civ_def)          # drops the replaced line, keeps the replacement
+    raw = _raw_civ_bonus_ids(civ_def)
+    return frozenset(u for bid, spec in _UNLOCK_UNIT_BONUSES.items() if spec.get("replaces")
+                     and (tree & set(spec["units"]) or bid in raw) for u in spec["units"])
 
 
 def _rebuild_unlock_techs(dat: DatFile, civ_index: int, spec: dict) -> dict:
@@ -3275,6 +3298,11 @@ def _rebuild_unlock_techs(dat: DatFile, civ_index: int, spec: dict) -> dict:
         dat.effects.append(eff)
         tech.effect_id = len(dat.effects) - 1
         tech.civ = civ_index
+        # The Scythian Horse Archer's techs ship with full_tech_mode 13, the
+        # value vanilla's [SCEN] techs carry: they never fire in a normal game,
+        # so the card unlocked nothing (#108).  1 is what every civ-owned
+        # unlock in the game uses (Hoplite 1136, the regional units).
+        tech.full_tech_mode = 1
         req = [made.get(r, r) for r in spec["rebuild"][tid]]
         tech.required_techs = tuple(req) + (-1,) * (6 - len(req))
         tech.required_tech_count = len(req)
@@ -6191,6 +6219,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                     _copy = seen_bonus.get(_trigger)
                     if _copy is not None:
                         _wired += _add_alt_prereq(dat, _trigger, _copy)
+                if bonus_id == _FEUDAL_SIEGE_BONUS:
+                    _wired += _add_feudal_siege_unlocks(dat, civ_index, civ_def)
                 if _wired:
                     print(f"       Bonus {bonus_id}: {_wired} tech(s) re-pointed "
                           f"at this civ's copy of trigger {_triggers}")
@@ -6611,12 +6641,68 @@ def _gate_add(dat: DatFile, gate_tid: int, member_tid: int) -> None:
 #       trigger].  Without the re-point our civ only ever reaches 192 + 103, so
 #       the upgrade stayed Imperial-only and the card's headline did nothing.
 #       With it, the auto-fire copy of 1004 pairs with 192 in the Castle Age.
+#    99 "Siege Workshop and Battering Ram in the Feudal Age" — the Cumans'
+#       copies stood behind global techs naming the originals: Siege Workshop
+#       149 wants 2 of [102, 668 Blacksmith, 705], Capped Ram 96 wants 103 or
+#       706, and 135's Castle Age building count takes 1218, which wants 295 (a
+#       Siege Workshop counts).  So the card did nothing at all (#109).  The
+#       Workshop and Ram themselves are unlocked directly instead; see
+#       _add_feudal_siege_unlocks.
+#   109 "Can build Donjon" — Arrowslits for the Guard Tower and Keep (610,
+#       611) want 2 of [608 Arrowslits, the tower tech, 775 the Sicilian Donjon
+#       trigger]; that pair is what lets them reach the Donjon too.
+#   316 "Fortified Church replaces Monastery" — every upgrade to its arrows
+#       (Fletching, Bodkin, Bracer, Chemistry, Murder Holes, Svan Towers: 931,
+#       943-947) and its Imperial Age armour (942) wants 2 of [the tech, 930
+#       Georgian, 941 Armenian], so a custom civ's church never improved.
 _ALT_PREREQ_BONUSES: dict[int, tuple[tuple[int, ...], str]] = {
+    99: ((295, 706),
+         "the Siege Workshop and Capped Ram keep their usual ages"),
+    109: ((775,),
+          "Arrowslits will not reach the Donjon"),
+    316: ((930,),
+          "the Fortified Church gets no arrow or armour upgrades"),
     282: ((789, 788),   # Poles first — the catalog copies that one
           "the Hussar will be disabled with no replacement"),
     360: ((1004,),
           "the Heavy Cavalry Archer upgrade stays Imperial-only"),
 }
+
+# Card 99's Siege Workshop and Battering Ram come from techs of the civ's own
+# that carry the enable, as the regional unit cards do.  Round 1 of #109 went
+# through the gates instead (an effect-less copy of 705 into Siege Workshop
+# 149, an empty Feudal trigger into Ram 162 where the Cumans' cavalry speed
+# 711 stands); the Capped Ram's gate worked in game, but no Feudal Workshop
+# appeared (2026-10-31).  Which link failed is unknown; this route has no gate.
+_FEUDAL_SIEGE_BONUS = 99
+_FEUDAL_SIEGE_UNLOCKS = (
+    # (name, the vanilla make-avail whose effect it copies, prerequisites)
+    ("EF Feudal Siege Workshop", 149, (101, 668)),     # 668: a Blacksmith stands
+    ("EF Feudal Battering Ram",  162, (101,)),
+)
+
+
+def _add_feudal_siege_unlocks(dat: DatFile, civ_index: int, civ_def: dict) -> int:
+    """This civ's own Feudal Age unlocks for the Siege Workshop and Battering
+    Ram; a tree that leaves either out keeps it out.  Returns how many."""
+    units, buildings = _tree_unit_ids(civ_def), _tree_building_ids(civ_def)
+    has_tree = bool(units or buildings)
+    wanted = {149: not has_tree or 49 in buildings,
+              162: not has_tree or 1258 in units}
+    made = 0
+    for name, make_avail, reqs in _FEUDAL_SIEGE_UNLOCKS:
+        if not wanted[make_avail]:
+            continue
+        src = dat.techs[make_avail]
+        dat.effects.append(Effect(name=name, effect_commands=[
+            deepcopy(ec) for ec in dat.effects[src.effect_id].effect_commands]))
+        tech = _make_tech(name, len(dat.effects) - 1, civ_index)
+        tech.required_techs = tuple(reqs) + (-1,) * (6 - len(reqs))
+        tech.required_tech_count = len(reqs)
+        dat.techs.append(tech)
+        made += 1
+    return made
+
 
 
 def _apply_early_eco_shims(dat: DatFile, civ_index: int) -> int:
@@ -7050,6 +7136,79 @@ def _shipped_tech_civ(dat: DatFile, tid: int) -> int:
     saw civ 99 — and _src_civ_uu_ids(99) answered with whichever replaced
     civ's UU came first, so Anarchy kept training Huskarls (QA 2026-10-23)."""
     return getattr(dat, "_ef_original_tech_civs", {}).get(tid, dat.techs[tid].civ)
+
+
+def _attack_classes_added(dat: DatFile, effect_ids) -> dict[int, set[int]]:
+    """unit -> the attack classes these effects change on it."""
+    out: dict[int, set[int]] = {}
+    for eid in effect_ids:
+        if not 0 <= eid < len(dat.effects):
+            continue
+        for ec in dat.effects[eid].effect_commands:
+            if ec.type in (EC_SET, EC_ADD, EC_MULTIPLY) and int(ec.c) == 9 and ec.a >= 0:
+                out.setdefault(int(ec.a), set()).add((abs(int(ec.d)) >> 8) & 0xFF)
+    return out
+
+
+def _add_missing_attack_classes(dat: DatFile, civ_index: int, team_eff_id: int) -> int:
+    """Give each unit a 0 entry for every attack class this civ's effects change.
+
+    The engine only changes an attack class the unit already has: "+1 vs
+    infantry" on a Skirmisher, which has no infantry entry, does nothing (card
+    243 at x4, reported 2026-10-30).  Vanilla never hits this because its
+    units carry 0-value entries for the classes their techs touch, and the one
+    vanilla bonus that targets a missing class (the Varangian team bonus, +1 vs
+    infantry for the Knight line) first creates it with attribute 161, "Add
+    Attack Type".  Ten cards target a missing class (206 213 243 253 254 255
+    256 263 268 275), so this runs after every bonus, UT and card rather than
+    in any one handler.
+
+    The team bonus reaches allies, whose units are any civ's, so its classes
+    go on every civ; a 0 attack entry adds no damage.  Armour is left alone:
+    a unit with no armour entry for a class takes no bonus damage from it at
+    all, and a 0 entry would make it vulnerable.
+    """
+    own = [dat.civs[civ_index].tech_tree_id]
+    own += [t.effect_id for t in dat.techs if t.civ == civ_index]
+    added = 0
+    for civs, classes in (([dat.civs[civ_index]], _attack_classes_added(dat, own)),
+                          (_every_civ(dat), _attack_classes_added(dat, [team_eff_id]))):
+        for civ in civs:
+            for uid, want in classes.items():
+                unit = civ.units[uid] if uid < len(civ.units) else None
+                if unit is None or unit.type_50 is None:
+                    continue
+                have = {a.class_ for a in unit.type_50.attacks}
+                for cls in sorted(want - have):
+                    unit.type_50.attacks.append(AttackOrArmor(class_=cls, amount=0))
+                    added += 1
+    return added
+
+
+_CIVILIAN_CLASS = 4            # unit.class_ of every villager variant (28 units)
+_VILLAGER_ARMOUR_CLASS = 10
+
+
+def _villager_armour_class(dat: DatFile) -> int:
+    """Give every civ's villagers a 0 armour entry for the villager class.
+
+    Bonus damage needs the target to carry the attacker's class, and no unit in
+    current DE has armour class 10: cards 206 and 253 ("+attack vs villagers")
+    could never land.  Nothing in vanilla attacks with class 10 either, so a 0
+    entry changes no vanilla matchup (the Gurjaras' mounted-unit multiplier
+    names class 10, but no cavalry has a class-10 attack).  Every civ and every
+    build, not only a civ with such a card: enemy villagers are any civ's, and
+    doing it always keeps the result independent of build order.
+    """
+    added = 0
+    for civ in _every_civ(dat):
+        for unit in civ.units:
+            if unit is None or unit.class_ != _CIVILIAN_CLASS or unit.type_50 is None:
+                continue
+            if not any(a.class_ == _VILLAGER_ARMOUR_CLASS for a in unit.type_50.armours):
+                unit.type_50.armours.append(AttackOrArmor(class_=_VILLAGER_ARMOUR_CLASS, amount=0))
+                added += 1
+    return added
 
 
 def _every_civ(dat: DatFile) -> list:
@@ -7817,6 +7976,12 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         if _n_imp:
             print(f"       Imperial Scorpion: {_n_imp} Heavy Scorpion commands extended to it")
 
+    # 7a''. An attack bonus only lands on a class the unit already has (#243).
+    _n_cls = _add_missing_attack_classes(dat, civ_index, tb_eff_id)
+    _villager_armour_class(dat)
+    if _n_cls:
+        print(f"       Attack classes: {_n_cls} missing entries added at 0")
+
     # 8. Language audio is handled in a single batch call to assign_all_languages()
     #    after all civs are processed — see app.py / build_all.py.
     lang_val = civ_def.get("language", 0)
@@ -7832,7 +7997,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     _place_hero(dat, civ_index, civ_def)
     button_layout = _resolve_button_collisions(
         dat, civ_index, civ_def,
-        frozenset(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0))
+        frozenset(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0)
+        | _replacement_units(civ_def))
     for _entry in button_layout:
         if _entry["to"] is None:
             # A player-visible warning, not just a log line: the unit silently
@@ -8286,6 +8452,41 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
     return cmds, pending_elite_uu_subs, pending_base_uu_subs
 
 
+def _wire_ut_companions(dat: DatFile, civ_index: int, stub_tid: int,
+                        source_tids: list) -> int:
+    """Let the vanilla companions of a preset UT fire for our copy of it.
+
+    Many unique techs have a second, auto-fire half that waits for the UT AND
+    an ordinary upgrade: Svan Towers + Chemistry, the six Thalassocracy techs
+    (Fletching ... Heated Shot), Greek Fire, Citadels, Rocketry and Ming-Kuang
+    Armor + Chemistry, Kshatriyas + Supplies.  They name the vanilla UT, and
+    our UT is a new tech, so none of them ever fired (Svan Towers gave the
+    Fortified Church nothing, seen in game 2026-10-31).  A global companion
+    gets our UT through the alt-prereq gate; one gated to the UT's own civ
+    (Imperial Nomads, Torsion + Chemistry, Paper Money's lumber halves) is
+    copied for this civ with our UT in place of the original.  Returns how
+    many companions now accept it."""
+    limit = len(dat.techs)
+    n = 0
+    for src in {t for t in source_tids if t is not None and 0 <= t < limit}:
+        deps = [i for i in range(limit) if src in dat.techs[i].required_techs
+                and not dat.techs[i].name.startswith(_ALT_GATE_PREFIX)]
+        if any(dat.techs[i].civ == -1 for i in deps):
+            n += _add_alt_prereq(dat, src, stub_tid, limit)
+        for i in deps:
+            orig = dat.techs[i]
+            if orig.civ in (-1, civ_index) or orig.effect_id < 0:
+                continue
+            tech = deepcopy(orig)
+            dat.effects.append(deepcopy(dat.effects[orig.effect_id]))
+            tech.effect_id = len(dat.effects) - 1
+            tech.civ = civ_index
+            tech.required_techs = tuple(stub_tid if r == src else r for r in orig.required_techs)
+            dat.techs.append(tech)
+            n += 1
+    return n
+
+
 def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
                                castle_ut_entries: list,
                                imperial_ut_entries: list,
@@ -8418,6 +8619,12 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         _append_tech(dat, tech)
         used_tech_ids.append(len(dat.techs) - 1)
         print(f"       {label}: {len(cmds)} effect commands (sid={name_sid})")
+        _n_comp = _wire_ut_companions(dat, civ_index, len(dat.techs) - 1, [
+            ut_source_tech(e[0], e[2]) for e in
+            (_norm_ut_entry(x, "castle" if btn == 7 else "imperial") for x in entries)
+            if e is not None and _UT_BUILT.get((e[2], int(e[0]))) is None])
+        if _n_comp:
+            print(f"       {label}: {_n_comp} companion tech(s) take this UT")
         # Some unique techs are not implemented in the DAT at all.  Writing
         # resource 33, "Effect Function Number", tells the engine to run
         # EffectFunction<N> from its own Effects.xs script, and that script — not
