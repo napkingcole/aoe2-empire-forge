@@ -6,8 +6,8 @@ Also cards 316 (Fortified Church) and 109 (Donjon), which had the same flaw.
 The card copies the Cumans' techs 295/705/706, but the techs that make the
 Siege Workshop (149), Battering Ram (162) and Capped Ram (96) available are
 global and name the originals, which only the Cumans can fire — so the card did
-nothing (#109).  The Ram's Feudal route is tech 711, the Cumans' cavalry speed
-bonus, so it gets an empty trigger of its own rather than a copy of 711.
+nothing (#109).  The Workshop and Ram are now unlocked by techs of the civ's own;
+the Capped Ram and the Castle Age building count go through alt-prereq gates.
 
     venv/bin/python tests/test_feudal_siege.py
 """
@@ -61,33 +61,54 @@ def build(slot, bonuses):
                          target_slot=slot)
 
 
+def own_unlock(slot, unit):
+    """This civ's own tech that enables `unit`, with its prerequisites."""
+    for t in dat.techs:
+        if t.civ == slot and t.name.startswith("EF Feudal") and t.effect_id >= 0 and any(
+                c.type == 2 and int(c.a) == unit and int(c.b) == 1
+                for c in dat.effects[t.effect_id].effect_commands):
+            return t
+    return None
+
+
 print("=== card 99 alone ===")
 res = build(1, [99])
 check("applies with no warnings", not res.get("warnings") and not res["bonus_results"]["skipped"],
       (res.get("warnings"), res["bonus_results"]["skipped"]))
-for dep, what, wants in ((SIEGE_WORKSHOP, "Siege Workshop", 705), (CAPPED_RAM, "Capped Ram", 706),
+# Round 1 went through gates, and in game no Feudal Siege Workshop appeared
+# (2026-10-31).  The Workshop and Ram are now this civ's own unlocks.
+ws = own_unlock(1, 49)
+check("the Siege Workshop has a Feudal unlock of this civ's own, needing a Blacksmith (668)",
+      ws is not None and set(ws.required_techs) - {-1} == {FEUDAL, 668} and ws.required_tech_count == 2,
+      ws and list(ws.required_techs))
+ram = own_unlock(1, 1258)
+check("the Battering Ram has a Feudal unlock of this civ's own",
+      ram is not None and set(ram.required_techs) - {-1} == {FEUDAL}, ram and list(ram.required_techs))
+check("and it enables only the Ram (no Cuman cavalry speed)",
+      ram is not None and len(dat.effects[ram.effect_id].effect_commands) == 1)
+for dep, what, wants in ((CAPPED_RAM, "Capped Ram", 706),
                          (CASTLE_COUNT, "Siege Workshop counting toward Castle Age", 295)):
     own = routes(dat, dep, 1)
     check(f"{what} ({dep}) can be reached through this civ's copy of {wants}",
           any(dat.techs[t].name == dat.techs[wants].name for t in own),
           [dat.techs[t].name for t in own])
-ram = routes(dat, RAM, 1)
-check("the Battering Ram (162) has a Feudal route of this civ's own",
-      len(ram) == 1 and list(dat.techs[ram[0]].required_techs)[:1] == [FEUDAL], ram)
-check("and that route carries no effect (no Cuman cavalry speed)",
-      ram and dat.techs[ram[0]].effect_id == -1)
 
 print("\n=== a second civ in the same DAT ===")
 build(2, [99])
-for dep in (SIEGE_WORKSHOP, RAM, CAPPED_RAM, CASTLE_COUNT):
+check("it gets its own unlocks", own_unlock(2, 49) is not None and own_unlock(2, 1258) is not None)
+for dep in (CAPPED_RAM, CASTLE_COUNT):
     check(f"{dep} reaches both civs' routes, from one gate",
           routes(dat, dep, 1) and routes(dat, dep, 2)
           and sum(dat.techs[r].name.startswith(_ALT_GATE_PREFIX)
                   for r in dat.techs[dep].required_techs if r >= 0) == 1)
 
-print("\n=== card 97 (the cavalry speed that copies 711) gives no early Ram ===")
-build(3, [97])
-check("a civ with only card 97 has no Feudal Ram route", not routes(dat, RAM, 3), routes(dat, RAM, 3))
+print("\n=== a tree without rams keeps them out ===")
+with contextlib.redirect_stdout(io.StringIO()):
+    apply_civ(dat, {"alias": "NoRams", "team_bonuses": [], "bonuses": [{"id": 99, "multiplier": 1}],
+                    "tree": {"units": [74, 4], "buildings": [49, 103, 12, 87], "techs": []}},
+              target_slot=3)
+check("no Ram unlock when the tree leaves the Ram out", own_unlock(3, 1258) is None)
+check("the Siege Workshop still comes", own_unlock(3, 49) is not None)
 
 print("\n=== the same shape on other cards: their copies reach the techs that need them ===")
 # 316 Fortified Church: arrows (931, 943-947) and Imperial armour (942) want the

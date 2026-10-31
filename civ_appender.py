@@ -6219,8 +6219,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
                     _copy = seen_bonus.get(_trigger)
                     if _copy is not None:
                         _wired += _add_alt_prereq(dat, _trigger, _copy)
-                if bonus_id == _FEUDAL_RAM_BONUS:
-                    _wired += _add_feudal_ram_trigger(dat, civ_index)
+                if bonus_id == _FEUDAL_SIEGE_BONUS:
+                    _wired += _add_feudal_siege_unlocks(dat, civ_index, civ_def)
                 if _wired:
                     print(f"       Bonus {bonus_id}: {_wired} tech(s) re-pointed "
                           f"at this civ's copy of trigger {_triggers}")
@@ -6646,8 +6646,8 @@ def _gate_add(dat: DatFile, gate_tid: int, member_tid: int) -> None:
 #       149 wants 2 of [102, 668 Blacksmith, 705], Capped Ram 96 wants 103 or
 #       706, and 135's Castle Age building count takes 1218, which wants 295 (a
 #       Siege Workshop counts).  So the card did nothing at all (#109).  The
-#       Ram is the odd one: 162 wants 102 or 711, and 711 is the Cumans' Feudal
-#       cavalry speed bonus, so it gets a trigger of its own (_FEUDAL_RAM_BONUS).
+#       Workshop and Ram themselves are unlocked directly instead; see
+#       _add_feudal_siege_unlocks.
 #   109 "Can build Donjon" — Arrowslits for the Guard Tower and Keep (610,
 #       611) want 2 of [608 Arrowslits, the tower tech, 775 the Sicilian Donjon
 #       trigger]; that pair is what lets them reach the Donjon too.
@@ -6656,7 +6656,7 @@ def _gate_add(dat: DatFile, gate_tid: int, member_tid: int) -> None:
 #       943-947) and its Imperial Age armour (942) wants 2 of [the tech, 930
 #       Georgian, 941 Armenian], so a custom civ's church never improved.
 _ALT_PREREQ_BONUSES: dict[int, tuple[tuple[int, ...], str]] = {
-    99: ((295, 705, 706),
+    99: ((295, 706),
          "the Siege Workshop and Capped Ram keep their usual ages"),
     109: ((775,),
           "Arrowslits will not reach the Donjon"),
@@ -6668,18 +6668,40 @@ _ALT_PREREQ_BONUSES: dict[int, tuple[tuple[int, ...], str]] = {
           "the Heavy Cavalry Archer upgrade stays Imperial-only"),
 }
 
-# The Battering Ram's Feudal route in the game is tech 711, which is also the
-# Cumans' +5% cavalry speed; copying it would bring the speed along.  The card
-# gets an empty Feudal trigger that stands where 711 does instead.
-_FEUDAL_RAM_BONUS = 99
-_FEUDAL_RAM_TRIGGER = 711
+# Card 99's Siege Workshop and Battering Ram come from techs of the civ's own
+# that carry the enable, as the regional unit cards do.  Round 1 of #109 went
+# through the gates instead (an effect-less copy of 705 into Siege Workshop
+# 149, an empty Feudal trigger into Ram 162 where the Cumans' cavalry speed
+# 711 stands); the Capped Ram's gate worked in game, but no Feudal Workshop
+# appeared (2026-10-31).  Which link failed is unknown; this route has no gate.
+_FEUDAL_SIEGE_BONUS = 99
+_FEUDAL_SIEGE_UNLOCKS = (
+    # (name, the vanilla make-avail whose effect it copies, prerequisites)
+    ("EF Feudal Siege Workshop", 149, (101, 668)),     # 668: a Blacksmith stands
+    ("EF Feudal Battering Ram",  162, (101,)),
+)
 
 
-def _add_feudal_ram_trigger(dat: DatFile, civ_index: int) -> int:
-    """This civ's own Feudal Age trigger for the Battering Ram (162); returns
-    the number of techs it was wired into."""
-    dat.techs.append(_make_tech("EF Feudal Battering Ram", -1, civ_index, age_req=101))
-    return _add_alt_prereq(dat, _FEUDAL_RAM_TRIGGER, len(dat.techs) - 1, len(dat.techs) - 1)
+def _add_feudal_siege_unlocks(dat: DatFile, civ_index: int, civ_def: dict) -> int:
+    """This civ's own Feudal Age unlocks for the Siege Workshop and Battering
+    Ram; a tree that leaves either out keeps it out.  Returns how many."""
+    units, buildings = _tree_unit_ids(civ_def), _tree_building_ids(civ_def)
+    has_tree = bool(units or buildings)
+    wanted = {149: not has_tree or 49 in buildings,
+              162: not has_tree or 1258 in units}
+    made = 0
+    for name, make_avail, reqs in _FEUDAL_SIEGE_UNLOCKS:
+        if not wanted[make_avail]:
+            continue
+        src = dat.techs[make_avail]
+        dat.effects.append(Effect(name=name, effect_commands=[
+            deepcopy(ec) for ec in dat.effects[src.effect_id].effect_commands]))
+        tech = _make_tech(name, len(dat.effects) - 1, civ_index)
+        tech.required_techs = tuple(reqs) + (-1,) * (6 - len(reqs))
+        tech.required_tech_count = len(reqs)
+        dat.techs.append(tech)
+        made += 1
+    return made
 
 
 
@@ -8430,6 +8452,41 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
     return cmds, pending_elite_uu_subs, pending_base_uu_subs
 
 
+def _wire_ut_companions(dat: DatFile, civ_index: int, stub_tid: int,
+                        source_tids: list) -> int:
+    """Let the vanilla companions of a preset UT fire for our copy of it.
+
+    Many unique techs have a second, auto-fire half that waits for the UT AND
+    an ordinary upgrade: Svan Towers + Chemistry, the six Thalassocracy techs
+    (Fletching ... Heated Shot), Greek Fire, Citadels, Rocketry and Ming-Kuang
+    Armor + Chemistry, Kshatriyas + Supplies.  They name the vanilla UT, and
+    our UT is a new tech, so none of them ever fired (Svan Towers gave the
+    Fortified Church nothing, seen in game 2026-10-31).  A global companion
+    gets our UT through the alt-prereq gate; one gated to the UT's own civ
+    (Imperial Nomads, Torsion + Chemistry, Paper Money's lumber halves) is
+    copied for this civ with our UT in place of the original.  Returns how
+    many companions now accept it."""
+    limit = len(dat.techs)
+    n = 0
+    for src in {t for t in source_tids if t is not None and 0 <= t < limit}:
+        deps = [i for i in range(limit) if src in dat.techs[i].required_techs
+                and not dat.techs[i].name.startswith(_ALT_GATE_PREFIX)]
+        if any(dat.techs[i].civ == -1 for i in deps):
+            n += _add_alt_prereq(dat, src, stub_tid, limit)
+        for i in deps:
+            orig = dat.techs[i]
+            if orig.civ in (-1, civ_index) or orig.effect_id < 0:
+                continue
+            tech = deepcopy(orig)
+            dat.effects.append(deepcopy(dat.effects[orig.effect_id]))
+            tech.effect_id = len(dat.effects) - 1
+            tech.civ = civ_index
+            tech.required_techs = tuple(stub_tid if r == src else r for r in orig.required_techs)
+            dat.techs.append(tech)
+            n += 1
+    return n
+
+
 def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
                                castle_ut_entries: list,
                                imperial_ut_entries: list,
@@ -8562,6 +8619,12 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
         _append_tech(dat, tech)
         used_tech_ids.append(len(dat.techs) - 1)
         print(f"       {label}: {len(cmds)} effect commands (sid={name_sid})")
+        _n_comp = _wire_ut_companions(dat, civ_index, len(dat.techs) - 1, [
+            ut_source_tech(e[0], e[2]) for e in
+            (_norm_ut_entry(x, "castle" if btn == 7 else "imperial") for x in entries)
+            if e is not None and _UT_BUILT.get((e[2], int(e[0]))) is None])
+        if _n_comp:
+            print(f"       {label}: {_n_comp} companion tech(s) take this UT")
         # Some unique techs are not implemented in the DAT at all.  Writing
         # resource 33, "Effect Function Number", tells the engine to run
         # EffectFunction<N> from its own Effects.xs script, and that script — not

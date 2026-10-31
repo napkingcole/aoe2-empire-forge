@@ -50,7 +50,7 @@ QA = [
         "QA Siege", "Siege",
         share_description="Test: Feudal Siege Workshop and Ram, Fortified Church arrows, Arrowslits on the Donjon.",
         unique_unit={"km_idx": CAMEL_ARCHER, "name": "", "description": ""},
-        bonuses=B(99, 316, 109), team_bonuses=B(3),
+        bonuses=B(99, 316, 109, 24, 44, 175), team_bonuses=B(3),   # 24/44/175: start resources
         castle_ut=preset(52, "castle"),                     # Svan Towers: +2 church arrows
         imperial_ut=preset(0, "imperial"),
         tree=tree_from("BRITONS.json"),                     # Siege Workshop, rams, Monastery, Arrowslits
