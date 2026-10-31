@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Card 99: Siege Workshop and Battering Ram in the Feudal Age.  DAT-gated.
 
+Also cards 316 (Fortified Church) and 109 (Donjon), which had the same flaw.
+
 The card copies the Cumans' techs 295/705/706, but the techs that make the
 Siege Workshop (149), Battering Ram (162) and Capped Ram (96) available are
 global and name the originals, which only the Cumans can fire — so the card did
@@ -86,6 +88,18 @@ for dep in (SIEGE_WORKSHOP, RAM, CAPPED_RAM, CASTLE_COUNT):
 print("\n=== card 97 (the cavalry speed that copies 711) gives no early Ram ===")
 build(3, [97])
 check("a civ with only card 97 has no Feudal Ram route", not routes(dat, RAM, 3), routes(dat, RAM, 3))
+
+print("\n=== the same shape on other cards: their copies reach the techs that need them ===")
+# 316 Fortified Church: arrows (931, 943-947) and Imperial armour (942) want the
+# Georgian 930; 109 Donjon: Arrowslits (610, 611) want the Sicilian 775.
+for slot, card, original, dependents in ((4, 316, 930, (931, 942, 943, 944, 945, 946, 947)),
+                                         (5, 109, 775, (610, 611))):
+    build(slot, [card])
+    for dep in dependents:
+        own = routes(dat, dep, slot)
+        check(f"card {card}: {dat.techs[dep].name} ({dep}) takes this civ's copy of {original}",
+              any(dat.techs[t].name == dat.techs[original].name for t in own),
+              [dat.techs[t].name for t in own])
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")

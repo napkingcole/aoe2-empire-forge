@@ -6648,9 +6648,20 @@ def _gate_add(dat: DatFile, gate_tid: int, member_tid: int) -> None:
 #       Siege Workshop counts).  So the card did nothing at all (#109).  The
 #       Ram is the odd one: 162 wants 102 or 711, and 711 is the Cumans' Feudal
 #       cavalry speed bonus, so it gets a trigger of its own (_FEUDAL_RAM_BONUS).
+#   109 "Can build Donjon" — Arrowslits for the Guard Tower and Keep (610,
+#       611) want 2 of [608 Arrowslits, the tower tech, 775 the Sicilian Donjon
+#       trigger]; that pair is what lets them reach the Donjon too.
+#   316 "Fortified Church replaces Monastery" — every upgrade to its arrows
+#       (Fletching, Bodkin, Bracer, Chemistry, Murder Holes, Svan Towers: 931,
+#       943-947) and its Imperial Age armour (942) wants 2 of [the tech, 930
+#       Georgian, 941 Armenian], so a custom civ's church never improved.
 _ALT_PREREQ_BONUSES: dict[int, tuple[tuple[int, ...], str]] = {
     99: ((295, 705, 706),
          "the Siege Workshop and Capped Ram keep their usual ages"),
+    109: ((775,),
+          "Arrowslits will not reach the Donjon"),
+    316: ((930,),
+          "the Fortified Church gets no arrow or armour upgrades"),
     282: ((789, 788),   # Poles first — the catalog copies that one
           "the Hussar will be disabled with no replacement"),
     360: ((1004,),

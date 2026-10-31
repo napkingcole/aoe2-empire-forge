@@ -8,6 +8,9 @@
                               archers vs villagers), 256 (Scouts vs stone
                               defences), 254 (gunpowder vs camels), 213
                               (Mangonels cut trees)
+  QA Siege    (over Goths)    #109 card 99 (Feudal Siege Workshop and Ram), 316
+                              (Fortified Church arrow and armour upgrades), 109
+                              (Arrowslits reach the Donjon); Svan Towers
 
     venv/bin/python scripts/build_qa_mod_108.py   # writes ignore/qa_108/
 """
@@ -42,6 +45,15 @@ QA = [
         bonuses=[{"id": 243, "multiplier": 4}, *B(253, 256, 254, 213)], team_bonuses=B(3),
         castle_ut=preset(0, "castle"), imperial_ut=preset(0, "imperial"),
         tree=tree_from("SPANISH.json"),                     # Skirmisher, Archer, Scout, Hand Cannoneer, Mangonel
+    )),
+    ("goths", civ(
+        "QA Siege", "Siege",
+        share_description="Test: Feudal Siege Workshop and Ram, Fortified Church arrows, Arrowslits on the Donjon.",
+        unique_unit={"km_idx": CAMEL_ARCHER, "name": "", "description": ""},
+        bonuses=B(99, 316, 109), team_bonuses=B(3),
+        castle_ut=preset(52, "castle"),                     # Svan Towers: +2 church arrows
+        imperial_ut=preset(0, "imperial"),
+        tree=tree_from("BRITONS.json"),                     # Siege Workshop, rams, Monastery, Arrowslits
     )),
 ]
 
