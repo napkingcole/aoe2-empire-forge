@@ -185,7 +185,16 @@
       {# Emblem #}
       <hr style="border-color: oklch(from var(--body-bg) calc(l + 0.12) c h);">
       <label class="form-label fw-semibold">Civ Emblem</label>
-      <div class="form-text mb-2">Shown on the civ selection screen and in-game HUD. PNG or JPG, ideally square.</div>
+      <div class="form-text mb-2">Shown on the civ selection screen and in-game HUD. PNG or JPG, ideally square. Without one, your civ keeps the emblem of the civ it replaces.</div>
+      <div class="alert alert-warning py-2 small mb-3" role="note">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span><i class="fa-solid fa-flag me-1" aria-hidden="true"></i> <strong>No emblem yet?</strong> Design one, download it as a PNG, then choose it below.</span>
+          <a href="https://flag-creator.com/" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm ms-auto">
+            Open Flag Creator <i class="fa-solid fa-arrow-up-right-from-square ms-1" aria-hidden="true"></i>
+          </a>
+        </div>
+        <div class="mt-1 text-muted" style="font-size:.78rem;">flag-creator.com is a free third-party site, not affiliated with Empire Forge.</div>
+      </div>
       <div class="d-flex align-items-start gap-3">
         <div id="emblem-preview-wrap" class="d-none">
           <img id="emblem-preview" src="" alt="Emblem preview"
@@ -200,9 +209,7 @@
           </button>
           <button type="button" id="emblem-clear" class="btn btn-outline-secondary btn-sm d-none" onclick="clearEmblem()">
             Remove
-          </button>
-          <div class="form-text mt-1">Optional — skip to use a solid colour placeholder.</div>
-        </div>
+          </button>        </div>
       </div>
 
     </div>

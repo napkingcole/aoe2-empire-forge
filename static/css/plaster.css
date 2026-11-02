@@ -2224,7 +2224,7 @@ img.card-main-image {
 }
 /* Homepage strip card (Custom Bonuses): the --new look, laid out in a row. */
 .builder-option-strip .builder-option-icon { font-size: 2rem; line-height: 1; }
-.builder-option-strip .card-body { padding-right: 4.5rem !important; }   /* clear the ribbon */
+.builder-option-card--new.builder-option-strip .card-body { padding-right: 4.5rem !important; }   /* clear the ribbon */
 @media (max-width: 576px) {
   .builder-option-strip .card-body { flex-direction: column; text-align: center !important; padding-right: 1.5rem !important; }
 }
