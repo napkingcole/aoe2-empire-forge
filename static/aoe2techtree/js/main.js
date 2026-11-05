@@ -1362,14 +1362,21 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
             resetHighlightPath();
             if (_canEdit) _hideEditTooltip();
         })
-        .click(function () {
+        .click(function (e) {
             if (_canEdit) {
-                _toggleNode(itemToDraw, element_height);
+                // Click opens the side panel; Shift-click is the quick on/off.
+                if (e && e.shiftKey || !window.ttInspector) {
+                    _toggleNode(itemToDraw, element_height);
+                    window.ttInspector?.refresh();
+                } else {
+                    window.ttInspector.select(itemToDraw, element_height);
+                }
             } else {
                 if (focusedNodeId === itemToDraw.id) hideHelp();
                 else displayHelp(itemToDraw.id, itemToDraw.help_string_id, element_height, tree_height);
             }
         });
+    if (_canEdit) window.ttInspector?.decorate(itemToDraw, element_height);
 }
 
 function techtreeDoesNotHaveScrollbar() {
@@ -1580,6 +1587,8 @@ function civ(civName) {
             drawItem(building, element_height, tree_height, draw);
             drawGrid(building, element_height, tree_height, draw, index);
         }
+        // Enable All / Disable All redraw the tree: keep the panel on its node.
+        if (_canEdit) window.ttInspector?.rebind(Object.values(_nodeIndex), element_height);
     });
 }
 
@@ -1633,7 +1642,7 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
     const resetBtn = mkBtn('Disable All',    '#5a1a1a', _disableAll);
     const hint     = document.createElement('span');
     hint.style.cssText = 'color:#aaa;font-size:12px;margin-left:8px;';
-    hint.textContent = 'Click a unit/tech/building to toggle it on or off.';
+    hint.textContent = 'Click a unit, building or tech for its details. Shift-click to turn it on or off.';
 
     toolbar.appendChild(doneBtn);
     toolbar.appendChild(fillBtn);
@@ -1659,6 +1668,52 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             line-height: 1.4;
         }
         #helptext details { display: none; }
+        .node.tt-selected .node__overlay { outline: 3px solid #ffd76a; outline-offset: 1px; border-radius: 2px; }
+        .tt-edited-dot { fill: #ffd76a; stroke: #5a3a08; stroke-width: 1.5px; pointer-events: none; }
+        #tt-inspector {
+            width: 340px; flex-shrink: 0; overflow-y: auto;
+            background: rgba(245,225,170,0.97); border-left: 2px solid #7a5c2e;
+            color: #2a1a05; font-size: 13px; padding: 12px 14px 24px;
+        }
+        .tt-insp-empty { color: #5a4420; line-height: 1.5; }
+        .tt-insp-empty-title, .tt-insp-title { font-weight: 700; font-size: 17px; color: #2a1a05; }
+        .tt-insp-empty-title { margin-bottom: 6px; }
+        .tt-insp-hint { margin-top: 8px; font-size: 12px; opacity: .8; }
+        .tt-insp-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
+        .tt-insp-head { margin-bottom: 8px; }
+        .tt-insp-include { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer;
+            padding: 6px 8px; background: rgba(122,92,46,.12); border-radius: 4px; }
+        .tt-insp-include.is-locked { cursor: default; opacity: .75; }
+        .tt-insp-section { margin: 14px 0 6px; font-weight: 700; font-size: 12px; text-transform: uppercase;
+            letter-spacing: .05em; color: #5a3a08; border-bottom: 1px solid rgba(122,92,46,.35);
+            padding-bottom: 3px; display: flex; justify-content: space-between; align-items: baseline; }
+        .tt-insp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+        .tt-insp-row { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+        .tt-insp-label { font-size: 12px; display: flex; justify-content: space-between; gap: 4px; }
+        .tt-insp-base { opacity: .65; font-size: 11px; }
+        .tt-insp-num { width: 100%; padding: 3px 6px; border: 1px solid #8b6d35; border-radius: 3px;
+            background: #fffaf0; color: #2a1a05; font-size: 13px; }
+        .tt-insp-num.is-edited { border-color: #b8860b; background: #fff1c2; font-weight: 600; }
+        .tt-insp-num:disabled { background: rgba(255,255,255,.35); }
+        .tt-insp-cost { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+        .tt-insp-res { display: grid; grid-template-columns: 18px 1fr; grid-template-rows: auto auto;
+            column-gap: 4px; align-items: center; font-size: 12px; }
+        .tt-insp-res img { width: 18px; height: 18px; grid-row: 1; }
+        .tt-insp-res .tt-insp-num { grid-column: 1 / span 2; }
+        .tt-insp-res.is-off { opacity: .45; }
+        .tt-insp-note { font-size: 12px; opacity: .8; margin-top: 6px; line-height: 1.4; }
+        .tt-insp-error { color: #9b1c1c; font-size: 12px; font-weight: 600; margin-top: 4px; }
+        .tt-insp-error:empty { display: none; }
+        .tt-insp-loading { opacity: .7; margin-top: 10px; }
+        .tt-insp-bonus { display: grid; grid-template-columns: 1fr 70px 22px; gap: 6px; align-items: center; margin-top: 4px; }
+        .tt-insp-bonus-add { display: grid; grid-template-columns: 1fr 60px auto; gap: 6px; margin-top: 8px; }
+        .tt-insp-bonus-add select { font-size: 12px; padding: 3px; border: 1px solid #8b6d35; border-radius: 3px; background: #fffaf0; }
+        .tt-insp-x, .tt-insp-add, .tt-insp-reset, .tt-insp-link {
+            border: 1px solid #8b6d35; background: #f3dfa6; color: #2a1a05; border-radius: 3px; cursor: pointer; font-size: 12px; }
+        .tt-insp-x { padding: 0; line-height: 18px; }
+        .tt-insp-link { border: none; background: none; text-decoration: underline; text-transform: none;
+            letter-spacing: 0; font-weight: 400; padding: 0; }
+        .tt-insp-reset { margin-top: 16px; width: 100%; padding: 5px; }
     `;
     document.head.appendChild(ttStyle);
 
@@ -1677,9 +1732,21 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
     treeWrap.appendChild(treeEl);
     treeWrap.appendChild(helptext);
 
+    // The tree and the side panel share the space below the toolbar.
+    const body = document.createElement('div');
+    body.style.cssText = 'flex:1;display:flex;min-height:0;';
+    const inspector = document.createElement('aside');
+    inspector.id = 'tt-inspector';
+    body.appendChild(treeWrap);
+    body.appendChild(inspector);
+
     container.appendChild(toolbar);
-    container.appendChild(treeWrap);
+    container.appendChild(body);
     document.body.appendChild(container);
+    if (window.ttInspector) {
+        window.ttInspector.load(window.getTreeEdits ? window.getTreeEdits() : null);
+        window.ttInspector.mount(inspector);
+    }
 
     // Scroll-to-horizontal with mouse wheel
     // treeWrap.addEventListener('wheel', function (e) {
@@ -1710,7 +1777,7 @@ function _saveTechTree() {
             _localtree.units.slice(),
             _localtree.buildings.slice(),
             _localtree.techs.slice(),
-        ]);
+        ], window.ttInspector ? window.ttInspector.edits() : null);
     }
     _closeTreeOverlay();
 }

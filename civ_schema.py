@@ -224,6 +224,8 @@ def to_draft(schema: dict) -> dict:
 
         # Phase Two pass-throughs (not yet consumed by build pipeline)
         "second_uu":              s.get("second_uu"),
+        "unit_edits":             norm_unit_edits(s.get("unit_edits")),
+        "tech_edits":             norm_tech_edits(s.get("tech_edits")),
         "unit_overrides":         s.get("unit_overrides",         []),
         "button_moves":           s.get("button_moves",           []),
         "free_techs":             s.get("free_techs",             []),
@@ -337,6 +339,8 @@ def from_draft(draft: dict) -> dict:
         "monk_skin":               draft.get("monk_skin"),
         "monastery_skin_building": draft.get("monastery_skin_building"),
 
+        "unit_edits":              norm_unit_edits(draft.get("unit_edits")),
+        "tech_edits":              norm_tech_edits(draft.get("tech_edits")),
         "unit_overrides":          draft.get("unit_overrides",          []),
         "button_moves":            draft.get("button_moves",            []),
         "free_techs":              draft.get("free_techs",              []),
@@ -366,6 +370,113 @@ def norm_elite_upgrade(raw) -> dict | None:
     out = {"cost": {r: num(cost.get(r)) for r in ("food", "wood", "stone", "gold")},
            "time": num(raw.get("time"))}
     return out if out["time"] or any(out["cost"].values()) else None
+
+
+# ── Tech-tree edits (the tree page's side panel) ─────────────────────────────
+#
+# unit_edits — {unit id: fields}, written straight onto the civ's own copy of
+#   the unit (civ_overrides._apply_unit_edits), so they cost no effect commands.
+#   A cost is the COMPLETE spendable cost: unlisted or 0 resources are not
+#   charged.  Cost and train time flow down the unit's upgrade line.
+# tech_edits — {tech id: {"cost": {...}, "time": s}}, applied as multiply
+#   "ghost" commands, since a tech is shared by every civ.
+#
+# Each field is clamped to what its DAT field holds; anything unreadable is
+# dropped rather than guessed at.
+
+_SHORT = 32767
+_UNIT_EDIT_FIELDS: dict[str, tuple[type, float, float]] = {
+    "hp":     (int,   1,   _SHORT),
+    "attack": (int,   0,   _SHORT),
+    # Armour can be negative: the Dark Age House has -2 melee.
+    "melee":  (int,   -_SHORT, _SHORT),
+    "pierce": (int,   -_SHORT, _SHORT),
+    "range":  (float, 0,   100),
+    "reload": (float, 0.1, 100),
+    "speed":  (float, 0,   10),
+    "los":    (float, 0,   100),
+    "train":  (int,   1,   _SHORT),
+}
+_RESOURCES = ("food", "wood", "stone", "gold")
+
+
+def _num(v, kind, lo, hi):
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    if x != x or x in (float("inf"), float("-inf")):
+        return None
+    x = min(max(x, lo), hi)
+    return int(round(x)) if kind is int else round(x, 3)
+
+
+def _norm_cost(raw) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    out = {r: _num(raw.get(r) or 0, int, 0, _SHORT) for r in _RESOURCES}
+    return {r: (v or 0) for r, v in out.items()}
+
+
+def _id_key(k) -> str | None:
+    try:
+        i = int(k)
+    except (TypeError, ValueError):
+        return None
+    return str(i) if i >= 0 else None
+
+
+def norm_unit_edits(raw) -> dict:
+    """{"<unit id>": {hp, attack, melee, pierce, range, reload, speed, los,
+    train, cost: {food, wood, stone, gold}, bonus: {"<class>": amount}}}."""
+    out: dict = {}
+    if not isinstance(raw, dict):
+        return out
+    for k, e in raw.items():
+        key = _id_key(k)
+        if key is None or not isinstance(e, dict):
+            continue
+        clean: dict = {}
+        for f, (kind, lo, hi) in _UNIT_EDIT_FIELDS.items():
+            if e.get(f) is not None and (v := _num(e[f], kind, lo, hi)) is not None:
+                clean[f] = v
+        cost = _norm_cost(e.get("cost"))
+        if cost is not None:
+            clean["cost"] = cost
+        if isinstance(e.get("bonus"), dict):
+            bonus = {}
+            for c, a in e["bonus"].items():
+                ck = _id_key(c)
+                # 3 and 4 are the unit's own pierce/melee attack ("attack").
+                if ck is None or int(ck) in (3, 4):
+                    continue
+                if (v := _num(a, int, 0, _SHORT)) is not None:
+                    bonus[ck] = v
+            if bonus:
+                clean["bonus"] = bonus
+        if clean:
+            out[key] = clean
+    return out
+
+
+def norm_tech_edits(raw) -> dict:
+    """{"<tech id>": {"cost": {food, wood, stone, gold}, "time": seconds}}."""
+    out: dict = {}
+    if not isinstance(raw, dict):
+        return out
+    for k, e in raw.items():
+        key = _id_key(k)
+        if key is None or not isinstance(e, dict):
+            continue
+        clean: dict = {}
+        cost = _norm_cost(e.get("cost"))
+        if cost is not None:
+            clean["cost"] = cost
+        if e.get("time") is not None and (t := _num(e["time"], int, 0, _SHORT)) is not None:
+            clean["time"] = t
+        if clean:
+            out[key] = clean
+    return out
 
 
 def is_empireforge(data: dict) -> bool:

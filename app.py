@@ -2992,6 +2992,133 @@ def api_builder_ut_costs():
     return jsonify(_DAT_COSTS_CACHE[dat_path])
 
 
+# ── Tech tree side panel ──────────────────────────────────────────────────────
+
+_SUCC_CACHE: dict[str, dict] = {}
+
+# Every armour class a bonus can aim at, for the panel's picker.  Names from the
+# UGC guide's damage_calculation table, except 10 (villagers carry it, found
+# for card 243) and 31, which the guide calls unused but is the
+# cavalry-vs-buildings class.  3 and 4 are the unit's own pierce/melee attack.
+_PANEL_CLASS_NAMES: dict[int, str] = {
+    **{c: n for c, n in _ATTACK_CLASS_NAMES.items()},
+    0: "wonders", 10: "villagers", 11: "all buildings", 13: "stone defenses",
+    14: "predator animals", 17: "rams, trebuchets, siege towers", 22: "walls and gates",
+    23: "gunpowder units", 25: "monks", 26: "castles", 35: "mamelukes",
+    36: "heroes and kings", 37: "hussite wagons",
+}
+
+
+@app.route("/api/builder/node-info")
+def api_builder_node_info():
+    """The base values the tech tree's side panel shows and edits for one node.
+
+    Read from the Britons, the template every custom civ clones, so they are
+    exactly what an edit replaces.  ?kind=unit|building|tech&id=N."""
+    import civ_overrides as co
+    from civ_appender import _display_name
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    kind = request.args.get("kind", "unit")
+    try:
+        nid = int(request.args.get("id", ""))
+    except ValueError:
+        return jsonify({"status": "error", "error": "bad id"}), 400
+    dat = _get_dat(dat_path)
+    res_names = {v: k for k, v in co._RES.items()}
+
+    def cost_of(slots) -> dict:
+        c = {r: 0 for r in co._RES}
+        for rc in slots:
+            if rc.type in res_names and rc.amount > 0:
+                c[res_names[rc.type]] = int(rc.amount)
+        return c
+
+    if kind == "tech":
+        if not 0 <= nid < len(dat.techs):
+            return jsonify({"status": "error", "error": "unknown tech"}), 404
+        t = dat.techs[nid]
+        return jsonify({"status": "ok", "kind": "tech", "id": nid,
+                        "name": _display_name(t.language_dll_name, t.name) or t.name,
+                        "icon": _tech_icon(nid, None, dat),
+                        "cost": cost_of(t.resource_costs), "time": co._tech_time(t)})
+
+    units = dat.civs[1].units
+    if not (0 <= nid < len(units)) or units[nid] is None:
+        return jsonify({"status": "error", "error": "unknown unit"}), 404
+    u = units[nid]
+    if dat_path not in _SUCC_CACHE:
+        _SUCC_CACHE[dat_path] = co.upgrade_successors(dat)
+    succ = _SUCC_CACHE[dat_path]
+    pred: dict[int, list[int]] = {}
+    for a, bs in succ.items():
+        for b in bs:
+            pred.setdefault(b, []).append(a)
+
+    def walk(start, graph):
+        out, todo = [], list(graph.get(start, ()))
+        while todo:
+            x = todo.pop(0)
+            if x not in out and x != start:
+                out.append(x)
+                todo += sorted(graph.get(x, ()))
+        return out
+
+    memo: dict[int, int] = {}
+
+    def depth(x, seen=()):
+        if x not in memo:
+            memo[x] = 1 + max((depth(p, seen + (x,)) for p in pred.get(x, ()) if p not in seen),
+                              default=-1)
+        return memo[x]
+
+    # The upgrade that produces this unit (Cavalier for the Cavalier node).
+    upgrade = None
+    for tid, t in enumerate(dat.techs):
+        if tid in co._AGE_TECHS or t.civ != -1 or not 0 <= t.effect_id < len(dat.effects):
+            continue
+        if not any(rl.location_id >= 0 for rl in t.research_locations):
+            continue
+        if any(c.type == 3 and c.b == nid for c in dat.effects[t.effect_id].effect_commands):
+            upgrade = {"id": tid, "name": _display_name(t.language_dll_name, t.name) or t.name,
+                       "cost": cost_of(t.resource_costs), "time": co._tech_time(t)}
+            break
+
+    stats = co.read_unit_stats(u)
+    slots = u.creatable.resource_costs if u.creatable else ()
+    spendable = sum(1 for rc in slots if rc.type in co._SPENDABLE or rc.type == -1)
+    bonus = []
+    if u.type_50 is not None:
+        bonus = [{"cls": a.class_, "amount": int(a.amount),
+                  "name": _PANEL_CLASS_NAMES.get(a.class_)}
+                 for a in u.type_50.attacks if a.class_ not in (3, 4) and a.amount > 0]
+    trains = [tl.train_time for tl in u.creatable.train_locations] if u.creatable else []
+    forms = co.unit_forms(dat, units, nid)
+    return jsonify({
+        "status": "ok", "kind": kind, "id": nid,
+        "name": _display_name(u.language_dll_name, u.name) or u.name,
+        "icon": (_building_icon if kind == "building" else _unit_icon)(nid, dat),
+        "hp": int(stats["hp"]), "speed": round(stats["speed"], 3), "los": round(stats["los"], 2),
+        "attack": int(stats.get("attack") or 0), "melee": int(stats.get("melee") or 0),
+        "pierce": int(stats.get("pierce") or 0),
+        "range": round(stats.get("range") or 0, 2), "reload": round(stats.get("reload") or 0, 3),
+        "fights": co._fights(u), "moves": bool(u.speed),
+        "train": int(trains[0]) if trains else 0,
+        "cost": cost_of(slots), "cost_slots": spendable,
+        "bonus": bonus,
+        "bonus_classes": [{"cls": c, "name": n} for c, n in sorted(_PANEL_CLASS_NAMES.items(),
+                                                                   key=lambda kv: kv[1])],
+        # Ancestors latest first (Paladin: Cavalier, then Knight), the order the
+        # build's _flow_down picks an inherited cost in.
+        "line_after": walk(nid, succ),
+        "line_before": sorted(walk(nid, {k: set(v) for k, v in pred.items()}),
+                              key=lambda x: (-depth(x), x)),
+        "forms": len(forms),
+        "upgrade": upgrade,
+    })
+
+
 # Parsed in the background on first use: the preview must never block on the
 # ~16s DAT load (2.2.0 hung on exactly that), so a cold call says "loading".
 _DAT_LOADING: set[str] = set()
