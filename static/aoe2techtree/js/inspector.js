@@ -214,9 +214,14 @@
         const kind = kindOf(item);
         const name = (typeof formatName === 'function' && data.strings)
             ? formatName(data.strings[item.name_string_id] || item.name) : item.name;
+        const icon = typeof _imgroot === 'string' && item.picture_index !== undefined
+            ? `${_imgroot}/${item.use_type}/${item.picture_index}.png` : '';
         panel.innerHTML = `<div class="tt-insp-head">
-                <div class="tt-insp-title">${esc(String(name).replace(/\n/g, ' '))}</div>
-                <div class="tt-insp-kind">${kind === 'tech' ? 'Technology' : kind === 'building' ? 'Building' : 'Unit'}</div>
+                ${icon ? `<img class="tt-insp-icon" src="${esc(icon)}" alt="">` : ''}
+                <div>
+                    <div class="tt-insp-title">${esc(String(name).replace(/\n/g, ' '))}</div>
+                    <div class="tt-insp-kind">${kind === 'tech' ? 'Technology' : kind === 'building' ? 'Building' : 'Unit'}</div>
+                </div>
             </div>
             ${includeRow(item)}
             <div id="tt-insp-body"><div class="tt-insp-loading">Loading stats…</div></div>`;

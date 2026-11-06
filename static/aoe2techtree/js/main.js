@@ -1670,50 +1670,87 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         #helptext details { display: none; }
         .node.tt-selected .node__overlay { outline: 3px solid #ffd76a; outline-offset: 1px; border-radius: 2px; }
         .tt-edited-dot { fill: #ffd76a; stroke: #5a3a08; stroke-width: 1.5px; pointer-events: none; }
-        #tt-inspector {
-            width: 340px; flex-shrink: 0; overflow-y: auto;
-            background: rgba(245,225,170,0.97); border-left: 2px solid #7a5c2e;
-            color: #2a1a05; font-size: 13px; padding: 12px 14px 24px;
+        /* The panel is a sheet of parchment laid over the right of the tree: the
+           torn edges are transparent, so the tree shows around them.  A 9-slice
+           border-image keeps the edges at their size however tall the panel is. */
+        #tt-inspector-frame {
+            position: absolute; top: 6px; right: 6px; bottom: 6px; width: 380px; z-index: 5;
+            border-style: solid; border-width: 30px 28px;
+            border-image: url('/static/img/parchment-panel.webp') 60 56 fill / 30px 28px stretch;
+            filter: drop-shadow(0 8px 14px rgba(0,0,0,.6)) drop-shadow(0 1px 2px rgba(0,0,0,.4));
+            display: flex;
         }
-        .tt-insp-empty { color: #5a4420; line-height: 1.5; }
-        .tt-insp-empty-title, .tt-insp-title { font-weight: 700; font-size: 17px; color: #2a1a05; }
-        .tt-insp-empty-title { margin-bottom: 6px; }
-        .tt-insp-hint { margin-top: 8px; font-size: 12px; opacity: .8; }
-        .tt-insp-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
-        .tt-insp-head { margin-bottom: 8px; }
+        #tt-inspector {
+            flex: 1; overflow-y: auto; min-height: 0; padding: 4px 8px 12px 4px;
+            color: #2e1d08; font: 13px/1.35 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            scrollbar-width: thin; scrollbar-color: rgba(110,75,30,.55) transparent;
+        }
+        #tt-inspector > * { animation: tt-insp-in .18s ease-out; }
+        @keyframes tt-insp-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+        #techtree { padding-right: 400px; }
+        /* The tree's own scrollbars: thin and brown, faint until you point at
+           the tree or scroll it, so they stay findable without the grey bar. */
+        #tt-tree-wrap { scrollbar-width: thin; scrollbar-color: rgba(70,42,12,.28) transparent; }
+        #tt-tree-wrap:hover, #tt-tree-wrap.is-scrolling { scrollbar-color: rgba(70,42,12,.75) rgba(70,42,12,.12); }
+        .tt-insp-empty { color: #5a4420; line-height: 1.5; text-align: center; padding-top: 18px; }
+        .tt-insp-empty-title, .tt-insp-title {
+            font-family: 'Cinzel', 'Times New Roman', serif; font-weight: 700; color: #3a1f04;
+            text-shadow: 0 1px 0 rgba(255,245,215,.6); }
+        .tt-insp-empty-title { font-size: 20px; margin-bottom: 8px; }
+        .tt-insp-title { font-size: 19px; line-height: 1.15; }
+        .tt-insp-hint { margin-top: 10px; font-size: 12px; font-style: italic; opacity: .8; }
+        .tt-insp-kind { font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em; color: #7a5424; margin-top: 3px; font-weight: 600; }
+        .tt-insp-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding-bottom: 10px;
+            border-bottom: 1px solid transparent;
+            border-image: linear-gradient(90deg, rgba(110,75,30,0), rgba(110,75,30,.55), rgba(110,75,30,0)) 1; }
+        .tt-insp-icon { width: 52px; height: 52px; flex-shrink: 0; border-radius: 3px;
+            border: 2px solid #6b4a1c; box-shadow: 0 0 0 1px #d9b86a, 0 3px 6px rgba(0,0,0,.35); }
         .tt-insp-include { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer;
-            padding: 6px 8px; background: rgba(122,92,46,.12); border-radius: 4px; }
+            padding: 7px 10px; background: rgba(110,75,30,.12); border: 1px solid rgba(110,75,30,.25); border-radius: 5px; }
+        .tt-insp-include input { accent-color: #8a5a12; width: 15px; height: 15px; }
         .tt-insp-include.is-locked { cursor: default; opacity: .75; }
-        .tt-insp-section { margin: 14px 0 6px; font-weight: 700; font-size: 12px; text-transform: uppercase;
-            letter-spacing: .05em; color: #5a3a08; border-bottom: 1px solid rgba(122,92,46,.35);
-            padding-bottom: 3px; display: flex; justify-content: space-between; align-items: baseline; }
-        .tt-insp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+        .tt-insp-section { margin: 18px 0 8px; font: 700 13px 'Cinzel', 'Times New Roman', serif;
+            letter-spacing: .06em; color: #5a3306; padding-bottom: 4px;
+            border-bottom: 1px solid transparent;
+            border-image: linear-gradient(90deg, rgba(110,75,30,.6), rgba(110,75,30,0)) 1;
+            display: flex; justify-content: space-between; align-items: baseline; }
+        .tt-insp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
         .tt-insp-row { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
-        .tt-insp-label { font-size: 12px; display: flex; justify-content: space-between; gap: 4px; }
-        .tt-insp-base { opacity: .65; font-size: 11px; }
-        .tt-insp-num { width: 100%; padding: 3px 6px; border: 1px solid #8b6d35; border-radius: 3px;
-            background: #fffaf0; color: #2a1a05; font-size: 13px; }
-        .tt-insp-num.is-edited { border-color: #b8860b; background: #fff1c2; font-weight: 600; }
-        .tt-insp-num:disabled { background: rgba(255,255,255,.35); }
-        .tt-insp-cost { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+        .tt-insp-label { font-size: 12px; font-weight: 500; color: #4a2e0c; display: flex; justify-content: space-between; gap: 4px; }
+        .tt-insp-base { opacity: .7; font-size: 11px; font-style: italic; font-weight: 400; }
+        .tt-insp-num { width: 100%; padding: 4px 7px; border: 1px solid rgba(110,75,30,.45); border-radius: 4px;
+            background: rgba(255,250,235,.55); color: #2e1d08; font: 600 13px 'Inter', sans-serif;
+            font-variant-numeric: tabular-nums; box-shadow: inset 0 1px 2px rgba(80,50,10,.15);
+            transition: border-color .12s, box-shadow .12s, background .12s; }
+        .tt-insp-num::placeholder { color: #3e2a10; opacity: .8; font-weight: 500; }
+        .tt-insp-num:hover:not(:disabled) { border-color: rgba(110,75,30,.8); }
+        .tt-insp-num:focus { outline: none; border-color: #a8740f; background: rgba(255,252,242,.9);
+            box-shadow: 0 0 0 3px rgba(212,160,40,.3); }
+        .tt-insp-num.is-edited { border-color: #b07a10; background: rgba(255,226,140,.55); color: #4a2a00; }
+        .tt-insp-num:disabled { background: rgba(255,255,255,.18); box-shadow: none; }
+        .tt-insp-cost { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
         .tt-insp-res { display: grid; grid-template-columns: 18px 1fr; grid-template-rows: auto auto;
-            column-gap: 4px; align-items: center; font-size: 12px; }
-        .tt-insp-res img { width: 18px; height: 18px; grid-row: 1; }
+            column-gap: 5px; align-items: center; font-size: 12px; font-weight: 500; color: #4a2e0c; }
+        .tt-insp-res img { width: 18px; height: 18px; grid-row: 1; filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
         .tt-insp-res .tt-insp-num { grid-column: 1 / span 2; }
-        .tt-insp-res.is-off { opacity: .45; }
-        .tt-insp-note { font-size: 12px; opacity: .8; margin-top: 6px; line-height: 1.4; }
+        .tt-insp-res.is-off { opacity: .4; }
+        .tt-insp-note { font-size: 12px; font-style: italic; color: #5a3d14; margin-top: 6px; line-height: 1.4; }
         .tt-insp-error { color: #9b1c1c; font-size: 12px; font-weight: 600; margin-top: 4px; }
         .tt-insp-error:empty { display: none; }
-        .tt-insp-loading { opacity: .7; margin-top: 10px; }
+        .tt-insp-loading { opacity: .7; margin-top: 10px; font-style: italic; }
         .tt-insp-bonus { display: grid; grid-template-columns: 1fr 70px 22px; gap: 6px; align-items: center; margin-top: 4px; }
         .tt-insp-bonus-add { display: grid; grid-template-columns: 1fr 60px auto; gap: 6px; margin-top: 8px; }
-        .tt-insp-bonus-add select { font-size: 12px; padding: 3px; border: 1px solid #8b6d35; border-radius: 3px; background: #fffaf0; }
+        .tt-insp-bonus-add select { font-size: 12px; padding: 3px; border: 1px solid rgba(110,75,30,.45); border-radius: 4px;
+            background: rgba(255,250,235,.55); color: #2e1d08; }
         .tt-insp-x, .tt-insp-add, .tt-insp-reset, .tt-insp-link {
-            border: 1px solid #8b6d35; background: #f3dfa6; color: #2a1a05; border-radius: 3px; cursor: pointer; font-size: 12px; }
+            border: 1px solid #7a5424; background: linear-gradient(#f6e2a8, #e2c27a); color: #3a2208;
+            border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;
+            box-shadow: 0 1px 2px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.5); }
+        .tt-insp-x:hover, .tt-insp-add:hover, .tt-insp-reset:hover { background: linear-gradient(#fbecc0, #e9cd8c); }
         .tt-insp-x { padding: 0; line-height: 18px; }
-        .tt-insp-link { border: none; background: none; text-decoration: underline; text-transform: none;
-            letter-spacing: 0; font-weight: 400; padding: 0; }
-        .tt-insp-reset { margin-top: 16px; width: 100%; padding: 5px; }
+        .tt-insp-link { border: none; background: none; box-shadow: none; text-decoration: underline; text-transform: none;
+            letter-spacing: 0; font: 400 12px 'Inter', sans-serif; padding: 0; color: #6b3f06; }
+        .tt-insp-reset { margin-top: 18px; width: 100%; padding: 6px; font-family: 'Cinzel', serif; letter-spacing: .04em; }
     `;
     document.head.appendChild(ttStyle);
 
@@ -1725,7 +1762,14 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
 
     // Tree panel
     const treeWrap = document.createElement('div');
+    treeWrap.id = 'tt-tree-wrap';
     treeWrap.style.cssText = 'flex:1;overflow:auto;position:relative;';
+    let scrollFade;
+    treeWrap.addEventListener('scroll', () => {
+        treeWrap.classList.add('is-scrolling');
+        clearTimeout(scrollFade);
+        scrollFade = setTimeout(() => treeWrap.classList.remove('is-scrolling'), 900);
+    }, { passive: true });
     const treeEl = document.createElement('div');
     treeEl.id = 'techtree';
     treeEl.style.cssText = 'width:max-content;min-height:100%;';
@@ -1734,11 +1778,14 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
 
     // The tree and the side panel share the space below the toolbar.
     const body = document.createElement('div');
-    body.style.cssText = 'flex:1;display:flex;min-height:0;';
-    const inspector = document.createElement('aside');
+    body.style.cssText = 'flex:1;display:flex;min-height:0;position:relative;';
+    const frame = document.createElement('aside');
+    frame.id = 'tt-inspector-frame';
+    const inspector = document.createElement('div');
     inspector.id = 'tt-inspector';
+    frame.appendChild(inspector);
     body.appendChild(treeWrap);
-    body.appendChild(inspector);
+    body.appendChild(frame);
 
     container.appendChild(toolbar);
     container.appendChild(body);
