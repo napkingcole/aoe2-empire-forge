@@ -126,6 +126,120 @@ def _refresh_uu_tooltips(dat, slot: int, civ_result: dict | None) -> None:
             unit, ext["name"], tag=regen.get("tag", ""), desc=regen.get("desc", ""))
 
 
+_RES = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
+_SPENDABLE = set(_RES.values())
+
+
+def _dominant_attack(u):
+    cls4 = next((a for a in u.type_50.attacks if a.class_ == 4), None)
+    cls3 = next((a for a in u.type_50.attacks if a.class_ == 3), None)
+    return cls4 if (cls4 and (not cls3 or cls4.amount >= cls3.amount)) else cls3
+
+
+def write_unit_stats(u, stats: dict) -> None:
+    """Write player-set stats onto one unit: hp, speed, range, reload, attack,
+    melee, pierce, los, train.  Absent (or None) means "keep the game's".
+    Shared by the unique unit's overrides and the tech tree's unit edits."""
+    stats = {k: v for k, v in stats.items() if v is not None}
+
+    if "hp" in stats:
+        u.hit_points = int(stats["hp"])
+
+    if "speed" in stats:
+        u.speed = float(stats["speed"])
+
+    if "los" in stats:
+        u.line_of_sight = float(stats["los"])
+
+    if u.type_50 is not None:
+        # Each stat has a real field and a displayed one, and KM writes both.
+        # Writing only the displayed reload left the unit attacking at its
+        # vanilla speed (issues #98, #104); only max_range left the tooltip
+        # on the old range.
+        if "range" in stats:
+            u.type_50.max_range = u.type_50.displayed_range = float(stats["range"])
+
+        if "reload" in stats:
+            u.type_50.reload_time = u.type_50.displayed_reload_time = float(stats["reload"])
+
+        if "attack" in stats:
+            v = int(stats["attack"])
+            u.type_50.displayed_attack = v
+            dominant = _dominant_attack(u)
+            if dominant:
+                dominant.amount = v
+            elif u.type_50.attacks:
+                u.type_50.attacks[0].amount = v
+
+        if "melee" in stats:
+            v = int(stats["melee"])
+            for a in u.type_50.armours:
+                if a.class_ == 4:
+                    a.amount = v
+                    break
+            u.type_50.displayed_melee_armour = v
+
+        if "pierce" in stats:
+            v = int(stats["pierce"])
+            for a in u.type_50.armours:
+                if a.class_ == 3:
+                    a.amount = v
+                    break
+            if u.creatable:
+                u.creatable.displayed_pierce_armour = v
+
+    if "train" in stats and u.creatable:
+        # train_time is a field of each TrainLocation, not of the unit, so a
+        # UU that trains in more than one building has one copy per slot.
+        # Writing only [0] left the Anarchy Barracks slot and the Krepost
+        # slot on the vanilla time while the Castle showed the override
+        # (issue #29).  apply_civ appends those extra slots before we run,
+        # so every one of them is already here.
+        for tl in u.creatable.train_locations:
+            tl.train_time = int(stats["train"])
+
+
+def write_unit_cost(u, cost: dict, label: str = "unit") -> None:
+    """Make {food, wood, stone, gold} the unit's complete spendable cost.
+
+    `resource_costs` is a fixed 3-slot tuple, and most trainable units spend
+    one slot on population (type 4, flag 0), which leaves room for just TWO
+    spendable resources.  The old code merged into whatever slots happened to
+    be free, so asking a Samurai (food + gold + population — all three slots
+    full) for wood silently dropped the wood and left the vanilla cost intact
+    (issue #35).
+
+    The cost is therefore read as the complete spendable cost, not as a patch
+    over the vanilla one: "wood 65, gold 30" means the unit costs 65 wood and
+    30 gold, with the unmentioned food gone.  Non-spendable slots (population,
+    and the rarer 214/215/501/514 counters) are preserved.  Writing the slots
+    directly can retype them, which an EC_SET cannot (CLAUDE.md quirk 14).
+    """
+    if not u.creatable:
+        return
+    _NAME  = {v: k for k, v in _RES.items()}
+    wanted = [(_RES[r], int(a)) for r, a in sorted(cost.items(), key=lambda kv: _RES[kv[0]])
+              if r in _RES and int(a or 0) > 0]
+    rc = u.creatable.resource_costs
+    free = [i for i, s in enumerate(rc) if s.type in _SPENDABLE or s.type == -1]
+
+    if len(wanted) > len(free):
+        dropped = ", ".join(f"{_NAME[t]} {a}" for t, a in wanted[len(free):])
+        print(f"       WARNING: {label} cost needs {len(wanted)} resource "
+              f"slots but only {len(free)} are spendable (a unit has 3 slots "
+              f"total and this one reserves "
+              f"{len(rc) - len(free)} for population) — dropped: {dropped}")
+
+    for i, (res_type, amount) in zip(free, wanted):
+        rc[i].type   = res_type
+        rc[i].amount = amount
+        rc[i].flag   = 1
+    for i in free[len(wanted):]:          # clear any slot we no longer use
+        rc[i].type   = -1
+        rc[i].amount = 0
+        rc[i].flag   = 0
+
+
 def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> None:
     """
     Apply wizard stat overrides and advanced flags to UU unit objects in the DAT.
@@ -181,111 +295,18 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
     # ── Stat overrides ──────────────────────────────────────────────────────
 
     for u, sfx in tiers:
-        if u is None:
-            continue
+        if u is not None:
+            write_unit_stats(u, {k[:-len(sfx)]: v for k, v in overrides.items()
+                                 if k.endswith(sfx)})
 
-        if overrides.get(f"hp{sfx}") is not None:
-            u.hit_points = int(overrides[f"hp{sfx}"])
-
-        if overrides.get(f"speed{sfx}") is not None:
-            u.speed = float(overrides[f"speed{sfx}"])
-
-        if u.type_50 is not None:
-            # Each stat has a real field and a displayed one, and KM writes both.
-            # Writing only the displayed reload left the unit attacking at its
-            # vanilla speed (issues #98, #104); only max_range left the tooltip
-            # on the old range.
-            if overrides.get(f"range{sfx}") is not None:
-                u.type_50.max_range = u.type_50.displayed_range = float(overrides[f"range{sfx}"])
-
-            if overrides.get(f"reload{sfx}") is not None:
-                u.type_50.reload_time = u.type_50.displayed_reload_time = float(overrides[f"reload{sfx}"])
-
-            if overrides.get(f"attack{sfx}") is not None:
-                v = int(overrides[f"attack{sfx}"])
-                u.type_50.displayed_attack = v
-                cls4 = next((a for a in u.type_50.attacks if a.class_ == 4), None)
-                cls3 = next((a for a in u.type_50.attacks if a.class_ == 3), None)
-                dominant = (
-                    cls4 if (cls4 and (not cls3 or cls4.amount >= cls3.amount)) else cls3
-                )
-                if dominant:
-                    dominant.amount = v
-                elif u.type_50.attacks:
-                    u.type_50.attacks[0].amount = v
-
-            if overrides.get(f"melee{sfx}") is not None:
-                v = int(overrides[f"melee{sfx}"])
-                for a in u.type_50.armours:
-                    if a.class_ == 4:
-                        a.amount = v
-                        break
-                u.type_50.displayed_melee_armour = v
-
-            if overrides.get(f"pierce{sfx}") is not None:
-                v = int(overrides[f"pierce{sfx}"])
-                for a in u.type_50.armours:
-                    if a.class_ == 3:
-                        a.amount = v
-                        break
-                if u.creatable:
-                    u.creatable.displayed_pierce_armour = v
-
-        if overrides.get(f"train{sfx}") is not None and u.creatable:
-            # train_time is a field of each TrainLocation, not of the unit, so a
-            # UU that trains in more than one building has one copy per slot.
-            # Writing only [0] left the Anarchy Barracks slot and the Krepost
-            # slot on the vanilla time while the Castle showed the override
-            # (issue #29).  apply_civ appends those extra slots before we run,
-            # so every one of them is already here.
-            for tl in u.creatable.train_locations:
-                tl.train_time = int(overrides[f"train{sfx}"])
-
-    # Training cost overrides (shared — applies to both tiers).
-    #
-    # `resource_costs` is a fixed 3-slot tuple, and most trainable units spend
-    # one slot on population (type 4, flag 0), which leaves room for just TWO
-    # spendable resources.  The old code merged into whatever slots happened to
-    # be free, so asking a Samurai (food + gold + population — all three slots
-    # full) for wood silently dropped the wood and left the vanilla cost intact
-    # (issue #35).
-    #
-    # The four cost boxes are therefore read as the complete spendable cost, not
-    # as a patch over the vanilla one: filling in "wood 65, gold 30" means the
-    # unit costs 65 wood and 30 gold, with the unmentioned food gone.  That
-    # matches the wizard, which shows one combined "Default: 45F 30G" label for
-    # the whole row rather than a per-resource default.  Non-spendable slots
-    # (population, and the rarer 214/215/501/514 counters) are preserved.
-    _RES = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
-    _SPENDABLE = set(_RES.values())
-    cost_overrides = {
-        _RES[r]: int(overrides[f"cost_{r}"])
-        for r in _RES if f"cost_{r}" in overrides
-    }
+    # Training cost overrides (shared — applies to both tiers).  The four boxes
+    # are the complete spendable cost, matching the wizard's one combined
+    # "Default: 45F 30G" label; see write_unit_cost.
+    cost_overrides = {r: int(overrides[f"cost_{r}"]) for r in _RES if f"cost_{r}" in overrides}
     if cost_overrides:
-        _NAME  = {v: k for k, v in _RES.items()}
-        wanted = [(t, a) for t, a in sorted(cost_overrides.items()) if a > 0]
         for u, _ in tiers:
-            if u is None or not u.creatable:
-                continue
-            rc = u.creatable.resource_costs
-            free = [i for i, s in enumerate(rc) if s.type in _SPENDABLE or s.type == -1]
-
-            if len(wanted) > len(free):
-                dropped = ", ".join(f"{_NAME[t]} {a}" for t, a in wanted[len(free):])
-                print(f"       WARNING: unique unit cost needs {len(wanted)} resource "
-                      f"slots but only {len(free)} are spendable (a unit has 3 slots "
-                      f"total and this one reserves "
-                      f"{len(rc) - len(free)} for population) — dropped: {dropped}")
-
-            for i, (res_type, amount) in zip(free, wanted):
-                rc[i].type   = res_type
-                rc[i].amount = amount
-                rc[i].flag   = 1
-            for i in free[len(wanted):]:          # clear any slot we no longer use
-                rc[i].type   = -1
-                rc[i].amount = 0
-                rc[i].flag   = 0
+            if u is not None:
+                write_unit_cost(u, cost_overrides, "unique unit")
 
     # ── Advanced flags ──────────────────────────────────────────────────────
 
@@ -573,6 +594,242 @@ def _apply_hero_unit(dat, slot: int, draft: dict) -> None:
             unit.creatable.train_locations[0].train_time = int(overrides["train_time"])
 
 
+# ── Tech-tree edits (the tree page's side panel) ─────────────────────────────
+
+# Age-ups swap every building for its next-age unit (Barracks 12 -> 498 -> 132
+# -> 20) by EC_UPGRADE, so an edit on the node id alone is gone at Feudal.
+_AGE_TECHS = (101, 102, 103)
+
+# One thing in the game, several units in the DAT.  The tree shows one node;
+# an edit has to reach every form, or a packed Trebuchet keeps the old HP the
+# moment it unpacks.  Vanilla's own effects disagree on which form to target
+# (Trade Cart and Ram effects hit both, Trebuchet effects mostly the unpacked
+# 42, Monk effects only 125), so the forms are listed rather than inferred.
+_UNIT_FORMS: dict[int, tuple[int, ...]] = {
+    331:  (42,),     # Trebuchet: packed (trained) / unpacked
+    125:  (286,),    # Monk / Monk carrying a relic (CLAUDE.md quirk 12)
+    128:  (204,),    # Trade Cart: empty / full
+    1258: (35,),     # Battering Ram: the trained orphan / the upgraded (quirk 4)
+    1105: (885,),    # Siege Tower
+}
+_VILLAGER, _CIVILIAN_CLASS = 83, 4    # Loom reaches every villager by class 4
+
+# Fields a form only takes if it already has that stat: the packed Trebuchet
+# neither attacks nor stands still, the unpacked one never moves.
+_COMBAT_FIELDS = ("attack", "range", "reload")
+
+
+def upgrade_successors(dat) -> dict[int, set[int]]:
+    """unit -> the units a researchable upgrade turns it into (Knight -> Cavalier,
+    Cavalier -> Paladin and Savar).  Age techs are left out: what they swap are
+    building forms, see unit_forms.  So are upgrades that change the unit's
+    class: Flemish Revolution turns Villagers into Flemish Militia, which is not
+    the next Villager, and must not inherit a Villager's cost."""
+    units = dat.civs[1].units
+    succ: dict[int, set[int]] = {}
+
+    def same_class(a, b):
+        return (a < len(units) and b < len(units) and units[a] is not None
+                and units[b] is not None and units[a].class_ == units[b].class_)
+
+    for tid, t in enumerate(dat.techs):
+        if tid in _AGE_TECHS or not 0 <= t.effect_id < len(dat.effects):
+            continue
+        if not any(rl.location_id >= 0 for rl in t.research_locations):
+            continue
+        for c in dat.effects[t.effect_id].effect_commands:
+            if c.type == 3 and c.a >= 0 and c.b >= 0 and c.a != c.b and same_class(c.a, c.b):
+                succ.setdefault(c.a, set()).add(c.b)
+    return succ
+
+
+def unit_forms(dat, units, uid: int) -> list[int]:
+    """Every DAT unit that is the tree node `uid` in the game, uid first."""
+    forms = [uid]
+    if uid == _VILLAGER:
+        forms += [i for i, u in enumerate(units)
+                  if u is not None and i != uid and u.class_ == _CIVILIAN_CLASS]
+    forms += [f for f in _UNIT_FORMS.get(uid, ()) if f not in forms]
+    # Each age tech upgrades from the ORIGINAL building (12 -> 498, 12 -> 132,
+    # 12 -> 20), and a later one may start from an earlier variant, so walk all.
+    age_up: dict[int, set[int]] = {}
+    for tid in _AGE_TECHS:
+        if tid < len(dat.techs):
+            for c in dat.effects[dat.techs[tid].effect_id].effect_commands:
+                if c.type == 3:
+                    age_up.setdefault(c.a, set()).add(c.b)
+    i = 0
+    while i < len(forms):
+        forms += [b for b in sorted(age_up.get(forms[i], ())) if b not in forms]
+        i += 1
+    return [f for f in forms if 0 <= f < len(units) and units[f] is not None]
+
+
+def _descendants(succ: dict[int, set[int]], root: int, stop=()) -> set[int]:
+    out, todo = set(), [root]
+    while todo:
+        for v in succ.get(todo.pop(), ()):
+            if v not in out and v != root:
+                out.add(v)
+                if v not in stop:
+                    todo.append(v)
+    return out
+
+
+def _flow_down(succ: dict[int, set[int]], own: dict) -> dict:
+    """Each unit's value: its own, else its latest edited upgrade ancestor's.
+
+    "Latest", not "fewest steps": the Paladin tech upgrades the Knight AND the
+    Cavalier straight to Paladin, so with both edited the Paladin is one step
+    from each, and it is the Cavalier's cost it should get."""
+    reach = {r: _descendants(succ, r, stop=own) for r in own}
+    every = {r: _descendants(succ, r) for r in own}
+    out = dict(own)
+    for v in set().union(*reach.values()) - set(own):
+        cands = [r for r in own if v in reach[r]]
+        latest = [r for r in cands if not any(o != r and o in every[r] for o in cands)]
+        out[v] = own[min(latest or cands)]
+    return out
+
+
+def read_unit_stats(u) -> dict:
+    """The values write_unit_stats writes, as the unit has them now."""
+    out = {"hp": u.hit_points, "speed": u.speed, "los": u.line_of_sight}
+    if u.type_50 is not None:
+        dom = _dominant_attack(u)
+        out.update(range=u.type_50.max_range, reload=u.type_50.reload_time,
+                   attack=dom.amount if dom else u.type_50.displayed_attack,
+                   melee=u.type_50.displayed_melee_armour)
+    if u.creatable is not None:
+        out["pierce"] = u.creatable.displayed_pierce_armour
+    return out
+
+
+def write_bonus_attacks(u, bonus: dict) -> None:
+    """{armour class: amount}: set the unit's attack against each class, adding
+    the class when the unit lacks it; 0 removes it."""
+    if u.type_50 is None:
+        return
+    from genieutils.unit import AttackOrArmor
+    for cls, amount in bonus.items():
+        cls, amount = int(cls), int(amount)
+        have = next((a for a in u.type_50.attacks if a.class_ == cls), None)
+        if amount <= 0:
+            if have is not None:
+                u.type_50.attacks.remove(have)
+        elif have is not None:
+            have.amount = amount
+        else:
+            u.type_50.attacks.append(AttackOrArmor(class_=cls, amount=amount))
+
+
+def _fights(u) -> bool:
+    return u.type_50 is not None and any(a.amount > 0 for a in u.type_50.attacks)
+
+
+def _apply_unit_edits(dat, slot: int, overrides: dict) -> int:
+    """The tree page's unit and building edits, written onto this civ's own
+    units (no effect commands).  Cost and train time flow down the upgrade line
+    unless a later tier has its own; everything else is per tier.  Returns the
+    number of units written."""
+    from civ_schema import norm_unit_edits
+    edits = {int(k): e for k, e in norm_unit_edits(overrides.get("unit_edits")).items()}
+    if not edits:
+        return 0
+    units = dat.civs[slot].units
+    succ = upgrade_successors(dat)
+    touched: set[int] = set()
+
+    def each_form(uid):
+        if 0 <= uid < len(units) and units[uid] is not None:
+            for f in unit_forms(dat, units, uid):
+                touched.add(f)
+                yield f, units[f], f == uid
+
+    for uid, cost in _flow_down(succ, {u: e["cost"] for u, e in edits.items() if "cost" in e}).items():
+        for f, u, _ in each_form(uid):
+            write_unit_cost(u, cost, f"unit {f}")
+    for uid, t in _flow_down(succ, {u: e["train"] for u, e in edits.items() if "train" in e}).items():
+        for _, u, _ in each_form(uid):
+            write_unit_stats(u, {"train": t})
+
+    # The node takes the player's number; its other forms take the same
+    # difference, so they keep their own (a Barracks gains 300 HP and 1 armour
+    # an age: edited to 2000 in the Dark Age, it is 2900 in Imperial).
+    for uid, e in sorted(edits.items()):
+        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus")}
+        if not (0 <= uid < len(units) and units[uid] is not None):
+            continue
+        node_now = read_unit_stats(units[uid])
+        delta = {k: v - node_now[k] for k, v in stats.items() if k in node_now}
+        for _, u, is_node in each_form(uid):
+            if is_node:
+                write_unit_stats(u, stats)
+            else:
+                now = read_unit_stats(u)
+                own = {k: now[k] + d for k, d in delta.items() if k in now}
+                for k in _COMBAT_FIELDS:
+                    if k in own and not _fights(u):
+                        own.pop(k)
+                if "speed" in own and not u.speed:
+                    own.pop("speed")
+                if "hp" in own:
+                    own["hp"] = max(1, int(own["hp"]))
+                write_unit_stats(u, own)
+            if e.get("bonus") and (is_node or _fights(u)):
+                write_bonus_attacks(u, e["bonus"])
+    return len(touched)
+
+
+def _tech_time(tech) -> int:
+    return next((int(rl.research_time) for rl in tech.research_locations
+                 if rl.location_id >= 0), 0)
+
+
+def _apply_tech_edits(dat, slot: int, overrides: dict, warnings: list) -> int:
+    """The tree page's tech cost and research-time edits.
+
+    A tech is shared by every civ, so it can't be written directly.  Each edit
+    becomes a "ghost" command in one civ-owned auto-fire tech: EC_TECH_COST /
+    EC_TECH_TIME in multiply mode (c=2), scaling the game's value to the
+    player's.  Vanilla writes exactly this (Byzantine Imperial Age gold x0.67,
+    Turkish Chemistry food and wood x0.5, Vietnamese time x0.5).  Multiplies
+    commute, so a "-50% gold" card gives the same result before or after.
+
+    A multiply can't add a resource the tech doesn't already cost, so that is
+    skipped with a warning (the panel only offers the tech's own resources).
+    Returns the number of commands written."""
+    from civ_schema import norm_tech_edits
+    from civ_appender import _append_effect, _append_tech, _make_tech
+    edits = norm_tech_edits(overrides.get("tech_edits"))
+    cmds: list[EffectCommand] = []
+    for key, e in sorted(edits.items(), key=lambda kv: int(kv[0])):
+        tid = int(key)
+        if not 0 <= tid < len(dat.techs):
+            continue
+        tech = dat.techs[tid]
+        have = {rc.type: rc.amount for rc in tech.resource_costs
+                if rc.type in _SPENDABLE and rc.amount > 0}
+        for res, amount in (e.get("cost") or {}).items():
+            rtype = _RES[res]
+            if rtype not in have:
+                if amount > 0:
+                    warnings.append(f"{tech.name}: can't add a {res} cost to a tech that "
+                                    f"doesn't already cost {res}; left as the game's.")
+                continue
+            if amount != have[rtype]:
+                cmds.append(EffectCommand(type=101, a=tid, b=rtype, c=2,
+                                          d=amount / have[rtype]))
+        if e.get("time") is not None and (now := _tech_time(tech)) > 0 and e["time"] != now:
+            cmds.append(EffectCommand(type=103, a=tid, b=-1, c=2, d=e["time"] / now))
+    if not cmds:
+        return 0
+    eff = Effect(name="Tech tree edits", effect_commands=cmds)
+    eid = _append_effect(dat, eff)
+    _append_tech(dat, _make_tech("Tech tree edits", eid, slot))
+    return len(cmds)
+
+
 # ── The whole DAT write for one civ ───────────────────────────────────────────
 
 def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
@@ -592,4 +849,6 @@ def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
     _apply_uu_overrides(dat, slot, uu_info, overrides)
     _refresh_uu_tooltips(dat, slot, civ_result)
     _apply_hero_unit(dat, slot, overrides)
+    _apply_unit_edits(dat, slot, overrides)
+    _apply_tech_edits(dat, slot, overrides, civ_result.setdefault("warnings", []))
     return civ_result, uu_info

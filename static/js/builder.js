@@ -4413,8 +4413,17 @@ function renderLRSPicker() {
 
 // ── Tech tree ─────────────────────────────────────────────────────────────────
 
-// KM's main.js calls this when the user clicks "Save Tech Tree"
-window.setTechTree = function (localtree) {
+// The tree's side panel (aoe2techtree/js/inspector.js) reads these.
+window.getTreeEdits = () => ({ unit_edits: draft.unit_edits || {}, tech_edits: draft.tech_edits || {} });
+window.getDatPath = () => draft.dat_path || "";
+
+// KM's main.js calls this when the user clicks "Save Tech Tree"; `edits` is the
+// side panel's {unit_edits, tech_edits} (civ_overrides._apply_unit_edits).
+window.setTechTree = function (localtree, edits) {
+  if (edits) {
+    draft.unit_edits = edits.unit_edits || {};
+    draft.tech_edits = edits.tech_edits || {};
+  }
   let units = localtree[0];
   if (_hasUniqueShipBonus()) {
     units = units.filter(id => !_DEMO_SHIP_UNITS.has(id));
