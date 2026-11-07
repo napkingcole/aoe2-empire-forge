@@ -4416,6 +4416,7 @@ function renderLRSPicker() {
 // The tree's side panel (aoe2techtree/js/inspector.js) reads these.
 window.getTreeEdits = () => ({ unit_edits: draft.unit_edits || {}, tech_edits: draft.tech_edits || {} });
 window.getDatPath = () => draft.dat_path || "";
+window.getDraft = () => draft;
 
 // KM's main.js calls this when the user clicks "Save Tech Tree"; `edits` is the
 // side panel's {unit_edits, tech_edits} (civ_overrides._apply_unit_edits).

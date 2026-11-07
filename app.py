@@ -3257,6 +3257,145 @@ def api_builder_fu_stats():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
+def _tech_labeler(dat, draft: dict, civ_def: dict, result: dict):
+    """(tech_label, card_techs) for a built civ.  A change's source in the
+    player's words: card text for a civ bonus, the UT's name, else the game's
+    name for the tech.  card_techs: the techs that carry the civ's bonus cards."""
+    from build_all import _ut_name, _ut_source
+    from civ_appender import _display_name
+    br = result.get("bonus_results") or {}
+    labels: dict[int, str] = {int(tid): bonus_name(int(bid))
+                              for tid, bid in (br.get("tech_cards") or {}).items()}
+    labels.update({int(k): v for k, v in (br.get("custom_labels") or {}).items()})
+    cards = set(labels)
+    for key, group, tid in (("castle_ut", 2, result.get("castle_ut_tech_id")),
+                            ("imperial_ut", 3, result.get("imp_ut_tech_id"))):
+        if tid is not None:
+            own = ((draft.get(key) or {}).get("name") or "").strip()
+            labels[tid] = own or _ut_name(*_ut_source(civ_def, group)).split(" (")[0]
+
+    def tech_label(tid: int) -> str:
+        if tid in labels:
+            return labels[tid]
+        t = dat.techs[tid]
+        name = _display_name(t.language_dll_name, t.name) or t.name
+        return name.removeprefix("C-Bonus, ")
+    return tech_label, cards
+
+
+# The tree's side panel shows each stat "with cards" and "fully upgraded".  A
+# build costs ~15 s, so it runs once per draft (unit and tech edits aside: they
+# change a starting value, not which techs apply) and the panel replays each
+# unit's steps onto whatever the player types.
+_TREE_STEPS: dict = {"key": None, "data": None}
+_TREE_STEPS_LOCK = threading.Lock()
+_STEP_FIELDS = {0: "hp", 1: "los", 5: "speed", 10: "reload", 12: "range", 101: "train"}
+_STEP_INT = {"hp", "train"}
+_COST_RES = {103: "food", 104: "wood", 105: "gold", 106: "stone"}
+
+
+def _tree_steps_build(draft: dict, dat_path: str) -> dict:
+    import fu_stats
+    from build_civ import _find_civ_slot
+    from civ_appender import _original_civ
+    from civ_overrides import _dominant_attack
+    from wizard_build import _draft_to_civ_def
+
+    civ_def = _draft_to_civ_def(draft)
+    dat = load_dat(dat_path)
+    slot = _find_civ_slot(dat, "Goths")
+    with contextlib.redirect_stdout(io.StringIO()):
+        result, _ = apply_civ_with_overrides(dat, civ_def, slot, draft)
+    sim = fu_stats.Simulation(dat, slot)
+    tech_label, cards = _tech_labeler(dat, draft, civ_def, result)
+    game = _original_civ(dat, 1).units
+
+    def main_cls(uid):
+        u = game[uid] if 0 <= uid < len(game) else None
+        if u is None or u.type_50 is None:
+            return None
+        dom = _dominant_attack(u)
+        return dom.class_ if dom is not None else None
+
+    steps: dict[int, list] = {}
+    for uid, log in sim.log.items():
+        out, mc = [], main_cls(uid)
+        for c in log:
+            if c.get("unmodelled") or c["op"] not in ("set", "add", "multiply"):
+                continue
+            attr, d = c["attr"], float(c["d"])
+            r = None
+            if attr in (8, 9):
+                key = ({4: "melee", 3: "pierce"}.get(c["cls"]) if attr == 8
+                       else "attack" if c["cls"] == mc else f"bonus:{c['cls']}")
+                if key is None:
+                    continue
+                val = abs(int(d)) & 0xFF
+                v = val / 100 if c["op"] == "multiply" else (-val if c["op"] == "add" and d < 0 else val)
+                r = "round" if c["op"] == "multiply" else None
+            elif attr in _STEP_FIELDS:
+                key, v = _STEP_FIELDS[attr], d
+                r = "trunc" if key in _STEP_INT else None
+            elif attr in _COST_RES:
+                key, v, r = f"cost:{_COST_RES[attr]}", d, "trunc"
+            elif attr == 13:
+                key, v = "work_rate", d
+            else:
+                continue
+            tid = c["tech"]
+            out.append({"key": key, "op": c["op"], "v": v, "r": r,
+                        "source": c["source"] if tid is None else tech_label(tid),
+                        "card": tid is None or tid in cards})
+        if out:
+            steps[uid] = out
+    rates, train_at = {}, {}
+    for u in dat.civs[slot].units:
+        if u is None:
+            continue
+        if u.bird is not None and u.bird.work_rate:
+            rates[u.id] = u.bird.work_rate
+        if u.creatable is not None:
+            b = next((t.unit_id for t in u.creatable.train_locations if t.unit_id >= 0), None)
+            if b is not None:
+                train_at[u.id] = b
+    return {"steps": steps, "rates": rates, "train_at": train_at}
+
+
+@app.route("/api/builder/tree-steps", methods=["POST"])
+def api_builder_tree_steps():
+    """The tech steps behind a unit's "with cards" and "fully upgraded" numbers
+    in the tree's side panel: {status, steps: [...], train: {building, rate,
+    steps}}.  The first call per draft builds the civ (~15 s); later ones are
+    instant."""
+    import traceback
+    body = request.get_json(silent=True) or {}
+    draft = body.get("draft") or {}
+    dat_path = _resolve_dat_path(body.get("dat_path") or draft.get("dat_path"))
+    if not dat_path:
+        return jsonify({"status": "no_dat"})
+    basis = {k: v for k, v in draft.items() if k not in ("unit_edits", "tech_edits")}
+    key = hashlib.sha1((dat_path + json.dumps(basis, sort_keys=True, default=str)).encode()).hexdigest()
+    try:
+        with _TREE_STEPS_LOCK:
+            if _TREE_STEPS["key"] != key:
+                _TREE_STEPS["data"] = _tree_steps_build(draft, dat_path)
+                _TREE_STEPS["key"] = key
+            data = _TREE_STEPS["data"]
+    except Exception as e:                                   # noqa: BLE001
+        traceback.print_exc()
+        return jsonify({"status": "error", "error": str(e)}), 500
+    try:
+        uid = int(body.get("id"))
+    except (TypeError, ValueError):
+        return jsonify({"status": "ok", "key": key})        # a warm-up call
+    out = {"status": "ok", "key": key, "steps": data["steps"].get(uid, [])}
+    b = data["train_at"].get(uid)
+    if b is not None:
+        out["train"] = {"building": b, "rate": data["rates"].get(b, 1.0),
+                        "steps": [s for s in data["steps"].get(b, []) if s["key"] == "work_rate"]}
+    return jsonify(out)
+
+
 def _fu_stats_preview(draft: dict, dat_path: str) -> dict:
     import fu_stats
     from bonus_names import bonus_name
@@ -3272,24 +3411,7 @@ def _fu_stats_preview(draft: dict, dat_path: str) -> dict:
         result, uu_info = apply_civ_with_overrides(dat, civ_def, slot, draft)
     sim = fu_stats.Simulation(dat, slot)
 
-    # Where a change came from, in the player's words: card text for a civ
-    # bonus, the UT's name, else the game's name for the tech.
-    br = result.get("bonus_results") or {}
-    labels: dict[int, str] = {tid: bonus_name(int(bid))
-                              for tid, bid in (br.get("tech_cards") or {}).items()}
-    labels.update(br.get("custom_labels") or {})
-    for key, group, tid in (("castle_ut", 2, result.get("castle_ut_tech_id")),
-                            ("imperial_ut", 3, result.get("imp_ut_tech_id"))):
-        if tid is not None:
-            own = ((draft.get(key) or {}).get("name") or "").strip()
-            labels[tid] = own or _ut_name(*_ut_source(civ_def, group)).split(" (")[0]
-
-    def tech_label(tid: int) -> str:
-        if tid in labels:
-            return labels[tid]
-        t = dat.techs[tid]
-        name = _display_name(t.language_dll_name, t.name) or t.name
-        return name.removeprefix("C-Bonus, ")
+    tech_label, _ = _tech_labeler(dat, draft, civ_def, result)
 
     def name(change: dict) -> str:
         return "Team bonus" if change["tech"] is None else tech_label(change["tech"])
@@ -3312,7 +3434,14 @@ def _fu_stats_preview(draft: dict, dat_path: str) -> dict:
     lines = [b for b in sim.available_lines() if sim.final_unit(b) not in _FU_HIDDEN
              and (b in own_units or sim.final_unit(b) in own_units
              or _display_name(sim.units[sim.final_unit(b)].language_dll_name, None))]
-    cards = [fu_stats.card(sim, base, name) for base in lines]
+    # Tree edits are written onto the civ's units; show them against the
+    # template civ's units as shipped (what the side panel calls "game").
+    from civ_appender import _original_civ
+    from civ_overrides import edited_fields
+    built_units = dat.civs[slot].units
+    edited = edited_fields(dat, built_units, draft.get("unit_edits"))
+    game_units = _original_civ(dat, 1).units if edited else None
+    cards = [fu_stats.card(sim, base, name, game_units, edited) for base in lines]
     own = {tid for tid in sim.techs if dat.techs[tid].civ == slot}
     shaping = {s for c in cards for s in c["sources"]} & own
     shaping |= {st["tech"] for c in cards for t in c.get("train", []) for st in t["steps"]

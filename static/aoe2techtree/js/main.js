@@ -1750,6 +1750,12 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         .tt-insp-x { padding: 0; line-height: 18px; }
         .tt-insp-link { border: none; background: none; box-shadow: none; text-decoration: underline; text-transform: none;
             letter-spacing: 0; font: 400 12px 'Inter', sans-serif; padding: 0; color: #6b3f06; }
+        .tt-insp-fu { font-size: 11.5px; color: #5a3d14; min-height: 0; line-height: 1.3; }
+        .tt-insp-fu:empty { display: none; }
+        .tt-insp-fu b { color: #2e1d08; font-weight: 700; }
+        .tt-insp-fu[title]:not([title=""]) { cursor: help; }
+        .tt-insp-bonus .tt-insp-fu { grid-column: 1 / -1; margin-top: -2px; }
+        .tt-insp-fu-status { font: italic 400 11px 'Inter', sans-serif; letter-spacing: 0; color: #7a5424; }
         .tt-insp-reset { margin-top: 18px; width: 100%; padding: 6px; font-family: 'Cinzel', serif; letter-spacing: .04em; }
     `;
     document.head.appendChild(ttStyle);

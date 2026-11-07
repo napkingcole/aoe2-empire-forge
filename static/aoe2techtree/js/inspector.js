@@ -33,6 +33,7 @@
     const infoCache = {};        // "kind:id" -> node-info response (a promise)
     const unitNames = {};        // unit id -> name, for "From the Knight edit"
     const upgradeOf = {};        // unit id -> upgrade tech id (learned from node-info)
+    const stepsCache = {};       // unit id -> /api/builder/tree-steps response (a promise)
 
     const clone = o => JSON.parse(JSON.stringify(o || {}));
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -152,9 +153,102 @@
         if (item) document.getElementById(item.id)?.classList.add('tt-selected');
     }
 
+    // ── "with cards" and "fully upgraded" ───────────────────────────────────
+    // The server builds the civ once (~15 s, started when the tree opens) and
+    // sends each unit's tech steps; they replay here onto whatever is typed, so
+    // the numbers follow every edit instantly.
+    function stepsRequest(id) {
+        return fetch('/api/builder/tree-steps', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ draft: window.getDraft ? window.getDraft() : {},
+                                   dat_path: window.getDatPath ? window.getDatPath() : '', id }),
+        }).then(r => r.json()).catch(() => ({ status: 'error' }));
+    }
+
+    function steps(id) {
+        if (!stepsCache[id]) stepsCache[id] = stepsRequest(id);
+        return stepsCache[id];
+    }
+
+    function replay(v, list) {
+        for (const s of list) {
+            v = s.op === 'set' ? s.v : s.op === 'add' ? v + s.v : v * s.v;
+            if (s.r === 'round') v = Math.round(v);
+            else if (s.r === 'trunc') v = Math.trunc(v);
+        }
+        return v;
+    }
+
+    const fmt = v => String(Math.round(v * 100) / 100);
+    const stepText = s => `${s.op === 'set' ? '= ' + fmt(s.v) : s.op === 'add' ? (s.v >= 0 ? '+' : '−') + fmt(Math.abs(s.v))
+        : '×' + fmt(s.v)}  ${s.source}${s.card ? ' (card)' : ''}`;
+
+    // One stat: "→ 40 with cards · 52 fully upgraded", each part only when it
+    // changes something.  Not focusable, so Tab skips it.
+    function fuLine(now, list, cardList = list.filter(s => s.card), wc, full) {
+        if (wc === undefined) wc = replay(now, cardList);
+        if (full === undefined) full = replay(now, list);
+        const parts = [];
+        if (fmt(wc) !== fmt(now)) parts.push(`<b>${fmt(wc)}</b> with cards`);
+        if (fmt(full) !== fmt(wc)) parts.push(`<b>${fmt(full)}</b> fully upgraded`);
+        return { html: parts.length ? '→ ' + parts.join(' · ') : '', title: list.map(stepText).join('\n') };
+    }
+
+    function setFu(el, line) {
+        el.innerHTML = line.html;
+        el.title = line.html ? line.title : '';
+    }
+
+    async function fillUpgrades(body, inf, kind) {
+        const status = body.querySelector('#tt-insp-fu-status');
+        const res = await steps(inf.id);
+        if (!current || !body.isConnected) return;
+        if (!res || res.status !== 'ok') {
+            if (status) status.textContent = '';
+            return;
+        }
+        if (status) status.remove();
+        const all = res.steps || [];
+        const of = key => all.filter(s => s.key === key);
+        const e = unitEdit(inf.id);
+
+        body.querySelectorAll('[data-fu]').forEach(el => {
+            const key = el.dataset.fu;
+            if (key === 'train') {
+                const now = effectiveTrain(inf).train;
+                const t = of('train'), rate = res.train || { rate: 1, steps: [] };
+                const card = l => l.filter(s => s.card);
+                const wc = replay(now, card(t)) / replay(rate.rate, card(rate.steps));
+                const full = replay(now, t) / replay(rate.rate, rate.steps);
+                setFu(el, fuLine(now, t.concat(rate.steps), null, wc, full));
+            } else if (key === 'cost') {
+                const now = effectiveCost(inf).cost;
+                const calc = pick => Object.fromEntries(RES.map(r =>
+                    [r, replay(now[r] || 0, pick(of(`cost:${r}`)))]));
+                const wc = calc(l => l.filter(s => s.card)), full = calc(l => l);
+                const list = RES.flatMap(r => of(`cost:${r}`).map(s => Object.assign({}, s,
+                    { source: `${RES_LABEL[r]}: ${s.source}` })));
+                const parts = [];
+                if (!costEqual(wc, now)) parts.push(`<b>${esc(costText(wc))}</b> with cards`);
+                if (!costEqual(full, wc)) parts.push(`<b>${esc(costText(full))}</b> fully upgraded`);
+                setFu(el, { html: parts.length ? '→ ' + parts.join(' · ') : '', title: list.map(stepText).join('\n') });
+            } else if (key.startsWith('bonus:')) {
+                const cls = key.slice(6);
+                const base = (inf.bonus || []).find(b => String(b.cls) === cls);
+                const now = (e.bonus && e.bonus[cls] !== undefined) ? e.bonus[cls] : (base ? base.amount : 0);
+                setFu(el, fuLine(now, of(key)));
+            } else {
+                const now = e[key] !== undefined ? e[key] : inf[key];
+                if (now === undefined || now === null) return;
+                setFu(el, fuLine(now, of(key)));
+            }
+        });
+    }
+
     // ── rendering ───────────────────────────────────────────────────────────
     function mount(el) {
         panel = el;
+        if (window.getDatPath) stepsRequest(null);       // start the build now
         panel.innerHTML = `<div class="tt-insp-empty">
             <div class="tt-insp-empty-title">Inspector</div>
             Click a unit, building or tech to see its stats and edit it.
@@ -208,9 +302,31 @@
         }).join('')}</div>`;
     }
 
+    // Every edit redraws the panel, which would drop keyboard focus.  So
+    // redraws wait a tick (a Tab has moved focus on by then), and the box that
+    // had focus gets it back afterwards.
+    function focusKey(el) {
+        if (!panel || !el || !panel.contains(el)) return null;
+        if (el.id) return `#${el.id}`;
+        if (el.dataset.cls !== undefined) return `input[data-cls="${el.dataset.cls}"]`;
+        if (el.dataset.remove !== undefined) return `[data-remove="${el.dataset.remove}"]`;
+        return null;
+    }
+
+    function restoreFocus(key) {
+        const el = key && panel.querySelector(key);
+        if (!el || el.disabled) return;
+        el.focus({ preventScroll: true });
+        if (el.tagName === 'INPUT' && el.type === 'number') el.select();
+    }
+
+    function later() { setTimeout(render, 0); }
+
     async function render() {
         if (!panel || !current) return;
         const { item } = current;
+        const focused = focusKey(document.activeElement);
+        const scrollTop = panel.scrollTop;
         const kind = kindOf(item);
         const name = (typeof formatName === 'function' && data.strings)
             ? formatName(data.strings[item.name_string_id] || item.name) : item.name;
@@ -227,7 +343,7 @@
             <div id="tt-insp-body"><div class="tt-insp-loading">Loading stats…</div></div>`;
         panel.querySelector('#tt-insp-include')?.addEventListener('change', () => {
             _toggleNode(item, current.element_height);
-            render();
+            later();
         });
 
         const inf = await info(kind, item.node_id);
@@ -248,6 +364,9 @@
         body.innerHTML = kind === 'tech' ? techBody(inf) : unitBody(inf, kind);
         wire(body, inf, kind);
         redecorate();
+        panel.scrollTop = scrollTop;
+        restoreFocus(focused);
+        if (kind !== 'tech') fillUpgrades(body, inf, kind);
     }
 
     function label(id, nm, base, edited) {
@@ -260,7 +379,8 @@
         const rows = STAT_FIELDS.filter(f => f[5](inf)).map(([f, nm, step, min, max]) => {
             const id = `tt-insp-${f}`;
             return `<div class="tt-insp-row">${label(id, nm, inf[f], e[f] !== undefined)}
-                ${numInput({ id, value: e[f], base: inf[f], step, min, max })}</div>`;
+                ${numInput({ id, value: e[f], base: inf[f], step, min, max })}
+                <div class="tt-insp-fu" data-fu="${f}"></div></div>`;
         }).join('');
 
         const tr = effectiveTrain(inf);
@@ -283,14 +403,16 @@
 
         return `
             ${notes.map(n => `<div class="tt-insp-note">${esc(n)}</div>`).join('')}
-            <div class="tt-insp-section">Stats</div>
+            <div class="tt-insp-section">Stats <span class="tt-insp-fu-status" id="tt-insp-fu-status">working out upgrades…</span></div>
             <div class="tt-insp-grid">${rows}
                 <div class="tt-insp-row">${label('tt-insp-train', trainName, inf.train, e.train !== undefined)}
-                    ${numInput({ id: 'tt-insp-train', value: e.train, base: tr.train, step: 1, min: 1, max: SHORT })}</div>
+                    ${numInput({ id: 'tt-insp-train', value: e.train, base: tr.train, step: 1, min: 1, max: SHORT })}
+                    <div class="tt-insp-fu" data-fu="train"></div></div>
             </div>${trainNote}
             ${inf.fights ? bonusSection(inf) : ''}
             <div class="tt-insp-section">Cost ${e.cost ? '<button type="button" class="tt-insp-link" id="tt-insp-cost-reset">use the game\'s</button>' : ''}</div>
             ${costBlock('tt-insp-cost', ec.cost, inf.cost)}
+            <div class="tt-insp-fu" data-fu="cost"></div>
             <div class="tt-insp-error" id="tt-insp-cost-error"></div>
             ${costNote}${lineNote}
             ${inf.upgrade ? upgradeSection(inf.upgrade) : ''}
@@ -313,6 +435,7 @@
                 <input type="number" class="tt-insp-num${e[cls] !== undefined ? ' is-edited' : ''}" data-cls="${cls}"
                     min="0" max="${SHORT}" step="1" value="${amount}">
                 <button type="button" class="tt-insp-x" data-remove="${cls}" title="Remove">×</button>
+                <div class="tt-insp-fu" data-fu="bonus:${cls}"></div>
             </div>`).join('');
         const options = (inf.bonus_classes || []).filter(c => !(shown[String(c.cls)] > 0))
             .map(c => `<option value="${c.cls}">${esc(c.name)}</option>`).join('');
@@ -349,7 +472,7 @@
 
     // ── input wiring ────────────────────────────────────────────────────────
     function wire(body, inf, kind) {
-        const rerender = () => render();
+        const rerender = later;
 
         if (kind === 'tech') {
             wireTechCost(body, 'tt-insp-tech', inf);
@@ -439,14 +562,14 @@
                     if (!x.disabled) cost[x.dataset.res] = clamp(parseFloat(x.value || '0'), 0, SHORT, 1) || 0;
                 });
                 setTechField(tech.id, 'cost', costEqual(cost, tech.cost) ? null : cost);
-                render();
+                later();
             });
         });
         const t = body.querySelector(`#${prefix}-time`);
         t?.addEventListener('change', () => {
             const v = t.value === '' ? null : clamp(parseFloat(t.value), 0, SHORT, 1);
             setTechField(tech.id, 'time', v === tech.time ? null : v);
-            render();
+            later();
         });
     }
 
@@ -464,6 +587,7 @@
         load(e) {
             edits = { unit_edits: clone(e && e.unit_edits), tech_edits: clone(e && e.tech_edits) };
             current = null;
+            for (const k of Object.keys(stepsCache)) delete stepsCache[k];   // the draft may have changed
         },
         edits: () => clone(edits),
     };
