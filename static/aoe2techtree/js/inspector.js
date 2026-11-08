@@ -34,8 +34,6 @@
     const unitNames = {};        // unit id -> name, for "From the Knight edit"
     const upgradeOf = {};        // unit id -> upgrade tech id (learned from node-info)
     const stepsCache = {};       // unit id -> /api/builder/tree-steps response (a promise)
-    let stepsGen = 0;            // bumped when the tree changes: older answers are dropped
-    let stepsTimer = null;
     let lastFill = null;         // { body, inf, kind } — what treeChanged() refills
 
     const clone = o => JSON.parse(JSON.stringify(o || {}));
@@ -157,9 +155,11 @@
     }
 
     // ── "with cards" and "fully upgraded" ───────────────────────────────────
-    // The server builds the civ once (~15 s, started when the tree opens) and
-    // sends each unit's tech steps; they replay here onto whatever is typed, so
-    // the numbers follow every edit instantly.
+    // The server builds the civ once per set of cards (~15 s, started when the
+    // tech tree step opens), with every tree tech switched on, and sends each
+    // unit's tech steps tagged with the tree tech they come from.  They replay
+    // here onto whatever is typed, minus the techs the live tree has off, so
+    // the numbers follow every edit and every click instantly.
     function stepsRequest(id) {
         return fetch('/api/builder/tree-steps', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -169,7 +169,12 @@
     }
 
     function steps(id) {
-        if (!stepsCache[id]) stepsCache[id] = stepsRequest(id);
+        if (!stepsCache[id]) {
+            stepsCache[id] = stepsRequest(id).then(r => {   // don't keep a failure
+                if (!r || r.status !== 'ok') delete stepsCache[id];
+                return r;
+            });
+        }
         return stepsCache[id];
     }
 
@@ -202,25 +207,30 @@
         el.title = line.html ? line.title : '';
     }
 
+    // A step from a tree tech counts while that tech is ticked, or while a
+    // ticked node needs it — the build keeps such a prerequisite (the Hand
+    // Cannoneer keeps Chemistry).  `needs` comes with every steps answer.
+    function liveTechs(needs) {
+        const on = new Set(_localtree.techs);
+        const add = k => (needs[k] || []).forEach(t => on.add(t));
+        _localtree.techs.forEach(t => add('t' + t));
+        _localtree.units.concat(_localtree.buildings).forEach(u => add('u' + u));
+        return on;
+    }
+
     async function fillUpgrades(body, inf, kind) {
         lastFill = { body, inf, kind };
-        const gen = stepsGen;
         const status = body.querySelector('#tt-insp-fu-status');
-        if (stepsTimer) {                                   // treeChanged() will fill it
-            body.classList.add('is-updating');
-            if (status) status.textContent = 'updating upgrades…';
-            return;
-        }
         const res = await steps(inf.id);
-        if (!current || !body.isConnected || gen !== stepsGen) return;
-        if (res && res.status === 'stale') return;          // a newer request will answer
-        body.classList.remove('is-updating');
+        if (!current || !body.isConnected) return;
         if (!res || res.status !== 'ok') {
             if (status) status.textContent = '';
             return;
         }
         if (status) status.textContent = '';
-        const all = res.steps || [];
+        const on = liveTechs(res.needs || {});
+        const live = list => list.filter(s => !s.node || on.has(s.node));
+        const all = live(res.steps || []);
         const of = key => all.filter(s => s.key === key);
         const e = unitEdit(inf.id);
 
@@ -229,6 +239,7 @@
             if (key === 'train') {
                 const now = effectiveTrain(inf).train;
                 const t = of('train'), rate = res.train || { rate: 1, steps: [] };
+                rate.steps = live(rate.steps);
                 const card = l => l.filter(s => s.card);
                 const wc = replay(now, card(t)) / replay(rate.rate, card(rate.steps));
                 const full = replay(now, t) / replay(rate.rate, rate.steps);
@@ -586,25 +597,10 @@
         });
     }
 
-    // The tree changed (and is already saved): which techs apply may have too,
-    // so rebuild — after a pause, so a burst of clicks costs one build.  The
-    // lines dim (or, after a redraw, sit empty) until the new numbers arrive.
+    // The tree changed (and is already saved): refilter the open unit's steps.
     function treeChanged() {
-        stepsGen++;
-        for (const k of Object.keys(stepsCache)) delete stepsCache[k];
-        const body = lastFill && lastFill.body.isConnected ? lastFill.body : null;
-        if (body) {
-            body.classList.add('is-updating');
-            const status = body.querySelector('#tt-insp-fu-status');
-            if (status) status.textContent = 'updating upgrades…';
-        }
-        clearTimeout(stepsTimer);
-        stepsTimer = setTimeout(() => {
-            stepsTimer = null;
-            const f = lastFill && lastFill.body.isConnected ? lastFill : null;
-            if (f) fillUpgrades(f.body, f.inf, f.kind);
-            else stepsRequest(null);
-        }, 1200);
+        const f = lastFill && lastFill.body.isConnected ? lastFill : null;
+        if (f) fillUpgrades(f.body, f.inf, f.kind);
     }
 
     window.ttInspector = {

@@ -3285,24 +3285,48 @@ def _tech_labeler(dat, draft: dict, civ_def: dict, result: dict):
 
 
 # The tree's side panel shows each stat "with cards" and "fully upgraded".  A
-# build costs ~15 s, so it runs once per draft (unit and tech edits aside: they
-# change a starting value, not which techs apply) and the panel replays each
-# unit's steps onto whatever the player types.
+# build costs ~15 s, so it runs once per set of cards: with every tech and
+# building in the editor switched on, each step tagged with the tree tech it
+# comes from (`node`), and the panel drops the steps of techs the live tree has
+# off.  Toggling a node, or typing an edit, never rebuilds.
 _TREE_STEPS: dict = {"want": None, "built": collections.OrderedDict()}   # key -> data, newest last
-_TREE_STEPS_KEEP = 6          # so a toggle undone is instant
+_TREE_STEPS_KEEP = 4
 _TREE_STEPS_LOCK = threading.Lock()
 _STEP_FIELDS = {0: "hp", 1: "los", 5: "speed", 10: "reload", 12: "range", 101: "train"}
 _STEP_INT = {"hp", "train"}
 _COST_RES = {103: "food", 104: "wood", 105: "gold", 106: "stone"}
 
 
-def _tree_steps_build(draft: dict, dat_path: str) -> dict:
+def _tree_steps_split(draft: dict) -> tuple[dict, dict]:
+    """(basis, tree) for a wizard draft, which is always in the builder's shape.
+
+    The basis is what the steps are built from and keyed on: the tree left out
+    (every editor tech and building is switched on instead), and so are the
+    edits and the Unlock cards the tree derives from its units — they make a
+    unit available rather than change a stat, and keeping them would rebuild on
+    every such click."""
+    from civ_appender import _UNLOCK_UNIT_BONUSES
+    basis = {k: v for k, v in draft.items() if k not in ("unit_edits", "tech_edits", "tree")}
+    basis["bonuses"] = [b for b in draft.get("bonuses") or []
+                        if not (isinstance(b, dict) and b.get("id") in _UNLOCK_UNIT_BONUSES)]
+    return basis, draft.get("tree") or {}
+
+
+def _tree_steps_build(basis: dict, tree: dict, dat_path: str, exact: bool = False) -> dict:
+    """`exact` builds `tree` as it is (the tests compare against it)."""
     import fu_stats
     from build_civ import _find_civ_slot
-    from civ_appender import _original_civ
+    from civ_appender import _editor_nodes, _original_civ
     from civ_overrides import _dominant_attack
     from wizard_build import _draft_to_civ_def
 
+    nodes = _editor_nodes()
+    extra = {"buildings": set(), "techs": set()} if exact else nodes
+    draft = dict(basis, tree={
+        "units": list(tree.get("units") or []),
+        "buildings": sorted(set(tree.get("buildings") or []) | extra["buildings"]),
+        "techs": sorted(set(tree.get("techs") or []) | extra["techs"]),
+    })
     civ_def = _draft_to_civ_def(draft)
     dat = load_dat(dat_path)
     slot = _find_civ_slot(dat, "Goths")
@@ -3347,10 +3371,12 @@ def _tree_steps_build(draft: dict, dat_path: str) -> dict:
             tid = c["tech"]
             out.append({"key": key, "op": c["op"], "v": v, "r": r,
                         "source": c["source"] if tid is None else tech_label(tid),
-                        "card": tid is None or tid in cards})
+                        "card": tid is None or tid in cards,
+                        "node": tid if tid in nodes["techs"] else None})
         if out:
             steps[uid] = out
     rates, train_at = {}, {}
+    needs = _tree_node_needs(dat, slot, nodes)
     for u in dat.civs[slot].units:
         if u is None:
             continue
@@ -3360,14 +3386,73 @@ def _tree_steps_build(draft: dict, dat_path: str) -> dict:
             b = next((t.unit_id for t in u.creatable.train_locations if t.unit_id >= 0), None)
             if b is not None:
                 train_at[u.id] = b
-    return {"steps": steps, "rates": rates, "train_at": train_at}
+    return {"steps": steps, "rates": rates, "train_at": train_at, "needs": needs}
+
+
+def _tree_node_needs(dat, slot: int, nodes: dict) -> dict:
+    """{"t<id>" / "u<id>": [tree techs it needs]} for every editor node.
+
+    The build keeps an unticked tech when a ticked node needs it (the Hand
+    Cannoneer keeps Chemistry; civ_appender Step 3b'), so the panel counts a
+    tech while it is ticked OR some ticked node needs it.  A unit or building
+    needs what the techs producing it need.  Prerequisites the civ disables and
+    the player can't tick (Chronicles' shadow techs) are not followed, and a
+    tech that needs only k of its n listed prerequisites follows just the ones
+    not already met by something always on (Gillnets: Castle Age + 912 + 906,
+    two of three, where 912 itself needs 906)."""
+    from civ_appender import _PROTECTED_TECHS, _is_enable
+    techs, effects = dat.techs, dat.effects
+    civ = dat.civs[slot]
+    off = ({int(ec.d) for ec in effects[civ.tech_tree_id].effect_commands if ec.type == 102}
+           if 0 <= civ.tech_tree_id < len(effects) else set())
+    node_t = nodes["techs"] - _PROTECTED_TECHS
+    memo: dict[int, frozenset] = {}
+
+    def need(tid: int) -> frozenset:
+        if tid in memo:
+            return memo[tid]
+        memo[tid] = frozenset()                     # a cycle needs nothing more
+        t = techs[tid]
+        reqs = [r for r in t.required_techs if 0 <= r < len(techs)
+                and not (r in off and r not in node_t)]
+        k = min(t.required_tech_count, len(reqs))
+        fixed = [r for r in reqs if r not in node_t and not need(r)]   # always met
+        out: set[int] = set()
+        if len(fixed) < k:
+            for r in reqs:
+                if r in node_t:
+                    out.add(r)
+                out |= need(r)
+        memo[tid] = frozenset(out)
+        return memo[tid]
+
+    producers: dict[int, set[int]] = {}
+    for tid, t in enumerate(techs):
+        if t.civ not in (-1, slot) or not 0 <= t.effect_id < len(effects) or tid in off:
+            continue
+        for c in effects[t.effect_id].effect_commands:
+            o = int(c.b) if c.type == 3 else int(c.a) if _is_enable(c) else None
+            if o is not None:
+                producers.setdefault(o, set()).add(tid)
+
+    out: dict[str, list[int]] = {}
+    for tid in nodes["techs"]:
+        if 0 <= tid < len(techs) and need(tid):
+            out[f"t{tid}"] = sorted(need(tid))
+    for uid in nodes["units"] | nodes["buildings"]:
+        n: set[int] = set()
+        for p in producers.get(uid, ()):
+            n |= need(p) | ({p} & node_t)
+        if n:
+            out[f"u{uid}"] = sorted(n)
+    return out
 
 
 @app.route("/api/builder/tree-steps", methods=["POST"])
 def api_builder_tree_steps():
     """The tech steps behind a unit's "with cards" and "fully upgraded" numbers
     in the tree's side panel: {status, steps: [...], train: {building, rate,
-    steps}}.  The first call per draft builds the civ (~15 s); later ones are
+    steps}}.  The first call per set of cards builds the civ (~15 s); later ones are
     instant."""
     import traceback
     body = request.get_json(silent=True) or {}
@@ -3375,15 +3460,10 @@ def api_builder_tree_steps():
     dat_path = _resolve_dat_path(body.get("dat_path") or draft.get("dat_path"))
     if not dat_path:
         return jsonify({"status": "no_dat"})
-    basis = {k: v for k, v in draft.items() if k not in ("unit_edits", "tech_edits")}
-    # Order changes button pages, not which techs apply: a node switched off and
-    # on again lands at the end of its list and must still hit the cache.
-    if isinstance(basis.get("tree"), dict):
-        basis["tree"] = {k: sorted(v, key=str) if isinstance(v, list) else v
-                         for k, v in basis["tree"].items()}
+    basis, tree = _tree_steps_split(draft)
     key = hashlib.sha1((dat_path + json.dumps(basis, sort_keys=True, default=str)).encode()).hexdigest()
-    # Builds run one at a time.  The tree autosaves on every change, so a
-    # request still waiting when a newer tree arrives is skipped, not built.
+    # Builds run one at a time; a request still waiting when a newer set of
+    # cards arrives is skipped, not built.
     _TREE_STEPS["want"] = key
     try:
         with _TREE_STEPS_LOCK:
@@ -3391,7 +3471,7 @@ def api_builder_tree_steps():
             if key not in built:
                 if _TREE_STEPS["want"] != key:
                     return jsonify({"status": "stale"})
-                built[key] = _tree_steps_build(draft, dat_path)
+                built[key] = _tree_steps_build(basis, tree, dat_path)
                 while len(built) > _TREE_STEPS_KEEP:
                     built.popitem(last=False)
             built.move_to_end(key)
@@ -3403,7 +3483,7 @@ def api_builder_tree_steps():
         uid = int(body.get("id"))
     except (TypeError, ValueError):
         return jsonify({"status": "ok", "key": key})        # a warm-up call
-    out = {"status": "ok", "key": key, "steps": data["steps"].get(uid, [])}
+    out = {"status": "ok", "key": key, "steps": data["steps"].get(uid, []), "needs": data["needs"]}
     b = data["train_at"].get(uid)
     if b is not None:
         out["train"] = {"building": b, "rate": data["rates"].get(b, 1.0),

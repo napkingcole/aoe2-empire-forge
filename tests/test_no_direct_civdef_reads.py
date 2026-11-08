@@ -60,6 +60,8 @@ ALLOWED = {
     "api_civ_summary",              # app.py  tells a Builder draft from a KM file by
                                     #         its bonuses' shape — format detection
     "is_km_format",                 # civ_schema.py    format detection
+    "_tree_steps_split",            # app.py  splits a wizard draft (always the
+                                    #         builder shape) into basis + tree
 }
 
 # Files that are not part of the build pipeline.

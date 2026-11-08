@@ -124,6 +124,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("civ build order",                 "test_civ_build_order.py",      "build"),
     ("fully-upgraded stats",            "test_fu_stats.py",             "build"),
     ("tree page unit/tech edits",       "test_tree_edits.py",           "build"),
+    ("tree panel upgrade filter",       "test_tree_steps_filter.py",    "build"),
     ("blank-civ seed (python)",         "test_full_seed.py",            "build"),
     ("Longship in the tree",            "test_longship_tree.py",        "build"),
     ("AI unique unit lines",            "test_unit_lines.py",           "build"),

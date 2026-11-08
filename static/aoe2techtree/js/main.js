@@ -1753,7 +1753,6 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             letter-spacing: 0; font: 400 12px 'Inter', sans-serif; padding: 0; color: #6b3f06; }
         .tt-insp-fu { font-size: 11.5px; color: #5a3d14; min-height: 0; line-height: 1.3; }
         .tt-insp-fu:empty { display: none; }
-        .is-updating .tt-insp-fu { opacity: .45; transition: opacity .2s; }
         .tt-insp-fu b { color: #2e1d08; font-weight: 700; }
         .tt-insp-fu[title]:not([title=""]) { cursor: help; }
         .tt-insp-bonus .tt-insp-fu { grid-column: 1 / -1; margin-top: -2px; }
@@ -1839,7 +1838,7 @@ function _commitTree() {
 }
 window._ttCommit = _commitTree;
 
-// A node turned on or off: save, and have the panel redo its upgrade numbers.
+// A node turned on or off: save, and have the panel refilter its upgrade numbers.
 function _treeChanged() {
     _commitTree();
     window.ttInspector?.treeChanged();
