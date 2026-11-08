@@ -8,7 +8,7 @@
  *                         train, cost: {food, wood, stone, gold}, bonus: {cls: n}}}
  *   tech_edits {tech id: {cost: {...}, time}}
  * Base values come from /api/builder/node-info (the DAT, Britons template).
- * Like the on/off state, edits are committed by "Save Tech Tree".
+ * Like the on/off state, edits are saved to the draft as they are made.
  */
 (function () {
     const RES = ['food', 'wood', 'stone', 'gold'];
@@ -34,6 +34,9 @@
     const unitNames = {};        // unit id -> name, for "From the Knight edit"
     const upgradeOf = {};        // unit id -> upgrade tech id (learned from node-info)
     const stepsCache = {};       // unit id -> /api/builder/tree-steps response (a promise)
+    let stepsGen = 0;            // bumped when the tree changes: older answers are dropped
+    let stepsTimer = null;
+    let lastFill = null;         // { body, inf, kind } — what treeChanged() refills
 
     const clone = o => JSON.parse(JSON.stringify(o || {}));
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -200,14 +203,23 @@
     }
 
     async function fillUpgrades(body, inf, kind) {
+        lastFill = { body, inf, kind };
+        const gen = stepsGen;
         const status = body.querySelector('#tt-insp-fu-status');
+        if (stepsTimer) {                                   // treeChanged() will fill it
+            body.classList.add('is-updating');
+            if (status) status.textContent = 'updating upgrades…';
+            return;
+        }
         const res = await steps(inf.id);
-        if (!current || !body.isConnected) return;
+        if (!current || !body.isConnected || gen !== stepsGen) return;
+        if (res && res.status === 'stale') return;          // a newer request will answer
+        body.classList.remove('is-updating');
         if (!res || res.status !== 'ok') {
             if (status) status.textContent = '';
             return;
         }
-        if (status) status.remove();
+        if (status) status.textContent = '';
         const all = res.steps || [];
         const of = key => all.filter(s => s.key === key);
         const e = unitEdit(inf.id);
@@ -320,7 +332,7 @@
         if (el.tagName === 'INPUT' && el.type === 'number') el.select();
     }
 
-    function later() { setTimeout(render, 0); }
+    function later() { setTimeout(render, 0); window._ttCommit?.(); }
 
     async function render() {
         if (!panel || !current) return;
@@ -343,6 +355,7 @@
             <div id="tt-insp-body"><div class="tt-insp-loading">Loading stats…</div></div>`;
         panel.querySelector('#tt-insp-include')?.addEventListener('change', () => {
             _toggleNode(item, current.element_height);
+            _treeChanged();
             later();
         });
 
@@ -573,7 +586,29 @@
         });
     }
 
+    // The tree changed (and is already saved): which techs apply may have too,
+    // so rebuild — after a pause, so a burst of clicks costs one build.  The
+    // lines dim (or, after a redraw, sit empty) until the new numbers arrive.
+    function treeChanged() {
+        stepsGen++;
+        for (const k of Object.keys(stepsCache)) delete stepsCache[k];
+        const body = lastFill && lastFill.body.isConnected ? lastFill.body : null;
+        if (body) {
+            body.classList.add('is-updating');
+            const status = body.querySelector('#tt-insp-fu-status');
+            if (status) status.textContent = 'updating upgrades…';
+        }
+        clearTimeout(stepsTimer);
+        stepsTimer = setTimeout(() => {
+            stepsTimer = null;
+            const f = lastFill && lastFill.body.isConnected ? lastFill : null;
+            if (f) fillUpgrades(f.body, f.inf, f.kind);
+            else stepsRequest(null);
+        }, 1200);
+    }
+
     window.ttInspector = {
+        treeChanged,
         mount,
         select,
         decorate,

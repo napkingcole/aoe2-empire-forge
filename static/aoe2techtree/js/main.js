@@ -1367,6 +1367,7 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
                 // Click opens the side panel; Shift-click is the quick on/off.
                 if (e && e.shiftKey || !window.ttInspector) {
                     _toggleNode(itemToDraw, element_height);
+                    _treeChanged();
                     window.ttInspector?.refresh();
                 } else {
                     window.ttInspector.select(itemToDraw, element_height);
@@ -1637,7 +1638,7 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         return b;
     };
 
-    const doneBtn  = mkBtn('Save Tech Tree', '#2c5729', _saveTechTree);
+    const doneBtn  = mkBtn('Save & Exit Tech Tree', '#2c5729', _saveTechTree);
     const fillBtn  = mkBtn('Enable All',     '#4a3a10', _fillAll);
     const resetBtn = mkBtn('Disable All',    '#5a1a1a', _disableAll);
     const hint     = document.createElement('span');
@@ -1752,6 +1753,7 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             letter-spacing: 0; font: 400 12px 'Inter', sans-serif; padding: 0; color: #6b3f06; }
         .tt-insp-fu { font-size: 11.5px; color: #5a3d14; min-height: 0; line-height: 1.3; }
         .tt-insp-fu:empty { display: none; }
+        .is-updating .tt-insp-fu { opacity: .45; transition: opacity .2s; }
         .tt-insp-fu b { color: #2e1d08; font-weight: 700; }
         .tt-insp-fu[title]:not([title=""]) { cursor: help; }
         .tt-insp-bonus .tt-insp-fu { grid-column: 1 / -1; margin-top: -2px; }
@@ -1824,14 +1826,27 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
     });
 };
 
+// Every change is written to the draft as it happens (a localStorage write),
+// so the side panel's upgrade numbers can follow the live tree; the button
+// only has to close the overlay.
+function _commitTree() {
+    if (!_canEdit || !window.setTechTree) return;
+    window.setTechTree([
+        _localtree.units.slice(),
+        _localtree.buildings.slice(),
+        _localtree.techs.slice(),
+    ], window.ttInspector ? window.ttInspector.edits() : null);
+}
+window._ttCommit = _commitTree;
+
+// A node turned on or off: save, and have the panel redo its upgrade numbers.
+function _treeChanged() {
+    _commitTree();
+    window.ttInspector?.treeChanged();
+}
+
 function _saveTechTree() {
-    if (window.setTechTree) {
-        window.setTechTree([
-            _localtree.units.slice(),
-            _localtree.buildings.slice(),
-            _localtree.techs.slice(),
-        ], window.ttInspector ? window.ttInspector.edits() : null);
-    }
+    _commitTree();
     _closeTreeOverlay();
 }
 
@@ -1881,6 +1896,7 @@ function _fillAll() {
             if (key) push(key, item.node_id);
         }
         civ(_currentCivName);
+        _treeChanged();
     });
 }
 
@@ -1891,4 +1907,5 @@ function _disableAll() {
     _localtree = { units: keepShips, buildings: [], techs: [] };
     _localtree.buildings = [...HARD_ALWAYS_ON_BUILDINGS, ..._CAMP_BUILDING_IDS];
     if (_currentCivName) civ(_currentCivName);
+    _treeChanged();
 }

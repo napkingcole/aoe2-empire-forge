@@ -11,6 +11,7 @@ Routes:
   GET  /download      Serve the built mod zip
 """
 
+import collections
 import contextlib
 import hashlib
 import io
@@ -3287,7 +3288,8 @@ def _tech_labeler(dat, draft: dict, civ_def: dict, result: dict):
 # build costs ~15 s, so it runs once per draft (unit and tech edits aside: they
 # change a starting value, not which techs apply) and the panel replays each
 # unit's steps onto whatever the player types.
-_TREE_STEPS: dict = {"key": None, "data": None}
+_TREE_STEPS: dict = {"want": None, "built": collections.OrderedDict()}   # key -> data, newest last
+_TREE_STEPS_KEEP = 6          # so a toggle undone is instant
 _TREE_STEPS_LOCK = threading.Lock()
 _STEP_FIELDS = {0: "hp", 1: "los", 5: "speed", 10: "reload", 12: "range", 101: "train"}
 _STEP_INT = {"hp", "train"}
@@ -3374,13 +3376,26 @@ def api_builder_tree_steps():
     if not dat_path:
         return jsonify({"status": "no_dat"})
     basis = {k: v for k, v in draft.items() if k not in ("unit_edits", "tech_edits")}
+    # Order changes button pages, not which techs apply: a node switched off and
+    # on again lands at the end of its list and must still hit the cache.
+    if isinstance(basis.get("tree"), dict):
+        basis["tree"] = {k: sorted(v, key=str) if isinstance(v, list) else v
+                         for k, v in basis["tree"].items()}
     key = hashlib.sha1((dat_path + json.dumps(basis, sort_keys=True, default=str)).encode()).hexdigest()
+    # Builds run one at a time.  The tree autosaves on every change, so a
+    # request still waiting when a newer tree arrives is skipped, not built.
+    _TREE_STEPS["want"] = key
     try:
         with _TREE_STEPS_LOCK:
-            if _TREE_STEPS["key"] != key:
-                _TREE_STEPS["data"] = _tree_steps_build(draft, dat_path)
-                _TREE_STEPS["key"] = key
-            data = _TREE_STEPS["data"]
+            built = _TREE_STEPS["built"]
+            if key not in built:
+                if _TREE_STEPS["want"] != key:
+                    return jsonify({"status": "stale"})
+                built[key] = _tree_steps_build(draft, dat_path)
+                while len(built) > _TREE_STEPS_KEEP:
+                    built.popitem(last=False)
+            built.move_to_end(key)
+            data = built[key]
     except Exception as e:                                   # noqa: BLE001
         traceback.print_exc()
         return jsonify({"status": "error", "error": str(e)}), 500
