@@ -1649,6 +1649,12 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
     toolbar.appendChild(fillBtn);
     toolbar.appendChild(resetBtn);
     toolbar.appendChild(hint);
+    // The wizard's command meter (builder.js efMeter), pushed to the right.
+    const meter = document.createElement('button');
+    meter.className = 'ef-meter';
+    meter.style.marginLeft = 'auto';
+    meter.hidden = true;
+    toolbar.appendChild(meter);
 
     // Inject tree-specific styles (no external CSS file loaded in wizard context)
     const ttStyle = document.createElement('style');
@@ -1810,6 +1816,7 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
     container.appendChild(toolbar);
     container.appendChild(body);
     document.body.appendChild(container);
+    window.efMeter?.render();
     if (window.ttInspector) {
         window.ttInspector.load(window.getTreeEdits ? window.getTreeEdits() : null);
         window.ttInspector.mount(inspector);

@@ -30,6 +30,9 @@ function saveDraft() {
   const json = JSON.stringify(draft);
   try { sessionStorage.setItem(EF_DRAFT_KEY, json); } catch {}
   localStorage.setItem(EF_DRAFT_KEY, json);
+  // Every change lands here, so the command meter recounts from here (deferred:
+  // the first saves run while this file is still loading).
+  setTimeout(() => window.efMeter?.changed(), 0);
 }
 
 let draft = loadDraft();
@@ -4410,6 +4413,116 @@ function renderLRSPicker() {
 
   renderDemoShipNotice();
 }
+
+// ── Effect-command meter ──────────────────────────────────────────────────────
+// The game crashes at startup when one Effect holds more than ~189 commands.
+// The tech tree and team bonus effects grow with the civ and can't be split, so
+// the meter shows the larger of the two, counted by /api/builder/command-count
+// from a real build (~3 s) after each change settles.  Every .ef-meter on the
+// page (the bottom bar, the tech tree's toolbar) shows the same state.
+window.efMeter = (() => {
+  const LIMIT = 189, NEAR = 160;
+  let state = { status: "idle", tree: null, team: null, soft: 185 };
+  let timer = null, seq = 0;
+
+  function level() {
+    const n = Math.max(state.tree ?? 0, state.team ?? 0);
+    return n > state.soft ? "over" : n >= NEAR ? "near" : "ok";
+  }
+
+  function render() {
+    const has = state.tree !== null;
+    const n = has ? Math.max(state.tree, state.team) : 0;
+    document.querySelectorAll(".ef-meter").forEach(el => {
+      el.hidden = state.status === "no_dat";
+      if (!el.firstChild) {
+        el.type = "button";
+        el.innerHTML = `<span class="ef-meter-label">Commands</span>
+          <span class="ef-meter-track"><span class="ef-meter-fill"></span>
+          <span class="ef-meter-text"></span></span>`;
+        el.addEventListener("click", openExplainer);
+      }
+      el.dataset.level = has ? level() : "ok";
+      el.classList.toggle("is-counting", state.status === "counting");
+      el.querySelector(".ef-meter-fill").style.width = `${Math.min(100, n / LIMIT * 100)}%`;
+      el.querySelector(".ef-meter-text").textContent =
+        has ? `${n} / ${LIMIT}` : state.status === "error" ? "?" : "counting…";
+      el.title = has ? `Effect commands — tech tree ${state.tree}, team bonus ${state.team}. Click for details.`
+                     : "Effect commands. Click for details.";
+      el.setAttribute("aria-label", has ? `Effect commands: ${n} of ${LIMIT}` : "Effect commands");
+    });
+    const card = document.getElementById("ef-crash-card");
+    if (card) {
+      card.classList.toggle("d-none", !(has && level() === "over"));
+      const what = card.querySelector("[data-ef-what]");
+      if (what) what.textContent = state.tree >= state.team
+        ? `tech tree needs ${state.tree}` : `team bonuses need ${state.team}`;
+    }
+  }
+
+  async function count() {
+    timer = null;
+    if (!draft.dat_path) { state.status = "no_dat"; render(); return; }
+    const mine = ++seq;
+    state.status = "counting";
+    render();
+    try {
+      const r = await fetch("/api/builder/command-count", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draft, dat_path: draft.dat_path }),
+      }).then(res => res.json());
+      if (mine !== seq || r.status === "stale") return;     // a newer count is coming
+      if (r.status === "ok") state = { status: "ok", tree: r.tree, team: r.team, soft: r.soft_limit };
+      else state.status = r.status === "no_dat" ? "no_dat" : "error";
+    } catch {
+      if (mine === seq) state.status = "error";
+    }
+    render();
+  }
+
+  function changed() {
+    clearTimeout(timer);
+    timer = setTimeout(count, 600);
+  }
+
+  function openExplainer() {
+    let dlg = document.getElementById("ef-meter-dialog");
+    if (!dlg) {
+      dlg = document.createElement("dialog");
+      dlg.id = "ef-meter-dialog";
+      dlg.className = "ef-meter-dialog";
+      document.body.appendChild(dlg);
+      dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+    }
+    const row = (name, v, note) => `<tr><td>${name}</td><td class="text-end fw-semibold">${v ?? "…"}</td>
+      <td class="small text-muted">${note}</td></tr>`;
+    dlg.innerHTML = `<form method="dialog">
+      <h5><i class="fa-solid fa-gauge-high me-2"></i>Effect commands</h5>
+      <p>Age of Empires II stores every bonus and every tech tree as an <em>effect</em>: a list of
+        commands such as "disable the Paladin" or "+1 attack for the Knight". If any one effect holds
+        more than about <strong>${LIMIT}</strong> commands, the game crashes at startup, before the main
+        menu, with no error message.</p>
+      <p>Two of your civ's effects grow as you build it, and can't be split:</p>
+      <table class="table table-sm ef-meter-table"><tbody>
+        ${row("Tech tree", state.tree, "about one per node you turn off, plus unlocks for opt-in units and techs")}
+        ${row("Team bonus", state.team, "every team bonus you pick, merged into one")}
+      </tbody></table>
+      <p class="small">Civ bonus cards and custom unique techs split themselves when they get big, so they
+        never count here. The bar shows the larger of the two.</p>
+      <p class="small">The count comes from a real build of your civ against your own game files, a few
+        seconds after each change. It's exact to within a command or two: the final number depends a little
+        on which civ yours replaces in the mod.</p>
+      <p class="small mb-3"><strong>Over the limit?</strong> Turn some tech tree nodes back on, or drop a team
+        bonus. You can still save and share the civ either way, for example to get help debugging it.</p>
+      <div class="text-end"><button class="btn btn-primary">Got it</button></div>
+    </form>`;
+    dlg.hidden = false;      // opening the tech tree hides every body child, this one included
+    dlg.showModal();
+  }
+
+  return { changed, render, count };
+})();
+document.addEventListener("DOMContentLoaded", () => window.efMeter.count());
 
 // ── Tech tree ─────────────────────────────────────────────────────────────────
 
