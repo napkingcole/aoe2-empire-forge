@@ -13,6 +13,10 @@ upgrades have something to ride), built through build_all like any mod.
     Barracks  Hoplite line (Chronicles), Castle -> Imperial.            [round 2]
     Stable    "Lionheart": Richard the Lionheart as a plain unit, Castle:
               no gold border, no regeneration, convertible.             [round 2]
+    Barracks  "Elite Champion" after the Champion, attack 16 (beside it).   [round 3]
+    Archery   "Imperial Skirmisher" after the Elite Skirmisher, 45 HP.     [round 3]
+    Stable    Paladin upgrade gives a Savar copy, named Savar.             [round 3]
+    Earlier   Knight in Feudal, Pikeman in Feudal, Gold Mining in Dark.    [round 3]
     Cards     Spearmen +25% HP (233) also reaches the Guard line.
 
     venv/bin/python scripts/build_qa_mod_added.py   # writes ignore/qa_added/
@@ -34,6 +38,7 @@ SPEARMAN, KNIGHT, LONGBOWMAN = 93, 38, 8
 SAVAR, CHU_KO_NU = 1813, 73
 CONQUISTADOR = 13
 HOPLITE, RICHARD = 2110, 160          # Chronicles; a hero (Richard the Lionheart)
+CHAMPION, ELITE_SKIRM, PALADIN, PIKEMAN, GOLD_MINING = 567, 6, 569, 358, 55
 
 LINES = [
     {"id": 1, "building": 12, "base": SPEARMAN,
@@ -47,6 +52,12 @@ LINES = [
     # Round 2: a Chronicles unit and a hero as bases.
     {"id": 4, "building": 12, "base": HOPLITE, "tiers": [{"age": 3}, {"age": 4}]},
     {"id": 5, "building": 101, "base": RICHARD, "tiers": [{"age": 3, "name": "Lionheart"}]},
+    # Round 3: extend, replace.
+    {"id": 6, "building": 12, "base": CHAMPION, "from": CHAMPION,
+     "tiers": [{"age": 4, "edits": {"attack": 16}}]},
+    {"id": 7, "building": 87, "base": ELITE_SKIRM, "from": ELITE_SKIRM,
+     "tiers": [{"age": 4, "edits": {"hp": 45}}]},
+    {"id": 8, "building": 101, "base": SAVAR, "replaces": PALADIN, "tiers": [{"age": 4}]},
 ]
 
 QA = [
@@ -61,6 +72,9 @@ QA = [
         castle_ut=preset(2, "castle"), imperial_ut=preset(0, "imperial"),
         tree=tree_from("FRANKS.json"),
         added_lines=LINES,
+        # Round 3: available earlier.
+        unit_edits={str(KNIGHT): {"age": 2}, str(PIKEMAN): {"age": 2}},
+        tech_edits={str(GOLD_MINING): {"age": 1}},
     )),
 ]
 
