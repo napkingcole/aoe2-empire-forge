@@ -1240,7 +1240,9 @@ function _addedTipHtml(t) {
         html += div('margin-top:5px;font-size:11px;opacity:.8;',
             `Upgrade: ${cost(t.upgrade.cost)}${t.upgrade.time ? ` (${t.upgrade.time}s)` : ''}`);
     }
-    if (t.of) html += div('margin-top:4px;font-size:11px;opacity:.7;', `Added unit · tier ${t.n + 1} of ${t.of}`);
+    if (t.replaces) html += div('margin-top:4px;font-size:11px;opacity:.7;',
+        `Replaces the ${_esc(t.replaces)}: its upgrade gives this unit (the button keeps the ${_esc(t.replaces)}'s picture)`);
+    else if (t.of) html += div('margin-top:4px;font-size:11px;opacity:.7;', `Added unit · tier ${t.n + 1} of ${t.of}`);
     return html;
 }
 
@@ -1476,6 +1478,14 @@ function _canExtend(item) {
 }
 window._ttCanExtend = _canExtend;
 
+// Can this unit be replaced?  Only one an upgrade gives (Paladin, not Knight):
+// the replacement rides that upgrade.
+function _canReplace(item) {
+    return _canEdit && item.use_type === 'Unit' && !item.added && item.node_type === 'UnitUpgrade'
+        && _isSelected(item) && _ADD_LINE_BUILDINGS.has(item.building_id);
+}
+window._ttCanReplace = _canReplace;
+
 // A small "+" under the last unit of a line, shown while it's hovered:
 // "add an upgrade after this unit" (an extension, added_lines "from").
 function _drawExtendButton(group, item, element_height) {
@@ -1589,8 +1599,29 @@ function _applyAddedLines(treeData) {
                 b.grid[at[n]][target] = id;
             });
         }
+        // Replacements take the vanilla unit's place (Savar where the Paladin was).
+        for (const line of mine.filter(l => l.replaces != null)) {
+            const vid = `Unit_${line.replaces}_${b.node_id}`;
+            const v = treeData.units_techs.find(i => i.id === vid);
+            if (!v || (_canEdit && !_isSelected(v))) continue;
+            const id = `Unit_a${line.id}_0_${b.node_id}`;
+            treeData.units_techs.push({
+                id, node_id: `a${line.id}.0`, building_id: b.node_id, use_type: 'Unit',
+                node_type: v.node_type, link_id: v.link_id, link_node_type: v.link_node_type,
+                replaces: v.node_id, replaced_node: v,
+                picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
+                image_url: window.ttInspector.lineImage(line),
+                name: '', name_string_id: -1, help_string_id: -1, age_id: v.age_id, row: v.row,
+                added: { line: line.id, n: 0, buildingAge: v.age_id || 1, buildingName: name,
+                         replacesName: _nodeName(v).replace(/\n/g, ' '), fromAge: v.age_id || 1 },
+            });
+            for (let r = 0; r < rows; r++) {
+                const c = b.grid[r].indexOf(vid);
+                if (c >= 0) b.grid[r][c] = id;
+            }
+        }
         const cols = [];
-        for (const line of mine.filter(l => l.from == null)) {
+        for (const line of mine.filter(l => l.from == null && l.replaces == null)) {
             const col = new Array(rows).fill(null);
             line.tiers.forEach((t, n) => {
                 const id = `Unit_a${line.id}_${n}_${b.node_id}`;
@@ -1756,7 +1787,8 @@ function civ(civName) {
                             const topId = building.grid[sr][c];
                             if (topId) {
                                 const top = index[topId];
-                                if (item.link_id === top.node_id && item.link_node_type === top.node_type)
+                                if ((item.link_id === top.node_id || item.link_id === top.replaces)
+                                        && item.link_node_type === top.node_type)
                                     connections.push([top.id, item.id]);
                                 break;
                             }

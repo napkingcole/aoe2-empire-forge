@@ -440,6 +440,7 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
     added_units = dat._ef_added_units.setdefault(civ_index, set())
     from civ_appender import _tree_building_ids
     have = _tree_building_ids(civ_def)
+    replaced: dict[int, tuple[int, list]] = {}      # vanilla unit -> (ours, its techs)
     for line in lines:
         base, building, tiers = line["base"], line["building"], line["tiers"]
         # The tree page hides a line whose building is off; the build agrees.
@@ -456,8 +457,25 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             continue
         used = used_by_building.setdefault(building, _occupied(dat, civ_index, civ_def, building))
         frm = line.get("from")              # an extension: tiers upgrade on from this vanilla unit
+        rep = line.get("replaces")          # a replacement: this vanilla unit's upgrade gives ours
         hk_train = None
-        if frm is not None:
+        if rep is not None:
+            from civ_appender import _civ_present_units
+            ru = target[rep] if 0 <= rep < len(target) else None
+            tl = next((t for t in (ru.creatable.train_locations if ru is not None and ru.creatable else ())
+                       if t.unit_id == building), None)
+            producer = _producer(dat, civ_index, rep, building)
+            why = ("isn't in the tree" if rep not in _civ_present_units(civ_def, dat, civ_index)
+                   else "isn't trained at this building" if tl is None
+                   else "isn't an upgrade (only an upgrade can be replaced)" if producer is None else None)
+            if why:
+                msg = f"Added line {line['id']}: {unit_label(dat, 0, rep)} {why} — skipped"
+                print(f"       WARNING: {msg}")
+                warnings.append(msg)
+                continue
+            # Ours takes the unit's button, so the upgrade moves the button to it (quirk 3).
+            train_btn, hk_train, up_btn = tl.button_id, tl.hot_key_id, None
+        elif frm is not None:
             fu = target[frm] if 0 <= frm < len(target) else None
             tl = next((t for t in (fu.creatable.train_locations if fu is not None and fu.creatable else ())
                        if t.unit_id == building), None)
@@ -488,7 +506,7 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         else:
             producer = None
             train_btn, up_btn = _pick_buttons(used, len(tiers))
-        if train_btn is None or ((len(tiers) > 1 or frm is not None) and up_btn is None):
+        if train_btn is None or ((len(tiers) > 1 or frm is not None) and up_btn is None and rep is None):
             msg = (f"Added line {line['id']}: {unit_label(dat, 0, building)} has no free "
                    f"button left — skipped")
             print(f"       WARNING: {msg}")
@@ -570,11 +588,38 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         # failing a better match, the icon.
         role = line.get("role")
         if role is None:
-            role = default_role(unit_lines, frm if frm is not None else base)
+            role = default_role(unit_lines, rep if rep is not None else frm if frm is not None else base)
         vanilla = role_upgrades(dat, role_chain(unit_lines, role)) if role is not None else {}
         tech_strings, tech_sids = [], []
         hk_up = _hotkey(grid, building, up_btn, -1) if up_btn else -1
-        if frm is None:
+        if rep is not None:
+            # The vanilla upgrade stays (the AI researches it by name); a hidden
+            # tech that waits on it upgrades the result into ours, the way the
+            # game's own Fast Fire Ship (246) follows Galleon.  The upgrade
+            # button keeps its picture, but takes our name.
+            eff = _append_effect(dat, Effect(name=f"{names[0]} replaces {unit_label(dat, 0, rep)}", effect_commands=[
+                EffectCommand(type=EC_UPGRADE, a=rep, b=ids[0], c=-1, d=0.0)]))
+            h1 = _make_tech(f"{names[0]} replaces {unit_label(dat, 0, rep)}", eff, civ_index)
+            h1.required_techs, h1.required_tech_count = (producer, -1, -1, -1, -1, -1), 1
+            techs = [_append_tech(dat, h1)]
+            ptech = dat.techs[producer]
+            before = next((int(c.a) for c in dat.effects[ptech.effect_id].effect_commands
+                           if c.type == EC_UPGRADE and int(c.b) == rep), None)
+            bsid = target[before].language_dll_name if before is not None else -1
+            prev = (_string_table().get(bsid) or chronicles_strings().get(bsid)
+                    or (unit_label(dat, 0, before) if before is not None else "units"))
+            sid = _editor_sid(dat)
+            _OWN_STRING_NAMES[sid] = names[0]
+            kv, pkv = names[0].replace('"', '\\"'), prev.replace('"', '\\"')
+            tech_strings.append({"sid": sid, "name": kv, "label": f"Upgrade to {kv} (<cost>)",
+                                 "hover": f"Upgrade to <b>{kv}<b> (<cost>)\\nUpgrades your {pkv} to {kv}."})
+            tech_sids.append(sid)
+            renames = _append_effect(dat, Effect(name=f"{names[0]}: upgrade name", effect_commands=[
+                EffectCommand(type=8, a=producer, b=7, c=-1, d=float(sid)),
+                EffectCommand(type=8, a=producer, b=8, c=-1, d=float(sid + 1000))]))
+            techs.append(_append_tech(dat, _make_tech(f"{names[0]}: upgrade name", renames, civ_index)))
+            replaced[rep] = (ids[0], techs)
+        elif frm is None:
             avail = _append_effect(dat, Effect(name=f"{names[0]} (available)", effect_commands=[
                 EffectCommand(type=EC_ENABLE, a=ids[0], b=1, c=-1, d=0.0)]))
             avail_tech = _make_tech(f"{names[0]} (available)", avail, civ_index,
@@ -585,7 +630,7 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             if producer is not None:
                 hk_up = next((rl.hot_key_id for rl in dat.techs[producer].research_locations
                               if rl.location_id == building), hk_up)
-        chain = ([frm] if frm is not None else []) + ids
+        chain = ([frm] if frm is not None else []) + (ids if rep is None else [])
         all_names = ([fname] if frm is not None else []) + names
         for n in range(1, len(chain)):
             k = n if frm is None else n - 1          # index into ids / tiers / names
@@ -625,12 +670,32 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
               f"button {train_btn} (units {ids}"
               + (f", AI line {role}" if role else "") + ")")
         built.append({"id": line["id"], "building": building, "base": base, "role": role,
-                      "from": frm, "from_is_upgrade": producer is not None,
+                      "from": frm, "from_is_upgrade": producer is not None, "replaces": rep,
                       "units": ids, "techs": techs, "names": names, "sids": sids,
                       "tech_sids": tech_sids, "ages": [t["age"] for t in tiers],
                       "button": train_btn, "upgrade_button": up_btn,
                       "strings": (unit_strings, tech_strings)})
+    _replacements_onward(dat, civ_index, civ_def, replaced)
     return built
+
+
+def _replacements_onward(dat, civ_index: int, civ_def: dict, replaced: dict) -> None:
+    """A replaced unit's next vanilla upgrade (Paladin, after a replaced
+    Cavalier) upgrades the vanilla unit, which no longer exists: ours must
+    follow it, straight to the next one's replacement if it has one."""
+    from civ_appender import _append_effect, _append_tech, _make_tech, unit_label
+    for rep, (ours, techs) in replaced.items():
+        nxt = _later_upgrade(dat, civ_index, civ_def, rep)
+        if nxt is None:
+            continue
+        to = next(int(c.b) for c in dat.effects[dat.techs[nxt].effect_id].effect_commands
+                  if c.type == EC_UPGRADE and int(c.a) == rep)
+        dest = replaced.get(to, (to,))[0]
+        eff = _append_effect(dat, Effect(name=f"{unit_label(dat, 0, ours)} onward", effect_commands=[
+            EffectCommand(type=EC_UPGRADE, a=ours, b=dest, c=-1, d=0.0)]))
+        h2 = _make_tech(f"{unit_label(dat, 0, ours)} onward", eff, civ_index)
+        h2.required_techs, h2.required_tech_count = (nxt, -1, -1, -1, -1, -1), 1
+        techs.append(_append_tech(dat, h2))
 
 
 # ── The AI: join the role's line ─────────────────────────────────────────────

@@ -527,9 +527,14 @@ def norm_added_lines(raw) -> list:
         # An extension: its tiers upgrade on from this unit (Halberdier ->
         # Elite Halberdier), rather than starting a line of their own.
         frm = _id_key(line.get("from")) if line.get("from") is not None else None
+        # A replacement: the unit a vanilla upgrade gives (Paladin) becomes this
+        # line's one tier (Savar).  One tier, its upgrade the vanilla one.
+        rep = _id_key(line.get("replaces")) if line.get("replaces") is not None else None
+        if rep is not None:
+            frm = None
         tiers: list = []
         for t in line.get("tiers") or []:
-            if not isinstance(t, dict) or len(tiers) == ADDED_LINE_MAX_TIERS:
+            if not isinstance(t, dict) or len(tiers) == (1 if rep is not None else ADDED_LINE_MAX_TIERS):
                 continue
             age = _num(t.get("age"), int, 1, 4)
             if age is None or (tiers and age <= tiers[-1]["age"]):
@@ -559,6 +564,8 @@ def norm_added_lines(raw) -> list:
                     "description": desc, "tiers": tiers})
         if frm is not None:
             out[-1]["from"] = int(frm)
+        if rep is not None:
+            out[-1]["replaces"] = int(rep)
     return out
 
 

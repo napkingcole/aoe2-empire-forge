@@ -86,6 +86,7 @@ SPEAR, PIKE, HALB, KNIGHT = 93, 358, 359, 38
 PIKEMAN_TECH, HALBERDIER_TECH, CAVALIER_TECH, SAVAR_TECH = 197, 429, 209, 526
 SAVAR = 1813
 SKIRM, ESKIRM, HC, ESKIRM_TECH = 7, 6, 5, 98
+CAVALIER, PALADIN, PALADIN_TECH = 283, 569, 265
 HERO = 160                     # Richard the Lionheart (creatable.hero_mode 1)
 units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
 draft = {
@@ -112,6 +113,10 @@ draft = {
         {"id": 4, "building": 87, "base": ESKIRM, "from": ESKIRM, "tiers": [{"age": 4}]},
         {"id": 5, "building": 87, "base": SKIRM, "from": SKIRM, "tiers": [{"age": 4}]},   # not the end
         {"id": 6, "building": 87, "base": HC, "from": HC, "tiers": [{"age": 4, "edits": {"hp": 60}}]},
+        # Replacements: the Cavalier and the Paladin upgrades give ours.
+        {"id": 7, "building": 101, "base": SAVAR, "replaces": CAVALIER, "tiers": [{"age": 3, "name": "Lancer"}]},
+        {"id": 8, "building": 101, "base": SAVAR, "replaces": PALADIN, "tiers": [{"age": 4}]},
+        {"id": 9, "building": 101, "base": SAVAR, "replaces": KNIGHT, "tiers": [{"age": 3}]},  # not an upgrade
     ],
 }
 dat = load_dat(str(dat_path))
@@ -120,9 +125,9 @@ out = io.StringIO()
 with contextlib.redirect_stdout(out):
     r, _ = apply_civ_with_overrides(dat, _draft_to_civ_def(draft), SLOT, draft)
 lines = r.get("added_lines") or []
-check("every line built but the extension of a unit that still upgrades",
-      [l["id"] for l in lines] == [1, 2, 3, 4, 6], ([l["id"] for l in lines], r["warnings"]))
-guard, knights, hero, ext, hcx = lines[0], lines[1], lines[2], lines[3], lines[4]
+check("every line built but an extension of a unit that still upgrades, and a replaced first unit",
+      [l["id"] for l in lines] == [1, 2, 3, 4, 6, 7, 8], ([l["id"] for l in lines], r["warnings"]))
+guard, knights, hero, ext, hcx, rcav, rpal = lines
 ids = guard["units"]
 U = dat.civs[SLOT].units
 
@@ -222,6 +227,31 @@ check("F2: the new tier hangs off the vanilla unit",
 check("the AI's line is the vanilla unit's", ext["role"] == added_lines.default_role(added_lines.game_unit_lines(), ESKIRM)
       and ext["role"] is not None, ext["role"])
 
+print("\n=== replacing a vanilla upgrade ===")
+y1, y2 = rcav["units"][0], rpal["units"][0]
+h1 = dat.techs[rpal["techs"][0]]
+check("the Paladin upgrade stays; a hidden tech after it upgrades Paladins into ours (Fast Fire Ship 246's shape)",
+      h1.civ == SLOT and [rl.location_id for rl in h1.research_locations] == [-1]
+      and list(h1.required_techs)[:1] == [PALADIN_TECH] and h1.required_tech_count == 1
+      and [(c.type, int(c.a), int(c.b)) for c in dat.effects[h1.effect_id].effect_commands] == [(3, PALADIN, y2)],
+      (h1.civ, list(h1.required_techs), [(c.type, int(c.a), int(c.b)) for c in dat.effects[h1.effect_id].effect_commands]))
+ptl = next(t for t in U[PALADIN].creatable.train_locations if t.unit_id == 101)
+check("ours trains on the Paladin's button (quirk 3)",
+      [(t.unit_id, t.button_id) for t in U[y2].creatable.train_locations] == [(101, ptl.button_id)])
+ren = [c for tid in rpal["techs"] for c in dat.effects[dat.techs[tid].effect_id].effect_commands if c.type == 8]
+check("the Paladin upgrade's button takes our name, for this civ (type 8, b=7 and b=8)",
+      sorted((int(c.a), c.b) for c in ren) == [(PALADIN_TECH, 7), (PALADIN_TECH, 8)])
+check("names default to the base's; a given one stands", rpal["names"] == ["Savar"] and rcav["names"] == ["Lancer"],
+      (rpal["names"], rcav["names"]))
+onward = [dat.techs[t] for t in rcav["techs"] if list(dat.techs[t].required_techs)[:1] == [PALADIN_TECH]]
+check("a replaced Cavalier follows the Paladin upgrade straight to the Paladin's replacement",
+      len(onward) == 1 and [(int(c.a), int(c.b)) for c in dat.effects[onward[0].effect_id].effect_commands] == [(y1, y2)],
+      [(list(t.required_techs), [(int(c.a), int(c.b)) for c in dat.effects[t.effect_id].effect_commands]) for t in onward])
+check("only an upgrade can be replaced (the Knight is skipped, with a warning)",
+      any("Added line 9" in w and "isn't an upgrade" in w for w in r["warnings"]), r["warnings"])
+check("the AI's knight line gains it", rpal["role"] == knights["role"] and rpal["role"] is not None)
+check("F2: no node of its own (it shows on the Paladin's)", not _added_line_nodes(dat, SLOT, [rpal]))
+
 print("\n=== the AI ===")
 check("role defaults to the base's line (spearman-line)", guard["role"] == -295 and knights["role"] == -287,
       (guard["role"], knights["role"]))
@@ -234,7 +264,8 @@ check("vanilla upgrades leave the added lines alone (in game: Pikeman upgrading 
 lines_doc = [{"LineID": -295, "IDChain": [SPEAR, PIKE, HALB]}, {"LineID": -287, "IDChain": [KNIGHT, 283, 569]}]
 n_joined = added_lines.patch_unitline_roles(lines_doc, {SLOT: {"added_lines": lines}})
 check("the units join their AI lines in unitlines.json",
-      n_joined == 5 and lines_doc[0]["IDChain"] == [SPEAR, PIKE, HALB] + ids, lines_doc)
+      n_joined == 7 and lines_doc[0]["IDChain"] == [SPEAR, PIKE, HALB] + ids
+      and lines_doc[1]["IDChain"] == [KNIGHT, 283, 569] + knights["units"] + rcav["units"] + rpal["units"], lines_doc)
 
 print("\n=== cards naming the role's units ===")
 hp = [(int(c.a), c.d) for e in dat.effects for c in e.effect_commands

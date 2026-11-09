@@ -1111,6 +1111,17 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                     node["Help String ID"] = _help_sid(sid)
                     changed += 1
 
+    # A replacement keeps the vanilla unit's node (its upgrade still triggers
+    # it), showing ours: Savar where the Paladin was.
+    for line in (civ_result or {}).get("added_lines") or []:
+        if line.get("replaces") is None or dat is None:
+            continue
+        for node in data.get("civ_techs_units", []):
+            if node.get("Node ID") == line["replaces"] and node.get("Use Type") == "Unit":
+                node.update({"Name": line["names"][0], "Name String ID": line["sids"][0],
+                             "Help String ID": line["sids"][0] + 100000,
+                             "Picture Index": dat.civs[slot].units[line["units"][0]].icon_id})
+                changed += 1
     added = _added_line_nodes(dat, slot, (civ_result or {}).get("added_lines") or [])
     if added:
         data.setdefault("civ_techs_units", []).extend(added)
@@ -1130,6 +1141,8 @@ def _added_line_nodes(dat, slot, lines: list[dict]) -> list[dict]:
         return out
     units = dat.civs[slot].units
     for line in lines:
+        if line.get("replaces") is not None:
+            continue                          # shown on the vanilla unit's node
         # An extension's first tier hangs off the vanilla unit it upgrades from.
         frm = line.get("from")
         for n, (uid, sid, age, tech) in enumerate(zip(line["units"], line["sids"], line["ages"], line["techs"])):

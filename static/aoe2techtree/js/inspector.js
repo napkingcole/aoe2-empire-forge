@@ -430,6 +430,7 @@
     }
     function defaultTierName(ref) {
         const { line, n } = ref;
+        if (line.replaces != null) return line.tiers[0].name || baseName(line.base);
         if (line.from != null) {
             const first = line.tiers[0].name;
             if (first) return n ? extensionNames(first, line.tiers.length - 1)[n - 1] : first;
@@ -465,6 +466,7 @@
         }
         return {
             name: tierName(key),
+            replaces: line.replaces != null ? baseName(line.replaces) : null,
             age: tier.age, n, of: line.tiers.length,
             cost: Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, base.cost, carried.cost || {}),
             hp: stat('hp'), attack: base.fights ? stat('attack') : null,
@@ -485,10 +487,11 @@
         window._ttRelayout?.();
     }
 
-    function addLine(building, age, base, from) {
+    function addLine(building, age, base, from, replaces) {
         const id = Math.max(0, ...edits.added_lines.map(l => l.id)) + 1;
         const line = { id, building, base, role: null, appearance: null, tiers: [{ age, name: '' }] };
         if (from != null) line.from = from;
+        if (replaces != null) line.replaces = replaces;
         edits.added_lines.push(line);
         relayout(tierItemId(line, 0));
     }
@@ -648,6 +651,19 @@
         });
     }
 
+    // Replace a unit an upgrade gives (Paladin) with another: the vanilla
+    // upgrade stays, and a hidden tech after it turns the result into ours.
+    function replace(item) {
+        const name = (window._ttNodeName ? window._ttNodeName(item) : baseName(item.node_id)).replace(/\n/g, ' ');
+        openUnitPicker({
+            title: `Replace the ${name}`,
+            sub: `Researching the ${name} upgrade gives this unit instead, and the button takes its name. `
+                + `The button keeps the ${name}'s picture: the game can't change a technology's picture for one civilization.`,
+            building: item.building_id,
+            onPick: base => addLine(item.building_id, item.age_id || 1, base, null, item.node_id),
+        });
+    }
+
     // The "+" was clicked (item.add), or a line's base is being changed (item.rebase).
     function renderPicker(item) {
         const ctx = item.add;
@@ -714,20 +730,28 @@
         const auto = defs && defs.default_role != null ? roleName(defs.default_role) || `line ${defs.default_role}` : null;
         const roles = catalog.roles.map(r => `<option value="${r.id}" ${r.id === line.role ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
         const look = line.appearance != null ? catalog.byId[line.appearance] : null;
+        const swap = line.replaces != null;
+        const was = swap ? (item.added.replacesName || baseName(line.replaces)) : '';
         return `<div class="tt-insp-line">
-            <div class="tt-insp-section">${line.from != null ? 'Added upgrade' : 'Added line'}</div>
+            <div class="tt-insp-section">${swap ? 'Replacement' : line.from != null ? 'Added upgrade' : 'Added line'}</div>
+            ${swap ? `<div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Replaces</span>
+                <span class="tt-insp-basename">${esc(was)}</span></div>` : ''}
             ${line.from != null ? `<div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Upgrades from</span>
                 <span class="tt-insp-basename">${esc(item.added.fromName || baseName(line.from))}</span></div>` : ''}
             <div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Copy of</span>
                 <span class="tt-insp-basename">${esc(baseName(line.base))}</span>
                 <button type="button" class="tt-insp-link" id="tt-line-base">change</button></div>
+            ${swap ? `<div class="tt-insp-note">Researching the ${esc(was)} upgrade gives this unit instead, and the
+                button takes its name. The button keeps the ${esc(was)}'s picture: the game can't change a
+                technology's picture for one civilization. The computer player gets it too, since it still
+                researches the ${esc(was)} upgrade.</div>` : `
             <div class="tt-insp-tiers">${tiers}</div>
             ${addAges.length ? `<div class="tt-insp-bonus-add"><select id="tt-line-add">
                 <option value="">Add a tier in…</option>${addAges.join('')}</select></div>` : ''}
             <div class="tt-insp-note">${line.from != null
                 ? `Each tier is researched at the ${esc(item.added.fromName || '')}'s upgrade button, after the one before, and takes over its train button.`
                 : 'Each tier after the first gets its own upgrade, one row below the unit\'s button.'}
-                A stat you change carries on to later tiers unless they set their own.</div>
+                A stat you change carries on to later tiers unless they set their own.</div>`}
             <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-desc">Description</label>
                 <textarea class="tt-insp-num tt-insp-text tt-insp-desc" id="tt-line-desc" rows="3" maxlength="300"
                     placeholder="The ${esc(baseName(line.base))}'s own description">${esc(line.description || '')}</textarea></div>
@@ -738,7 +762,7 @@
                 <span class="tt-insp-basename">${line.appearance == null ? 'Its own'
                     : esc(look ? look.name : `unit ${line.appearance}`)}</span>
                 <button type="button" class="tt-insp-link" id="tt-line-look">change</button></div>
-            <button type="button" class="tt-insp-reset" id="tt-line-remove">Remove this line</button>
+            <button type="button" class="tt-insp-reset" id="tt-line-remove">${swap ? `Undo: back to the ${esc(was)}` : 'Remove this line'}</button>
         </div>`;
     }
 
@@ -790,7 +814,7 @@
         rm?.addEventListener('click', () => {
             if (rm.dataset.armed) return removeLine(line);
             rm.dataset.armed = '1';
-            rm.textContent = 'Click again to remove the whole line';
+            rm.textContent = line.replaces != null ? 'Click again to undo the replacement' : 'Click again to remove the whole line';
         });
     }
 
@@ -815,8 +839,9 @@
                 <img class="tt-insp-icon" src="${lineImage(line)}" alt="">
                 <div>
                     <div class="tt-insp-title">${esc(tierName(key))}</div>
-                    <div class="tt-insp-kind">${line.from != null ? `Added upgrade after the ${esc(item.added.fromName || '')}`
-                        : 'Added unit'} · tier ${n + 1} of ${line.tiers.length} · ${AGE_NAMES[tier.age - 1]}</div>
+                    <div class="tt-insp-kind">${line.replaces != null ? `Replaces the ${esc(item.added.replacesName || '')}`
+                        : `${line.from != null ? `Added upgrade after the ${esc(item.added.fromName || '')}` : 'Added unit'}`
+                          + ` · tier ${n + 1} of ${line.tiers.length}`} · ${AGE_NAMES[tier.age - 1]}</div>
                 </div>
             </div>
             ${lineSection(ref, item, defs && defs.status === 'ok' ? defs : null)}
@@ -963,8 +988,11 @@
             ${includeRow(item)}
             ${window._ttCanExtend?.(item) ? `<button type="button" class="tt-insp-reset" id="tt-insp-extend"
                 title="A further upgrade for this line, like the Imperial Skirmisher">Add an upgrade after it…</button>` : ''}
+            ${window._ttCanReplace?.(item) ? `<button type="button" class="tt-insp-reset" id="tt-insp-replace"
+                title="Its upgrade gives another unit instead, like the Savar for the Paladin">Replace with another unit…</button>` : ''}
             <div id="tt-insp-body"><div class="tt-insp-loading">Loading stats…</div></div>`;
         panel.querySelector('#tt-insp-extend')?.addEventListener('click', () => extend(item));
+        panel.querySelector('#tt-insp-replace')?.addEventListener('click', () => replace(item));
         panel.querySelector('#tt-insp-include')?.addEventListener('change', () => {
             _toggleNode(item, current.element_height);
             _treeChanged();
