@@ -261,6 +261,8 @@ check("standard / regional / unique / chronicles / scenario / hero",
       (group(KNIGHT), group(1132), group(SAVAR), group(2110), group(299), group(HERO))
       == ("standard", "regional", "unique", "chronicles", "scenario", "hero"),
       (group(KNIGHT), group(1132), group(SAVAR), group(2110), group(299), group(HERO)))
+check("a unit no civ's tree has is still offered (War Dog, Ninja: scenario)",
+      group(2612) == "scenario" and group(1145) == "scenario", (group(2612), group(1145)))
 check("Chronicles units are named from the game's own strings", (cat.get(2110) or {}).get("name") == "Hoplite")
 check("military only: no Villager, no Trade Cart, no animals",
       not ({83, 128, 594} & set(cat)), sorted({83, 128, 594} & set(cat)))

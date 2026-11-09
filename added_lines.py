@@ -163,6 +163,7 @@ def unit_catalog(dat, dat_path, name_of) -> list[dict]:
     civ trains it) and hero.  [{id, name, group, cls, at, naval}]"""
     from heroes import is_hero
     avail, era, uus, uu_civ = _tree_availability(dat_path)
+    chron = chronicles_strings()
     base_civs = {c for c, e in era.items() if e == "base"} or set().union(*avail.values()) if avail else set()
     half = max(2, len(base_civs) // 2)
     units = dat.civs[0].units
@@ -183,10 +184,12 @@ def unit_catalog(dat, dat_path, name_of) -> list[dict]:
             mine = civs & base_civs
             group = ("chronicles" if not mine else "standard" if len(mine) >= half
                      else "unique" if len(mine) == 1 else "regional")
-        elif at or u.hide_in_editor:
-            continue            # trained somewhere no tree shows: campaign copies
+        elif u.hide_in_editor:
+            continue            # campaign-only copies ("Alexander's Peltast")
+        elif u.language_dll_name in chron:
+            group = "chronicles"    # its name is in the Chronicles strings (mercenaries)
         else:
-            group = "scenario"
+            group = "scenario"      # no civ trains it: War Dog, Ninja, Xolotl Warrior
         rows.append({"id": uid, "name": name, "group": group, "cls": u.class_, "at": at,
                      "naval": u.class_ in NAVAL_CLASSES, "in_tree": bool(civs),
                      "icon": u.icon_id})
