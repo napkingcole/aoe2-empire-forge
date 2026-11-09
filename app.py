@@ -3076,6 +3076,84 @@ _PANEL_CLASS_NAMES: dict[int, str] = {
 }
 
 
+_ADD_OPTIONS_CACHE: dict[str, dict] = {}
+
+
+@app.route("/api/builder/add-unit-options")
+def api_builder_add_unit_options():
+    """What the tree page's "+ Add Unit" offers: every unit some building
+    trains (a line's base, read from the Britons template like node-info), with
+    the ones this building trains first, and the AI's unit lines (roles) from
+    the player's unitlines.json.  ?building=N."""
+    import added_lines
+    from civ_appender import _display_name
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    try:
+        building = int(request.args.get("building", ""))
+    except ValueError:
+        return jsonify({"status": "error", "error": "bad building"}), 400
+    if dat_path not in _ADD_OPTIONS_CACHE:
+        dat = _get_dat(dat_path)
+        bases, seen = [], set()
+        for uid, u in enumerate(dat.civs[1].units):
+            # Units only: Villagers "train" buildings (type 80) too.
+            if u is None or u.creatable is None or u.type >= 80:
+                continue
+            at = sorted({tl.unit_id for tl in u.creatable.train_locations if tl.unit_id >= 0})
+            name = _display_name(u.language_dll_name, None) if at else None
+            if not name or (name, u.icon_id) in seen:
+                continue
+            seen.add((name, u.icon_id))
+            bases.append({"id": uid, "name": name, "icon": u.icon_id, "at": at, "cls": u.class_})
+        bases.sort(key=lambda b: b["name"].lower())
+        roles = sorted(({"id": int(l["LineID"]), "name": l.get("Name") or str(l["LineID"]),
+                         "units": list(l.get("IDChain") or [])}
+                        for l in added_lines.game_unit_lines(dat_path) if "LineID" in l),
+                       key=lambda r: r["name"].lower())
+        _ADD_OPTIONS_CACHE[dat_path] = {"bases": bases, "roles": roles}
+    opts = _ADD_OPTIONS_CACHE[dat_path]
+    here = [b for b in opts["bases"] if building in b["at"]]
+    rest = [b for b in opts["bases"] if building not in b["at"]]
+    return jsonify({"status": "ok", "here": here, "other": rest, "roles": opts["roles"]})
+
+
+@app.route("/api/builder/added-line-info")
+def api_builder_added_line_info():
+    """A line's defaults for the side panel: the AI role its base implies and,
+    per age, the upgrade cost and time the build will use unless edited (the
+    role's vanilla upgrade at that age, else the Militia line's).
+    ?base=N[&role=LineID]."""
+    import added_lines
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    try:
+        base = int(request.args.get("base", ""))
+        role = int(request.args["role"]) if request.args.get("role") not in (None, "") else None
+    except ValueError:
+        return jsonify({"status": "error", "error": "bad id"}), 400
+    dat = _get_dat(dat_path)
+    lines = added_lines.game_unit_lines(dat_path)
+    default = added_lines.default_role(lines, base)
+    rides = added_lines.role_upgrades(dat, added_lines.role_chain(lines, role if role is not None else default))
+    names = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+    upgrades = {}
+    for age in (2, 3, 4):
+        if age in rides:
+            t = dat.techs[rides[age]]
+            cost = {names[rc.type]: int(rc.amount) for rc in t.resource_costs if rc.type in names and rc.amount > 0}
+            time = next((rl.research_time for rl in t.research_locations if rl.location_id >= 0), 40)
+            from civ_appender import _display_name
+            upgrades[age] = {"cost": cost, "time": time, "rides": rides[age],
+                             "rides_name": _display_name(t.language_dll_name, t.name) or t.name}
+        else:
+            c, time = added_lines._DEFAULT_UPGRADE[age]
+            upgrades[age] = {"cost": {names[r]: a for r, a in c.items()}, "time": time, "rides": None}
+    return jsonify({"status": "ok", "default_role": default, "upgrades": upgrades})
+
+
 @app.route("/api/builder/node-info")
 def api_builder_node_info():
     """The base values the tech tree's side panel shows and edits for one node.
@@ -3343,7 +3421,7 @@ def _tree_steps_split(draft: dict) -> tuple[dict, dict]:
     unit available rather than change a stat, and keeping them would rebuild on
     every such click."""
     from civ_appender import _UNLOCK_UNIT_BONUSES
-    basis = {k: v for k, v in draft.items() if k not in ("unit_edits", "tech_edits", "tree")}
+    basis = {k: v for k, v in draft.items() if k not in ("unit_edits", "tech_edits", "tree", "added_lines")}
     basis["bonuses"] = [b for b in draft.get("bonuses") or []
                         if not (isinstance(b, dict) and b.get("id") in _UNLOCK_UNIT_BONUSES)]
     return basis, draft.get("tree") or {}

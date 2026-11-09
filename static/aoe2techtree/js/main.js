@@ -627,6 +627,7 @@ function _useTypeKey(useType) {
 }
 
 function _isSelected(item) {
+    if (item.added || item.add) return true;     // added lines are in by being there
     if (item.use_type === 'Building' && HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) return true;
     const key = _useTypeKey(item.use_type);
     if (!key) return true;  // unknown types treated as always-selected
@@ -1063,6 +1064,8 @@ function _disableBuildingItems(building, element_height) {
 }
 
 function _toggleNode(item, element_height) {
+    // An added line is removed from its panel, and a "+" only adds.
+    if (item.added || item.add) return;
     // The siege ship is owned by the wizard's picker and the regional second
     // unique units by their bonus cards — neither decision lives in this tree.
     if (_isExternallyControlled(item)) return;
@@ -1325,7 +1328,24 @@ window._ttRelabel = function (item, element_height) {
         .y(item.y + element_height * 0.67);
 };
 
+// A "+" box (tree page, "+ Add Unit"): a dim square with a plus, brighter on
+// hover; clicking it opens the unit picker for that building and age.
+function _drawAddSlot(slot, element_height, draw) {
+    const g = draw.group().attr({ id: slot.id }).addClass('node tt-add-slot');
+    const x = slot.x, y = slot.y, s = element_height;
+    g.rect(s, s).attr({ id: `${slot.id}_bg`, fill: '#000', 'fill-opacity': 0.15,
+                        stroke: '#000', 'stroke-width': 1 }).move(x, y).addClass('tt-add-bg');
+    const arm = s * 0.36, w = Math.max(2, s * 0.07);
+    g.rect(arm, w).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - arm) / 2, y + (s - w) / 2);
+    g.rect(w, arm).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - w) / 2, y + (s - arm) / 2);
+    g.rect(s, s).attr({ id: `${slot.id}_overlay`, fill: 'transparent' }).addClass('node__overlay')
+        .move(x, y)
+        .click(() => window.ttInspector?.select(slot, element_height));
+    g.element('title').words(`Add a unit to the ${slot.add.buildingName} in the ${['Dark', 'Feudal', 'Castle', 'Imperial'][slot.add.age - 1]} Age`);
+}
+
 function drawItem(itemToDraw, element_height, tree_height, draw) {
+    if (itemToDraw.add) return _drawAddSlot(itemToDraw, element_height, draw);
     const item = draw.group().attr({ id: itemToDraw.id }).addClass('node');
     item.rect(element_height, element_height).attr({
         fill: getColourForNodeType(itemToDraw.node_type || itemToDraw.use_type),
@@ -1428,6 +1448,75 @@ function _stripCastleUuAndUt(treeData) {
     }
 }
 
+// ── "+ Add Unit" (added_lines.py) ────────────────────────────────────────────
+// Buildings that can take an added line; the Castle's second unit is the
+// unique-unit step's.
+const _ADD_LINE_BUILDINGS = new Set([12, 87, 101, 49, 45, 104, 109]);
+
+// Draw the draft's added lines as columns after a building's units, and, while
+// editing, one more column of "+" boxes, one per age the building has.
+function _applyAddedLines(treeData) {
+    const lines = window.ttInspector ? window.ttInspector.addedLines() : [];
+    for (const b of treeData.buildings) {
+        if (!_ADD_LINE_BUILDINGS.has(b.node_id) || !b.grid || !b.grid.length) continue;
+        const on = !_canEdit || _isSelected(b);
+        const mine = lines.filter(l => l.building === b.node_id);
+        if (!on || (!mine.length && !_canEdit)) continue;
+        const rows = b.grid.length;
+        // The row for an age: its first row, or the next one if the building
+        // itself sits there (the Stable is drawn in the Feudal row).
+        const rowOf = age => { const r = (age - 1) * 2; return r <= b.row ? b.row + 1 : r; };
+        const name = formatName(data.strings[b.name_string_id] || b.name).replace(/\n/g, ' ');
+        const cols = [];
+        for (const line of mine) {
+            const col = new Array(rows).fill(null);
+            line.tiers.forEach((t, n) => {
+                const id = `Unit_a${line.id}_${n}_${b.node_id}`;
+                const row = rowOf(t.age);
+                if (row >= rows) return;
+                treeData.units_techs.push({
+                    id, node_id: `a${line.id}.${n}`, building_id: b.node_id, use_type: 'Unit',
+                    node_type: n ? 'UnitUpgrade' : 'Unit',
+                    link_id: n ? `a${line.id}.${n - 1}` : null,
+                    link_node_type: n === 0 ? 'BuildingTech' : n === 1 ? 'Unit' : 'UnitUpgrade',
+                    picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
+                    name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row,
+                    added: { line: line.id, n, buildingAge: b.age_id || 1, buildingName: name },
+                });
+                col[row] = id;
+            });
+            cols.push(col);
+        }
+        if (_canEdit) {
+            const col = new Array(rows).fill(null);
+            for (let age = Math.max(1, b.age_id || 1); age <= 4; age++) {
+                const id = `Add_${b.node_id}_${age}`;
+                const row = rowOf(age);
+                if (row >= rows) continue;
+                treeData.units_techs.push({
+                    id, node_id: id, building_id: b.node_id, use_type: 'Add', node_type: 'AddSlot',
+                    link_id: null, age_id: age, row, name: '', name_string_id: -1,
+                    add: { building: b.node_id, age, buildingName: name },
+                });
+                col[row] = id;
+            }
+            cols.push(col);
+        }
+        if (!cols.length) continue;
+        // After the last column holding a unit, so techs stay at the right.
+        let at = 0;
+        for (let c = 0; c < b.grid[0].length; c++) {
+            if (b.grid.some(r => r[c] && String(r[c]).startsWith('Unit_'))) at = c + 1;
+        }
+        for (let r = 0; r < rows; r++) b.grid[r].splice(at, 0, ...cols.map(c => c[r]));
+    }
+}
+
+// A line changed shape: redraw (the panel re-opens its node via rebind).
+window._ttRelayout = function () {
+    if (_currentCivName) civ(_currentCivName);
+};
+
 function civ(civName) {
     _currentCivName = civName;
     const era = (data.civs && data.civs[civName]) ? data.civs[civName].era : 'base';
@@ -1436,6 +1525,7 @@ function civ(civName) {
         _stripCastleUuAndUt(treeData);
         _applyBuildingVariantLayout(treeData);
         _applySiegeShipLayout(treeData);
+        _applyAddedLines(treeData);
         const root = document.getElementById('root');
         if (root) document.getElementById('techtree').removeChild(root);
 
@@ -1536,6 +1626,7 @@ function civ(civName) {
                     const iId = building.grid[r][c];
                     if (!iId) continue;
                     const item = index[iId];
+                    if (item.add) continue;                  // a "+" box joins nothing
                     if (item.link_id !== -1 && item.link_id !== null) {
                         for (let sr = r - 1; sr >= 0; sr--) {
                             const topId = building.grid[sr][c];
@@ -1785,6 +1876,30 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             box-shadow: 0 1px 2px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.5); }
         .tt-insp-x:hover, .tt-insp-add:hover, .tt-insp-reset:hover { background: linear-gradient(#fbecc0, #e9cd8c); }
         .tt-insp-x { padding: 0; line-height: 18px; }
+        /* "+ Add Unit" */
+        .tt-add-slot { cursor: pointer; }
+        .tt-add-slot .tt-add-bg { transition: fill-opacity .12s; }
+        .tt-add-slot:hover .tt-add-bg { fill-opacity: .32; }
+        .tt-insp-search { width: 100%; margin: 6px 0 2px; box-sizing: border-box; }
+        .tt-insp-picks { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+        .tt-insp-pick { display: flex; align-items: center; gap: 8px; padding: 3px 6px; text-align: left;
+            border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer;
+            color: #2e1d08; font-size: 12px; }
+        .tt-insp-pick:hover, .tt-insp-pick:focus-visible { background: rgba(255,250,235,.6); border-color: rgba(110,75,30,.45); }
+        .tt-insp-pick img { width: 26px; height: 26px; flex: none; }
+        .tt-insp-pick[hidden] { display: none; }
+        .tt-insp-line { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(110,75,30,.25); }
+        .tt-insp-line .tt-insp-baserow { display: flex; flex-direction: row; align-items: baseline; gap: 8px; text-align: left; }
+        .tt-insp-basename { font-weight: 600; flex: 1; }
+        .tt-insp-tiers { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+        .tt-insp-tier { display: grid; grid-template-columns: 1fr auto 22px; gap: 6px; align-items: center;
+            padding: 2px 4px; border-radius: 4px; }
+        .tt-insp-tier.is-current { background: rgba(255,250,235,.55); outline: 1px solid rgba(110,75,30,.35); }
+        .tt-insp-tier-name { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            background: none !important; border: none !important; box-shadow: none !important; padding: 2px 0; }
+        .tt-insp-tier select, .tt-insp-line select { font-size: 12px; padding: 3px; border: 1px solid rgba(110,75,30,.45);
+            border-radius: 4px; background: rgba(255,250,235,.55); color: #2e1d08; max-width: 100%; }
+        .tt-insp-line .tt-insp-row select { width: 100%; }
         .tt-insp-link { border: none; background: none; box-shadow: none; text-decoration: underline; text-transform: none;
             letter-spacing: 0; font: 400 12px 'Inter', sans-serif; padding: 0; color: #6b3f06; }
         .tt-insp-fu { font-size: 11.5px; color: #5a3d14; min-height: 0; line-height: 1.3; }

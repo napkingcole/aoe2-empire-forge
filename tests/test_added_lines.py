@@ -188,6 +188,14 @@ check("unit tooltip is the base's own, renamed, minus its Upgrades line",
 check("upgrade button label and hover", ts.get(guard["tech_sids"][0], {}).get("label") == "Upgrade to Veteran Guard"
       and "(<cost>)" in ts.get(guard["tech_sids"][0], {}).get("hover", ""), ts.get(guard["tech_sids"][0]))
 
+print("\n=== a line whose building is off ===")
+dat3 = load_dat(str(dat_path))
+no_stable = dict(draft, tree=dict(draft["tree"], buildings=[b for b in buildings if b != 101]))
+with contextlib.redirect_stdout(io.StringIO()):
+    r3, _ = apply_civ_with_overrides(dat3, _draft_to_civ_def(no_stable), SLOT, no_stable)
+check("is not built (the page hides it too)", [l["id"] for l in r3["added_lines"]] == [1],
+      [l["id"] for l in r3["added_lines"]])
+
 print("\n=== two civs in one build ===")
 dat2 = load_dat(str(dat_path))
 with contextlib.redirect_stdout(io.StringIO()):

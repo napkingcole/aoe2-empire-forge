@@ -54,15 +54,18 @@ _ANY_BUTTONS = tuple(range(1, 16)) + tuple(range(21, 36))
 _LINES_CACHE: dict = {}
 
 
-def game_unit_lines() -> list[dict]:
-    """unitlines.json's UnitLines, from beside the DAT being built ([] if none)."""
+def game_unit_lines(dat_path=None) -> list[dict]:
+    """unitlines.json's UnitLines, from beside `dat_path` (default: the DAT
+    being built) — [] if there is none."""
     import dat_reader
     from build_civ import _find_adjacent_json
-    key = str(dat_reader.last_loaded)
+    if dat_path is None:
+        dat_path = dat_reader.last_loaded
+    key = str(dat_path)
     if key not in _LINES_CACHE:
         lines: list = []
-        if dat_reader.last_loaded is not None:
-            path = _find_adjacent_json(Path(dat_reader.last_loaded), "unitlines.json")
+        if dat_path is not None:
+            path = _find_adjacent_json(Path(dat_path), "unitlines.json")
             try:
                 if path is not None and path.exists():
                     lines = json.loads(path.read_text(encoding="utf-8")).get("UnitLines", [])
@@ -210,8 +213,16 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
     if not hasattr(dat, "_ef_added_units"):
         dat._ef_added_units = {}
     added_units = dat._ef_added_units.setdefault(civ_index, set())
+    from civ_appender import _tree_building_ids
+    have = _tree_building_ids(civ_def)
     for line in lines:
         base, building, tiers = line["base"], line["building"], line["tiers"]
+        # The tree page hides a line whose building is off; the build agrees.
+        # (The Town Center is always on; a tree with no buildings listed is a
+        # KM file that never chose, so it keeps them.)
+        if have and building != 109 and building not in have:
+            print(f"       Added line {line['id']}: {unit_label(dat, 0, building)} isn't in the tree — skipped")
+            continue
         src = target[base] if 0 <= base < len(target) else None
         if src is None or src.creatable is None:
             msg = f"Added line {line['id']}: unit {base} can't be trained, so it can't be copied — skipped"
