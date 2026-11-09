@@ -333,8 +333,9 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
         for ext in civ_result["bonus_results"].get("extra_tech_strings", []):
             sid, name = ext["sid"], ext["name"]
             string_lines[lang].append(f'{sid} "{name}"')
-            string_lines[lang].append(f'{sid + DLL_CREATION_OFFSET} "Research {name}"')
-            _ext_help = f"Research <b>{name}<b> (<cost>)"
+            _ext_label = ext.get("label") or f"Research {name}"
+            string_lines[lang].append(f'{sid + DLL_CREATION_OFFSET} "{_ext_label}"')
+            _ext_help = ext.get("hover") or f"Research <b>{name}<b> (<cost>)"
             string_lines[lang].append(f'{sid + DLL_HELP_OFFSET} "{_ext_help}"')
             string_lines[lang].append(f'{sid + 150000} "{name}"')
             # Some bonus techs (e.g. City Walls) use a separate help_sid from

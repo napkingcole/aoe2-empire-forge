@@ -239,11 +239,15 @@ print("\n=== renames ===")
 dat3 = load_dat(str(dat_path))
 OTHER = 5 if SLOT != 5 else 6                     # any civ but ours
 MONK, MONK_RELIC, CART, CART_FULL = 125, 286, 128, 204
+MILITIA, MAA, PALADIN, MAA_TECH, PALADIN_TECH = 74, 75, 569, 222, 265
 named = dict(draft, unit_edits={
     str(KNIGHT): {"name": "Holy Knight", "hp": 150},
     str(TREB_PACKED): {"name": "Siege Engine"},
     str(VILLAGER): {"name": "Peasant"},
     str(MONK): {"name": "Priest"},
+    str(MILITIA): {"name": "Footman"},
+    str(MAA): {"name": "Sergeant"},
+    str(PALADIN): {"name": "Holy Paladin"},
 })
 with contextlib.redirect_stdout(io.StringIO()):
     r3, uu3 = apply_civ_with_overrides(dat3, _draft_to_civ_def(named), SLOT, named)
@@ -269,9 +273,33 @@ check("both villagers, the jobs untouched",
 check("the Monk with a relic follows", (said(MONK), said(MONK_RELIC)) == ("Priest", "Priest with Relic"),
       (said(MONK), said(MONK_RELIC)))
 k = texts[u3[KNIGHT].language_dll_name]
-check("the tooltips quote the name and the edited HP",
-      "Holy Knight" in k["ext_text"] and "150 HP" in k["ext_text"] and k["ext_sid"] == k["sid"] + 21000,
-      k["ext_text"])
+check("the tooltips are the game's own, renamed, with the stat tokens the engine fills",
+      k["ext_text"].startswith("Create <b>Holy Knight<b> (<cost>)") and "<hp> <attack>" in k["ext_text"]
+      and "Heavy Cavalry" in k["ext_text"] and k["help_text"] == k["ext_text"]
+      and k["ext_sid"] == k["sid"] + 21000, k["ext_text"])
+
+# The upgrade button: the shared tech renamed for this civ by type=8 Set Name /
+# Set Description, never copied (the AI researches it by id).
+techs3 = {e["sid"]: e for e in r3["bonus_results"].get("extra_tech_strings", [])}
+names_cmds = [(c.a, c.b, int(c.d)) for t in dat3.techs if t.name == "Upgrade names" and t.civ == SLOT
+              for c in dat3.effects[t.effect_id].effect_commands if c.type == 8]
+by_tech = {(a, b): d for a, b, d in names_cmds}
+pal = techs3.get(by_tech.get((PALADIN_TECH, 7)), {})
+check("the Paladin upgrade is renamed for this civ",
+      pal.get("name") == "Holy Paladin" and pal.get("label") == "Upgrade to Holy Paladin"
+      and by_tech.get((PALADIN_TECH, 8)) == by_tech.get((PALADIN_TECH, 7), 0) + 1000, (pal, by_tech))
+check("its hover is the game's, with every renamed unit's name",
+      pal.get("hover", "").startswith("Upgrade to <b>Holy Paladin<b> (<cost>)")
+      and "Holy Paladins" in pal.get("hover", ""), pal.get("hover"))
+maa = techs3.get(by_tech.get((MAA_TECH, 7)), {})
+check("Men-at-Arms -> Sergeants, Militia -> Footman in the Man-at-Arms upgrade",
+      "Upgrades your Footman" in maa.get("hover", "") and "Sergeants" in maa.get("hover", ""),
+      maa.get("hover"))
+check("the shared techs keep their own ids and names",
+      dat3.techs[PALADIN_TECH].language_dll_name == load_dat(str(dat_path)).techs[PALADIN_TECH].language_dll_name
+      and not any(t.civ == SLOT and t.name == dat3.techs[PALADIN_TECH].name for t in dat3.techs))
+check("only upgrade buttons are renamed (the Knight has none)", set(a for a, _, _ in names_cmds) == {MAA_TECH, PALADIN_TECH},
+      names_cmds)
 check("one pool id per distinct name", len(set(ren.values())) == len(texts) - 0
       and len(set(ren.values())) == len({e["name"] for e in texts.values()}))
 uu_ids = {uu3.get("unit_id"), uu3.get("elite_id")} - {None}

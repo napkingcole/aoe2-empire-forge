@@ -952,10 +952,14 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
             for ext in civ_result["bonus_results"].get("extra_tech_strings", []):
                 sid, name = ext["sid"], ext["name"]
                 string_lines[lang].append(f'{sid} "{name}"')
-                string_lines[lang].append(f'{sid + DLL_CREATION_OFFSET} "Research {name}"')
-                string_lines[lang].append(
-                    f'{sid + DLL_HELP_OFFSET} "Research <b>{name}<b> (<cost>)"')
+                _ext_label = ext.get("label") or f"Research {name}"
+                _ext_help = ext.get("hover") or f"Research <b>{name}<b> (<cost>)"
+                string_lines[lang].append(f'{sid + DLL_CREATION_OFFSET} "{_ext_label}"')
+                string_lines[lang].append(f'{sid + DLL_HELP_OFFSET} "{_ext_help}"')
                 string_lines[lang].append(f'{sid + 150000} "{name}"')
+                # The research button's hover is description+20000 = name+21000,
+                # as app.py and wizard_build.py already write.
+                string_lines[lang].append(f'{sid + 21000} "{_ext_help}"')
             _owned_sids: set[int] = set()
             # KM-custom UU units' OWN name/help strings (the actual in-game
             # selection-panel/training-queue text, distinct from the

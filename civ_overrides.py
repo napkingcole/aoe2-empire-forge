@@ -876,12 +876,12 @@ def _apply_unit_names(dat, slot: int, overrides: dict, civ_result: dict,
     hero are named on their own wizard steps, so they are left alone here.
     Runs after the stat edits, so the tooltips quote the edited numbers.
 
-    The upgrade TECH keeps its name: techs are shared by every civ, and a
-    per-civ copy would hide the upgrade from the AI (it researches by id) and
-    from cards that discount that tech."""
+    The upgrade tech that leads to a renamed unit is renamed for this civ by
+    _name_upgrade_techs, without copying it."""
     from civ_appender import (_OWN_STRING_NAMES, _creation_sid, _display_name, _editor_sid,
                               _extended_tooltip_sid, _help_sid)
     from civ_schema import norm_unit_edits
+    from build_civ import rich_unit_tooltip
     names = {int(k): e["name"] for k, e in norm_unit_edits(overrides.get("unit_edits")).items()
              if e.get("name")}
     own = {uu_info.get("unit_id"), uu_info.get("elite_id")} if uu_info else set()
@@ -891,6 +891,7 @@ def _apply_unit_names(dat, slot: int, overrides: dict, civ_result: dict,
     extra = civ_result.setdefault("bonus_results", {}).setdefault("extra_unit_strings", [])
     import re
     shown = lambda u: _display_name(u.language_dll_name, u.name) or ""   # noqa: E731
+    was: dict[int, str] = {}                             # form -> the game's name
     for uid, name in sorted(names.items()):
         node = units[uid] if 0 <= uid < len(units) else None
         if node is None or uid in own or uid in renamed:
@@ -904,6 +905,7 @@ def _apply_unit_names(dat, slot: int, overrides: dict, civ_result: dict,
             t = shown(u)
             if f == uid or (stem and t.startswith(stem)):
                 texts[f] = name + (t[len(stem):] if stem and t.startswith(stem) else "")
+                was[f] = t
         sids: dict[str, int] = {}
         for f, text in texts.items():                    # node first: unit_forms order
             if text not in sids:
@@ -915,21 +917,95 @@ def _apply_unit_names(dat, slot: int, overrides: dict, civ_result: dict,
             u.language_dll_creation = _creation_sid(sid)
             u.language_dll_help = _help_sid(sid)
             renamed[f] = sid
+        kv = lambda t: t.replace('"', '\\"')                    # noqa: E731
         for text, sid in sids.items():
-            u = units[next(f for f, t in texts.items() if t == text)]
+            f = next(f for f, t in texts.items() if t == text)
+            u = units[f]
+            # The game's own tooltip for this form, renamed: description,
+            # upgrades, and the <hp> <attack> … tokens the engine fills from
+            # the unit with stat icons.  Plain text only where it has none.
+            rich = rich_unit_tooltip(dat, f, kv(name))
             where = ""
             if u.creatable and u.creatable.train_locations:
                 b = u.creatable.train_locations[0].unit_id
                 bu = template[b] if 0 <= b < len(template) else None
                 where = shown(bu) if bu else ""
             extra.append({
-                "sid": sid, "name": text, "desc_sid": _help_sid(sid),
-                "help_text": format_unit_tooltip_help(
-                    u, name, extra=f"Trainable at {where}." if where else ""),
+                "sid": sid, "name": kv(text), "desc_sid": _help_sid(sid),
+                "help_text": rich or format_unit_tooltip_help(
+                    u, kv(name), extra=f"Trainable at {where}." if where else ""),
                 "ext_sid": _extended_tooltip_sid(sid),
-                "ext_text": format_unit_extended_tooltip(u, name),
+                "ext_text": rich or format_unit_extended_tooltip(u, kv(name)),
             })
+    _name_upgrade_techs(dat, slot, {f: (was[f], _OWN_STRING_NAMES[sid])
+                                    for f, sid in renamed.items() if f in was},
+                        civ_result)
     return len(renamed)
+
+
+def _name_upgrade_techs(dat, slot: int, names: dict, civ_result: dict) -> int:
+    """Give the research button that upgrades into a renamed unit the new name,
+    for this civ only: "Upgrade to Holy Paladin" on the Stable.
+
+    The tech is shared by every civ, but a type=8 Modify Tech command with b=7
+    (Set Name) or b=8 (Set Description) points one player's copy of it at
+    another string, the way vanilla's "Dark Age" and "Rename Units" effects
+    rename tech 1151 and Veteran Chiliarchs rewrites its doctrines' text.  The
+    tech keeps its id, so the AI (which researches by id) and cards that
+    discount it still find it.  The button label is the description; its hover
+    is description+20000, which for a fresh pool id is name+21000.
+
+    names: {unit form: (the game's name, its new name)}.  Returns the number of
+    techs renamed."""
+    from civ_appender import (_OWN_STRING_NAMES, _append_effect, _append_tech, _editor_sid,
+                              _make_tech, _string_table)
+    import re
+    if not names:
+        return 0
+    table = _string_table()
+    # Every renamed unit, in one pass so a new name is never renamed again:
+    # "Upgrades your Militia and lets you create ..." names this civ's Footman.
+    # Plurals too ("create Paladins"); whole words, longest name first.
+    pairs = {o: n for o, n in names.values() if o and o != n}
+    for o, n in list(pairs.items()):                     # Men-at-Arms, Spearmen
+        if (many := re.sub(r"([Mm])an\b", r"\1en", o)) != o:
+            pairs.setdefault(many, n + "s")
+    pattern = re.compile(r"\b(" + "|".join(re.escape(o) for o in sorted(pairs, key=len, reverse=True))
+                         + r")(?=s?\b)") if pairs else None
+    swap_all = lambda text, esc=lambda t: t: pattern.sub(          # noqa: E731
+        lambda m: esc(pairs[m.group(1)]), text) if pattern else text
+    kv = lambda t: t.replace('"', '\\"')                                       # noqa: E731
+    extra = civ_result.setdefault("bonus_results", {}).setdefault("extra_tech_strings", [])
+    cmds: list[EffectCommand] = []
+    for tid, tech in enumerate(dat.techs):
+        if tech.civ not in (-1, slot) or not any(
+                rl.location_id >= 0 for rl in tech.research_locations):
+            continue
+        eff = dat.effects[tech.effect_id] if 0 <= tech.effect_id < len(dat.effects) else None
+        into = next((c.b for c in (eff.effect_commands if eff else [])
+                     if c.type == 3 and c.b in names), None)
+        if into is None:
+            continue
+        old, new = names[into]
+        game_name = table.get(tech.language_dll_name) or old
+        label = table.get(tech.language_dll_description) or f"Upgrade to {old}"
+        hover = table.get(tech.language_dll_description + 20000) or ""
+        if "(<cost>)" in hover:
+            hover = swap_all(hover, kv)
+            hover = re.sub(r"<b>.*?<b>", lambda _m: f"<b>{kv(new)}<b>", hover, count=1)
+        else:
+            hover = f"Upgrade to <b>{kv(new)}<b> (<cost>)"
+        sid = _editor_sid(dat)
+        text = swap_all(game_name) if old in game_name else new
+        _OWN_STRING_NAMES[sid] = text
+        extra.append({"sid": sid, "name": kv(text), "label": kv(swap_all(label)),
+                      "hover": hover})
+        cmds += [EffectCommand(type=8, a=tid, b=7, c=-1, d=float(sid)),
+                 EffectCommand(type=8, a=tid, b=8, c=-1, d=float(sid + 1000))]
+    if cmds:
+        eid = _append_effect(dat, Effect(name="Upgrade names", effect_commands=cmds))
+        _append_tech(dat, _make_tech("Upgrade names", eid, slot))
+    return len(cmds) // 2
 
 
 # ── The whole DAT write for one civ ───────────────────────────────────────────
