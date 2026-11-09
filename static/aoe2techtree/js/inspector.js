@@ -457,7 +457,7 @@
         const stat = f => carried[f] !== undefined ? carried[f] : base[f];
         let upgrade = null;
         if (n || line.from != null) {
-            const def = defs && defs.status === 'ok' ? defs.upgrades[String(tier.age)] : null;
+            const def = tierUpgradeDefault(defs, line, n);
             const own = tier.upgrade || {};
             upgrade = {
                 cost: own.cost || (def && def.cost) || null,
@@ -475,6 +475,16 @@
             desc: line.description || base.desc || '',
             upgrade,
         };
+    }
+
+    // The default upgrade for tier n: its age's, and for a second tier in one
+    // age that age's second (added-line-info upgrades_seq; the build agrees).
+    function tierUpgradeDefault(defs, line, n) {
+        if (!defs || defs.status !== 'ok') return null;
+        const age = line.tiers[n].age;
+        const same = line.tiers.slice(0, n).filter(t => t.age === age).length;
+        const seq = (defs.upgrades_seq || {})[String(age)] || [];
+        return seq[Math.min(same, seq.length - 1)] || defs.upgrades[String(age)] || null;
     }
 
     function tierItemId(line, n) { return `Unit_a${line.id}_${n}_${line.building}`; }
@@ -515,6 +525,10 @@
     const pickerState = { group: null, kind: 'all', q: '' };
 
     function pickerShell() {
+        // The wizard's unit preview lives in its <main>, which is hidden while
+        // the tree is full screen: it opened at zero size, backdrop only.
+        const preview = document.getElementById('modal-unit-preview');
+        if (preview && preview.parentElement !== document.body) document.body.appendChild(preview);
         if (pickerEl) return pickerEl;
         pickerEl = document.createElement('div');
         pickerEl.className = 'modal fade tt-unit-picker';
@@ -639,6 +653,8 @@
     // Its first tier starts in the next age (the same one in the Imperial Age),
     // a copy of that unit unless another is picked.
     function extend(item) {
+        const ref = addedRef(item.node_id);
+        if (ref) return addTier(ref, item.added);            // an added line: one more tier
         const from = item.node_id;
         const fromName = (window._ttNodeName ? window._ttNodeName(item) : baseName(from)).replace(/\n/g, ' ');
         const age = Math.min(4, (item.age_id || 1) + 1);
@@ -707,15 +723,55 @@
         open();
     }
 
+    // Do these tier ages fit the column?  Each age has two rows (one where the
+    // building itself sits), tiers never go back an age, and an extension
+    // starts beside or below its unit (main.js _applyAddedLines).
+    function agesFit(line, added, ages) {
+        const bRow = added.buildingRow ?? -1;
+        const rowOf = a => { const r = (a - 1) * 2; return r <= bRow ? bRow + 1 : r; };
+        const minAge = added.fromAge || added.buildingAge || 1;
+        let prev = line.from != null ? (added.fromRow ?? 0) - 1 : -1;
+        for (let i = 0; i < ages.length; i++) {
+            const a = ages[i];
+            if (a < minAge || (i && a < ages[i - 1])) return false;
+            const r = Math.max(rowOf(a), prev + 1);
+            if (r > (a - 1) * 2 + 1) return false;
+            prev = r;
+        }
+        return true;
+    }
+    // The ages a new last tier could take, the next age first.
+    function addableAges(line, added) {
+        if (line.replaces != null || line.tiers.length >= 4) return [];
+        const last = line.tiers[line.tiers.length - 1].age;
+        const ages = line.tiers.map(t => t.age);
+        return [last, last + 1, last + 2, last + 3].filter(a => a <= 4 && agesFit(line, added, [...ages, a]));
+    }
+    // The tree's hover "+" on a line's last tier (main.js _canExtend).
+    function canAddTier(key) {
+        const ref = addedRef(key);
+        const it = known[tierItemId(ref?.line || {}, ref?.n)];
+        return !!(ref && it && ref.n === ref.line.tiers.length - 1 && addableAges(ref.line, it[0].added).length);
+    }
+    function addTier(ref, added) {
+        const ages = addableAges(ref.line, added);
+        if (!ages.length) return;
+        const last = ref.line.tiers[ref.line.tiers.length - 1].age;
+        ref.line.tiers.push({ age: ages.find(a => a > last) ?? ages[0], name: '' });
+        relayout(tierItemId(ref.line, ref.line.tiers.length - 1));
+    }
+
     function lineSection(ref, item, defs) {
         const { line, n } = ref;
         const last = line.tiers.length - 1;
-        const minAge = item.added.fromAge || item.added.buildingAge || 1;
         const tiers = line.tiers.map((t, i) => {
-            const lo = i === 0 ? minAge : line.tiers[i - 1].age + 1;
-            const hi = i === last ? 4 : line.tiers[i + 1].age - 1;
             const ages = [];
-            for (let a = lo; a <= hi; a++) ages.push(`<option value="${a}" ${a === t.age ? 'selected' : ''}>${AGE_NAMES[a - 1]}</option>`);
+            for (let a = 1; a <= 4; a++) {
+                const trial = line.tiers.map((x, j) => j === i ? a : x.age);
+                if (a === t.age || agesFit(line, item.added, trial)) {
+                    ages.push(`<option value="${a}" ${a === t.age ? 'selected' : ''}>${AGE_NAMES[a - 1]}</option>`);
+                }
+            }
             return `<div class="tt-insp-tier${i === n ? ' is-current' : ''}">
                 <button type="button" class="tt-insp-link tt-insp-tier-name" data-goto="${i}">${esc(tierName(`a${line.id}.${i}`))}</button>
                 <select data-age="${i}" title="Age">${ages.join('')}</select>
@@ -723,9 +779,8 @@
                     title="${line.tiers.length === 1 ? 'Remove this line' : 'Remove this tier'}">×</button>
             </div>`;
         }).join('');
-        const lastAge = line.tiers[last].age;
-        const addAges = [];
-        for (let a = lastAge + 1; a <= 4 && line.tiers.length < 4; a++) addAges.push(`<option value="${a}">${AGE_NAMES[a - 1]}</option>`);
+        const addAges = addableAges(line, item.added).sort((a, b) => a - b)
+            .map(a => `<option value="${a}">${AGE_NAMES[a - 1]}</option>`);
         const roleName = id => (catalog.roles.find(r => r.id === id) || {}).name;
         const auto = defs && defs.default_role != null ? roleName(defs.default_role) || `line ${defs.default_role}` : null;
         const roles = catalog.roles.map(r => `<option value="${r.id}" ${r.id === line.role ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
@@ -871,7 +926,7 @@
         inf.line_before = [];
         inf.line_after = [];
         inf.forms = 1;
-        const up = defs && defs.status === 'ok' ? defs.upgrades[String(tier.age)] : null;
+        const up = tierUpgradeDefault(defs, line, n);
         inf.upgrade = (n || line.from != null) && up ? {
             id: `${key}u`, name: tierName(key), any: true,
             cost: Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, up.cost),
@@ -1302,6 +1357,7 @@
         addedLines: () => edits.added_lines,
         addedTip,
         extend,
+        canAddTier,
         tierName,
         baseIcon,
         lineImage,

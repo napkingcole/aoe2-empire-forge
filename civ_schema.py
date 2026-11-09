@@ -542,8 +542,11 @@ def norm_added_lines(raw) -> list:
             if not isinstance(t, dict) or len(tiers) == (1 if rep is not None else ADDED_LINE_MAX_TIERS):
                 continue
             age = _num(t.get("age"), int, 1, 4)
-            if age is None or (tiers and age <= tiers[-1]["age"]):
-                continue                                 # each tier a later age
+            # Ages never go back; two tiers may share one (Cavalier and Paladin
+            # are both Imperial) — an age has two rows on the tree, so no third.
+            if age is None or (tiers and age < tiers[-1]["age"]) \
+                    or (len(tiers) >= 2 and tiers[-2]["age"] == age):
+                continue
             tier: dict = {"age": age, "name": norm_unit_name(t.get("name"))}
             edits = norm_unit_edits({"0": dict(t.get("edits") or {}, name=None, age=None)}).get("0")
             if edits:

@@ -46,7 +46,7 @@ LINES = [
                {"age": 3},
                {"age": 4, "edits": {"attack": 9}}]},
     {"id": 2, "building": 101, "base": KNIGHT, "appearance": SAVAR,
-     "tiers": [{"age": 3}, {"age": 4}]},
+     "tiers": [{"age": 3}, {"age": 4}, {"age": 4}]},          # round 4: two Imperial tiers
     {"id": 3, "building": 87, "base": LONGBOWMAN, "appearance": CHU_KO_NU,
      "tiers": [{"age": 2}, {"age": 3}]},
     # Round 2: a Chronicles unit and a hero as bases.

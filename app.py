@@ -3184,21 +3184,30 @@ def api_builder_added_line_info():
     lines = added_lines.game_unit_lines(dat_path)
     # An extension plays the role of the unit it upgrades from.
     default = added_lines.default_role(lines, frm if frm is not None else base)
-    rides = added_lines.role_upgrades(dat, added_lines.role_chain(lines, role if role is not None else default))
+    from civ_appender import _display_name
+    rides = added_lines.role_upgrades_by_age(
+        dat, added_lines.role_chain(lines, role if role is not None else default), after=frm)
     names = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
-    upgrades = {}
-    for age in (2, 3, 4):
-        if age in rides:
-            t = dat.techs[rides[age]]
-            cost = {names[rc.type]: int(rc.amount) for rc in t.resource_costs if rc.type in names and rc.amount > 0}
-            time = next((rl.research_time for rl in t.research_locations if rl.location_id >= 0), 40)
-            from civ_appender import _display_name
-            upgrades[age] = {"cost": cost, "time": time, "from": rides[age],
-                             "from_name": _display_name(t.language_dll_name, t.name) or t.name}
-        else:
+
+    def one(tid):
+        t = dat.techs[tid]
+        cost = {names[rc.type]: int(rc.amount) for rc in t.resource_costs if rc.type in names and rc.amount > 0}
+        time = next((rl.research_time for rl in t.research_locations if rl.location_id >= 0), 40)
+        return {"cost": cost, "time": time, "from": tid,
+                "from_name": _display_name(t.language_dll_name, t.name) or t.name}
+
+    upgrades, seq = {}, {}
+    for age in (1, 2, 3, 4):
+        if rides.get(age):
+            seq[age] = [one(t) for t in rides[age]]
+            upgrades[age] = seq[age][0]
+        elif age in added_lines._DEFAULT_UPGRADE:
             c, time = added_lines._DEFAULT_UPGRADE[age]
             upgrades[age] = {"cost": {names[r]: a for r, a in c.items()}, "time": time, "from": None}
-    return jsonify({"status": "ok", "default_role": default, "upgrades": upgrades})
+            seq[age] = [upgrades[age]]
+    # upgrades_seq[age][i]: the default for the i-th tier of a line in that age
+    # (added_lines.apply_added_lines picks the same).
+    return jsonify({"status": "ok", "default_role": default, "upgrades": upgrades, "upgrades_seq": seq})
 
 
 @app.route("/api/builder/node-info")

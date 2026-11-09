@@ -1463,8 +1463,7 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
             }
         });
     if (_canEdit) window.ttInspector?.decorate(itemToDraw, element_height);
-    if (_canEdit && itemToDraw.use_type === 'Unit' && !itemToDraw.added
-            && _ADD_LINE_BUILDINGS.has(itemToDraw.building_id)) {
+    if (_canEdit && itemToDraw.use_type === 'Unit' && _ADD_LINE_BUILDINGS.has(itemToDraw.building_id)) {
         _drawExtendButton(item, itemToDraw, element_height);
     }
 }
@@ -1472,7 +1471,9 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
 // Is this the last unit of its line, so a tier can be added after it?  Asked
 // on hover, so it follows every on/off click.
 function _canExtend(item) {
-    if (!_canEdit || item.use_type !== 'Unit' || item.added || !_isSelected(item)
+    // An added line's last tier: one more tier, if the line has room.
+    if (item.added) return _canEdit && !!window.ttInspector?.canAddTier(item.node_id);
+    if (!_canEdit || item.use_type !== 'Unit' || !_isSelected(item)
             || !_ADD_LINE_BUILDINGS.has(item.building_id)) return false;
     const next = _successorIndex[`${item.building_id}_${item.node_id}`] || [];
     return !next.some(s => s.added || (s.use_type === 'Unit' && _isSelected(s)));
@@ -1497,7 +1498,7 @@ function _drawExtendButton(group, item, element_height) {
     const arm = r * 1.1, w = Math.max(1.5, r * 0.22);
     btn.rect(arm, w).attr({ fill: '#f3e2b5' }).center(cx, cy);
     btn.rect(w, arm).attr({ fill: '#f3e2b5' }).center(cx, cy);
-    btn.element('title').words('Add an upgrade after this unit');
+    btn.element('title').words(item.added ? 'Add a tier to this line' : 'Add an upgrade after this unit');
     btn.click(e => {
         e.stopPropagation();
         _hideEditTooltip();
@@ -1595,7 +1596,7 @@ function _applyAddedLines(treeData) {
                     name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row: at[n],
                     beside_of: n === 0 ? beside : null,
                     added: { line: line.id, n, buildingAge: from.age_id || 1, buildingName: name,
-                             fromName, fromAge: from.age_id || 1 },
+                             fromName, fromAge: from.age_id || 1, buildingRow: b.row, fromRow: frow },
                 });
                 b.grid[at[n]][target] = id;
             });
@@ -1624,10 +1625,13 @@ function _applyAddedLines(treeData) {
         const cols = [];
         for (const line of mine.filter(l => l.from == null && l.replaces == null)) {
             const col = new Array(rows).fill(null);
+            let prev = -1;
             line.tiers.forEach((t, n) => {
                 const id = `Unit_a${line.id}_${n}_${b.node_id}`;
-                const row = rowOf(t.age);
-                if (row >= rows) return;
+                // Two tiers in one age take its two rows (Cavalier, Paladin).
+                const row = Math.max(rowOf(t.age), prev + 1);
+                prev = row;
+                if (row >= rows || row > (t.age - 1) * 2 + 1) return;
                 treeData.units_techs.push({
                     id, node_id: `a${line.id}.${n}`, building_id: b.node_id, use_type: 'Unit',
                     node_type: n ? 'UnitUpgrade' : 'Unit',
@@ -1636,7 +1640,7 @@ function _applyAddedLines(treeData) {
                     picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
                     image_url: window.ttInspector.lineImage(line),
                     name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row,
-                    added: { line: line.id, n, buildingAge: b.age_id || 1, buildingName: name },
+                    added: { line: line.id, n, buildingAge: b.age_id || 1, buildingName: name, buildingRow: b.row },
                 });
                 col[row] = id;
             });

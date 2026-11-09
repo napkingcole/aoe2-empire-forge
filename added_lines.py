@@ -38,13 +38,13 @@ from genieutils.tech import ResearchResourceCost
 from genieutils.unit import TrainLocation
 
 EC_ENABLE, EC_UPGRADE = 2, 3
-AGE_TECHS = {2: 101, 3: 102, 4: 103}            # Feudal, Castle, Imperial Age
+AGE_TECHS = {1: 104, 2: 101, 3: 102, 4: 103}   # Dark (fires at the start) .. Imperial Age
 _AGE_OF_TECH = {v: k for k, v in AGE_TECHS.items()}
 ELITE_UPGRADE_ICON = 105                         # the gold medal every elite UU tech uses
 # An upgrade's default cost and time when the role has no vanilla upgrade at
 # that age: the Militia line's (Man-at-Arms, Long Swordsman, Two-Handed
 # Swordsman), the most ordinary upgrades in the game.
-_DEFAULT_UPGRADE = {2: ({0: 100, 3: 40}, 40), 3: ({0: 150, 3: 65}, 40), 4: ({0: 200, 3: 100}, 45)}
+_DEFAULT_UPGRADE = {1: ({0: 75, 3: 25}, 30), 2: ({0: 100, 3: 40}, 40), 3: ({0: 150, 3: 65}, 40), 4: ({0: 200, 3: 100}, 45)}
 _RES = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
 # Train buttons a line may take, page 1 then page 2; its upgrade goes +5.  No
 # vanilla unit or tech uses the fifth column at the Barracks, Archery Range or
@@ -216,22 +216,32 @@ def role_chain(unit_lines: list[dict], role: int | None) -> list[int]:
 
 
 def role_upgrades(dat, chain: list[int]) -> dict[int, int]:
-    """{age: tech} — the global, researchable techs upgrading one unit of the
-    role's line to another, by the age they need (Pikeman -> 3, Halberdier -> 4)."""
+    """{age: tech} — the role's first upgrade in each age (Pikeman -> 3,
+    Halberdier -> 4).  See role_upgrades_by_age."""
+    return {age: tids[0] for age, tids in role_upgrades_by_age(dat, chain).items()}
+
+
+def role_upgrades_by_age(dat, chain: list[int], after: int | None = None) -> dict[int, list[int]]:
+    """{age: [techs]} — the global, researchable techs upgrading one unit of the
+    role's line to another, by the age they need, in line order: Imperial is
+    [Cavalier, Paladin] for the knight line.  `after` (a unit of the line)
+    keeps only the upgrades past it, for an extension's defaults."""
     members = set(chain)
-    out: dict[int, int] = {}
+    pos = {u: i for i, u in enumerate(chain)}
+    found: dict[int, list[tuple[int, int]]] = {}
     for tid, t in enumerate(dat.techs):
         if t.civ != -1 or not any(rl.location_id >= 0 for rl in t.research_locations):
             continue
         if not 0 <= t.effect_id < len(dat.effects):
             continue
-        if not any(c.type == EC_UPGRADE and int(c.a) in members and int(c.b) in members
-                   for c in dat.effects[t.effect_id].effect_commands):
+        into = next((int(c.b) for c in dat.effects[t.effect_id].effect_commands
+                     if c.type == EC_UPGRADE and int(c.a) in members and int(c.b) in members), None)
+        if into is None or (after in pos and pos[into] <= pos[after]):
             continue
         age = next((_AGE_OF_TECH[r] for r in t.required_techs if r in _AGE_OF_TECH), None)
         if age is not None:
-            out.setdefault(age, tid)
-    return out
+            found.setdefault(age, []).append((pos[into], tid))
+    return {age: [tid for _, tid in sorted(v)] for age, v in found.items()}
 
 
 # ── Names ────────────────────────────────────────────────────────────────────
@@ -589,7 +599,7 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         role = line.get("role")
         if role is None:
             role = default_role(unit_lines, rep if rep is not None else frm if frm is not None else base)
-        vanilla = role_upgrades(dat, role_chain(unit_lines, role)) if role is not None else {}
+        vanilla = role_upgrades_by_age(dat, role_chain(unit_lines, role), after=frm) if role is not None else {}
         tech_strings, tech_sids = [], []
         hk_up = _hotkey(grid, building, up_btn, -1) if up_btn else -1
         if rep is not None:
@@ -635,7 +645,11 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         for n in range(1, len(chain)):
             k = n if frm is None else n - 1          # index into ids / tiers / names
             age = tiers[k]["age"]
-            ride = vanilla.get(age)          # the role's own upgrade at this age
+            # The role's own upgrade at this age; a second tier in one age
+            # takes the age's second (Paladin's price after Cavalier's).
+            same = sum(1 for j in range(k) if tiers[j]["age"] == age)
+            ups = vanilla.get(age) or []
+            ride = ups[min(same, len(ups) - 1)] if ups else None
             up = tiers[k].get("upgrade") or {}
             if ride is not None:
                 rt = dat.techs[ride]

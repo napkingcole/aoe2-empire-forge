@@ -40,7 +40,9 @@ raw = [
     {"id": 1, "building": 12, "base": 93, "role": -295,
      "tiers": [{"age": 2, "name": " Guard\n", "edits": {"hp": 70, "name": "ignored"}},
                {"age": 3, "upgrade": {"cost": {"food": -5, "gold": "50"}, "time": 30}},
-               {"age": 3},                                # not later: dropped
+               {"age": 3},                                # a second Castle tier: kept
+               {"age": 3},                                # a third: dropped (an age has two rows)
+               {"age": 2},                                # back an age: dropped
                {"age": 4}, {"age": 4}]},
     {"id": 1, "building": 12, "base": 93, "tiers": [{"age": 2}]},       # duplicate id
     {"id": 2, "building": 82, "base": 4, "tiers": [{"age": 2}]},        # the Castle: UU step
@@ -52,7 +54,7 @@ raw = [
 n = norm_added_lines(raw)
 check("only valid lines survive", [l["id"] for l in n] == [1, 5], [l["id"] for l in n])
 t = n[0]["tiers"]
-check("ages must climb, at most 4 tiers", [x["age"] for x in t] == [2, 3, 4], t)
+check("ages never go back, at most two tiers an age, at most 4 tiers", [x["age"] for x in t] == [2, 3, 3, 4], t)
 check("names cleaned; edits keep stats, not names",
       t[0]["name"] == "Guard" and t[0]["edits"] == {"hp": 70}, t[0])
 check("tier 1 has no upgrade; costs clamp", "upgrade" not in t[0]
@@ -121,6 +123,8 @@ draft = {
         {"id": 7, "building": 101, "base": SAVAR, "replaces": CAVALIER, "tiers": [{"age": 3, "name": "Lancer"}]},
         {"id": 8, "building": 101, "base": SAVAR, "replaces": PALADIN, "tiers": [{"age": 4}]},
         {"id": 9, "building": 101, "base": SAVAR, "replaces": KNIGHT, "tiers": [{"age": 3}]},  # not an upgrade
+        # Two Imperial tiers, like Cavalier and Paladin.
+        {"id": 10, "building": 101, "base": KNIGHT, "tiers": [{"age": 3, "name": "Rider"}, {"age": 4}, {"age": 4}]},
     ],
 }
 dat = load_dat(str(dat_path))
@@ -130,8 +134,8 @@ with contextlib.redirect_stdout(out):
     r, _ = apply_civ_with_overrides(dat, _draft_to_civ_def(draft), SLOT, draft)
 lines = r.get("added_lines") or []
 check("every line built but an extension of a unit that still upgrades, and a replaced first unit",
-      [l["id"] for l in lines] == [1, 2, 3, 4, 6, 7, 8], ([l["id"] for l in lines], r["warnings"]))
-guard, knights, hero, ext, hcx, rcav, rpal = lines
+      [l["id"] for l in lines] == [1, 2, 3, 4, 6, 7, 8, 10], ([l["id"] for l in lines], r["warnings"]))
+guard, knights, hero, ext, hcx, rcav, rpal, two = lines
 ids = guard["units"]
 U = dat.civs[SLOT].units
 
@@ -231,6 +235,15 @@ check("F2: the new tier hangs off the vanilla unit",
 check("the AI's line is the vanilla unit's", ext["role"] == added_lines.default_role(added_lines.game_unit_lines(), ESKIRM)
       and ext["role"] is not None, ext["role"])
 
+print("\n=== two tiers in one age ===")
+_, t2, t3 = (dat.techs[x] for x in two["techs"])
+cost = lambda t: {(c.type, c.amount) for c in t.resource_costs if c.amount}      # noqa: E731
+check("both Imperial upgrades: after Imperial and the tier before",
+      list(t2.required_techs)[:2] == [103, two["techs"][0]] and list(t3.required_techs)[:2] == [103, two["techs"][1]])
+check("their default prices are the age's first and second upgrades (Cavalier's, then Paladin's)",
+      cost(t2) == cost(dat.techs[CAVALIER_TECH]) and cost(t3) == cost(dat.techs[PALADIN_TECH]), (cost(t2), cost(t3)))
+check("named like any line", two["names"] == ["Rider", "Veteran Rider", "Elite Rider"], two["names"])
+
 print("\n=== replacing a vanilla upgrade ===")
 y1, y2 = rcav["units"][0], rpal["units"][0]
 h1 = dat.techs[rpal["techs"][0]]
@@ -288,8 +301,8 @@ check("vanilla upgrades leave the added lines alone (in game: Pikeman upgrading 
 lines_doc = [{"LineID": -295, "IDChain": [SPEAR, PIKE, HALB]}, {"LineID": -287, "IDChain": [KNIGHT, 283, 569]}]
 n_joined = added_lines.patch_unitline_roles(lines_doc, {SLOT: {"added_lines": lines}})
 check("the units join their AI lines in unitlines.json",
-      n_joined == 7 and lines_doc[0]["IDChain"] == [SPEAR, PIKE, HALB] + ids
-      and lines_doc[1]["IDChain"] == [KNIGHT, 283, 569] + knights["units"] + rcav["units"] + rpal["units"], lines_doc)
+      n_joined == 10 and lines_doc[0]["IDChain"] == [SPEAR, PIKE, HALB] + ids
+      and lines_doc[1]["IDChain"] == [KNIGHT, 283, 569] + knights["units"] + rcav["units"] + rpal["units"] + two["units"], lines_doc)
 
 print("\n=== cards naming the role's units ===")
 hp = [(int(c.a), c.d) for e in dat.effects for c in e.effect_commands
