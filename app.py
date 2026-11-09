@@ -3177,11 +3177,13 @@ def api_builder_added_line_info():
     try:
         base = int(request.args.get("base", ""))
         role = int(request.args["role"]) if request.args.get("role") not in (None, "") else None
+        frm = int(request.args["from"]) if request.args.get("from") not in (None, "") else None
     except ValueError:
         return jsonify({"status": "error", "error": "bad id"}), 400
     dat = _get_dat(dat_path)
     lines = added_lines.game_unit_lines(dat_path)
-    default = added_lines.default_role(lines, base)
+    # An extension plays the role of the unit it upgrades from.
+    default = added_lines.default_role(lines, frm if frm is not None else base)
     rides = added_lines.role_upgrades(dat, added_lines.role_chain(lines, role if role is not None else default))
     names = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
     upgrades = {}

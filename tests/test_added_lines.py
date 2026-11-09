@@ -60,6 +60,10 @@ check("tier 1 has no upgrade; costs clamp", "upgrade" not in t[0]
 check("a role outside unitlines' range is dropped; age 9 clamps to Imperial",
       n[1]["role"] is None and [x["age"] for x in n[1]["tiers"]] == [4], n[1])
 check("saves and loads", to_draft(from_draft({"added_lines": raw}))["added_lines"] == n)
+x = norm_added_lines([{"id": 1, "building": 87, "base": 6, "from": "6",
+                       "tiers": [{"age": 4, "upgrade": {"time": 50}}]}])
+check("an extension keeps its unit, and its first tier's upgrade", x and x[0].get("from") == 6
+      and x[0]["tiers"][0].get("upgrade") == {"time": 50}, x)
 
 try:
     from dat_reader import find_game_dat, load_dat
@@ -81,6 +85,7 @@ SLOT, OTHER = 1, 5
 SPEAR, PIKE, HALB, KNIGHT = 93, 358, 359, 38
 PIKEMAN_TECH, HALBERDIER_TECH, CAVALIER_TECH, SAVAR_TECH = 197, 429, 209, 526
 SAVAR = 1813
+SKIRM, ESKIRM, HC, ESKIRM_TECH = 7, 6, 5, 98
 HERO = 160                     # Richard the Lionheart (creatable.hero_mode 1)
 units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
 draft = {
@@ -103,6 +108,10 @@ draft = {
          "description": 'Holy "warriors".', "tiers": [{"age": 3}, {"age": 4}]},
         # A hero as a base: trains like any unit, without hero status.
         {"id": 3, "building": 12, "base": HERO, "tiers": [{"age": 3}]},
+        # Extensions: tiers upgrading on from a vanilla unit.
+        {"id": 4, "building": 87, "base": ESKIRM, "from": ESKIRM, "tiers": [{"age": 4}]},
+        {"id": 5, "building": 87, "base": SKIRM, "from": SKIRM, "tiers": [{"age": 4}]},   # not the end
+        {"id": 6, "building": 87, "base": HC, "from": HC, "tiers": [{"age": 4, "edits": {"hp": 60}}]},
     ],
 }
 dat = load_dat(str(dat_path))
@@ -111,8 +120,9 @@ out = io.StringIO()
 with contextlib.redirect_stdout(out):
     r, _ = apply_civ_with_overrides(dat, _draft_to_civ_def(draft), SLOT, draft)
 lines = r.get("added_lines") or []
-check("all three lines built", [l["id"] for l in lines] == [1, 2, 3], (lines, r["warnings"]))
-guard, knights, hero = lines[0], lines[1], lines[2]
+check("every line built but the extension of a unit that still upgrades",
+      [l["id"] for l in lines] == [1, 2, 3, 4, 6], ([l["id"] for l in lines], r["warnings"]))
+guard, knights, hero, ext, hcx = lines[0], lines[1], lines[2], lines[3], lines[4]
 ids = guard["units"]
 U = dat.civs[SLOT].units
 
@@ -182,6 +192,36 @@ check("a hero's copy loses hero status; the hero keeps it",
 check("and trains at the building like any unit",
       [(t.unit_id, t.button_id) for t in h.creatable.train_locations] == [(12, hero["button"])])
 
+print("\n=== extending a vanilla line ===")
+x = U[ext["units"][0]]
+etl = next(t for t in U[ESKIRM].creatable.train_locations if t.unit_id == 87)
+check("named after the game's own next title (Imperial Skirmisher)", ext["names"] == ["Imperial Skirmisher"], ext["names"])
+check("trains on the unit's own button and hotkey (quirk 3)",
+      [(t.unit_id, t.button_id, t.hot_key_id) for t in x.creatable.train_locations] == [(87, etl.button_id, etl.hot_key_id)])
+xt = dat.techs[ext["techs"][0]]
+prod_btn = next(rl.button_id for rl in dat.techs[ESKIRM_TECH].research_locations if rl.location_id == 87)
+check("its upgrade follows the vanilla one: same button, after it and the age",
+      [(rl.location_id, rl.button_id) for rl in xt.research_locations] == [(87, prod_btn)]
+      and list(xt.required_techs)[:2] == [103, ESKIRM_TECH] and xt.required_tech_count == 2,
+      ([(rl.location_id, rl.button_id) for rl in xt.research_locations], list(xt.required_techs)))
+check("which upgrades the vanilla unit into the new tier, and no tech makes it available instead",
+      [(c.type, int(c.a), int(c.b)) for c in dat.effects[xt.effect_id].effect_commands] == [(3, ESKIRM, ext["units"][0])]
+      and len(ext["techs"]) == 1)
+check("a unit that still upgrades further isn't extended, and says why",
+      any("Added line 5" in w and "isn't the end of its line" in w for w in r["warnings"]), r["warnings"])
+ht = dat.techs[hcx["techs"][0]]
+check("a line's first unit (Hand Cannoneer): after the age alone, never in the top row",
+      hcx["names"] == ["Elite Hand Cannoneer"] and ht.required_tech_count == 1 and list(ht.required_techs)[0] == 103
+      and (hcx["upgrade_button"] - 1) % 20 >= 5 and U[hcx["units"][0]].hit_points == 60,
+      (hcx["names"], list(ht.required_techs), hcx["upgrade_button"]))
+xn = [nd for nd in _added_line_nodes(dat, SLOT, [ext, hcx])]
+check("F2: the new tier hangs off the vanilla unit",
+      [(nd["Node Type"], nd.get("Link ID"), nd["Link Node Type"]) for nd in xn]
+      == [("UnitUpgrade", ESKIRM, "UnitUpgrade"), ("UnitUpgrade", HC, "Unit")],
+      [(nd["Node Type"], nd.get("Link ID"), nd["Link Node Type"]) for nd in xn])
+check("the AI's line is the vanilla unit's", ext["role"] == added_lines.default_role(added_lines.game_unit_lines(), ESKIRM)
+      and ext["role"] is not None, ext["role"])
+
 print("\n=== the AI ===")
 check("role defaults to the base's line (spearman-line)", guard["role"] == -295 and knights["role"] == -287,
       (guard["role"], knights["role"]))
@@ -238,7 +278,7 @@ dat3 = load_dat(str(dat_path))
 no_stable = dict(draft, tree=dict(draft["tree"], buildings=[b for b in buildings if b != 101]))
 with contextlib.redirect_stdout(io.StringIO()):
     r3, _ = apply_civ_with_overrides(dat3, _draft_to_civ_def(no_stable), SLOT, no_stable)
-check("is not built (the page hides it too)", [l["id"] for l in r3["added_lines"]] == [1, 3],
+check("is not built (the page hides it too)", [l["id"] for l in r3["added_lines"]] == [1, 3, 4, 6],
       [l["id"] for l in r3["added_lines"]])
 
 print("\n=== two civs in one build ===")

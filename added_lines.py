@@ -245,6 +245,52 @@ def default_names(base_name: str, n: int) -> list[str]:
     return [base_name] + [f"{m} {base_name}" for m in middle] + [f"Elite {base_name}"]
 
 
+_EXTEND_PREFIXES = ("Elite", "Imperial", "Royal", "Legendary")
+
+
+def extension_names(from_name: str, n: int) -> list[str]:
+    """Default names for tiers added after a vanilla unit: the next title it
+    hasn't got — Halberdier -> Elite Halberdier, Elite Skirmisher -> Imperial
+    Skirmisher (the game's own), then Royal, Legendary."""
+    words = from_name.split()
+    stem = " ".join(w for w in words if w not in _EXTEND_PREFIXES) or from_name
+    free = [p for p in _EXTEND_PREFIXES if p not in words]
+    return [f"{p} {stem}" for p in free[:n]] + [f"{stem} {i}" for i in range(len(free) + 1, n + 1)]
+
+
+def _producer(dat, civ_index: int, unit: int, building: int) -> int | None:
+    """The researchable tech upgrading INTO `unit` (Halberdier's tech for the
+    Halberdier), preferring one at `building`."""
+    found = []
+    for tid, t in enumerate(dat.techs):
+        if t.civ not in (-1, civ_index) or not 0 <= t.effect_id < len(dat.effects):
+            continue
+        locs = [rl.location_id for rl in t.research_locations if rl.location_id >= 0]
+        if locs and any(c.type == EC_UPGRADE and int(c.b) == unit
+                        for c in dat.effects[t.effect_id].effect_commands):
+            found.append((building not in locs, t.civ == -1, tid))
+    return min(found)[2] if found else None
+
+
+def _later_upgrade(dat, civ_index: int, civ_def: dict, unit: int) -> int | None:
+    """A tech this civ can still research that upgrades `unit` onward
+    (Halberdier while extending the Pikeman): the line doesn't end there."""
+    from civ_appender import _civ_present_units
+    tt = dat.effects[dat.civs[civ_index].tech_tree_id]
+    off = {int(c.d) for c in tt.effect_commands if c.type == 102}
+    present = _civ_present_units(civ_def, dat, civ_index)
+    for tid, t in enumerate(dat.techs):
+        if t.civ not in (-1, civ_index) or tid in off or not 0 <= t.effect_id < len(dat.effects):
+            continue
+        if not any(rl.location_id >= 0 for rl in t.research_locations):
+            continue
+        for c in dat.effects[t.effect_id].effect_commands:
+            # Into a unit the tree has: an unticked Halberdier doesn't count.
+            if c.type == EC_UPGRADE and int(c.a) == unit and int(c.b) in present:
+                return tid
+    return None
+
+
 def _tooltip(dat, base: int, name: str, desc: str = "") -> str | None:
     """The base unit's own Castle tooltip, renamed, without its grey
     "Upgrades: ..." line (that names the base's line, not this one), and with
@@ -409,8 +455,40 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             warnings.append(msg)
             continue
         used = used_by_building.setdefault(building, _occupied(dat, civ_index, civ_def, building))
-        train_btn, up_btn = _pick_buttons(used, len(tiers))
-        if train_btn is None or (len(tiers) > 1 and up_btn is None):
+        frm = line.get("from")              # an extension: tiers upgrade on from this vanilla unit
+        hk_train = None
+        if frm is not None:
+            fu = target[frm] if 0 <= frm < len(target) else None
+            tl = next((t for t in (fu.creatable.train_locations if fu is not None and fu.creatable else ())
+                       if t.unit_id == building), None)
+            later = _later_upgrade(dat, civ_index, civ_def, frm)
+            from civ_appender import _civ_present_units
+            gone = frm not in _civ_present_units(civ_def, dat, civ_index)
+            if tl is None or later is not None or gone:
+                why = ("isn't in the tree" if gone else "isn't trained at this building" if tl is None
+                       else f"still upgrades further ({dat.techs[later].name}), so it isn't the end of its line")
+                msg = f"Added line {line['id']}: {unit_label(dat, 0, frm)} {why} — skipped"
+                print(f"       WARNING: {msg}")
+                warnings.append(msg)
+                continue
+            # The new tiers take the unit's own button (quirk 3: an upgrade
+            # moves the train button only when the target trains there too);
+            # their upgrades take the button of the upgrade into it, one after
+            # the other (Elite Skirmisher -> Imperial Skirmisher share button 7).
+            producer = _producer(dat, civ_index, frm, building)
+            prod_btn = next((rl.button_id for rl in (dat.techs[producer].research_locations if producer is not None else ())
+                             if rl.location_id == building), None)
+            train_btn, hk_train = tl.button_id, tl.hot_key_id
+            if prod_btn is not None:
+                up_btn = prod_btn
+            else:
+                below = train_btn + 5
+                up_btn = below if below not in used and below not in _RESERVED else next(
+                    (b for b in _ANY_BUTTONS if b not in used and (b - 1) % 20 >= 5), None)
+        else:
+            producer = None
+            train_btn, up_btn = _pick_buttons(used, len(tiers))
+        if train_btn is None or ((len(tiers) > 1 or frm is not None) and up_btn is None):
             msg = (f"Added line {line['id']}: {unit_label(dat, 0, building)} has no free "
                    f"button left — skipped")
             print(f"       WARNING: {msg}")
@@ -440,11 +518,22 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         sid = src.language_dll_name
         stem = (tiers[0]["name"] or _string_table().get(sid) or chronicles_strings().get(sid)
                 or _display_name(sid, src.name) or unit_label(dat, 0, base))
-        names = [t["name"] or d for t, d in zip(tiers, default_names(stem, len(tiers)))]
+        if frm is not None:
+            fsid = target[frm].language_dll_name
+            fname = (_string_table().get(fsid) or chronicles_strings().get(fsid)
+                     or _display_name(fsid, target[frm].name))
+            defaults = (default_names(tiers[0]["name"], len(tiers)) if tiers[0]["name"]
+                        else extension_names(fname, len(tiers)))
+            if tiers[0]["name"] and len(tiers) > 1:        # "Sergeant" -> "Elite Sergeant"
+                defaults = [tiers[0]["name"]] + extension_names(tiers[0]["name"], len(tiers) - 1)
+        else:
+            defaults = default_names(stem, len(tiers))
+        names = [t["name"] or d for t, d in zip(tiers, defaults)]
         look = line.get("appearance")
         look_last = look_elite(dat, look) if look is not None else None
         desc = (line.get("description") or "").replace("\\", " ").replace('"', '\\"')
-        hk_train = _hotkey(grid, building, train_btn, -1)
+        if hk_train is None:
+            hk_train = _hotkey(grid, building, train_btn, -1)
         unit_strings, sids = [], []
         for n, (uid, tier, edits) in enumerate(zip(ids, tiers, _flowed_edits(tiers))):
             u = target[uid]
@@ -481,19 +570,28 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         # failing a better match, the icon.
         role = line.get("role")
         if role is None:
-            role = default_role(unit_lines, base)
+            role = default_role(unit_lines, frm if frm is not None else base)
         vanilla = role_upgrades(dat, role_chain(unit_lines, role)) if role is not None else {}
-        avail = _append_effect(dat, Effect(name=f"{names[0]} (available)", effect_commands=[
-            EffectCommand(type=EC_ENABLE, a=ids[0], b=1, c=-1, d=0.0)]))
-        avail_tech = _make_tech(f"{names[0]} (available)", avail, civ_index,
-                                age_req=AGE_TECHS.get(tiers[0]["age"], -1))
-        techs = [_append_tech(dat, avail_tech)]
         tech_strings, tech_sids = [], []
         hk_up = _hotkey(grid, building, up_btn, -1) if up_btn else -1
-        for n in range(1, len(ids)):
-            age = tiers[n]["age"]
+        if frm is None:
+            avail = _append_effect(dat, Effect(name=f"{names[0]} (available)", effect_commands=[
+                EffectCommand(type=EC_ENABLE, a=ids[0], b=1, c=-1, d=0.0)]))
+            avail_tech = _make_tech(f"{names[0]} (available)", avail, civ_index,
+                                    age_req=AGE_TECHS.get(tiers[0]["age"], -1))
+            techs = [_append_tech(dat, avail_tech)]
+        else:
+            techs = []
+            if producer is not None:
+                hk_up = next((rl.hot_key_id for rl in dat.techs[producer].research_locations
+                              if rl.location_id == building), hk_up)
+        chain = ([frm] if frm is not None else []) + ids
+        all_names = ([fname] if frm is not None else []) + names
+        for n in range(1, len(chain)):
+            k = n if frm is None else n - 1          # index into ids / tiers / names
+            age = tiers[k]["age"]
             ride = vanilla.get(age)          # the role's own upgrade at this age
-            up = tiers[n].get("upgrade") or {}
+            up = tiers[k].get("upgrade") or {}
             if ride is not None:
                 rt = dat.techs[ride]
                 d_cost = {rc.type: rc.amount for rc in rt.resource_costs if rc.type in (0, 1, 2, 3) and rc.amount > 0}
@@ -502,28 +600,32 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
                 d_cost, d_time = _DEFAULT_UPGRADE[age]
             cost = ({_RES[r]: a for r, a in up["cost"].items()} if "cost" in up else d_cost)
             time = up.get("time", d_time)
-            eff = _append_effect(dat, Effect(name=f"Upgrade to {names[n]}", effect_commands=[
-                EffectCommand(type=EC_UPGRADE, a=ids[n - 1], b=ids[n], c=-1, d=0.0)]))
+            eff = _append_effect(dat, Effect(name=f"Upgrade to {names[k]}", effect_commands=[
+                EffectCommand(type=EC_UPGRADE, a=chain[n - 1], b=chain[n], c=-1, d=0.0)]))
             sid = _editor_sid(dat)
-            _OWN_STRING_NAMES[sid] = names[n]
-            tech = _make_tech(f"Upgrade to {names[n]}", eff, civ_index, age_req=AGE_TECHS[age],
+            _OWN_STRING_NAMES[sid] = names[k]
+            tech = _make_tech(f"Upgrade to {names[k]}", eff, civ_index, age_req=AGE_TECHS[age],
                               location=building, button=up_btn, research_time=time,
-                              icon_id=_upgrade_icon(dat, target[ids[n]].icon_id, ride),
+                              icon_id=_upgrade_icon(dat, target[chain[n]].icon_id, ride),
                               lang_name=sid, lang_desc=sid + 1000, lang_help=sid + 21000,
                               lang_tech_tree=sid + 150000, hot_key_id=hk_up)
-            tech.required_techs = (AGE_TECHS[age], techs[-1], -1, -1, -1, -1)
-            tech.required_tech_count = 2
+            # After the age and the step before: our previous upgrade, or for an
+            # extension's first, the vanilla upgrade into the unit (if it has one).
+            before = techs[-1] if techs else producer
+            tech.required_techs = (AGE_TECHS[age], before if before is not None else -1, -1, -1, -1, -1)
+            tech.required_tech_count = 2 if before is not None else 1
             tech.resource_costs = _costs(cost)
             tid = _append_tech(dat, tech)
             techs.append(tid)
             tech_sids.append(sid)
-            kv, prev = names[n].replace('"', '\\"'), names[n - 1].replace('"', '\\"')
+            kv, prev = all_names[n].replace('"', '\\"'), all_names[n - 1].replace('"', '\\"')
             tech_strings.append({"sid": sid, "name": kv, "label": f"Upgrade to {kv}",
                                  "hover": f"Upgrade to <b>{kv}<b> (<cost>)\\nUpgrades your {prev} to {kv}."})
         print(f"       Added line: {' -> '.join(names)} at {unit_label(dat, 0, building)} "
               f"button {train_btn} (units {ids}"
               + (f", AI line {role}" if role else "") + ")")
         built.append({"id": line["id"], "building": building, "base": base, "role": role,
+                      "from": frm, "from_is_upgrade": producer is not None,
                       "units": ids, "techs": techs, "names": names, "sids": sids,
                       "tech_sids": tech_sids, "ages": [t["age"] for t in tiers],
                       "button": train_btn, "upgrade_button": up_btn,

@@ -524,6 +524,9 @@ def norm_added_lines(raw) -> list:
         base = _id_key(line.get("base"))
         if lid is None or lid in seen or building not in ADDED_LINE_BUILDINGS or base is None:
             continue
+        # An extension: its tiers upgrade on from this unit (Halberdier ->
+        # Elite Halberdier), rather than starting a line of their own.
+        frm = _id_key(line.get("from")) if line.get("from") is not None else None
         tiers: list = []
         for t in line.get("tiers") or []:
             if not isinstance(t, dict) or len(tiers) == ADDED_LINE_MAX_TIERS:
@@ -535,7 +538,7 @@ def norm_added_lines(raw) -> list:
             edits = norm_unit_edits({"0": dict(t.get("edits") or {}, name=None)}).get("0")
             if edits:
                 tier["edits"] = edits
-            if tiers:                                    # tier 1 has no upgrade
+            if tiers or frm is not None:                 # a new line's tier 1 has no upgrade
                 up = norm_tech_edits({"0": t.get("upgrade") or {}}).get("0")
                 if up:
                     tier["upgrade"] = up
@@ -554,6 +557,8 @@ def norm_added_lines(raw) -> list:
         out.append({"id": lid, "building": building, "base": int(base), "role": role,
                     "appearance": int(look) if look is not None else None,
                     "description": desc, "tiers": tiers})
+        if frm is not None:
+            out[-1]["from"] = int(frm)
     return out
 
 

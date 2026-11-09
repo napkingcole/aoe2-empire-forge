@@ -387,11 +387,12 @@
         return lookCache[base];
     }
 
-    function lineInfo(base, role) {
-        const key = `${base}:${role ?? ''}`;
+    function lineInfo(base, role, from) {
+        const key = `${base}:${role ?? ''}:${from ?? ''}`;
         if (!lineInfoCache[key]) {
             lineInfoCache[key] = fetch(`/api/builder/added-line-info?base=${base}`
-                    + (role !== null && role !== undefined ? `&role=${role}` : '') + datQuery())
+                    + (role !== null && role !== undefined ? `&role=${role}` : '')
+                    + (from !== null && from !== undefined ? `&from=${from}` : '') + datQuery())
                 .then(r => r.json()).catch(() => ({ status: 'error' }));
         }
         return lineInfoCache[key];
@@ -416,9 +417,26 @@
         const mid = ['Veteran', 'Heavy'].slice(0, n - 2);
         return [stem, ...mid.map(m => `${m} ${stem}`), `Elite ${stem}`];
     }
+    // added_lines.extension_names: the next title the unit hasn't got —
+    // Halberdier -> Elite Halberdier, Elite Skirmisher -> Imperial Skirmisher.
+    const EXTEND_PREFIXES = ['Elite', 'Imperial', 'Royal', 'Legendary'];
+    function extensionNames(fromName, n) {
+        const words = fromName.split(' ');
+        const stem = words.filter(w => !EXTEND_PREFIXES.includes(w)).join(' ') || fromName;
+        const free = EXTEND_PREFIXES.filter(p => !words.includes(p));
+        const out = free.slice(0, n).map(p => `${p} ${stem}`);
+        for (let i = free.length + 1; out.length < n; i++) out.push(`${stem} ${i}`);
+        return out;
+    }
     function defaultTierName(ref) {
-        const stem = ref.line.tiers[0].name || baseName(ref.line.base);
-        return defaultNames(stem, ref.line.tiers.length)[ref.n];
+        const { line, n } = ref;
+        if (line.from != null) {
+            const first = line.tiers[0].name;
+            if (first) return n ? extensionNames(first, line.tiers.length - 1)[n - 1] : first;
+            return extensionNames(baseName(line.from), line.tiers.length)[n];
+        }
+        const stem = line.tiers[0].name || baseName(line.base);
+        return defaultNames(stem, line.tiers.length)[n];
     }
     function tierName(key) {
         const ref = addedRef(key);
@@ -431,13 +449,13 @@
         const ref = addedRef(key);
         if (!ref) return null;
         const { line, n, tier } = ref;
-        const [base, defs] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role)]);
+        const [base, defs] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role, line.from)]);
         if (!base || base.status !== 'ok') return { name: tierName(key), desc: line.description || '' };
         const carried = {};
         for (let i = 0; i <= n; i++) Object.assign(carried, line.tiers[i].edits || {});
         const stat = f => carried[f] !== undefined ? carried[f] : base[f];
         let upgrade = null;
-        if (n) {
+        if (n || line.from != null) {
             const def = defs && defs.status === 'ok' ? defs.upgrades[String(tier.age)] : null;
             const own = tier.upgrade || {};
             upgrade = {
@@ -467,9 +485,10 @@
         window._ttRelayout?.();
     }
 
-    function addLine(building, age, base) {
+    function addLine(building, age, base, from) {
         const id = Math.max(0, ...edits.added_lines.map(l => l.id)) + 1;
         const line = { id, building, base, role: null, appearance: null, tiers: [{ age, name: '' }] };
+        if (from != null) line.from = from;
         edits.added_lines.push(line);
         relayout(tierItemId(line, 0));
     }
@@ -565,6 +584,7 @@
         const groups = GROUPS.filter(([g]) => g === 'all' || (g === 'here' ? here.length
             : units.some(u => u.group === g)));
         if (!groups.some(([g]) => g === pickerState.group)) pickerState.group = here.length ? 'here' : 'all';
+        if (opts.first != null) pickerState.group = here.length ? 'here' : 'all';
         if (opts.pool) pickerState.group = 'all';
 
         groupsEl.innerHTML = groups.map(([g, label]) => {
@@ -578,7 +598,8 @@
             const list = (pickerState.group === 'here' ? here : pickerState.group === 'all' ? units
                 : units.filter(u => u.group === pickerState.group))
                 .filter(u => !q || u.name.toLowerCase().includes(q))
-                .filter(u => !kind[2] || kind[2].includes(u.cls));
+                .filter(u => !kind[2] || kind[2].includes(u.cls))
+                .sort((a, b) => (b.id === opts.first) - (a.id === opts.first));
             el.querySelector('#tt-pick-count').textContent = `${list.length} unit${list.length === 1 ? '' : 's'}`;
             const own = opts.ownLook ? `<div class="uu-card${opts.current == null ? ' selected' : ''}" data-pick="">
                     <img class="uu-card-icon" src="${unitImage(opts.ownLook)}" alt="">
@@ -609,6 +630,22 @@
         kindSel.onchange = draw;
         draw();
         setTimeout(() => search.focus({ preventScroll: true }), 200);
+    }
+
+    // The "+" under the last unit of a line: add tiers after it (an extension).
+    // Its first tier starts in the next age (the same one in the Imperial Age),
+    // a copy of that unit unless another is picked.
+    function extend(item) {
+        const from = item.node_id;
+        const fromName = (window._ttNodeName ? window._ttNodeName(item) : baseName(from)).replace(/\n/g, ' ');
+        const age = Math.min(4, (item.age_id || 1) + 1);
+        openUnitPicker({
+            title: `Add an upgrade after the ${fromName}`,
+            sub: `The ${fromName} upgrades into it in the ${AGE_NAMES[age - 1]} (you can change the age next). `
+                + `Pick the ${fromName} itself to make a stronger copy of it, like the Imperial Skirmisher.`,
+            building: item.building_id, current: from, first: from,
+            onPick: base => addLine(item.building_id, age, base, from),
+        });
     }
 
     // The "+" was clicked (item.add), or a line's base is being changed (item.rebase).
@@ -657,7 +694,7 @@
     function lineSection(ref, item, defs) {
         const { line, n } = ref;
         const last = line.tiers.length - 1;
-        const minAge = item.added.buildingAge || 1;
+        const minAge = item.added.fromAge || item.added.buildingAge || 1;
         const tiers = line.tiers.map((t, i) => {
             const lo = i === 0 ? minAge : line.tiers[i - 1].age + 1;
             const hi = i === last ? 4 : line.tiers[i + 1].age - 1;
@@ -678,14 +715,18 @@
         const roles = catalog.roles.map(r => `<option value="${r.id}" ${r.id === line.role ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
         const look = line.appearance != null ? catalog.byId[line.appearance] : null;
         return `<div class="tt-insp-line">
-            <div class="tt-insp-section">Added line</div>
+            <div class="tt-insp-section">${line.from != null ? 'Added upgrade' : 'Added line'}</div>
+            ${line.from != null ? `<div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Upgrades from</span>
+                <span class="tt-insp-basename">${esc(item.added.fromName || baseName(line.from))}</span></div>` : ''}
             <div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Copy of</span>
                 <span class="tt-insp-basename">${esc(baseName(line.base))}</span>
                 <button type="button" class="tt-insp-link" id="tt-line-base">change</button></div>
             <div class="tt-insp-tiers">${tiers}</div>
             ${addAges.length ? `<div class="tt-insp-bonus-add"><select id="tt-line-add">
                 <option value="">Add a tier in…</option>${addAges.join('')}</select></div>` : ''}
-            <div class="tt-insp-note">Each tier after the first gets its own upgrade, one row below the unit's button.
+            <div class="tt-insp-note">${line.from != null
+                ? `Each tier is researched at the ${esc(item.added.fromName || '')}'s upgrade button, after the one before, and takes over its train button.`
+                : 'Each tier after the first gets its own upgrade, one row below the unit\'s button.'}
                 A stat you change carries on to later tiers unless they set their own.</div>
             <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-desc">Description</label>
                 <textarea class="tt-insp-num tt-insp-text tt-insp-desc" id="tt-line-desc" rows="3" maxlength="300"
@@ -768,13 +809,14 @@
         const scrollTop = panel.scrollTop;
         const { line, n, tier } = ref;
         const key = item.node_id;
-        const [base, defs] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role)]);
+        const [base, defs] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role, line.from)]);
         if (!current || current.item !== item) return;
         panel.innerHTML = `<div class="tt-insp-head">
                 <img class="tt-insp-icon" src="${lineImage(line)}" alt="">
                 <div>
                     <div class="tt-insp-title">${esc(tierName(key))}</div>
-                    <div class="tt-insp-kind">Added unit · tier ${n + 1} of ${line.tiers.length} · ${AGE_NAMES[tier.age - 1]}</div>
+                    <div class="tt-insp-kind">${line.from != null ? `Added upgrade after the ${esc(item.added.fromName || '')}`
+                        : 'Added unit'} · tier ${n + 1} of ${line.tiers.length} · ${AGE_NAMES[tier.age - 1]}</div>
                 </div>
             </div>
             ${lineSection(ref, item, defs && defs.status === 'ok' ? defs : null)}
@@ -805,7 +847,7 @@
         inf.line_after = [];
         inf.forms = 1;
         const up = defs && defs.status === 'ok' ? defs.upgrades[String(tier.age)] : null;
-        inf.upgrade = n && up ? {
+        inf.upgrade = (n || line.from != null) && up ? {
             id: `${key}u`, name: tierName(key), any: true,
             cost: Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, up.cost),
             time: up.time,
@@ -919,7 +961,10 @@
                 </div>
             </div>
             ${includeRow(item)}
+            ${window._ttCanExtend?.(item) ? `<button type="button" class="tt-insp-reset" id="tt-insp-extend"
+                title="A further upgrade for this line, like the Imperial Skirmisher">Add an upgrade after it…</button>` : ''}
             <div id="tt-insp-body"><div class="tt-insp-loading">Loading stats…</div></div>`;
+        panel.querySelector('#tt-insp-extend')?.addEventListener('click', () => extend(item));
         panel.querySelector('#tt-insp-include')?.addEventListener('change', () => {
             _toggleNode(item, current.element_height);
             _treeChanged();
@@ -1207,6 +1252,7 @@
         },
         addedLines: () => edits.added_lines,
         addedTip,
+        extend,
         tierName,
         baseIcon,
         lineImage,

@@ -1130,16 +1130,25 @@ def _added_line_nodes(dat, slot, lines: list[dict]) -> list[dict]:
         return out
     units = dat.civs[slot].units
     for line in lines:
+        # An extension's first tier hangs off the vanilla unit it upgrades from.
+        frm = line.get("from")
         for n, (uid, sid, age, tech) in enumerate(zip(line["units"], line["sids"], line["ages"], line["techs"])):
+            if frm is not None:
+                kind, link = "UnitUpgrade", ("UnitUpgrade" if n or line.get("from_is_upgrade") else "Unit")
+            else:
+                kind = "Unit" if n == 0 else "UnitUpgrade"
+                link = "BuildingTech" if n == 0 else ("Unit" if n == 1 else "UnitUpgrade")
             node = {"Name": line["names"][n],
-                    "Node Type": "Unit" if n == 0 else "UnitUpgrade",
-                    "Link Node Type": "BuildingTech" if n == 0 else ("Unit" if n == 1 else "UnitUpgrade"),
+                    "Node Type": kind,
+                    "Link Node Type": link,
                     "Draw Node Type": "UnitTech", "Use Type": "Unit",
                     "Node Status": "ResearchedCompleted", "Name String ID": sid,
                     "Age ID": age, "Building ID": line["building"], "Help String ID": sid + 100000,
                     "Node ID": uid, "Picture Index": units[uid].icon_id, "Trigger Tech ID": tech}
             if n:
                 node["Link ID"] = line["units"][n - 1]
+            elif frm is not None:
+                node["Link ID"] = frm
             out.append(node)
     return out
 
