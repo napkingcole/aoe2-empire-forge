@@ -226,6 +226,7 @@ def to_draft(schema: dict) -> dict:
         "second_uu":              s.get("second_uu"),
         "unit_edits":             norm_unit_edits(s.get("unit_edits")),
         "tech_edits":             norm_tech_edits(s.get("tech_edits")),
+        "added_lines":            norm_added_lines(s.get("added_lines")),
         "unit_overrides":         s.get("unit_overrides",         []),
         "button_moves":           s.get("button_moves",           []),
         "free_techs":             s.get("free_techs",             []),
@@ -341,6 +342,7 @@ def from_draft(draft: dict) -> dict:
 
         "unit_edits":              norm_unit_edits(draft.get("unit_edits")),
         "tech_edits":              norm_tech_edits(draft.get("tech_edits")),
+        "added_lines":             norm_added_lines(draft.get("added_lines")),
         "unit_overrides":          draft.get("unit_overrides",          []),
         "button_moves":            draft.get("button_moves",            []),
         "free_techs":              draft.get("free_techs",              []),
@@ -490,6 +492,63 @@ def norm_tech_edits(raw) -> dict:
             clean["time"] = t
         if clean:
             out[key] = clean
+    return out
+
+
+# ── Added lines (the tree page's "+ Add Unit") ──────────────────────────────
+#
+# added_lines — [{id, building, base, role, appearance, tiers: [{age, name,
+#   edits, upgrade}]}].  A line is 1-4 tiers, each a copy of the same base unit,
+#   each in a later age than the one before; tier 1 is made available at its age,
+#   every later tier has its own upgrade tech (cost/time in `upgrade`).  `edits`
+#   is one unit_edits entry, and a tier's edit carries to the later tiers unless
+#   they set that field themselves (stats never fall back with an upgrade).
+#   `role` is the AI's unit line it joins (a unitlines.json LineID, None = the
+#   one holding the base unit).  Built by added_lines.apply_added_lines.
+
+ADDED_LINE_BUILDINGS = (12, 87, 101, 49, 45, 104, 109)  # Barracks .. Town Center
+ADDED_LINE_MAX_TIERS = 4
+
+
+def norm_added_lines(raw) -> list:
+    out: list = []
+    if not isinstance(raw, list):
+        return out
+    seen: set[int] = set()
+    for line in raw:
+        if not isinstance(line, dict):
+            continue
+        lid = _num(line.get("id"), int, 1, 1_000_000)
+        building = _num(line.get("building"), int, -1, _SHORT)
+        base = _id_key(line.get("base"))
+        if lid is None or lid in seen or building not in ADDED_LINE_BUILDINGS or base is None:
+            continue
+        tiers: list = []
+        for t in line.get("tiers") or []:
+            if not isinstance(t, dict) or len(tiers) == ADDED_LINE_MAX_TIERS:
+                continue
+            age = _num(t.get("age"), int, 1, 4)
+            if age is None or (tiers and age <= tiers[-1]["age"]):
+                continue                                 # each tier a later age
+            tier: dict = {"age": age, "name": norm_unit_name(t.get("name"))}
+            edits = norm_unit_edits({"0": dict(t.get("edits") or {}, name=None)}).get("0")
+            if edits:
+                tier["edits"] = edits
+            if tiers:                                    # tier 1 has no upgrade
+                up = norm_tech_edits({"0": t.get("upgrade") or {}}).get("0")
+                if up:
+                    tier["upgrade"] = up
+            tiers.append(tier)
+        if not tiers:
+            continue
+        # unitlines.json's LineIDs are -400..-199; anything else is no role, not
+        # the nearest real line (clamping 7 to -199 would join an unrelated one).
+        role = _num(line.get("role"), int, -_SHORT, _SHORT) if line.get("role") is not None else None
+        role = role if role is not None and -400 <= role <= -199 else None
+        look = _id_key(line.get("appearance")) if line.get("appearance") is not None else None
+        seen.add(lid)
+        out.append({"id": lid, "building": building, "base": int(base), "role": role,
+                    "appearance": int(look) if look is not None else None, "tiers": tiers})
     return out
 
 

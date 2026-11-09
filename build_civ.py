@@ -1111,8 +1111,37 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                     node["Help String ID"] = _help_sid(sid)
                     changed += 1
 
+    added = _added_line_nodes(dat, slot, (civ_result or {}).get("added_lines") or [])
+    if added:
+        data.setdefault("civ_techs_units", []).extend(added)
+        changed += len(added)
+
     print(f"  CivTechTrees/{civ_json_path.name}: {changed} nodes updated")
     return json.dumps(data, separators=(",", ":")).encode("utf-8")
+
+
+def _added_line_nodes(dat, slot, lines: list[dict]) -> list[dict]:
+    """F2 nodes for the "+ Add Unit" lines (added_lines): tier 1 hangs off its
+    building, each later tier off the one before, triggered by its upgrade —
+    the shape of the Vietnamese Imperial Skirmisher's node.  The game lays the
+    tree out from Age/Building/Link ID; there are no coordinates to find."""
+    out: list[dict] = []
+    if dat is None or slot is None:
+        return out
+    units = dat.civs[slot].units
+    for line in lines:
+        for n, (uid, sid, age, tech) in enumerate(zip(line["units"], line["sids"], line["ages"], line["techs"])):
+            node = {"Name": line["names"][n],
+                    "Node Type": "Unit" if n == 0 else "UnitUpgrade",
+                    "Link Node Type": "BuildingTech" if n == 0 else ("Unit" if n == 1 else "UnitUpgrade"),
+                    "Draw Node Type": "UnitTech", "Use Type": "Unit",
+                    "Node Status": "ResearchedCompleted", "Name String ID": sid,
+                    "Age ID": age, "Building ID": line["building"], "Help String ID": sid + 100000,
+                    "Node ID": uid, "Picture Index": units[uid].icon_id, "Trigger Tech ID": tech}
+            if n:
+                node["Link ID"] = line["units"][n - 1]
+            out.append(node)
+    return out
 
 
 def _generate_civilizations_json(dat, replaced_index: int | None,

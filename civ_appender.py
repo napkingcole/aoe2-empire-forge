@@ -2365,6 +2365,9 @@ def _civ_present_units(civ_def: dict, dat: DatFile | None = None,
     in, and only the techs its cards and KM UU will copy count as its own.
     """
     present = set(_tree_unit_ids(civ_def))
+    # "+ Add Unit" lines built for this civ (added_lines.apply_added_lines).
+    if dat is not None and civ_index is not None:
+        present |= getattr(dat, "_ef_added_units", {}).get(civ_index, set())
     card_techs: set[int] = set()
     for entry in get_civ_bonuses(civ_def):
         if isinstance(entry, (list, tuple)) and entry:
@@ -7995,6 +7998,11 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     _apply_uu_appearance(dat, civ_index, civ_def,
                          tuple(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0), warnings)
 
+    # 6d. The tree page's "+ Add Unit" lines — before the cards, so class and
+    #     "Trained at" cards reach the new units.
+    import added_lines
+    _added = added_lines.apply_added_lines(dat, civ_index, civ_def, warnings)
+
     # 7. Apply bonuses from catalog.
     bonus_results: dict = {"applied": 0, "skipped": [], "team_applied": 0, "team_total": 0,
                            "extra_tech_strings": [], "extra_unit_strings": []}
@@ -8009,6 +8017,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                                      uu_id, elite_uu_id)
     bonus_results["extra_unit_strings"].extend(km_uu_custom_unit_strings)
     bonus_results.setdefault("extra_tech_strings", []).extend(km_uu_extra_tech_strings)
+    for _line in _added:
+        bonus_results["extra_unit_strings"].extend(_line["strings"][0])
+        bonus_results["extra_tech_strings"].extend(_line["strings"][1])
 
     # 6b. Tree units whose unlock techs are locked to another civ in THIS DAT.
     #     A tree node only opts in (type=8), which can't reach a civ-gated tech
@@ -8059,6 +8070,12 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # 7b. Lock every global opt-in tech this civ never claimed.  After bonuses,
     #     so bonus-added type=8 opt-ins are already visible and stay exempt.
     _n_locked = _lock_unclaimed_optin_techs(dat, civ_index, civ_def)
+    # 7b'. Added lines join their role's line for effects too: whatever names
+    #      the Spearman line by id (cards, UTs, Supplies...) reaches them.
+    if _added:
+        _n_member = added_lines.extend_line_membership(dat, civ_index, _added)
+        if _n_member:
+            print(f"       Added lines: {_n_member} command(s) copied from their AI lines' targets")
     if _n_locked:
         print(f"       Opt-in lockdown: {_n_locked} unclaimed regional techs disabled")
 
@@ -8170,6 +8187,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         "uu_id":                    uu_id,
         "elite_uu_id":              elite_uu_id,
         "button_layout":            button_layout,
+        # "+ Add Unit" lines: units, techs, names, AI role — read by the F2
+        # tree patch and the AI files (added_lines module docstring).
+        "added_lines":              [{k: v for k, v in ln.items() if k != "strings"} for ln in _added],
         # The two effects that can't be split, for the results page's red alert.
         "command_counts":           {"tech_tree": _tt_cmd_count, "team_bonus": _tb_cmd_count,
                                      "soft_limit": _EFFECT_COMMAND_SOFT_LIMIT},

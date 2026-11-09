@@ -939,6 +939,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 # The civ's own UTs, for civilizations.json (patch_civilizations_list).
                 "castle_ut_tech_id": result.get("castle_ut_tech_id"),
                 "imp_ut_tech_id":    result.get("imp_ut_tech_id"),
+                # "+ Add Unit" lines: their AI role (added_lines.patch_unitline_roles).
+                "added_lines":       result.get("added_lines") or [],
                 "uu_name_sid":   uu_info["dll_name"] if uu_info else None,
                 "uu_desc_sid":   uu_info["dll_help"] if uu_info else None,
             }
