@@ -7200,10 +7200,13 @@ def _villager_armour_class(dat: DatFile) -> int:
     build, not only a civ with such a card: enemy villagers are any civ's, and
     doing it always keeps the result independent of build order.
     """
+    from dat_lazy import indices_of_class
     added = 0
     for civ in _every_civ(dat):
-        for unit in civ.units:
-            if unit is None or unit.class_ != _CIVILIAN_CLASS or unit.type_50 is None:
+        # By index, so a lazily loaded civ parses only its villagers.
+        for i in list(indices_of_class(civ.units, _CIVILIAN_CLASS)):
+            unit = civ.units[i]
+            if unit is None or unit.type_50 is None:
                 continue
             if not any(a.class_ == _VILLAGER_ARMOUR_CLASS for a in unit.type_50.armours):
                 unit.type_50.armours.append(AttackOrArmor(class_=_VILLAGER_ARMOUR_CLASS, amount=0))

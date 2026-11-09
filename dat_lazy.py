@@ -47,7 +47,7 @@ from genieutils.unit import Unit
 from genieutils.unitheaders import UnitHeaders
 from genieutils.versions import Version
 
-CACHE_VERSION = 2
+CACHE_VERSION = 3              # 3: each unit's class, for indices_of_class
 # One lock for every parse: the web app shares a parsed DAT across request
 # threads, and two threads filling the same list would duplicate it.
 _LOCK = threading.RLock()
@@ -63,9 +63,9 @@ class LazyUnits(list):
     """
 
     __slots__ = ("_raw", "_n", "_version", "_pointers", "_starts", "_over",
-                 "_extra", "_origin", "_summary")
+                 "_extra", "_origin", "_summary", "_classes")
 
-    def __init__(self, raw, n, version, starts, origin, summary):
+    def __init__(self, raw, n, version, starts, origin, summary, classes=None):
         super().__init__()
         self._raw = raw              # unit pointers + unit records; None once fully parsed
         self._n = n
@@ -76,6 +76,7 @@ class LazyUnits(list):
         self._extra: list = []       # appended units
         self._origin = origin        # which civ's bytes these are (survives copying)
         self._summary = summary      # cached train locations of the untouched units
+        self._classes = classes      # cached unit.class_ per index (-1: no unit)
 
     @property
     def materialized(self) -> bool:
@@ -106,6 +107,7 @@ class LazyUnits(list):
             list.extend(self, units + self._extra)
             self._raw = None
             self._over, self._extra, self._starts, self._summary = {}, [], None, None
+            self._classes = None
 
     def __len__(self):
         return self._n + len(self._extra) if self._raw is not None else list.__len__(self)
@@ -159,7 +161,8 @@ class LazyUnits(list):
 
     def __deepcopy__(self, memo):
         if self._raw is not None:
-            c = LazyUnits(self._raw, self._n, self._version, self._starts, self._origin, self._summary)
+            c = LazyUnits(self._raw, self._n, self._version, self._starts, self._origin, self._summary,
+                          self._classes)
             c._over = {i: deepcopy(u, memo) for i, u in self._over.items()}
             c._extra = [deepcopy(u, memo) for u in self._extra]
             return c
@@ -239,6 +242,27 @@ def train_locations(units):
                 yield tl.unit_id, tl.button_id, tl.hot_key_id
 
 
+def indices_of_class(units, cls: int):
+    """Index of every unit of class `cls` in a civ's unit list — without parsing
+    a lazy list's untouched units, whose classes come from the offset cache.
+    A pass over every civ's units otherwise parses all 63 civs: the villager
+    armour pass (_villager_armour_class) cost every build ~16 s from v2.7.0."""
+    if isinstance(units, LazyUnits) and units._raw is not None and units._classes is not None:
+        for i, c in enumerate(units._classes):
+            if c == cls and i not in units._over:
+                yield i
+        for i, u in units._over.items():
+            if u is not None and u.class_ == cls:
+                yield i
+        for j, u in enumerate(units._extra):
+            if u is not None and u.class_ == cls:
+                yield units._n + j
+        return
+    for i, u in enumerate(units):
+        if u is not None and u.class_ == cls:
+            yield i
+
+
 class LazyCiv(Civ):
     """A Civ whose units may still be raw bytes.  Header fields are always live,
     so editing one (icon_set, resources, ...) is written normally."""
@@ -306,12 +330,12 @@ def _write_cache(digest: str, cache: dict) -> None:
         pass          # a cache that can't be written just means the next load parses fully
 
 
-def _read_units_recording(bh: ByteHandler, n: int) -> tuple[list, list[int], list]:
+def _read_units_recording(bh: ByteHandler, n: int) -> tuple[list, list[int], list, list[int]]:
     """Parse a civ's units as genieutils does, noting where each one starts
-    (relative to the pointer array) and its train locations."""
+    (relative to the pointer array), its train locations and its class."""
     region = bh.offset
     pointers = bh.read_int_32_array(n)
-    units, starts, summary = [], [], []
+    units, starts, summary, classes = [], [], [], []
     for i in range(n):
         if pointers[i]:
             starts.append(bh.offset - region)
@@ -319,11 +343,13 @@ def _read_units_recording(bh: ByteHandler, n: int) -> tuple[list, list[int], lis
             if u.creatable is not None:
                 summary.extend([i, tl.unit_id, tl.button_id, tl.hot_key_id]
                                for tl in u.creatable.train_locations)
+            classes.append(u.class_)
         else:
             starts.append(-1)
+            classes.append(-1)
             u = None
         units.append(u)
-    return units, starts, summary
+    return units, starts, summary, classes
 
 
 # zlib level for a DAT we write.  genieutils uses the default (6): 6.6s and
@@ -370,7 +396,7 @@ def parse(path: str | Path) -> DatFile:
     if cache is not None and len(cache.get("civ_ends", ())) != civs_size:
         cache = None                         # a cache from some other file; ignore it
     civs: list[Civ] = []
-    fresh = {"civ_ends": [], "unit_starts": [], "train_locations": []}
+    fresh = {"civ_ends": [], "unit_starts": [], "train_locations": [], "classes": []}
     for i in range(civs_size):
         header, units_size = _read_civ_header(bh)
         if cache is not None:
@@ -378,13 +404,15 @@ def parse(path: str | Path) -> DatFile:
             raw = bytes(data[bh.offset:end])
             bh.offset = end
             civs.append(LazyCiv(units=LazyUnits(raw, units_size, bh.version, cache["unit_starts"][i],
-                                                i, cache["train_locations"][i]), **header))
+                                                i, cache["train_locations"][i], cache["classes"][i]),
+                                **header))
         else:
-            units, starts, summary = _read_units_recording(bh, units_size)
+            units, starts, summary, classes = _read_units_recording(bh, units_size)
             civs.append(LazyCiv(units=units, **header))
             fresh["civ_ends"].append(bh.offset)
             fresh["unit_starts"].append(starts)
             fresh["train_locations"].append(summary)
+            fresh["classes"].append(classes)
 
     techs = bh.read_class_array(Tech, bh.read_int_16())
     tail = [bh.read_int_32() for _ in range(7)]
