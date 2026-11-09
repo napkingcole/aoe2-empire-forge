@@ -459,6 +459,9 @@ def norm_unit_edits(raw) -> dict:
         cost = _norm_cost(e.get("cost"))
         if cost is not None:
             clean["cost"] = cost
+        # "Available from": the age it becomes available in (civ_overrides._apply_age_moves).
+        if e.get("age") is not None and (a := _num(e["age"], int, 1, 4)) is not None:
+            clean["age"] = a
         if isinstance(e.get("bonus"), dict):
             bonus = {}
             for c, a in e["bonus"].items():
@@ -476,7 +479,7 @@ def norm_unit_edits(raw) -> dict:
 
 
 def norm_tech_edits(raw) -> dict:
-    """{"<tech id>": {"cost": {food, wood, stone, gold}, "time": seconds}}."""
+    """{"<tech id>": {"cost": {food, wood, stone, gold}, "time": seconds, "age": 1-4}}."""
     out: dict = {}
     if not isinstance(raw, dict):
         return out
@@ -490,6 +493,8 @@ def norm_tech_edits(raw) -> dict:
             clean["cost"] = cost
         if e.get("time") is not None and (t := _num(e["time"], int, 0, _SHORT)) is not None:
             clean["time"] = t
+        if e.get("age") is not None and (a := _num(e["age"], int, 1, 4)) is not None:
+            clean["age"] = a
         if clean:
             out[key] = clean
     return out
@@ -540,7 +545,7 @@ def norm_added_lines(raw) -> list:
             if age is None or (tiers and age <= tiers[-1]["age"]):
                 continue                                 # each tier a later age
             tier: dict = {"age": age, "name": norm_unit_name(t.get("name"))}
-            edits = norm_unit_edits({"0": dict(t.get("edits") or {}, name=None)}).get("0")
+            edits = norm_unit_edits({"0": dict(t.get("edits") or {}, name=None, age=None)}).get("0")
             if edits:
                 tier["edits"] = edits
             if tiers or frm is not None:                 # a new line's tier 1 has no upgrade

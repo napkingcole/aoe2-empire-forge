@@ -1295,7 +1295,8 @@ function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
         ? `<div style="margin-top:5px;font-size:11px;line-height:1.4;opacity:.88;">${desc}</div>`
         : '';
 
-    const hint = _variantHint(itemToDraw);
+    const hint = _variantHint(itemToDraw) || (itemToDraw.age_moved
+        ? `Available from the ${['Dark', 'Feudal', 'Castle', 'Imperial'][itemToDraw.age_moved - 1]} Age for this civ.` : '');
     const hintLine = hint
         ? `<div style="margin-top:5px;font-size:11px;font-weight:600;color:#7a4a00;">${hint}</div>`
         : '';
@@ -1666,6 +1667,43 @@ function _applyAddedLines(treeData) {
     }
 }
 
+// "Available from" an earlier age (an "age" in a unit or tech edit): the node
+// moves up to that age's row when its column has room there, and says so.
+function _applyAgeMoves(treeData) {
+    const e = window.ttInspector ? window.ttInspector.edits() : null;
+    if (!e) return;
+    for (const item of treeData.units_techs) {
+        const ed = item.use_type === 'Unit' ? e.unit_edits[String(item.node_id)]
+            : item.use_type === 'Tech' ? e.tech_edits[String(item.node_id)] : null;
+        const age = ed && ed.age;
+        if (!age || age >= item.age_id) continue;
+        const b = treeData.buildings.find(x => x.node_id === item.building_id);
+        if (!b || !b.grid) continue;
+        let col = -1, row = -1;
+        b.grid.forEach((r, i) => { const c = r.indexOf(item.id); if (c >= 0) { col = c; row = i; } });
+        item.age_moved = age;
+        item.age_id = age;
+        if (col < 0) continue;
+        // Below whatever sits above it in the column (the unit before it).
+        let above = -1;
+        for (let r = row - 1; r >= 0; r--) if (b.grid[r][col]) { above = r; break; }
+        const first = Math.max((age - 1) * 2, b.row + 1);
+        const to = [first, first + 1].find(r => r <= (age - 1) * 2 + 1 && r > above && r < row && !b.grid[r][col]);
+        if (to === undefined) continue;
+        b.grid[row][col] = null;
+        b.grid[to][col] = item.id;
+        item.row = to;
+    }
+}
+
+// The earliest age the panel offers for a node: its building's, and the
+// node before it in its line.
+window._ttMinAge = function (item) {
+    const b = _nodeIndex[`${item.building_id}_${item.building_id}`];
+    const prev = item.link_id != null ? _nodeIndex[`${item.building_id}_${item.link_id}`] : null;
+    return Math.max(b ? b.age_id || 1 : 1, prev && prev.use_type !== 'Building' ? prev.age_id || 1 : 1);
+};
+
 // A line changed shape: redraw (the panel re-opens its node via rebind).
 window._ttRelayout = function () {
     if (_currentCivName) civ(_currentCivName);
@@ -1679,6 +1717,7 @@ function civ(civName) {
         _stripCastleUuAndUt(treeData);
         _applyBuildingVariantLayout(treeData);
         _applySiegeShipLayout(treeData);
+        _applyAgeMoves(treeData);
         _applyAddedLines(treeData);
         const root = document.getElementById('root');
         if (root) document.getElementById('techtree').removeChild(root);

@@ -1014,12 +1014,33 @@
         // Names for the "From the Knight edit" notes.
         await Promise.all((inf.line_before || []).map(a => info('unit', a)));
         if (!current || current.item !== item) return;
-        body.innerHTML = kind === 'tech' ? techBody(inf) : unitBody(inf, kind);
+        body.innerHTML = ageRow(item, inf, kind) + (kind === 'tech' ? techBody(inf) : unitBody(inf, kind));
+        body.querySelector('#tt-insp-age')?.addEventListener('change', e => {
+            const v = +e.target.value;
+            (kind === 'tech' ? setTechField : setUnitField)(item.node_id, 'age', v === inf.age_move.age ? null : v);
+            relayout(item.id);
+        });
         wire(body, inf, kind);
         redecorate();
         panel.scrollTop = scrollTop;
         restoreFocus(focused);
         if (kind !== 'tech') fillUpgrades(body, inf, kind);
+    }
+
+    // "Available from": an age earlier than the game's, down to its building's
+    // and the unit or tech before it (civ_overrides._apply_age_moves).
+    function ageRow(item, inf, kind) {
+        const mv = inf.age_move;
+        if (!mv || !mv.ok) return '';
+        const own = (kind === 'tech' ? techEdit(item.node_id) : unitEdit(item.node_id)).age;
+        const lo = Math.min(mv.age, window._ttMinAge ? window._ttMinAge(item) : 1);
+        const opts = [];
+        for (let a = lo; a <= mv.age; a++) {
+            opts.push(`<option value="${a}" ${a === (own ?? mv.age) ? 'selected' : ''}>${AGE_NAMES[a - 1]}${a === mv.age ? ' (the game\'s)' : ''}</option>`);
+        }
+        return `<div class="tt-insp-row"><label class="tt-insp-label" for="tt-insp-age">Available from</label>
+            <select id="tt-insp-age" class="${own != null ? 'is-edited' : ''}" ${opts.length < 2 ? 'disabled' : ''}
+                title="${opts.length < 2 ? 'Its building, or what comes before it, isn\'t available any earlier' : ''}">${opts.join('')}</select></div>`;
     }
 
     function label(id, nm, base, edited) {

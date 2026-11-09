@@ -3234,7 +3234,8 @@ def api_builder_node_info():
         return jsonify({"status": "ok", "kind": "tech", "id": nid,
                         "name": _display_name(t.language_dll_name, t.name) or t.name,
                         "icon": _tech_icon(nid, None, dat),
-                        "cost": cost_of(t.resource_costs), "time": co._tech_time(t)})
+                        "cost": cost_of(t.resource_costs), "time": co._tech_time(t),
+                        "age_move": _age_move_info(dat, nid)})
 
     units = dat.civs[1].units
     if not (0 <= nid < len(units)) or units[nid] is None:
@@ -3280,7 +3281,18 @@ def api_builder_node_info():
         "forms": len(forms),
         "upgrade": upgrade,
         "desc": _unit_desc(dat, nid),
+        "age_move": _age_move_info(dat, co.enabling_tech(dat, 1, nid)) if kind == "unit" else None,
     })
+
+
+def _age_move_info(dat, tid) -> dict | None:
+    """Whether the panel's "Available from" can move this node earlier
+    (civ_overrides.age_move_plan): {ok, age, why}."""
+    import civ_overrides as co
+    if tid is None:
+        return None
+    plan = co.age_move_plan(dat, tid)
+    return {"ok": plan["ok"], "age": plan["age"], "why": plan["why"]}
 
 
 def _unit_desc(dat, uid: int) -> str:

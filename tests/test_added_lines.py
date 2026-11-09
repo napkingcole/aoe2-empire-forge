@@ -100,6 +100,10 @@ draft = {
     "imperial_ut": {"mode": "vanilla", "effects": [{"id": 12, "multiplier": 1}]},
     "tree": {"units": [u for u in units if u not in (SPEAR, PIKE, HALB)], "buildings": buildings,
              "techs": techs},
+    # "Available from": Knight in Feudal, Hand Cannoneer in Castle, Bloodlines in Dark;
+    # the Militia has no tech to move.
+    "unit_edits": {"38": {"age": 2}, "5": {"age": 3}, "74": {"age": 1}},
+    "tech_edits": {"435": {"age": 1}},
     "added_lines": [
         {"id": 1, "building": 12, "base": SPEAR,
          "tiers": [{"age": 2, "name": "Guard", "edits": {"hp": 70}},
@@ -251,6 +255,26 @@ check("only an upgrade can be replaced (the Knight is skipped, with a warning)",
       any("Added line 9" in w and "isn't an upgrade" in w for w in r["warnings"]), r["warnings"])
 check("the AI's knight line gains it", rpal["role"] == knights["role"] and rpal["role"] is not None)
 check("F2: no node of its own (it shows on the Paladin's)", not _added_line_nodes(dat, SLOT, [rpal]))
+
+print("\n=== available from an earlier age ===")
+moved = r.get("age_moves") or {}
+check("Knight, Hand Cannoneer and Bloodlines moved; the Militia can't be",
+      moved == {"Unit:38": 2, "Unit:5": 3, "Tech:435": 1}
+      and any("can't change" in w for w in r["warnings"]), (moved, r["warnings"]))
+def trigger(tid):
+    t = dat.techs[tid]
+    trig = [dat.techs[q] for q in t.required_techs if q >= 0 and dat.techs[q].civ == SLOT]
+    return [(list(x.required_techs), x.required_tech_count, [rl.location_id for rl in x.research_locations],
+             len(dat.effects[x.effect_id].effect_commands)) for x in trig]
+check("Knight: a trigger of ours in a spare slot, firing at Feudal (vanilla 950/955's shape)",
+      trigger(166) == [([101, -1, -1, -1, -1, -1], 1, [-1], 0)], trigger(166))
+check("Hand Cannoneer: the trigger also waits for Chemistry (the tech's other requirement)",
+      trigger(85) == [([102, 47, -1, -1, -1, -1], 2, [-1], 0)], trigger(85))
+check("Bloodlines: from the Dark Age", trigger(435) == [([104, -1, -1, -1, -1, -1], 1, [-1], 0)], trigger(435))
+check("the tech keeps its id and its requirement count (the AI researches it by name)",
+      dat.techs[166].required_tech_count == 1 and dat.techs[85].required_tech_count == 2)
+check("other civs: no trigger of theirs fires", all(dat.techs[q].civ in (-1, SLOT, 39)
+      for q in dat.techs[85].required_techs if q >= 0))
 
 print("\n=== the AI ===")
 check("role defaults to the base's line (spearman-line)", guard["role"] == -295 and knights["role"] == -287,
