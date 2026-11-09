@@ -42,7 +42,10 @@ if dat_path is None:
     sys.exit(0)
 dat = load_dat(str(dat_path))
 SLOT = 1
-CARDS = (206, 213, 243, 253, 254, 255, 256, 263, 268, 275)
+# 203 (infantry) and 228 (warships) target a unit CLASS (a=-1, b=class), not
+# unit ids: the first fix only read unit-id commands, and players reported
+# infantry vs villagers still doing nothing (2026-11-09).
+CARDS = (203, 206, 213, 228, 243, 253, 254, 255, 256, 263, 268, 275)
 
 print("=== cards that add attack vs a class the unit lacks ===")
 civ_def = {"alias": "Classes", "description": "", "architecture": 2, "language": 0,
@@ -54,7 +57,7 @@ with contextlib.redirect_stdout(io.StringIO()):
 civ = dat.civs[SLOT]
 own = [civ.tech_tree_id] + [t.effect_id for t in dat.techs if t.civ == SLOT]
 missing = []
-for uid, classes in _attack_classes_added(dat, own).items():
+for uid, classes in _attack_classes_added(dat, own, civ.units).items():
     unit = civ.units[uid] if uid < len(civ.units) else None
     if unit is None or unit.type_50 is None:
         continue
@@ -68,6 +71,16 @@ check("the Skirmisher has an infantry (class 1) entry", 1 in skirm, skirm)
 check("added at 0, so the card's +4 is the whole bonus", skirm.get(1) == 0, skirm)
 pierce = {a.class_: a.amount for a in dat.civs[2].units[7].type_50.attacks}
 check("another civ's Skirmisher is untouched", 1 not in pierce, pierce)
+
+for uid, who in ((74, "Militia (card 203, infantry class)"), (473, "Two-Handed Swordsman (203)"),
+                 (539, "Galley (card 228, warship class)")):
+    att = {a.class_: a.amount for a in civ.units[uid].type_50.attacks}
+    check(f"{who} has a villager (class 10) attack entry", 10 in att, att)
+check("the class-targeted commands are there to use it",
+      {(int(c.b), int(c.d) >> 8) for e in own if 0 <= e < len(dat.effects)
+       for c in dat.effects[e].effect_commands if c.a == -1 and int(c.c) == 9} >= {(6, 10), (22, 10)})
+other = {a.class_ for a in dat.civs[2].units[74].type_50.attacks}
+check("another civ's Militia is untouched", 10 not in other, other)
 
 print("\n=== cards 206 and 253: villagers can take bonus damage ===")
 # No unit had armour class 10, so "+attack vs villagers" never landed.

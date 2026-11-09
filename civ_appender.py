@@ -7138,15 +7138,27 @@ def _shipped_tech_civ(dat: DatFile, tid: int) -> int:
     return getattr(dat, "_ef_original_tech_civs", {}).get(tid, dat.techs[tid].civ)
 
 
-def _attack_classes_added(dat: DatFile, effect_ids) -> dict[int, set[int]]:
-    """unit -> the attack classes these effects change on it."""
+def _attack_classes_added(dat: DatFile, effect_ids, units=None) -> dict[int, set[int]]:
+    """unit -> the attack classes these effects change on it.
+
+    A command names one unit (a) or a whole unit class (a=-1, b=class) — the
+    custom cards' groups ("Infantry" is classes 6/45/46/50) are written by
+    class, so with `units` (a civ's unit list) a class target becomes every
+    unit of that class in it.  Without, class targets are left out."""
+    from dat_lazy import indices_of_class
     out: dict[int, set[int]] = {}
     for eid in effect_ids:
         if not 0 <= eid < len(dat.effects):
             continue
         for ec in dat.effects[eid].effect_commands:
-            if ec.type in (EC_SET, EC_ADD, EC_MULTIPLY) and int(ec.c) == 9 and ec.a >= 0:
-                out.setdefault(int(ec.a), set()).add((abs(int(ec.d)) >> 8) & 0xFF)
+            if ec.type not in (EC_SET, EC_ADD, EC_MULTIPLY) or int(ec.c) != 9:
+                continue
+            cls = (abs(int(ec.d)) >> 8) & 0xFF
+            if ec.a >= 0:
+                out.setdefault(int(ec.a), set()).add(cls)
+            elif ec.b >= 0 and units is not None:
+                for uid in indices_of_class(units, int(ec.b)):
+                    out.setdefault(uid, set()).add(cls)
     return out
 
 
@@ -7171,10 +7183,9 @@ def _add_missing_attack_classes(dat: DatFile, civ_index: int, team_eff_id: int) 
     own = [dat.civs[civ_index].tech_tree_id]
     own += [t.effect_id for t in dat.techs if t.civ == civ_index]
     added = 0
-    for civs, classes in (([dat.civs[civ_index]], _attack_classes_added(dat, own)),
-                          (_every_civ(dat), _attack_classes_added(dat, [team_eff_id]))):
+    for civs, effects in (([dat.civs[civ_index]], own), (_every_civ(dat), [team_eff_id])):
         for civ in civs:
-            for uid, want in classes.items():
+            for uid, want in _attack_classes_added(dat, effects, civ.units).items():
                 unit = civ.units[uid] if uid < len(civ.units) else None
                 if unit is None or unit.type_50 is None:
                     continue
