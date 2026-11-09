@@ -298,13 +298,6 @@ check("Men-at-Arms -> Sergeants, Militia -> Footman in the Man-at-Arms upgrade",
 check("the shared techs keep their own ids and names",
       dat3.techs[PALADIN_TECH].language_dll_name == load_dat(str(dat_path)).techs[PALADIN_TECH].language_dll_name
       and not any(t.civ == SLOT and t.name == dat3.techs[PALADIN_TECH].name for t in dat3.techs))
-from civ_overrides import _civ_tech_cost
-check("the literal cost style quotes this civ's edited cost (Paladin: 100 food, free of gold)",
-      _civ_tech_cost(dat3, PALADIN_TECH, SLOT) == "100f", _civ_tech_cost(dat3, PALADIN_TECH, SLOT))
-check("and the game's for another civ", _civ_tech_cost(dat3, PALADIN_TECH, OTHER)
-      == ", ".join(f"{rc.amount}{'fwsg'[rc.type]}" for rc in sorted(dat3.techs[PALADIN_TECH].resource_costs,
-                   key=lambda rc: rc.type) if rc.type in (0, 1, 2, 3) and rc.amount > 0),
-      _civ_tech_cost(dat3, PALADIN_TECH, OTHER))
 check("only upgrade buttons are renamed (the Knight has none)", set(a for a, _, _ in names_cmds) == {MAA_TECH, PALADIN_TECH},
       names_cmds)
 check("one pool id per distinct name", len(set(ren.values())) == len(texts) - 0

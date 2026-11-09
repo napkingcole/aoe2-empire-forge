@@ -943,41 +943,7 @@ def _apply_unit_names(dat, slot: int, overrides: dict, civ_result: dict,
     return len(renamed)
 
 
-# How a renamed upgrade button shows its cost.  Giving a tech a new description
-# (b=8) turns off the game's generated tooltip — label, "(Cost: 150f, 50g)",
-# and with Extended Tooltips on, the time and the effects — and the hover is
-# the description alone ("Upgrade to Sergeant (Hotkey: A)", in-game
-# 2026-11-09).  So the cost goes in the description: "token" writes the
-# engine's (<cost>), "literal" the numbers at the start of the game.
-# Unverified which renders; the QA round tries both.
-UPGRADE_COST_STYLE = "token"
-_COST_LETTER = {0: "f", 1: "w", 2: "s", 3: "g"}
-
-
-def _civ_tech_cost(dat, tid: int, slot: int) -> str:
-    """"150f, 50g": tech tid's cost for this civ at the start of the game — the
-    tech's own, then every EC_TECH_COST (type 101) aimed at it from the civ's
-    tech tree effect and its auto-fire techs (cards, tree-page edits), in DAT
-    order.  Mode c: 0 set, 1 or -1 add, 2 multiply."""
-    tech = dat.techs[tid]
-    cost = {rc.type: float(rc.amount) for rc in tech.resource_costs
-            if rc.type in _SPENDABLE and rc.amount > 0}
-    effects = [dat.civs[slot].tech_tree_id]
-    effects += [t.effect_id for t in dat.techs
-                if t.civ == slot and all(r < 0 for r in t.required_techs)
-                and all(rl.location_id < 0 for rl in t.research_locations)]
-    for eid in effects:
-        if not 0 <= eid < len(dat.effects):
-            continue
-        for c in dat.effects[eid].effect_commands:
-            if c.type == 101 and c.a == tid and c.b in cost:
-                cost[c.b] = (c.d if c.c == 0 else cost[c.b] * c.d if c.c == 2
-                             else cost[c.b] + c.d)
-    return ", ".join(f"{round(v)}{_COST_LETTER[r]}" for r, v in sorted(cost.items()) if round(v) > 0)
-
-
-def _name_upgrade_techs(dat, slot: int, names: dict, civ_result: dict,
-                        style: str | None = None) -> int:
+def _name_upgrade_techs(dat, slot: int, names: dict, civ_result: dict) -> int:
     """Give the research button that upgrades into a renamed unit the new name,
     for this civ only: "Upgrade to Holy Paladin" on the Stable.
 
@@ -986,10 +952,15 @@ def _name_upgrade_techs(dat, slot: int, names: dict, civ_result: dict,
     another string, the way vanilla's "Dark Age" and "Rename Units" effects
     rename tech 1151 and Veteran Chiliarchs rewrites its doctrines' text.  The
     tech keeps its id, so the AI (which researches by id) and cards that
-    discount it still find it.  A new description is the whole hover (the
-    game's generated cost line goes), so it carries the cost: see
-    UPGRADE_COST_STYLE.  description+20000 (= name+21000) is written as well,
-    matching vanilla's own rename strings.
+    discount it still find it.
+
+    A new description is the whole hover: the game's generated tooltip (cost,
+    and with Extended Tooltips on, time and effects) goes, leaving "Upgrade to
+    Sergeant (Hotkey: A)" (in-game 2026-11-09).  So the description carries the
+    engine's (<cost>) token, which it fills in the same way: "Upgrade to Holy
+    Paladin (Cost: 1300f, 750g)" (confirmed in game 2026-11-09).  The extended
+    effect lines are not replaced.  description+20000 (= name+21000) is written
+    as well, matching vanilla's own rename strings.
 
     names: {unit form: (the game's name, its new name)}.  Returns the number of
     techs renamed."""
@@ -1034,11 +1005,7 @@ def _name_upgrade_techs(dat, slot: int, names: dict, civ_result: dict,
         sid = _editor_sid(dat)
         text = swap_all(game_name) if old in game_name else new
         _OWN_STRING_NAMES[sid] = text
-        label = swap_all(label)
-        if (style or UPGRADE_COST_STYLE) == "token":
-            label += " (<cost>)"
-        elif cost := _civ_tech_cost(dat, tid, slot):
-            label += f" (Cost: {cost})"
+        label = swap_all(label) + " (<cost>)"
         extra.append({"sid": sid, "name": kv(text), "label": kv(label), "hover": hover})
         cmds += [EffectCommand(type=8, a=tid, b=7, c=-1, d=float(sid)),
                  EffectCommand(type=8, a=tid, b=8, c=-1, d=float(sid + 1000))]
@@ -1068,7 +1035,6 @@ def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
     _refresh_uu_tooltips(dat, slot, civ_result)
     _apply_hero_unit(dat, slot, overrides)
     _apply_unit_edits(dat, slot, overrides)
-    # Tech edits first: a renamed upgrade button quotes the edited cost.
     _apply_tech_edits(dat, slot, overrides, civ_result.setdefault("warnings", []))
     _apply_unit_names(dat, slot, overrides, civ_result, uu_info)
     return civ_result, uu_info
