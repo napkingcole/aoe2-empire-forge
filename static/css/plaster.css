@@ -2315,3 +2315,52 @@ details.card.cb-fold:not([open]) > summary.card-header { border-bottom: 0; }
 /* (?) beside a path input — the hover text is tooltip.js's data-tip */
 .path-help { color: var(--accent-2); cursor: help; margin-left: .25rem; font-weight: normal; }
 .path-help:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: 50%; }
+
+/* ── Effect-command meter (builder.js efMeter) ───────────────────────────────
+   A walnut pill, so it reads on the cream bottom bar and the tree's brown
+   toolbar alike.  Green with room to spare, gold near the limit, crimson over. */
+.ef-meter {
+  --meter-ok: #4f7d3a;
+  display: inline-flex; align-items: center; gap: 8px; padding: 3px 9px 3px 10px;
+  background: var(--walnut-mid); border: 1px solid var(--walnut-border); border-radius: 999px;
+  color: var(--cream); font: 500 12px 'Inter', sans-serif; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(28, 21, 8, .35);
+  transition: border-color .15s, box-shadow .15s;
+}
+.ef-meter:hover { border-color: var(--gold); box-shadow: 0 2px 6px rgba(28, 21, 8, .45); }
+.ef-meter:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.ef-meter-label { color: var(--cream-mid); letter-spacing: .03em; }
+.ef-meter-track {
+  position: relative; width: 120px; height: 16px; border-radius: 8px; overflow: hidden;
+  background: rgba(0, 0, 0, .5); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6);
+}
+.ef-meter-fill {
+  position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 8px;
+  background: var(--meter-ok); transition: width .4s ease, background-color .3s;
+}
+.ef-meter[data-level="near"] .ef-meter-fill { background: var(--gold); }
+.ef-meter[data-level="over"] .ef-meter-fill { background: var(--crimson-light); }
+.ef-meter[data-level="over"] { border-color: var(--crimson-light); }
+.ef-meter-text {
+  position: relative; display: block; text-align: center; line-height: 16px; color: #fff;
+  font-weight: 600; font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0, 0, 0, .85);
+}
+.ef-meter.is-counting .ef-meter-fill { animation: ef-meter-pulse 1s ease-in-out infinite; }
+@keyframes ef-meter-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) {
+  .ef-meter.is-counting .ef-meter-fill { animation: none; opacity: .6; }
+}
+.ef-meter-dialog {
+  max-width: 580px; width: calc(100% - 32px); padding: 22px 26px;
+  border: 1px solid var(--border-dark); border-radius: var(--r-lg);
+  background: var(--parch-light); color: var(--ink-mid);
+  box-shadow: 0 24px 60px rgba(28, 21, 8, .45);
+}
+.ef-meter-dialog::backdrop { background: rgba(28, 21, 8, .55); }
+.ef-meter-dialog h5 { color: var(--ink); margin-bottom: 12px; }
+.ef-meter-dialog h5 i { color: var(--gold); }
+.ef-meter-table { --bs-table-bg: transparent; --bs-table-color: var(--ink-mid); --bs-table-border-color: var(--border); }
+.ef-crash-alert .fs-5 { line-height: 1.3; }
+.ef-meter-table td:first-child { white-space: nowrap; }
+.ef-meter-dialog .btn-primary { background: var(--crimson); border-color: var(--crimson-dark); }
+.ef-meter-dialog .btn-primary:hover { background: var(--crimson-light); border-color: var(--crimson); }

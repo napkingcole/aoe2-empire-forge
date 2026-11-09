@@ -1036,6 +1036,14 @@
     </div>
   </div>
 
+  {# Over the effect-command limit (efMeter in builder.js shows it): warn, never block. #}
+  <div class="alert alert-danger mb-3 d-none ef-crash-alert" id="ef-crash-card" role="alert">
+    <div class="fw-bold fs-5 mb-1"><i class="fa-solid fa-triangle-exclamation me-2"></i>This civ will probably crash the game at startup</div>
+    <div>Its <span data-ef-what>tech tree needs too many</span> effect commands, and the game crashes
+      before the main menu above about 189. You can still save it, and share it for debugging. To fix it,
+      turn some tech tree nodes back on (step 2) or drop a team bonus.</div>
+  </div>
+
   {# Save #}
   <div class="card mb-3">
     <div class="card-header">
@@ -1138,7 +1146,10 @@
   <button id="btn-prev" class="btn btn-outline-primary" disabled>
     <i class="fa-solid fa-arrow-left me-1"></i> Previous
   </button>
-  <div class="text-muted small" id="step-counter">Step 1 of 9</div>
+  <div class="d-flex align-items-center gap-3">
+    <div class="text-muted small" id="step-counter">Step 1 of 9</div>
+    <button class="ef-meter" hidden></button>
+  </div>
   <button id="btn-next" class="btn btn-primary">
     Next <i class="fa-solid fa-arrow-right ms-1"></i>
   </button>

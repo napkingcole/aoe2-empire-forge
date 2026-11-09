@@ -545,12 +545,16 @@
 
             // Cost: the four boxes are the complete cost, so any change commits
             // all four — unless that needs more resource slots than the unit has.
+            // An emptied box is that resource unedited (inherited or the game's), not 0.
             const err = body.querySelector('#tt-insp-cost-error');
             body.querySelectorAll('[id^="tt-insp-cost-"][data-res]').forEach(el => {
                 el.addEventListener('change', () => {
+                    const without = effectiveCost(Object.assign({}, inf, { id: -1 })).cost;
                     const cost = {};
                     body.querySelectorAll('[id^="tt-insp-cost-"][data-res]').forEach(x => {
-                        cost[x.dataset.res] = clamp(parseFloat(x.value || '0'), 0, SHORT, 1) || 0;
+                        const r = x.dataset.res;
+                        cost[r] = x.value.trim() === '' ? (without[r] || 0)
+                            : clamp(parseFloat(x.value), 0, SHORT, 1) || 0;
                     });
                     const used = RES.filter(r => cost[r] > 0).length;
                     if (used > inf.cost_slots) {
@@ -560,7 +564,6 @@
                     }
                     err.textContent = '';
                     // Back to what it would get anyway (inherited or the game's): drop the edit.
-                    const without = effectiveCost(Object.assign({}, inf, { id: -1 })).cost;
                     setUnitField(inf.id, 'cost', costEqual(cost, without) ? null : cost);
                     rerender();
                 });
@@ -609,7 +612,9 @@
             el.addEventListener('change', () => {
                 const cost = {};
                 body.querySelectorAll(`[id^="${prefix}-"][data-res]`).forEach(x => {
-                    if (!x.disabled) cost[x.dataset.res] = clamp(parseFloat(x.value || '0'), 0, SHORT, 1) || 0;
+                    const r = x.dataset.res;          // emptied = the game's, not 0
+                    if (!x.disabled) cost[r] = x.value.trim() === '' ? (tech.cost[r] || 0)
+                        : clamp(parseFloat(x.value), 0, SHORT, 1) || 0;
                 });
                 setTechField(tech.id, 'cost', costEqual(cost, tech.cost) ? null : cost);
                 later();

@@ -40,6 +40,18 @@
       <div class="alert alert-danger mb-0">{{ r.error }}</div>
 
     {% else %}
+      {# ── Over the effect-command limit: the one warning that means a crash ── #}
+      {% set cc = r.get('command_counts') %}
+      {% if cc and (cc.tech_tree > cc.soft_limit or cc.team_bonus > cc.soft_limit) %}
+      <div class="alert alert-danger mb-3 ef-crash-alert" role="alert">
+        <div class="fw-bold fs-5 mb-1"><i class="fa-solid fa-triangle-exclamation me-2"></i>This civ will probably crash the game at startup</div>
+        <div>Its {{ 'tech tree' if cc.tech_tree > cc.soft_limit else 'team bonus' }} needs
+          {{ cc.tech_tree if cc.tech_tree > cc.soft_limit else cc.team_bonus }} effect commands, and the game
+          crashes before the main menu above about 189. The mod was still built, so you can
+          share it for debugging. To fix it, re-enable some tech tree nodes or drop a team bonus.</div>
+      </div>
+      {% endif %}
+
       {# ── Warnings ──────────────────────────────────────────────────────── #}
       {% for w in r.get('warnings', []) %}
       <div class="alert alert-warning py-2 small mb-3">⚠ {{ w }}</div>

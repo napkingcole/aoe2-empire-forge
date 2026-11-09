@@ -8114,6 +8114,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         "uu_id":                    uu_id,
         "elite_uu_id":              elite_uu_id,
         "button_layout":            button_layout,
+        # The two effects that can't be split, for the results page's red alert.
+        "command_counts":           {"tech_tree": _tt_cmd_count, "team_bonus": _tb_cmd_count,
+                                     "soft_limit": _EFFECT_COMMAND_SOFT_LIMIT},
     }
 
 

@@ -3525,6 +3525,54 @@ def api_builder_tree_steps():
     return jsonify(out)
 
 
+# The effect-command meter.  Any Effect over ~189 commands crashes the game at
+# startup; the tech tree and team bonus effects grow with the civ and can't be
+# split (cards and custom UTs split themselves), so the meter shows those two,
+# counted from a real build (~3 s) — exact, not an estimate.  Text the build
+# never reads is left out of the key, so typing a name doesn't recount.
+_CMD_COUNT: dict = {"want": None, "built": collections.OrderedDict()}
+_CMD_COUNT_LOCK = threading.Lock()
+_CMD_COUNT_TEXT = {"alias", "tagline", "description", "share_description", "emblem",
+                   "flag_palette", "customFlag", "customFlagData"}
+
+
+@app.route("/api/builder/command-count", methods=["POST"])
+def api_builder_command_count():
+    """{status, tree, team, limit, soft_limit} for the draft in the body."""
+    import traceback
+    from build_civ import _find_civ_slot
+    from civ_appender import _EFFECT_COMMAND_SOFT_LIMIT
+    from wizard_build import _draft_to_civ_def
+    body = request.get_json(silent=True) or {}
+    draft = body.get("draft") or {}
+    dat_path = _resolve_dat_path(body.get("dat_path") or draft.get("dat_path"))
+    if not dat_path:
+        return jsonify({"status": "no_dat"})
+    basis = {k: v for k, v in draft.items() if k not in _CMD_COUNT_TEXT}
+    key = hashlib.sha1((dat_path + json.dumps(basis, sort_keys=True, default=str)).encode()).hexdigest()
+    _CMD_COUNT["want"] = key
+    try:
+        with _CMD_COUNT_LOCK:
+            built = _CMD_COUNT["built"]
+            if key not in built:
+                if _CMD_COUNT["want"] != key:
+                    return jsonify({"status": "stale"})       # a newer draft is waiting
+                dat = load_dat(dat_path)
+                slot = _find_civ_slot(dat, "Goths")
+                with contextlib.redirect_stdout(io.StringIO()):
+                    result, _ = apply_civ_with_overrides(dat, _draft_to_civ_def(draft), slot, draft)
+                cc = result["command_counts"]          # what the build itself checks
+                built[key] = {"tree": cc["tech_tree"], "team": cc["team_bonus"]}
+                while len(built) > 8:
+                    built.popitem(last=False)
+            built.move_to_end(key)
+            data = built[key]
+    except Exception as e:                                   # noqa: BLE001
+        traceback.print_exc()
+        return jsonify({"status": "error", "error": str(e)}), 500
+    return jsonify({"status": "ok", **data, "limit": 189, "soft_limit": _EFFECT_COMMAND_SOFT_LIMIT})
+
+
 def _fu_stats_preview(draft: dict, dat_path: str) -> dict:
     import fu_stats
     from bonus_names import bonus_name
