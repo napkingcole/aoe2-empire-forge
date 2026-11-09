@@ -84,12 +84,31 @@
         else delete edits.tech_edits[k];
     }
 
+    // Every unit's ancestors and upgrade tech, loaded once (/api/builder/tree-lines)
+    // so a node changed through its line is marked before it is ever opened.
+    let lines = { before: {}, upgrade: {} };
+    const known = {};            // node id -> [item, element_height], for redecorate()
+
+    function loadLines() {
+        const dat = window.getDatPath ? window.getDatPath() : '';
+        fetch('/api/builder/tree-lines?dat_path=' + encodeURIComponent(dat))
+            .then(r => r.json())
+            .then(r => { if (r.status === 'ok') { lines = r; redecorate(); } })
+            .catch(() => {});
+    }
+
+    // Edited = its own edit, its upgrade tech's, or a cost / train time it
+    // inherits from an edited ancestor (the build's _flow_down).
     function isEdited(item) {
         const kind = kindOf(item);
         if (kind === 'tech') return !!edits.tech_edits[String(item.node_id)];
         if (edits.unit_edits[String(item.node_id)]) return true;
-        const up = upgradeOf[item.node_id];
-        return up !== undefined && !!edits.tech_edits[String(up)];
+        const up = upgradeOf[item.node_id] ?? lines.upgrade[item.node_id];
+        if (up !== undefined && edits.tech_edits[String(up)]) return true;
+        return (lines.before[item.node_id] || []).some(a => {
+            const e = unitEdit(a);
+            return e.cost !== undefined || e.train !== undefined;
+        });
     }
 
     function costEqual(a, b) {
@@ -131,6 +150,7 @@
 
     // ── tree decoration ─────────────────────────────────────────────────────
     function decorate(item, element_height) {
+        known[item.id] = [item, element_height];
         const id = `${item.id}_edited`;
         document.getElementById(id)?.remove();
         if (!isEdited(item)) return;
@@ -149,7 +169,7 @@
     }
 
     function redecorate() {
-        if (current) decorate(current.item, current.element_height);
+        for (const [item, eh] of Object.values(known)) decorate(item, eh);
     }
 
     function markSelected(item) {
@@ -275,6 +295,7 @@
     function mount(el) {
         panel = el;
         if (window.getDatPath) stepsRequest(null);       // start the build now
+        loadLines();
         panel.innerHTML = `<div class="tt-insp-empty">
             <div class="tt-insp-empty-title">Inspector</div>
             Click a unit, building or tech to see its stats and edit it.
@@ -623,6 +644,7 @@
         load(e) {
             edits = { unit_edits: clone(e && e.unit_edits), tech_edits: clone(e && e.tech_edits) };
             current = null;
+            for (const k of Object.keys(known)) delete known[k];             // a new drawing
             for (const k of Object.keys(stepsCache)) delete stepsCache[k];   // the draft may have changed
         },
         edits: () => clone(edits),

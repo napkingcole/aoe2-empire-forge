@@ -2995,7 +2995,70 @@ def api_builder_ut_costs():
 
 # ── Tech tree side panel ──────────────────────────────────────────────────────
 
-_SUCC_CACHE: dict[str, dict] = {}
+_LINES_CACHE: dict[str, dict] = {}
+
+
+def _tree_lines(dat_path: str) -> dict:
+    """Every unit's place in its upgrade line, from the DAT (cached per DAT):
+    {"after": {uid: [later tiers]}, "before": {uid: [ancestors, latest first —
+    the order the build's _flow_down picks an inherited cost in]},
+    "upgrade": {uid: the researchable tech that produces it}}."""
+    if dat_path in _LINES_CACHE:
+        return _LINES_CACHE[dat_path]
+    import civ_overrides as co
+    dat = _get_dat(dat_path)
+    succ = co.upgrade_successors(dat)
+    pred: dict[int, list[int]] = {}
+    for a, bs in succ.items():
+        for b in bs:
+            pred.setdefault(b, []).append(a)
+    pred_sets = {k: set(v) for k, v in pred.items()}
+
+    def walk(start, graph):
+        out, todo = [], list(graph.get(start, ()))
+        while todo:
+            x = todo.pop(0)
+            if x not in out and x != start:
+                out.append(x)
+                todo += sorted(graph.get(x, ()))
+        return out
+
+    memo: dict[int, int] = {}
+
+    def depth(x, seen=()):
+        if x not in memo:
+            memo[x] = 1 + max((depth(p, seen + (x,)) for p in pred.get(x, ()) if p not in seen),
+                              default=-1)
+        return memo[x]
+
+    upgrade: dict[int, int] = {}
+    for tid, t in enumerate(dat.techs):
+        if tid in co._AGE_TECHS or t.civ != -1 or not 0 <= t.effect_id < len(dat.effects):
+            continue
+        if not any(rl.location_id >= 0 for rl in t.research_locations):
+            continue
+        for c in dat.effects[t.effect_id].effect_commands:
+            if c.type == 3:
+                upgrade.setdefault(int(c.b), tid)
+    nodes = set(succ) | set(pred)
+    _LINES_CACHE[dat_path] = {
+        "after": {u: walk(u, succ) for u in nodes if walk(u, succ)},
+        "before": {u: sorted(walk(u, pred_sets), key=lambda x: (-depth(x), x))
+                   for u in nodes if walk(u, pred_sets)},
+        "upgrade": upgrade,
+    }
+    return _LINES_CACHE[dat_path]
+
+
+@app.route("/api/builder/tree-lines")
+def api_builder_tree_lines():
+    """Every unit's line and upgrade tech at once, so the tree can mark a node
+    edited through its line (or its upgrade's cost) before it is ever opened."""
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    lines = _tree_lines(dat_path)
+    return jsonify({"status": "ok", "before": lines["before"], "upgrade": lines["upgrade"]})
 
 # Every armour class a bonus can aim at, for the panel's picker.  Names from the
 # UGC guide's damage_calculation table, except 10 (villagers carry it, found
@@ -3049,42 +3112,14 @@ def api_builder_node_info():
     if not (0 <= nid < len(units)) or units[nid] is None:
         return jsonify({"status": "error", "error": "unknown unit"}), 404
     u = units[nid]
-    if dat_path not in _SUCC_CACHE:
-        _SUCC_CACHE[dat_path] = co.upgrade_successors(dat)
-    succ = _SUCC_CACHE[dat_path]
-    pred: dict[int, list[int]] = {}
-    for a, bs in succ.items():
-        for b in bs:
-            pred.setdefault(b, []).append(a)
-
-    def walk(start, graph):
-        out, todo = [], list(graph.get(start, ()))
-        while todo:
-            x = todo.pop(0)
-            if x not in out and x != start:
-                out.append(x)
-                todo += sorted(graph.get(x, ()))
-        return out
-
-    memo: dict[int, int] = {}
-
-    def depth(x, seen=()):
-        if x not in memo:
-            memo[x] = 1 + max((depth(p, seen + (x,)) for p in pred.get(x, ()) if p not in seen),
-                              default=-1)
-        return memo[x]
-
+    lines = _tree_lines(dat_path)
     # The upgrade that produces this unit (Cavalier for the Cavalier node).
     upgrade = None
-    for tid, t in enumerate(dat.techs):
-        if tid in co._AGE_TECHS or t.civ != -1 or not 0 <= t.effect_id < len(dat.effects):
-            continue
-        if not any(rl.location_id >= 0 for rl in t.research_locations):
-            continue
-        if any(c.type == 3 and c.b == nid for c in dat.effects[t.effect_id].effect_commands):
-            upgrade = {"id": tid, "name": _display_name(t.language_dll_name, t.name) or t.name,
-                       "cost": cost_of(t.resource_costs), "time": co._tech_time(t)}
-            break
+    if nid in lines["upgrade"]:
+        tid = lines["upgrade"][nid]
+        t = dat.techs[tid]
+        upgrade = {"id": tid, "name": _display_name(t.language_dll_name, t.name) or t.name,
+                   "cost": cost_of(t.resource_costs), "time": co._tech_time(t)}
 
     stats = co.read_unit_stats(u)
     slots = u.creatable.resource_costs if u.creatable else ()
@@ -3112,9 +3147,8 @@ def api_builder_node_info():
                                                                    key=lambda kv: kv[1])],
         # Ancestors latest first (Paladin: Cavalier, then Knight), the order the
         # build's _flow_down picks an inherited cost in.
-        "line_after": walk(nid, succ),
-        "line_before": sorted(walk(nid, {k: set(v) for k, v in pred.items()}),
-                              key=lambda x: (-depth(x), x)),
+        "line_after": lines["after"].get(nid, []),
+        "line_before": lines["before"].get(nid, []),
         "forms": len(forms),
         "upgrade": upgrade,
     })
