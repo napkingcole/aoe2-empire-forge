@@ -781,6 +781,34 @@ def _apply_unit_edits(dat, slot: int, overrides: dict) -> int:
     return len(touched)
 
 
+def edited_fields(dat, units, raw_edits) -> dict[int, set[str]]:
+    """Which fields the tree edits set on each DAT unit, as _apply_unit_edits
+    writes them: stats and bonus classes ("bonus:<cls>") on the node and its
+    forms, "train" and "cost" down the line too.  The stats preview uses it to
+    tell an edit from the game's own value."""
+    from civ_schema import norm_unit_edits
+    edits = {int(k): e for k, e in norm_unit_edits(raw_edits).items()}
+    out: dict[int, set[str]] = {}
+
+    def mark(uid, field):
+        if 0 <= uid < len(units) and units[uid] is not None:
+            for f in unit_forms(dat, units, uid):
+                out.setdefault(f, set()).add(field)
+
+    succ = upgrade_successors(dat) if any("cost" in e or "train" in e for e in edits.values()) else {}
+    for field in ("cost", "train"):
+        for uid in _flow_down(succ, {u: 1 for u, e in edits.items() if field in e}):
+            mark(uid, field)
+    for uid, e in edits.items():
+        for k, v in e.items():
+            if k == "bonus":
+                for cls in v:
+                    mark(uid, f"bonus:{cls}")
+            elif k not in ("cost", "train"):
+                mark(uid, k)
+    return out
+
+
 def _tech_time(tech) -> int:
     return next((int(rl.research_time) for rl in tech.research_locations
                  if rl.location_id >= 0), 0)

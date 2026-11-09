@@ -373,11 +373,22 @@ def _step(c: dict, name) -> dict:
                       (c["d"] if c["op"] == "multiply" else c.get("new"))}
 
 
-def card(sim: Simulation, base_unit_id: int, name) -> dict:
+# A tree edit's field -> the card's stat key.
+_EDIT_KEYS = {"hp": "hp", "attack": "attack", "melee": "melee_armor", "pierce": "pierce_armor",
+              "range": "range", "reload": "reload", "speed": "speed", "los": "los"}
+EDIT_LABEL = "Your edit (tech tree)"
+
+
+def card(sim: Simulation, base_unit_id: int, name, game_units=None, edited=None) -> dict:
     """One unit line's stat card: each stat's base value, final value and the
     steps between them.  `name(change)` turns a change into its source's label.
     A stat built from both adds and multiplies is flagged "mixed": its value
-    depends on the order the engine applies them, which is unconfirmed."""
+    depends on the order the engine applies them, which is unconfirmed.
+
+    Tree edits are written straight onto the civ's units, so they would read as
+    the base.  `edited` ({unit id: fields}, civ_overrides.edited_fields) and
+    `game_units` (the template civ's units, as shipped) turn each edited field
+    back into the game's base plus an "edit" step."""
     uid = sim.final_unit(base_unit_id)
     u, base = sim.units[uid], sim.dat.civs[sim.civ_index].units[uid]
     main_cls = _main_attack_class(u)
@@ -385,6 +396,16 @@ def card(sim: Simulation, base_unit_id: int, name) -> dict:
     steps: dict[str, list] = defaultdict(list)
     for c in sim.log[uid]:
         steps[_stat_key(c, main_cls)].append(c)
+
+    fields = (edited or {}).get(uid, set())
+    game = game_units[uid] if fields and game_units is not None and 0 <= uid < len(game_units) else None
+    game_before = _stat_values(game, main_cls) if game is not None else {}
+    edit_steps: dict[str, dict] = {}
+    for f in fields:
+        key = _EDIT_KEYS.get(f)
+        if key and game_before.get(key) is not None and game_before[key] != before.get(key):
+            edit_steps[key] = {"source": EDIT_LABEL, "tech": None, "op": "set", "amount": before[key]}
+            before[key] = game_before[key]
 
     stats = []
     for key, label in _STAT_ORDER:
@@ -394,7 +415,8 @@ def card(sim: Simulation, base_unit_id: int, name) -> dict:
             continue
         ops = {c["op"] for c in steps[key]}
         stats.append({"key": key, "label": label, "value": after[key], "base": before.get(key),
-                      "steps": [_step(c, name) for c in steps[key]],
+                      "steps": ([edit_steps[key]] if key in edit_steps else [])
+                               + [_step(c, name) for c in steps[key]],
                       "mixed": {"add", "multiply"} <= ops})
         if key == "attack":
             stats[-1]["kind"] = "pierce" if main_cls == PIERCE else "melee"
@@ -402,11 +424,17 @@ def card(sim: Simulation, base_unit_id: int, name) -> dict:
     bonus = []
     if u.type_50 is not None:
         base_atk = {a.class_: a.amount for a in base.type_50.attacks}
+        game_atk = ({a.class_: a.amount for a in game.type_50.attacks}
+                    if game is not None and game.type_50 is not None else {})
         for a in u.type_50.attacks:
             if a.class_ in (MELEE, PIERCE) or a.amount <= 0:
                 continue
-            bonus.append({"cls": a.class_, "value": a.amount, "base": base_atk.get(a.class_, 0),
-                          "steps": [_step(c, name) for c in steps[f"bonus:{a.class_}"]]})
+            was, edit = base_atk.get(a.class_, 0), []
+            if f"bonus:{a.class_}" in fields and game_atk.get(a.class_, 0) != was:
+                edit = [{"source": EDIT_LABEL, "tech": None, "op": "set", "amount": was}]
+                was = game_atk.get(a.class_, 0)
+            bonus.append({"cls": a.class_, "value": a.amount, "base": was,
+                          "steps": edit + [_step(c, name) for c in steps[f"bonus:{a.class_}"]]})
 
     out = {"unit": uid, "base_unit": base_unit_id, "class": u.class_, "stats": stats,
            "bonus": bonus, "sources": sorted({c["tech"] for c in sim.log[uid]
@@ -419,10 +447,16 @@ def card(sim: Simulation, base_unit_id: int, name) -> dict:
     if cr is not None:
         out["cost"] = {r: a for r, a in ((c.type, c.amount) for c in cr.resource_costs
                                          if c.flag == 1) if r in (0, 1, 2, 3) and a > 0}
+        game_time = {}
+        if "train" in fields and game is not None and game.creatable is not None:
+            game_time = {tl.unit_id: tl.train_time for tl in game.creatable.train_locations}
         out["train"] = [{"building": tl.unit_id, "time": tl.train_time,
                          "work_rate": sim.work_rate(tl.unit_id),
                          "effective": round(tl.train_time / sim.work_rate(tl.unit_id), 1),
-                         "steps": [_step(c, name) for c in sim.log[tl.unit_id] if c["attr"] == 13]}
+                         "steps": ([{"source": f"{EDIT_LABEL}, was {game_time[tl.unit_id]}s",
+                                     "tech": None, "op": "set", "amount": tl.train_time}]
+                                   if game_time.get(tl.unit_id, tl.train_time) != tl.train_time else [])
+                                  + [_step(c, name) for c in sim.log[tl.unit_id] if c["attr"] == 13]}
                         for tl in cr.train_locations if tl.unit_id >= 0]
     return out
 

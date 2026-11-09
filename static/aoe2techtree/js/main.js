@@ -1367,6 +1367,7 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
                 // Click opens the side panel; Shift-click is the quick on/off.
                 if (e && e.shiftKey || !window.ttInspector) {
                     _toggleNode(itemToDraw, element_height);
+                    _treeChanged();
                     window.ttInspector?.refresh();
                 } else {
                     window.ttInspector.select(itemToDraw, element_height);
@@ -1637,7 +1638,7 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         return b;
     };
 
-    const doneBtn  = mkBtn('Save Tech Tree', '#2c5729', _saveTechTree);
+    const doneBtn  = mkBtn('Save & Exit Tech Tree', '#2c5729', _saveTechTree);
     const fillBtn  = mkBtn('Enable All',     '#4a3a10', _fillAll);
     const resetBtn = mkBtn('Disable All',    '#5a1a1a', _disableAll);
     const hint     = document.createElement('span');
@@ -1728,6 +1729,19 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             box-shadow: 0 0 0 3px rgba(212,160,40,.3); }
         .tt-insp-num.is-edited { border-color: #b07a10; background: rgba(255,226,140,.55); color: #4a2a00; }
         .tt-insp-num:disabled { background: rgba(255,255,255,.18); box-shadow: none; }
+        /* Input group: the stat's icon joined to the left of its box. */
+        .tt-insp-group { display: flex; align-items: stretch; }
+        .tt-insp-addon { flex: 0 0 30px; display: flex; align-items: center; justify-content: center;
+            border: 1px solid rgba(110,75,30,.45); border-right: 0; border-radius: 4px 0 0 4px;
+            background: rgba(110,75,30,.16); transition: border-color .12s, background .12s; }
+        .tt-insp-addon img { width: 18px; height: 18px; object-fit: contain;
+            filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+        .tt-insp-group .tt-insp-num { border-radius: 0 4px 4px 0; min-width: 0; }
+        .tt-insp-group:hover .tt-insp-addon { border-color: rgba(110,75,30,.8); }
+        .tt-insp-group:focus-within { border-radius: 4px; box-shadow: 0 0 0 3px rgba(212,160,40,.3); }
+        .tt-insp-group .tt-insp-num:focus { box-shadow: none; }
+        .tt-insp-group:focus-within .tt-insp-addon { border-color: #a8740f; background: rgba(212,160,40,.25); }
+        .tt-insp-group:has(.is-edited) .tt-insp-addon { border-color: #b07a10; background: rgba(255,226,140,.7); }
         .tt-insp-cost { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
         .tt-insp-res { display: grid; grid-template-columns: 18px 1fr; grid-template-rows: auto auto;
             column-gap: 5px; align-items: center; font-size: 12px; font-weight: 500; color: #4a2e0c; }
@@ -1750,6 +1764,12 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         .tt-insp-x { padding: 0; line-height: 18px; }
         .tt-insp-link { border: none; background: none; box-shadow: none; text-decoration: underline; text-transform: none;
             letter-spacing: 0; font: 400 12px 'Inter', sans-serif; padding: 0; color: #6b3f06; }
+        .tt-insp-fu { font-size: 11.5px; color: #5a3d14; min-height: 0; line-height: 1.3; }
+        .tt-insp-fu:empty { display: none; }
+        .tt-insp-fu b { color: #2e1d08; font-weight: 700; }
+        .tt-insp-fu[title]:not([title=""]) { cursor: help; }
+        .tt-insp-bonus .tt-insp-fu { grid-column: 1 / -1; margin-top: -2px; }
+        .tt-insp-fu-status { font: italic 400 11px 'Inter', sans-serif; letter-spacing: 0; color: #7a5424; }
         .tt-insp-reset { margin-top: 18px; width: 100%; padding: 6px; font-family: 'Cinzel', serif; letter-spacing: .04em; }
     `;
     document.head.appendChild(ttStyle);
@@ -1818,14 +1838,27 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
     });
 };
 
+// Every change is written to the draft as it happens (a localStorage write),
+// so the side panel's upgrade numbers can follow the live tree; the button
+// only has to close the overlay.
+function _commitTree() {
+    if (!_canEdit || !window.setTechTree) return;
+    window.setTechTree([
+        _localtree.units.slice(),
+        _localtree.buildings.slice(),
+        _localtree.techs.slice(),
+    ], window.ttInspector ? window.ttInspector.edits() : null);
+}
+window._ttCommit = _commitTree;
+
+// A node turned on or off: save, and have the panel refilter its upgrade numbers.
+function _treeChanged() {
+    _commitTree();
+    window.ttInspector?.treeChanged();
+}
+
 function _saveTechTree() {
-    if (window.setTechTree) {
-        window.setTechTree([
-            _localtree.units.slice(),
-            _localtree.buildings.slice(),
-            _localtree.techs.slice(),
-        ], window.ttInspector ? window.ttInspector.edits() : null);
-    }
+    _commitTree();
     _closeTreeOverlay();
 }
 
@@ -1875,6 +1908,7 @@ function _fillAll() {
             if (key) push(key, item.node_id);
         }
         civ(_currentCivName);
+        _treeChanged();
     });
 }
 
@@ -1885,4 +1919,5 @@ function _disableAll() {
     _localtree = { units: keepShips, buildings: [], techs: [] };
     _localtree.buildings = [...HARD_ALWAYS_ON_BUILDINGS, ..._CAMP_BUILDING_IDS];
     if (_currentCivName) civ(_currentCivName);
+    _treeChanged();
 }

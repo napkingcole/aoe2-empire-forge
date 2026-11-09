@@ -129,7 +129,7 @@ function showStep(n) {
     }
   }
   if (n === 1) renderScene();      // a card picked since (460) can change it
-  if (n === 2) { renderLRSPicker(); renderDemoShipNotice(); }
+  if (n === 2) { renderLRSPicker(); renderDemoShipNotice(); warmTreeSteps(); }
   if (n === 6 || n === 7) initUTPanel(n);
 
   const btnPrev = document.getElementById("btn-prev");
@@ -4413,9 +4413,21 @@ function renderLRSPicker() {
 
 // ── Tech tree ─────────────────────────────────────────────────────────────────
 
+// The side panel's upgrade numbers need one ~15 s build per set of cards;
+// start it when the tech tree step opens, so it is usually done by the time a
+// node is clicked.  The server keeps the result, and ignores a repeat.
+function warmTreeSteps() {
+  if (!draft.dat_path) return;
+  fetch("/api/builder/tree-steps", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft, dat_path: draft.dat_path }),
+  }).catch(() => {});
+}
+
 // The tree's side panel (aoe2techtree/js/inspector.js) reads these.
 window.getTreeEdits = () => ({ unit_edits: draft.unit_edits || {}, tech_edits: draft.tech_edits || {} });
 window.getDatPath = () => draft.dat_path || "";
+window.getDraft = () => draft;
 
 // KM's main.js calls this when the user clicks "Save Tech Tree"; `edits` is the
 // side panel's {unit_edits, tech_edits} (civ_overrides._apply_unit_edits).

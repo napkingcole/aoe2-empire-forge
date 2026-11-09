@@ -11,6 +11,7 @@ Routes:
   GET  /download      Serve the built mod zip
 """
 
+import collections
 import contextlib
 import hashlib
 import io
@@ -2994,7 +2995,70 @@ def api_builder_ut_costs():
 
 # ── Tech tree side panel ──────────────────────────────────────────────────────
 
-_SUCC_CACHE: dict[str, dict] = {}
+_LINES_CACHE: dict[str, dict] = {}
+
+
+def _tree_lines(dat_path: str) -> dict:
+    """Every unit's place in its upgrade line, from the DAT (cached per DAT):
+    {"after": {uid: [later tiers]}, "before": {uid: [ancestors, latest first —
+    the order the build's _flow_down picks an inherited cost in]},
+    "upgrade": {uid: the researchable tech that produces it}}."""
+    if dat_path in _LINES_CACHE:
+        return _LINES_CACHE[dat_path]
+    import civ_overrides as co
+    dat = _get_dat(dat_path)
+    succ = co.upgrade_successors(dat)
+    pred: dict[int, list[int]] = {}
+    for a, bs in succ.items():
+        for b in bs:
+            pred.setdefault(b, []).append(a)
+    pred_sets = {k: set(v) for k, v in pred.items()}
+
+    def walk(start, graph):
+        out, todo = [], list(graph.get(start, ()))
+        while todo:
+            x = todo.pop(0)
+            if x not in out and x != start:
+                out.append(x)
+                todo += sorted(graph.get(x, ()))
+        return out
+
+    memo: dict[int, int] = {}
+
+    def depth(x, seen=()):
+        if x not in memo:
+            memo[x] = 1 + max((depth(p, seen + (x,)) for p in pred.get(x, ()) if p not in seen),
+                              default=-1)
+        return memo[x]
+
+    upgrade: dict[int, int] = {}
+    for tid, t in enumerate(dat.techs):
+        if tid in co._AGE_TECHS or t.civ != -1 or not 0 <= t.effect_id < len(dat.effects):
+            continue
+        if not any(rl.location_id >= 0 for rl in t.research_locations):
+            continue
+        for c in dat.effects[t.effect_id].effect_commands:
+            if c.type == 3:
+                upgrade.setdefault(int(c.b), tid)
+    nodes = set(succ) | set(pred)
+    _LINES_CACHE[dat_path] = {
+        "after": {u: walk(u, succ) for u in nodes if walk(u, succ)},
+        "before": {u: sorted(walk(u, pred_sets), key=lambda x: (-depth(x), x))
+                   for u in nodes if walk(u, pred_sets)},
+        "upgrade": upgrade,
+    }
+    return _LINES_CACHE[dat_path]
+
+
+@app.route("/api/builder/tree-lines")
+def api_builder_tree_lines():
+    """Every unit's line and upgrade tech at once, so the tree can mark a node
+    edited through its line (or its upgrade's cost) before it is ever opened."""
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    lines = _tree_lines(dat_path)
+    return jsonify({"status": "ok", "before": lines["before"], "upgrade": lines["upgrade"]})
 
 # Every armour class a bonus can aim at, for the panel's picker.  Names from the
 # UGC guide's damage_calculation table, except 10 (villagers carry it, found
@@ -3048,42 +3112,14 @@ def api_builder_node_info():
     if not (0 <= nid < len(units)) or units[nid] is None:
         return jsonify({"status": "error", "error": "unknown unit"}), 404
     u = units[nid]
-    if dat_path not in _SUCC_CACHE:
-        _SUCC_CACHE[dat_path] = co.upgrade_successors(dat)
-    succ = _SUCC_CACHE[dat_path]
-    pred: dict[int, list[int]] = {}
-    for a, bs in succ.items():
-        for b in bs:
-            pred.setdefault(b, []).append(a)
-
-    def walk(start, graph):
-        out, todo = [], list(graph.get(start, ()))
-        while todo:
-            x = todo.pop(0)
-            if x not in out and x != start:
-                out.append(x)
-                todo += sorted(graph.get(x, ()))
-        return out
-
-    memo: dict[int, int] = {}
-
-    def depth(x, seen=()):
-        if x not in memo:
-            memo[x] = 1 + max((depth(p, seen + (x,)) for p in pred.get(x, ()) if p not in seen),
-                              default=-1)
-        return memo[x]
-
+    lines = _tree_lines(dat_path)
     # The upgrade that produces this unit (Cavalier for the Cavalier node).
     upgrade = None
-    for tid, t in enumerate(dat.techs):
-        if tid in co._AGE_TECHS or t.civ != -1 or not 0 <= t.effect_id < len(dat.effects):
-            continue
-        if not any(rl.location_id >= 0 for rl in t.research_locations):
-            continue
-        if any(c.type == 3 and c.b == nid for c in dat.effects[t.effect_id].effect_commands):
-            upgrade = {"id": tid, "name": _display_name(t.language_dll_name, t.name) or t.name,
-                       "cost": cost_of(t.resource_costs), "time": co._tech_time(t)}
-            break
+    if nid in lines["upgrade"]:
+        tid = lines["upgrade"][nid]
+        t = dat.techs[tid]
+        upgrade = {"id": tid, "name": _display_name(t.language_dll_name, t.name) or t.name,
+                   "cost": cost_of(t.resource_costs), "time": co._tech_time(t)}
 
     stats = co.read_unit_stats(u)
     slots = u.creatable.resource_costs if u.creatable else ()
@@ -3111,9 +3147,8 @@ def api_builder_node_info():
                                                                    key=lambda kv: kv[1])],
         # Ancestors latest first (Paladin: Cavalier, then Knight), the order the
         # build's _flow_down picks an inherited cost in.
-        "line_after": walk(nid, succ),
-        "line_before": sorted(walk(nid, {k: set(v) for k, v in pred.items()}),
-                              key=lambda x: (-depth(x), x)),
+        "line_after": lines["after"].get(nid, []),
+        "line_before": lines["before"].get(nid, []),
         "forms": len(forms),
         "upgrade": upgrade,
     })
@@ -3257,6 +3292,239 @@ def api_builder_fu_stats():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
+def _tech_labeler(dat, draft: dict, civ_def: dict, result: dict):
+    """(tech_label, card_techs) for a built civ.  A change's source in the
+    player's words: card text for a civ bonus, the UT's name, else the game's
+    name for the tech.  card_techs: the techs that carry the civ's bonus cards."""
+    from build_all import _ut_name, _ut_source
+    from civ_appender import _display_name
+    br = result.get("bonus_results") or {}
+    labels: dict[int, str] = {int(tid): bonus_name(int(bid))
+                              for tid, bid in (br.get("tech_cards") or {}).items()}
+    labels.update({int(k): v for k, v in (br.get("custom_labels") or {}).items()})
+    cards = set(labels)
+    for key, group, tid in (("castle_ut", 2, result.get("castle_ut_tech_id")),
+                            ("imperial_ut", 3, result.get("imp_ut_tech_id"))):
+        if tid is not None:
+            own = ((draft.get(key) or {}).get("name") or "").strip()
+            labels[tid] = own or _ut_name(*_ut_source(civ_def, group)).split(" (")[0]
+
+    def tech_label(tid: int) -> str:
+        if tid in labels:
+            return labels[tid]
+        t = dat.techs[tid]
+        name = _display_name(t.language_dll_name, t.name) or t.name
+        return name.removeprefix("C-Bonus, ")
+    return tech_label, cards
+
+
+# The tree's side panel shows each stat "with cards" and "fully upgraded".  A
+# build costs ~15 s, so it runs once per set of cards: with every tech and
+# building in the editor switched on, each step tagged with the tree tech it
+# comes from (`node`), and the panel drops the steps of techs the live tree has
+# off.  Toggling a node, or typing an edit, never rebuilds.
+_TREE_STEPS: dict = {"want": None, "built": collections.OrderedDict()}   # key -> data, newest last
+_TREE_STEPS_KEEP = 4
+_TREE_STEPS_LOCK = threading.Lock()
+_STEP_FIELDS = {0: "hp", 1: "los", 5: "speed", 10: "reload", 12: "range", 101: "train"}
+_STEP_INT = {"hp", "train"}
+_COST_RES = {103: "food", 104: "wood", 105: "gold", 106: "stone"}
+
+
+def _tree_steps_split(draft: dict) -> tuple[dict, dict]:
+    """(basis, tree) for a wizard draft, which is always in the builder's shape.
+
+    The basis is what the steps are built from and keyed on: the tree left out
+    (every editor tech and building is switched on instead), and so are the
+    edits and the Unlock cards the tree derives from its units — they make a
+    unit available rather than change a stat, and keeping them would rebuild on
+    every such click."""
+    from civ_appender import _UNLOCK_UNIT_BONUSES
+    basis = {k: v for k, v in draft.items() if k not in ("unit_edits", "tech_edits", "tree")}
+    basis["bonuses"] = [b for b in draft.get("bonuses") or []
+                        if not (isinstance(b, dict) and b.get("id") in _UNLOCK_UNIT_BONUSES)]
+    return basis, draft.get("tree") or {}
+
+
+def _tree_steps_build(basis: dict, tree: dict, dat_path: str, exact: bool = False) -> dict:
+    """`exact` builds `tree` as it is (the tests compare against it)."""
+    import fu_stats
+    from build_civ import _find_civ_slot
+    from civ_appender import _editor_nodes, _original_civ
+    from civ_overrides import _dominant_attack
+    from wizard_build import _draft_to_civ_def
+
+    nodes = _editor_nodes()
+    extra = {"buildings": set(), "techs": set()} if exact else nodes
+    draft = dict(basis, tree={
+        "units": list(tree.get("units") or []),
+        "buildings": sorted(set(tree.get("buildings") or []) | extra["buildings"]),
+        "techs": sorted(set(tree.get("techs") or []) | extra["techs"]),
+    })
+    civ_def = _draft_to_civ_def(draft)
+    dat = load_dat(dat_path)
+    slot = _find_civ_slot(dat, "Goths")
+    with contextlib.redirect_stdout(io.StringIO()):
+        result, _ = apply_civ_with_overrides(dat, civ_def, slot, draft)
+    sim = fu_stats.Simulation(dat, slot)
+    tech_label, cards = _tech_labeler(dat, draft, civ_def, result)
+    game = _original_civ(dat, 1).units
+
+    def main_cls(uid):
+        u = game[uid] if 0 <= uid < len(game) else None
+        if u is None or u.type_50 is None:
+            return None
+        dom = _dominant_attack(u)
+        return dom.class_ if dom is not None else None
+
+    steps: dict[int, list] = {}
+    for uid, log in sim.log.items():
+        out, mc = [], main_cls(uid)
+        for c in log:
+            if c.get("unmodelled") or c["op"] not in ("set", "add", "multiply"):
+                continue
+            attr, d = c["attr"], float(c["d"])
+            r = None
+            if attr in (8, 9):
+                key = ({4: "melee", 3: "pierce"}.get(c["cls"]) if attr == 8
+                       else "attack" if c["cls"] == mc else f"bonus:{c['cls']}")
+                if key is None:
+                    continue
+                val = abs(int(d)) & 0xFF
+                v = val / 100 if c["op"] == "multiply" else (-val if c["op"] == "add" and d < 0 else val)
+                r = "round" if c["op"] == "multiply" else None
+            elif attr in _STEP_FIELDS:
+                key, v = _STEP_FIELDS[attr], d
+                r = "trunc" if key in _STEP_INT else None
+            elif attr in _COST_RES:
+                key, v, r = f"cost:{_COST_RES[attr]}", d, "trunc"
+            elif attr == 13:
+                key, v = "work_rate", d
+            else:
+                continue
+            tid = c["tech"]
+            out.append({"key": key, "op": c["op"], "v": v, "r": r,
+                        "source": c["source"] if tid is None else tech_label(tid),
+                        "card": tid is None or tid in cards,
+                        "node": tid if tid in nodes["techs"] else None})
+        if out:
+            steps[uid] = out
+    rates, train_at = {}, {}
+    needs = _tree_node_needs(dat, slot, nodes)
+    for u in dat.civs[slot].units:
+        if u is None:
+            continue
+        if u.bird is not None and u.bird.work_rate:
+            rates[u.id] = u.bird.work_rate
+        if u.creatable is not None:
+            b = next((t.unit_id for t in u.creatable.train_locations if t.unit_id >= 0), None)
+            if b is not None:
+                train_at[u.id] = b
+    return {"steps": steps, "rates": rates, "train_at": train_at, "needs": needs}
+
+
+def _tree_node_needs(dat, slot: int, nodes: dict) -> dict:
+    """{"t<id>" / "u<id>": [tree techs it needs]} for every editor node.
+
+    The build keeps an unticked tech when a ticked node needs it (the Hand
+    Cannoneer keeps Chemistry; civ_appender Step 3b'), so the panel counts a
+    tech while it is ticked OR some ticked node needs it.  A unit or building
+    needs what the techs producing it need.  Prerequisites the civ disables and
+    the player can't tick (Chronicles' shadow techs) are not followed, and a
+    tech that needs only k of its n listed prerequisites follows just the ones
+    not already met by something always on (Gillnets: Castle Age + 912 + 906,
+    two of three, where 912 itself needs 906)."""
+    from civ_appender import _PROTECTED_TECHS, _is_enable
+    techs, effects = dat.techs, dat.effects
+    civ = dat.civs[slot]
+    off = ({int(ec.d) for ec in effects[civ.tech_tree_id].effect_commands if ec.type == 102}
+           if 0 <= civ.tech_tree_id < len(effects) else set())
+    node_t = nodes["techs"] - _PROTECTED_TECHS
+    memo: dict[int, frozenset] = {}
+
+    def need(tid: int) -> frozenset:
+        if tid in memo:
+            return memo[tid]
+        memo[tid] = frozenset()                     # a cycle needs nothing more
+        t = techs[tid]
+        reqs = [r for r in t.required_techs if 0 <= r < len(techs)
+                and not (r in off and r not in node_t)]
+        k = min(t.required_tech_count, len(reqs))
+        fixed = [r for r in reqs if r not in node_t and not need(r)]   # always met
+        out: set[int] = set()
+        if len(fixed) < k:
+            for r in reqs:
+                if r in node_t:
+                    out.add(r)
+                out |= need(r)
+        memo[tid] = frozenset(out)
+        return memo[tid]
+
+    producers: dict[int, set[int]] = {}
+    for tid, t in enumerate(techs):
+        if t.civ not in (-1, slot) or not 0 <= t.effect_id < len(effects) or tid in off:
+            continue
+        for c in effects[t.effect_id].effect_commands:
+            o = int(c.b) if c.type == 3 else int(c.a) if _is_enable(c) else None
+            if o is not None:
+                producers.setdefault(o, set()).add(tid)
+
+    out: dict[str, list[int]] = {}
+    for tid in nodes["techs"]:
+        if 0 <= tid < len(techs) and need(tid):
+            out[f"t{tid}"] = sorted(need(tid))
+    for uid in nodes["units"] | nodes["buildings"]:
+        n: set[int] = set()
+        for p in producers.get(uid, ()):
+            n |= need(p) | ({p} & node_t)
+        if n:
+            out[f"u{uid}"] = sorted(n)
+    return out
+
+
+@app.route("/api/builder/tree-steps", methods=["POST"])
+def api_builder_tree_steps():
+    """The tech steps behind a unit's "with cards" and "fully upgraded" numbers
+    in the tree's side panel: {status, steps: [...], train: {building, rate,
+    steps}}.  The first call per set of cards builds the civ (~15 s); later ones are
+    instant."""
+    import traceback
+    body = request.get_json(silent=True) or {}
+    draft = body.get("draft") or {}
+    dat_path = _resolve_dat_path(body.get("dat_path") or draft.get("dat_path"))
+    if not dat_path:
+        return jsonify({"status": "no_dat"})
+    basis, tree = _tree_steps_split(draft)
+    key = hashlib.sha1((dat_path + json.dumps(basis, sort_keys=True, default=str)).encode()).hexdigest()
+    # Builds run one at a time; a request still waiting when a newer set of
+    # cards arrives is skipped, not built.
+    _TREE_STEPS["want"] = key
+    try:
+        with _TREE_STEPS_LOCK:
+            built = _TREE_STEPS["built"]
+            if key not in built:
+                if _TREE_STEPS["want"] != key:
+                    return jsonify({"status": "stale"})
+                built[key] = _tree_steps_build(basis, tree, dat_path)
+                while len(built) > _TREE_STEPS_KEEP:
+                    built.popitem(last=False)
+            built.move_to_end(key)
+            data = built[key]
+    except Exception as e:                                   # noqa: BLE001
+        traceback.print_exc()
+        return jsonify({"status": "error", "error": str(e)}), 500
+    try:
+        uid = int(body.get("id"))
+    except (TypeError, ValueError):
+        return jsonify({"status": "ok", "key": key})        # a warm-up call
+    out = {"status": "ok", "key": key, "steps": data["steps"].get(uid, []), "needs": data["needs"]}
+    b = data["train_at"].get(uid)
+    if b is not None:
+        out["train"] = {"building": b, "rate": data["rates"].get(b, 1.0),
+                        "steps": [s for s in data["steps"].get(b, []) if s["key"] == "work_rate"]}
+    return jsonify(out)
+
+
 def _fu_stats_preview(draft: dict, dat_path: str) -> dict:
     import fu_stats
     from bonus_names import bonus_name
@@ -3272,24 +3540,7 @@ def _fu_stats_preview(draft: dict, dat_path: str) -> dict:
         result, uu_info = apply_civ_with_overrides(dat, civ_def, slot, draft)
     sim = fu_stats.Simulation(dat, slot)
 
-    # Where a change came from, in the player's words: card text for a civ
-    # bonus, the UT's name, else the game's name for the tech.
-    br = result.get("bonus_results") or {}
-    labels: dict[int, str] = {tid: bonus_name(int(bid))
-                              for tid, bid in (br.get("tech_cards") or {}).items()}
-    labels.update(br.get("custom_labels") or {})
-    for key, group, tid in (("castle_ut", 2, result.get("castle_ut_tech_id")),
-                            ("imperial_ut", 3, result.get("imp_ut_tech_id"))):
-        if tid is not None:
-            own = ((draft.get(key) or {}).get("name") or "").strip()
-            labels[tid] = own or _ut_name(*_ut_source(civ_def, group)).split(" (")[0]
-
-    def tech_label(tid: int) -> str:
-        if tid in labels:
-            return labels[tid]
-        t = dat.techs[tid]
-        name = _display_name(t.language_dll_name, t.name) or t.name
-        return name.removeprefix("C-Bonus, ")
+    tech_label, _ = _tech_labeler(dat, draft, civ_def, result)
 
     def name(change: dict) -> str:
         return "Team bonus" if change["tech"] is None else tech_label(change["tech"])
@@ -3312,7 +3563,14 @@ def _fu_stats_preview(draft: dict, dat_path: str) -> dict:
     lines = [b for b in sim.available_lines() if sim.final_unit(b) not in _FU_HIDDEN
              and (b in own_units or sim.final_unit(b) in own_units
              or _display_name(sim.units[sim.final_unit(b)].language_dll_name, None))]
-    cards = [fu_stats.card(sim, base, name) for base in lines]
+    # Tree edits are written onto the civ's units; show them against the
+    # template civ's units as shipped (what the side panel calls "game").
+    from civ_appender import _original_civ
+    from civ_overrides import edited_fields
+    built_units = dat.civs[slot].units
+    edited = edited_fields(dat, built_units, draft.get("unit_edits"))
+    game_units = _original_civ(dat, 1).units if edited else None
+    cards = [fu_stats.card(sim, base, name, game_units, edited) for base in lines]
     own = {tid for tid in sim.techs if dat.techs[tid].civ == slot}
     shaping = {s for c in cards for s in c["sources"]} & own
     shaping |= {st["tech"] for c in cards for t in c.get("train", []) for st in t["steps"]

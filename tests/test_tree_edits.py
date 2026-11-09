@@ -165,6 +165,29 @@ check("both Trebuchet forms take the HP", units[TREB_PACKED].hit_points == 300
 check("the unpacked Trebuchet (it fights) takes the attack",
       units[TREB].type_50.displayed_attack == 999, units[TREB].type_50.displayed_attack)
 
+print("\n=== the stats preview tells an edit from the game's value ===")
+import fu_stats                                                   # noqa: E402
+from civ_appender import _original_civ                            # noqa: E402
+from civ_overrides import edited_fields                           # noqa: E402
+fields = edited_fields(dat, units, draft["unit_edits"])
+check("edited fields: the Knight's own stats, bonus, cost and train",
+      {"hp", "train", "cost", "bonus:15"} <= fields.get(KNIGHT, set()), fields.get(KNIGHT))
+check("cost and train reach the Cavalier, its HP does not",
+      {"train", "cost"} <= fields.get(CAVALIER, set()) and "hp" not in fields.get(CAVALIER, set()),
+      fields.get(CAVALIER))
+check("every villager form is marked", all("hp" in fields.get(f, ()) for f in forms))
+sim = fu_stats.Simulation(dat, SLOT)
+game_units = _original_civ(dat, 1).units
+vil = fu_stats.card(sim, VILLAGER, lambda c: "x", game_units, fields)
+hp = next(st for st in vil["stats"] if st["key"] == "hp")
+check("the Villager card's base is the game's 25 HP, not the edit",
+      hp["base"] == game_units[VILLAGER].hit_points and hp["steps"][:1]
+      and hp["steps"][0]["source"] == fu_stats.EDIT_LABEL and hp["steps"][0]["amount"] == 40,
+      (hp["base"], hp["steps"][:2]))
+plain = fu_stats.card(sim, VILLAGER, lambda c: "x")
+check("without the edit map the card is as before (edit reads as base)",
+      next(st for st in plain["stats"] if st["key"] == "hp")["base"] == 40)
+
 print("\n=== tech edits (ghosts) ===")
 ghost = [t for t in dat.techs[n_techs:] if t.name == "Tech tree edits"]
 check("one civ-owned ghost tech", len(ghost) == 1 and ghost[0].civ == SLOT,
