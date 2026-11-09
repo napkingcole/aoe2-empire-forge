@@ -1335,11 +1335,16 @@ function _drawAddSlot(slot, element_height, draw) {
     const x = slot.x, y = slot.y, s = element_height;
     g.rect(s, s).attr({ id: `${slot.id}_bg`, fill: '#000', 'fill-opacity': 0.15,
                         stroke: '#000', 'stroke-width': 1 }).move(x, y).addClass('tt-add-bg');
-    const arm = s * 0.36, w = Math.max(2, s * 0.07);
+    const arm = s * 0.36, w = Math.max(2, s * 0.042);   // ~6px at the usual node size
     g.rect(arm, w).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - arm) / 2, y + (s - w) / 2);
     g.rect(w, arm).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - w) / 2, y + (s - arm) / 2);
+    // Hovering one box dims the rest of its column (its building's other ages).
+    const column = () => document.querySelectorAll(`.tt-add-slot[data-building="${slot.add.building}"]`);
+    g.attr({ 'data-building': slot.add.building });
     g.rect(s, s).attr({ id: `${slot.id}_overlay`, fill: 'transparent' }).addClass('node__overlay')
         .move(x, y)
+        .mouseover(() => column().forEach(el => { if (el.id !== slot.id) el.classList.add('is-dim'); }))
+        .mouseout(() => column().forEach(el => el.classList.remove('is-dim')))
         .click(() => window.ttInspector?.select(slot, element_height));
     g.element('title').words(`Add a unit to the ${slot.add.buildingName} in the ${['Dark', 'Feudal', 'Castle', 'Imperial'][slot.add.age - 1]} Age`);
 }
@@ -1660,8 +1665,8 @@ function civ(civName) {
         document.getElementById('techtree').onclick = (e) => { if (e.target.id === 'techtree') hideHelp(); };
 
         // Age row highlights (subtle amber on parchment)
-        draw.rect(tree_width, row_height).attr({ fill: '#7a5010', opacity: 0.12 }).click(hideHelp);
-        draw.rect(tree_width, row_height).attr({ fill: '#7a5010', opacity: 0.12 }).click(hideHelp).y(row_height * 2);
+        draw.rect(tree_width, row_height).attr({ fill: '#7a5010', opacity: 0.2 }).click(hideHelp);
+        draw.rect(tree_width, row_height).attr({ fill: '#7a5010', opacity: 0.2 }).click(hideHelp).y(row_height * 2);
 
         // Age icons
         const icon_height = Math.min(row_height / 2, 112);
@@ -1789,7 +1794,7 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
            torn edges are transparent, so the tree shows around them.  A 9-slice
            border-image keeps the edges at their size however tall the panel is. */
         #tt-inspector-frame {
-            position: absolute; top: 6px; right: 6px; bottom: 6px; width: 380px; z-index: 5;
+            position: absolute; top: 6px; right: 6px; bottom: 6px; width: 390px; z-index: 5;
             border-style: solid; border-width: 30px 28px;
             border-image: url('/static/img/parchment-panel.webp') 60 56 fill / 30px 28px stretch;
             filter: drop-shadow(0 8px 14px rgba(0,0,0,.6)) drop-shadow(0 1px 2px rgba(0,0,0,.4));
@@ -1880,6 +1885,8 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         .tt-add-slot { cursor: pointer; }
         .tt-add-slot .tt-add-bg { transition: fill-opacity .12s; }
         .tt-add-slot:hover .tt-add-bg { fill-opacity: .32; }
+        .tt-add-slot.is-dim .tt-add-bg { fill-opacity: .06; }
+        .tt-add-slot.is-dim { opacity: .55; }
         .tt-insp-search { width: 100%; margin: 6px 0 2px; box-sizing: border-box; }
         .tt-insp-picks { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
         .tt-insp-pick { display: flex; align-items: center; gap: 8px; padding: 3px 6px; text-align: left;
