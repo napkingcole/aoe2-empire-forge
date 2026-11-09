@@ -252,6 +252,9 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             for _ in ids:
                 dat.unit_headers.append(deepcopy(dat.unit_headers[base]))
         added_units.update(ids)
+        if not hasattr(dat, "_ef_added_lines"):
+            dat._ef_added_lines = {}
+        dat._ef_added_lines[(civ_index, line["id"])] = list(ids)   # custom cards' "line" target
 
         # Unnamed tiers follow tier 1's name: "Guard" -> "Elite Guard".
         stem = tiers[0]["name"] or _display_name(src.language_dll_name, src.name) or unit_label(dat, 0, base)

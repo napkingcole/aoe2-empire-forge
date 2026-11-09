@@ -84,6 +84,9 @@ units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree
 draft = {
     "alias": "Added", "architecture": 2, "language": 0,
     "bonuses": [{"id": 233, "multiplier": 1}, {"id": 101, "multiplier": 1}],   # Spearmen +25% HP, +10% speed
+    # A card on one added line only: +7 HP to the Knight line we add (id 2).
+    "custom_bonuses": [{"targets": [{"type": "line", "id": 2, "name": "Knight"}],
+                        "effects": [{"attr": "hp", "op": "add", "value": 7}]}],
     "team_bonuses": [], "unique_unit": {"km_idx": 11},
     "castle_ut": {"mode": "vanilla", "effects": [{"id": 3, "multiplier": 1}]},
     "imperial_ut": {"mode": "vanilla", "effects": [{"id": 12, "multiplier": 1}]},
@@ -169,6 +172,13 @@ check("Spearmen +25% HP reaches every tier, exactly once each",
       sorted(a for a, _ in hp) == sorted([SPEAR] + ids), hp)
 names = [c for e in dat.effects for c in e.effect_commands if int(c.a) in ids and c.c == 50]
 check("never a name command", not names)
+
+import custom_bonus  # noqa: E402
+card = custom_bonus.normalize(draft["custom_bonuses"])[0]
+plus7 = {int(c.a) for e in dat.effects for c in e.effect_commands if c.type == 4 and c.c == 0 and c.d == 7}
+check("a card can target one added line, and only it", plus7 == set(knights["units"]), plus7)
+check("its text names the line", "Knight line" in custom_bonus.card_text(card), custom_bonus.card_text(card))
+check("and it can't be a team bonus", custom_bonus.team_problem(card) is not None)
 
 print("\n=== F2 tree and strings ===")
 nodes = _added_line_nodes(dat, SLOT, lines)

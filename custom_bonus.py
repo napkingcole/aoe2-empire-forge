@@ -811,6 +811,16 @@ def _norm_target(t) -> dict | None:
             age = None
         if age in CIV_AGES:
             target["age"] = age
+    elif ttype == "line":
+        # A "+ Add Unit" line of this civ's (added_lines.py), by its draft id;
+        # resolved at build time to the line's units ("added_line").
+        try:
+            lid = int(t.get("id"))
+        except (TypeError, ValueError):
+            return None
+        if lid < 1:
+            return None
+        target = {"type": "line", "id": lid, "name": str(t.get("name") or "")}
     elif ttype == "unit":
         try:
             uid = int(t.get("id"))
@@ -963,6 +973,8 @@ def target_kind(target: dict) -> str:
         return "tech"
     if target["type"] == "civ":
         return "civ"
+    if target["type"] == "line":
+        return "unit"
     return "building" if target.get("kind") == "building" else "unit"
 
 
@@ -975,6 +987,8 @@ def target_label(target: dict) -> str:
         return target.get("name") or f"Tech {target['id']}"
     if target["type"] == "civ":
         return "Civilization"
+    if target["type"] == "line":
+        return target.get("name") or f"Added line {target['id']}"
     return target.get("name") or f"Unit {target['id']}"
 
 
@@ -1253,6 +1267,8 @@ def _merge_cost_set(effects: list[dict]) -> list:
 def target_subject(t: dict) -> str:
     """A target as card text names it: "Militia line", "Long Swordsman and up"."""
     subject = target_label(t)
+    if t["type"] == "line":
+        return subject + " line"
     if t["type"] == "unit" and t.get("kind") != "building":
         if t.get("scope") != "up":
             subject += " line"
@@ -1299,6 +1315,8 @@ def _target_selectors(t: dict, line_of, resolve) -> tuple[list[int], set[int]]:
     if t["type"] == "job":
         # The exact pair, never an upgrade line — jobs don't upgrade.
         return [], set(JOBS[t["id"]]["units"])
+    if t["type"] == "line":
+        return [], set(resolve("added_line", t["id"]) if resolve else ())
     if t["type"] != "group":
         if t["id"] in EXACT_BUILDINGS:
             return [], set(EXACT_BUILDINGS[t["id"]])
@@ -1511,6 +1529,8 @@ def team_problem(card: dict) -> str | None:
         return "Bonuses that wait for an age or a building can't be team bonuses — the game's own never do."
     if any(t["type"] == "group" and GROUPS[t["id"]].get("uu") for t in card["targets"]):
         return "\"Unique unit\" means this civ's unique unit, which allies don't train."
+    if any(t["type"] == "line" for t in card["targets"]):
+        return "An added line is this civ's own, which allies don't train."
     if any(e["attr"] == "pop_space" for e in card["effects"]):
         return "Population space only works on this civ's own buildings."
     return None

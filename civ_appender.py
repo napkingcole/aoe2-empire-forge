@@ -4218,6 +4218,8 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
                     if u < n_units and units[u] is not None}
         if kind == "uu":
             return set() if team else custom_bonus.with_forms({u for u in uu_ids if u >= 0})
+        if kind == "added_line":
+            return set() if team else set(getattr(dat, "_ef_added_lines", {}).get((civ_index, arg), ()))
         if kind == "techs":
             return tech_copies(arg)
         if kind == "researched_at":
