@@ -1729,6 +1729,19 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             box-shadow: 0 0 0 3px rgba(212,160,40,.3); }
         .tt-insp-num.is-edited { border-color: #b07a10; background: rgba(255,226,140,.55); color: #4a2a00; }
         .tt-insp-num:disabled { background: rgba(255,255,255,.18); box-shadow: none; }
+        /* Input group: the stat's icon joined to the left of its box. */
+        .tt-insp-group { display: flex; align-items: stretch; }
+        .tt-insp-addon { flex: 0 0 30px; display: flex; align-items: center; justify-content: center;
+            border: 1px solid rgba(110,75,30,.45); border-right: 0; border-radius: 4px 0 0 4px;
+            background: rgba(110,75,30,.16); transition: border-color .12s, background .12s; }
+        .tt-insp-addon img { width: 18px; height: 18px; object-fit: contain;
+            filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+        .tt-insp-group .tt-insp-num { border-radius: 0 4px 4px 0; min-width: 0; }
+        .tt-insp-group:hover .tt-insp-addon { border-color: rgba(110,75,30,.8); }
+        .tt-insp-group:focus-within { border-radius: 4px; box-shadow: 0 0 0 3px rgba(212,160,40,.3); }
+        .tt-insp-group .tt-insp-num:focus { box-shadow: none; }
+        .tt-insp-group:focus-within .tt-insp-addon { border-color: #a8740f; background: rgba(212,160,40,.25); }
+        .tt-insp-group:has(.is-edited) .tt-insp-addon { border-color: #b07a10; background: rgba(255,226,140,.7); }
         .tt-insp-cost { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
         .tt-insp-res { display: grid; grid-template-columns: 18px 1fr; grid-template-rows: auto auto;
             column-gap: 5px; align-items: center; font-size: 12px; font-weight: 500; color: #4a2e0c; }

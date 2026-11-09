@@ -26,6 +26,9 @@
         ['speed',  'Speed',         0.01, 0,      10,    i => i.moves],
         ['los',    'Line of sight', 1,    0,      100,   () => true],
     ];
+    // The game's stat icons (static/icons/properties, as on the review step).
+    const STAT_ICON = { hp: 'heart', attack: 'attack', melee: 'armor', pierce: 'pierce_armor',
+                        range: 'range', reload: 'reload_time', speed: 'speed', los: 'line_of_sight' };
 
     let edits = { unit_edits: {}, tech_edits: {} };
     let panel = null;
@@ -403,7 +406,9 @@
         const rows = STAT_FIELDS.filter(f => f[5](inf)).map(([f, nm, step, min, max]) => {
             const id = `tt-insp-${f}`;
             return `<div class="tt-insp-row">${label(id, nm, inf[f], e[f] !== undefined)}
-                ${numInput({ id, value: e[f], base: inf[f], step, min, max })}
+                <div class="tt-insp-group"><span class="tt-insp-addon" aria-hidden="true">
+                    <img src="/static/icons/properties/${STAT_ICON[f]}.png" alt=""></span>
+                ${numInput({ id, value: e[f], base: inf[f], step, min, max })}</div>
                 <div class="tt-insp-fu" data-fu="${f}"></div></div>`;
         }).join('');
 
