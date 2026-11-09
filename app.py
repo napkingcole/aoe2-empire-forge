@@ -3122,8 +3122,8 @@ def api_builder_add_unit_options():
 @app.route("/api/builder/added-line-info")
 def api_builder_added_line_info():
     """A line's defaults for the side panel: the AI role its base implies and,
-    per age, the upgrade cost and time the build will use unless edited (the
-    role's vanilla upgrade at that age, else the Militia line's).
+    per age, the upgrade cost and time the build will use unless edited (copied
+    from the role's vanilla upgrade at that age, else the Militia line's).
     ?base=N[&role=LineID]."""
     import added_lines
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
@@ -3146,11 +3146,11 @@ def api_builder_added_line_info():
             cost = {names[rc.type]: int(rc.amount) for rc in t.resource_costs if rc.type in names and rc.amount > 0}
             time = next((rl.research_time for rl in t.research_locations if rl.location_id >= 0), 40)
             from civ_appender import _display_name
-            upgrades[age] = {"cost": cost, "time": time, "rides": rides[age],
-                             "rides_name": _display_name(t.language_dll_name, t.name) or t.name}
+            upgrades[age] = {"cost": cost, "time": time, "from": rides[age],
+                             "from_name": _display_name(t.language_dll_name, t.name) or t.name}
         else:
             c, time = added_lines._DEFAULT_UPGRADE[age]
-            upgrades[age] = {"cost": {names[r]: a for r, a in c.items()}, "time": time, "rides": None}
+            upgrades[age] = {"cost": {names[r]: a for r, a in c.items()}, "time": time, "from": None}
     return jsonify({"status": "ok", "default_role": default, "upgrades": upgrades})
 
 

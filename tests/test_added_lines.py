@@ -79,7 +79,8 @@ from wizard_build import _draft_to_civ_def  # noqa: E402
 
 SLOT, OTHER = 1, 5
 SPEAR, PIKE, HALB, KNIGHT = 93, 358, 359, 38
-PIKEMAN_TECH, HALBERDIER_TECH, CAVALIER_TECH = 197, 429, 209
+PIKEMAN_TECH, HALBERDIER_TECH, CAVALIER_TECH, SAVAR_TECH = 197, 429, 209, 526
+SAVAR = 1813
 units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
 draft = {
     "alias": "Added", "architecture": 2, "language": 0,
@@ -97,7 +98,8 @@ draft = {
          "tiers": [{"age": 2, "name": "Guard", "edits": {"hp": 70}},
                    {"age": 3, "upgrade": {"cost": {"food": 100, "gold": 50}, "time": 30}},
                    {"age": 4, "edits": {"attack": 9}}]},
-        {"id": 2, "building": 101, "base": KNIGHT, "tiers": [{"age": 3}, {"age": 4}]},
+        {"id": 2, "building": 101, "base": KNIGHT, "appearance": SAVAR,
+         "description": 'Holy "warriors".', "tiers": [{"age": 3}, {"age": 4}]},
     ],
 }
 dat = load_dat(str(dat_path))
@@ -152,14 +154,25 @@ check("an unedited upgrade defaults to the role's vanilla upgrade (Halberdier)",
 check("upgrades are EC_UPGRADE from the tier before",
       [(c.type, int(c.a), int(c.b)) for c in dat.effects[up3.effect_id].effect_commands] == [(3, ids[1], ids[2])])
 
+print("\n=== buttons ===")
+check("never the fifth column (the building's commands: rally point)",
+      all(l["button"] not in (5, 10, 25, 30) and l.get("upgrade_button") not in (5, 10, 25, 30) for l in lines),
+      [(l["button"], l.get("upgrade_button")) for l in lines])
+check("the Stable's line takes column 3 when the civ has no camels (opt-in techs don't hold a column)",
+      (1755 in units or 329 in units) or knights["button"] == 3, knights["button"])
+sav = dat.techs[knights["techs"][1]]
+check("an upgrade wears the icon of the upgrade into its look (Savar)",
+      sav.icon_id == dat.techs[SAVAR_TECH].icon_id, (sav.icon_id, dat.techs[SAVAR_TECH].icon_id))
+
 print("\n=== the AI ===")
 check("role defaults to the base's line (spearman-line)", guard["role"] == -295 and knights["role"] == -287,
       (guard["role"], knights["role"]))
-pike_cmds = [(c.type, int(c.a), int(c.b), c.d) for c in dat.effects[dat.techs[PIKEMAN_TECH].effect_id].effect_commands]
-check("Pikeman also upgrades tier 1 -> 2 and retires our button",
-      (3, ids[0], ids[1], 0.0) in pike_cmds and (102, -1, -1, float(guard["techs"][1])) in pike_cmds, pike_cmds)
-check("a role without a Castle upgrade rides the Imperial one (Cavalier for the Knight line)",
-      knights["rides"] == [CAVALIER_TECH], knights["rides"])
+ours = set(ids) | set(knights["units"])
+touched = [(t, c.type, int(c.a)) for t in (PIKEMAN_TECH, HALBERDIER_TECH, CAVALIER_TECH)
+           for c in dat.effects[dat.techs[t].effect_id].effect_commands
+           if int(c.a) in ours or (c.type == 102 and int(c.d) in guard["techs"] + knights["techs"])]
+check("vanilla upgrades leave the added lines alone (in game: Pikeman upgrading Guards confused)",
+      not touched, touched)
 lines_doc = [{"LineID": -295, "IDChain": [SPEAR, PIKE, HALB]}, {"LineID": -287, "IDChain": [KNIGHT, 283, 569]}]
 n_joined = added_lines.patch_unitline_roles(lines_doc, {SLOT: {"added_lines": lines}})
 check("the units join their AI lines in unitlines.json",
@@ -195,6 +208,10 @@ k = us.get(guard["sids"][0], {})
 check("unit tooltip is the base's own, renamed, minus its Upgrades line",
       k.get("ext_text", "").startswith("Create <b>Guard<b> (<cost>)") and "<hp>" in k.get("ext_text", "")
       and "<GREY>" not in k.get("ext_text", ""), k.get("ext_text"))
+kk = us.get(knights["sids"][0], {})
+check("the line's own description replaces the base's, quotes escaped",
+      'Holy \\"warriors\\".' in kk.get("ext_text", "") and "Heavy Cavalry" not in kk.get("ext_text", ""),
+      kk.get("ext_text"))
 check("upgrade button label and hover", ts.get(guard["tech_sids"][0], {}).get("label") == "Upgrade to Veteran Guard"
       and "(<cost>)" in ts.get(guard["tech_sids"][0], {}).get("hover", ""), ts.get(guard["tech_sids"][0]))
 

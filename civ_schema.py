@@ -497,7 +497,7 @@ def norm_tech_edits(raw) -> dict:
 
 # ── Added lines (the tree page's "+ Add Unit") ──────────────────────────────
 #
-# added_lines — [{id, building, base, role, appearance, tiers: [{age, name,
+# added_lines — [{id, building, base, role, appearance, description, tiers: [{age, name,
 #   edits, upgrade}]}].  A line is 1-4 tiers, each a copy of the same base unit,
 #   each in a later age than the one before; tier 1 is made available at its age,
 #   every later tier has its own upgrade tech (cost/time in `upgrade`).  `edits`
@@ -508,6 +508,7 @@ def norm_tech_edits(raw) -> dict:
 
 ADDED_LINE_BUILDINGS = (12, 87, 101, 49, 45, 104, 109)  # Barracks .. Town Center
 ADDED_LINE_MAX_TIERS = 4
+ADDED_LINE_DESC_MAX = 300
 
 
 def norm_added_lines(raw) -> list:
@@ -547,8 +548,12 @@ def norm_added_lines(raw) -> list:
         role = role if role is not None and -400 <= role <= -199 else None
         look = _id_key(line.get("appearance")) if line.get("appearance") is not None else None
         seen.add(lid)
+        desc = line.get("description")
+        desc = " ".join("".join(c if c.isprintable() else " " for c in desc).split())[:ADDED_LINE_DESC_MAX] \
+            if isinstance(desc, str) else ""
         out.append({"id": lid, "building": building, "base": int(base), "role": role,
-                    "appearance": int(look) if look is not None else None, "tiers": tiers})
+                    "appearance": int(look) if look is not None else None,
+                    "description": desc, "tiers": tiers})
     return out
 
 

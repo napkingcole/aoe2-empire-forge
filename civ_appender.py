@@ -6033,6 +6033,16 @@ def _tree_building_ids(civ_def: dict) -> set[int]:
     return set()
 
 
+def _tree_tech_ids(civ_def: dict) -> set[int]:
+    """Tech IDs from the civ's tree, for either civ_def format."""
+    tree = civ_def.get("tree") or []
+    if isinstance(tree, dict):
+        return {int(t) for t in (tree.get("techs") or [])}
+    if len(tree) > 2 and isinstance(tree[2], (list, tuple)):
+        return {int(t) for t in tree[2]}
+    return set()
+
+
 def get_civ_bonuses(civ_def: dict) -> list:
     """Return civ bonus entries as [[id, mult], ...] from either format.
 

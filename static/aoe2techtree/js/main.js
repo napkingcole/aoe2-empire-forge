@@ -1907,6 +1907,7 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         .tt-insp-tier select, .tt-insp-line select { font-size: 12px; padding: 3px; border: 1px solid rgba(110,75,30,.45);
             border-radius: 4px; background: rgba(255,250,235,.55); color: #2e1d08; max-width: 100%; }
         .tt-insp-line .tt-insp-row select { width: 100%; }
+        .tt-insp-desc { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 12px; }
         .tt-insp-link { border: none; background: none; box-shadow: none; text-decoration: underline; text-transform: none;
             letter-spacing: 0; font: 400 12px 'Inter', sans-serif; padding: 0; color: #6b3f06; }
         .tt-insp-fu { font-size: 11.5px; color: #5a3d14; min-height: 0; line-height: 1.3; }

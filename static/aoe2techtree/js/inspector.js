@@ -511,8 +511,12 @@
                 <option value="">Add a tier in…</option>${addAges.join('')}</select></div>` : ''}
             <div class="tt-insp-note">Each tier after the first gets its own upgrade, one row below the unit's button.
                 A stat you change carries on to later tiers unless they set their own.</div>
+            <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-desc">Description</label>
+                <textarea class="tt-insp-num tt-insp-text tt-insp-desc" id="tt-line-desc" rows="3" maxlength="300"
+                    placeholder="The ${esc(baseName(line.base))}'s own description">${esc(line.description || '')}</textarea></div>
             <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-role">Computer player trains it as</label>
                 <select id="tt-line-role"><option value="">${auto ? `Automatic: ${esc(auto)}` : 'Automatic (no line found; the computer player won\'t train it)'}</option>${roles}</select></div>
+            ${line.tiers.length > 1 ? `<div class="tt-insp-note">The computer player trains the first tier only: it researches just the upgrades it knows by name.</div>` : ''}
             <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-look">Appearance</label>
                 <select id="tt-line-look"><option value="">Its own</option>${looks}</select></div>
             <button type="button" class="tt-insp-reset" id="tt-line-remove">Remove this line</button>
@@ -544,6 +548,10 @@
         });
         panel.querySelector('#tt-line-role')?.addEventListener('change', e => {
             line.role = e.target.value === '' ? null : +e.target.value;
+            later();
+        });
+        panel.querySelector('#tt-line-desc')?.addEventListener('change', e => {
+            line.description = e.target.value.replace(/\s+/g, ' ').trim().slice(0, 300);
             later();
         });
         panel.querySelector('#tt-line-look')?.addEventListener('change', e => {
@@ -618,7 +626,7 @@
         inf.upgrade = n && up ? {
             id: `${key}u`, name: tierName(key), any: true,
             cost: Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, up.cost),
-            time: up.time, rides_name: up.rides_name,
+            time: up.time,
         } : null;
         unitNames[key] = tierName(key);
         body.innerHTML = unitBody(inf, 'unit');
@@ -862,9 +870,7 @@
 
     function upgradeSection(up) {
         return `<div class="tt-insp-section">Upgrade: ${esc(up.name)}</div>
-            ${techCostBlock('tt-insp-up', up)}
-            ${up.rides_name ? `<div class="tt-insp-note">Researching ${esc(up.rides_name)} also upgrades this line.
-                That is how the computer player gets it, since it only researches upgrades it knows.</div>` : ''}`;
+            ${techCostBlock('tt-insp-up', up)}`;
     }
 
     function techBody(inf) {

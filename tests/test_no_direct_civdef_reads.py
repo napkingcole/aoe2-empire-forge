@@ -43,7 +43,7 @@ DIVERGENT = {"tree", "bonuses"}
 # deliberately, not to silence a failure.
 ALLOWED = {
     # civ_appender.py — the accessors themselves
-    "_tree_unit_ids", "_tree_building_ids", "get_civ_bonuses",
+    "_tree_unit_ids", "_tree_building_ids", "_tree_tech_ids", "get_civ_bonuses",
     "get_team_bonuses", "get_ut_entries", "get_km_uu_index",
     "_raw_civ_bonus_ids",           # bonus ids as saved, before get_civ_bonuses
                                     # retires any — RETIRED_INTO_TREE needs them
