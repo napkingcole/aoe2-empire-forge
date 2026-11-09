@@ -1222,11 +1222,46 @@ function _variantHint(item) {
     return '';
 }
 
+// An added line's tier: the stats it will have, read like a vanilla node's.
+function _addedTipHtml(t) {
+    const div = (css, html) => `<div style="${css}">${html}</div>`;
+    const cost = c => _costHtml(c && { Food: c.food, Wood: c.wood, Gold: c.gold, Stone: c.stone });
+    let html = div('font-weight:700;font-size:13px;', _esc(t.name));
+    if (t.cost) html += div('margin-top:4px;font-size:11px;opacity:.8;', `Cost: ${cost(t.cost)}`);
+    if (t.hp !== undefined) {
+        const parts = [`HP ${t.hp}`];
+        if (t.attack) parts.push(`Atk ${t.attack}`);
+        parts.push(`MA ${t.melee}/${t.pierce}`);
+        if (t.range) parts.push(`Range ${t.range}`);
+        html += div('margin-top:2px;font-size:11px;opacity:.7;', parts.join(' · '));
+    }
+    if (t.desc) html += div('margin-top:5px;font-size:11px;line-height:1.4;opacity:.88;', _esc(t.desc));
+    if (t.upgrade && t.upgrade.cost) {
+        html += div('margin-top:5px;font-size:11px;opacity:.8;',
+            `Upgrade: ${cost(t.upgrade.cost)}${t.upgrade.time ? ` (${t.upgrade.time}s)` : ''}`);
+    }
+    if (t.of) html += div('margin-top:4px;font-size:11px;opacity:.7;', `Added unit · tier ${t.n + 1} of ${t.of}`);
+    return html;
+}
+
+function _esc(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
 function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
     const svgX = svgNodeRight; // keep existing references below working
     const panel = document.getElementById('helptext');
     const content = document.getElementById('helptext__content');
     if (!panel || !content) return;
+    if (itemToDraw.added && window.ttInspector) {
+        // Draw the name now; the stats follow once the base unit is read (cached).
+        _tipFor = itemToDraw.id;
+        window.ttInspector.addedTip(itemToDraw.node_id).then(t => {
+            if (!t || _tipFor !== itemToDraw.id || panel.style.display === 'none') return;
+            content.innerHTML = _addedTipHtml(t);
+            _placeEditTooltip(panel, svgNodeLeft, svgX, svgY);
+        });
+    }
 
     const name = _nodeName(itemToDraw);
     const idParts = itemToDraw.id.split('_');  // e.g. ["Unit","4","87"]
@@ -1266,7 +1301,12 @@ function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
     content.innerHTML = `<div style="font-weight:700;font-size:13px;">${name}</div>${costLine}${statsLine}${descLine}${hintLine}${civLine}`;
     document.getElementById('helptext__advanced_stats').innerHTML = '';
     panel.style.display = 'block';
+    _placeEditTooltip(panel, svgNodeLeft, svgX, svgY);
+}
 
+let _tipFor = null;
+
+function _placeEditTooltip(panel, svgNodeLeft, svgX, svgY) {
     // Position near the node
     const treeEl = document.getElementById('techtree');
     const wrap   = treeEl?.parentElement;
@@ -1289,6 +1329,7 @@ function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
 }
 
 function _hideEditTooltip() {
+    _tipFor = null;
     const panel = document.getElementById('helptext');
     if (panel) panel.style.display = 'none';
 }
@@ -1333,8 +1374,7 @@ window._ttRelabel = function (item, element_height) {
 function _drawAddSlot(slot, element_height, draw) {
     const g = draw.group().attr({ id: slot.id }).addClass('node tt-add-slot');
     const x = slot.x, y = slot.y, s = element_height;
-    g.rect(s, s).attr({ id: `${slot.id}_bg`, fill: '#000', 'fill-opacity': 0.15,
-                        stroke: '#000', 'stroke-width': 1 }).move(x, y).addClass('tt-add-bg');
+    g.rect(s, s).attr({ id: `${slot.id}_bg`, fill: '#000', 'fill-opacity': 0.15 }).move(x, y).addClass('tt-add-bg');
     const arm = s * 0.36, w = Math.max(2, s * 0.042);   // ~6px at the usual node size
     g.rect(arm, w).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - arm) / 2, y + (s - w) / 2);
     g.rect(w, arm).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - w) / 2, y + (s - arm) / 2);
@@ -1373,7 +1413,7 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
         .attr({ fill: '#ffffff', opacity: 0.3, id: itemToDraw.id + '_imgph' })
         .move(imgX, itemToDraw.y + 2);
 
-    item.image(_imgroot + '/' + itemToDraw.use_type + '/' + itemToDraw.picture_index + '.png')
+    item.image(itemToDraw.image_url || _imgroot + '/' + itemToDraw.use_type + '/' + itemToDraw.picture_index + '.png')
         .size(imgSize, imgSize)
         .attr({ id: itemToDraw.id + '_img' })
         .move(imgX, itemToDraw.y + 2);
@@ -1485,6 +1525,7 @@ function _applyAddedLines(treeData) {
                     link_id: n ? `a${line.id}.${n - 1}` : null,
                     link_node_type: n === 0 ? 'BuildingTech' : n === 1 ? 'Unit' : 'UnitUpgrade',
                     picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
+                    image_url: window.ttInspector.lineImage(line),
                     name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row,
                     added: { line: line.id, n, buildingAge: b.age_id || 1, buildingName: name },
                 });
@@ -1884,6 +1925,18 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         /* "+ Add Unit" */
         .tt-add-slot { cursor: pointer; }
         .tt-add-slot .tt-add-bg { transition: fill-opacity .12s; }
+        .tt-unit-picker .tt-pick-grid { max-height: none; overflow: visible;
+            grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+        .tt-unit-picker .tt-pick-stats { font-size: .68rem; opacity: .75; line-height: 1.2; }
+        .tt-unit-picker .tt-pick-stats i { font-size: .6rem; margin-left: 2px; }
+        .tt-unit-picker .uu-badge-hero { background: #b8860b; color: #fff; }
+        .tt-unit-picker .modal-footer .uu-badge { position: static; }
+        .tt-unit-picker .modal-body { min-height: 60vh; }
+        /* Above the full-screen tree (z-index 9999), and so is the unit preview it opens. */
+        .tt-unit-picker { z-index: 10060; }
+        body.tt-picker-open .modal-backdrop { z-index: 10055; }
+        body.tt-picker-open .modal-backdrop ~ .modal-backdrop { z-index: 10065; }
+        body.tt-picker-open #modal-unit-preview { z-index: 10070; }
         .tt-add-slot:hover .tt-add-bg { fill-opacity: .32; }
         .tt-add-slot.is-dim .tt-add-bg { fill-opacity: .06; }
         .tt-add-slot.is-dim { opacity: .55; }

@@ -81,6 +81,7 @@ SLOT, OTHER = 1, 5
 SPEAR, PIKE, HALB, KNIGHT = 93, 358, 359, 38
 PIKEMAN_TECH, HALBERDIER_TECH, CAVALIER_TECH, SAVAR_TECH = 197, 429, 209, 526
 SAVAR = 1813
+HERO = 160                     # Richard the Lionheart (creatable.hero_mode 1)
 units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
 draft = {
     "alias": "Added", "architecture": 2, "language": 0,
@@ -100,6 +101,8 @@ draft = {
                    {"age": 4, "edits": {"attack": 9}}]},
         {"id": 2, "building": 101, "base": KNIGHT, "appearance": SAVAR,
          "description": 'Holy "warriors".', "tiers": [{"age": 3}, {"age": 4}]},
+        # A hero as a base: trains like any unit, without hero status.
+        {"id": 3, "building": 12, "base": HERO, "tiers": [{"age": 3}]},
     ],
 }
 dat = load_dat(str(dat_path))
@@ -108,8 +111,8 @@ out = io.StringIO()
 with contextlib.redirect_stdout(out):
     r, _ = apply_civ_with_overrides(dat, _draft_to_civ_def(draft), SLOT, draft)
 lines = r.get("added_lines") or []
-check("both lines built", [l["id"] for l in lines] == [1, 2], (lines, r["warnings"]))
-guard, knights = lines[0], lines[1]
+check("all three lines built", [l["id"] for l in lines] == [1, 2, 3], (lines, r["warnings"]))
+guard, knights, hero = lines[0], lines[1], lines[2]
 ids = guard["units"]
 U = dat.civs[SLOT].units
 
@@ -160,9 +163,24 @@ check("never the fifth column (the building's commands: rally point)",
       [(l["button"], l.get("upgrade_button")) for l in lines])
 check("the Stable's line takes column 3 when the civ has no camels (opt-in techs don't hold a column)",
       (1755 in units or 329 in units) or knights["button"] == 3, knights["button"])
+check("an upgrade sits below its unit, never in a page's top row (the units' row)",
+      all(l.get("upgrade_button") is None or (l["upgrade_button"] - 1) % 20 >= 5 for l in lines)
+      and ((1755 in units or 329 in units) or knights["upgrade_button"] == knights["button"] + 5),
+      [(l["button"], l.get("upgrade_button")) for l in lines])
+check("an upgrade into a unit the civ lacks (Heavy Camel) holds no slot",
+      added_lines._upgrades_into_absent(dat, dat.techs[236], {KNIGHT})
+      and not added_lines._upgrades_into_absent(dat, dat.techs[CAVALIER_TECH], {KNIGHT}))
 sav = dat.techs[knights["techs"][1]]
 check("an upgrade wears the icon of the upgrade into its look (Savar)",
       sav.icon_id == dat.techs[SAVAR_TECH].icon_id, (sav.icon_id, dat.techs[SAVAR_TECH].icon_id))
+
+print("\n=== heroes ===")
+h = U[hero["units"][0]]
+check("a hero's copy loses hero status; the hero keeps it",
+      dat.civs[SLOT].units[HERO].creatable.hero_mode and h.creatable.hero_mode == 0,
+      (dat.civs[SLOT].units[HERO].creatable.hero_mode, h.creatable.hero_mode))
+check("and trains at the building like any unit",
+      [(t.unit_id, t.button_id) for t in h.creatable.train_locations] == [(12, hero["button"])])
 
 print("\n=== the AI ===")
 check("role defaults to the base's line (spearman-line)", guard["role"] == -295 and knights["role"] == -287,
@@ -220,7 +238,7 @@ dat3 = load_dat(str(dat_path))
 no_stable = dict(draft, tree=dict(draft["tree"], buildings=[b for b in buildings if b != 101]))
 with contextlib.redirect_stdout(io.StringIO()):
     r3, _ = apply_civ_with_overrides(dat3, _draft_to_civ_def(no_stable), SLOT, no_stable)
-check("is not built (the page hides it too)", [l["id"] for l in r3["added_lines"]] == [1],
+check("is not built (the page hides it too)", [l["id"] for l in r3["added_lines"]] == [1, 3],
       [l["id"] for l in r3["added_lines"]])
 
 print("\n=== two civs in one build ===")
@@ -232,6 +250,21 @@ a, b = r1["added_lines"][0]["units"], r2["added_lines"][0]["units"]
 check("each civ gets its own units, every civ's list the same length",
       not set(a) & set(b) and len({len(c.units) for c in dat2.civs}) == 1, (a, b))
 check("each civ's string ids are its own", not set(r1["added_lines"][0]["sids"]) & set(r2["added_lines"][0]["sids"]))
+
+print("\n=== the picker's catalog ===")
+from civ_appender import _string_table  # noqa: E402
+names, chron = _string_table(), added_lines.chronicles_strings()
+cat = {r["id"]: r for r in added_lines.unit_catalog(
+    dat2, dat_path, lambda u: names.get(u.language_dll_name) or chron.get(u.language_dll_name))}
+group = lambda uid: (cat.get(uid) or {}).get("group")      # noqa: E731
+check("standard / regional / unique / chronicles / scenario / hero",
+      (group(KNIGHT), group(1132), group(SAVAR), group(2110), group(299), group(HERO))
+      == ("standard", "regional", "unique", "chronicles", "scenario", "hero"),
+      (group(KNIGHT), group(1132), group(SAVAR), group(2110), group(299), group(HERO)))
+check("Chronicles units are named from the game's own strings", (cat.get(2110) or {}).get("name") == "Hoplite")
+check("military only: no Villager, no Trade Cart, no animals",
+      not ({83, 128, 594} & set(cat)), sorted({83, 128, 594} & set(cat)))
+check("one per name", len({r["name"].casefold() for r in cat.values()}) == len(cat))
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")

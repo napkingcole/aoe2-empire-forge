@@ -6,11 +6,13 @@ upgrades have something to ride), built through build_all like any mod.
   QA Lines (over Britons)
     Barracks  "Guard" line from the Spearman: Feudal -> Castle -> Imperial.
               Guard 70 HP (carried to every tier); Elite Guard attack 9.
-              Pikeman / Halberdier also upgrade it (the AI's way up).
     Stable    Knight line, Castle -> Imperial, wearing the Savar's look;
               a custom card gives this line only +20 HP.
     Archery   Longbowman line, Feudal -> Castle, wearing the Chu Ko Nu's
               look (the Elite wears the Elite Chu Ko Nu's).
+    Barracks  Hoplite line (Chronicles), Castle -> Imperial.            [round 2]
+    Stable    "Lionheart": Richard the Lionheart as a plain unit, Castle:
+              no gold border, no regeneration, convertible.             [round 2]
     Cards     Spearmen +25% HP (233) also reaches the Guard line.
 
     venv/bin/python scripts/build_qa_mod_added.py   # writes ignore/qa_added/
@@ -31,6 +33,7 @@ OUT = ROOT / "ignore" / "qa_added"
 SPEARMAN, KNIGHT, LONGBOWMAN = 93, 38, 8
 SAVAR, CHU_KO_NU = 1813, 73
 CONQUISTADOR = 13
+HOPLITE, RICHARD = 2110, 160          # Chronicles; a hero (Richard the Lionheart)
 
 LINES = [
     {"id": 1, "building": 12, "base": SPEARMAN,
@@ -41,6 +44,9 @@ LINES = [
      "tiers": [{"age": 3}, {"age": 4}]},
     {"id": 3, "building": 87, "base": LONGBOWMAN, "appearance": CHU_KO_NU,
      "tiers": [{"age": 2}, {"age": 3}]},
+    # Round 2: a Chronicles unit and a hero as bases.
+    {"id": 4, "building": 12, "base": HOPLITE, "tiers": [{"age": 3}, {"age": 4}]},
+    {"id": 5, "building": 101, "base": RICHARD, "tiers": [{"age": 3, "name": "Lionheart"}]},
 ]
 
 QA = [

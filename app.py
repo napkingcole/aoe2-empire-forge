@@ -3119,6 +3119,51 @@ def api_builder_add_unit_options():
     return jsonify({"status": "ok", "here": here, "other": rest, "roles": opts["roles"]})
 
 
+_UNIT_CATALOG_CACHE: dict[str, list] = {}
+
+
+@app.route("/api/builder/unit-catalog")
+def api_builder_unit_catalog():
+    """The tree page's unit picker: every military unit in the player's game
+    (added_lines.unit_catalog), grouped, with the stats its cards show.
+    ?look_for=<unit id> keeps only the looks that unit may wear
+    (civ_appender.appearance_ok), for the Appearance picker."""
+    import added_lines
+    from civ_appender import _string_table, appearance_ok
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat", "units": []})
+    dat = _get_dat(dat_path)
+    if dat_path not in _UNIT_CATALOG_CACHE:
+        names, chron = _string_table(), added_lines.chronicles_strings()
+        res = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+        art = Path(app.static_folder) / "aoe2techtree" / "img" / "Unit"
+        rows = added_lines.unit_catalog(
+            dat, dat_path, lambda u: names.get(u.language_dll_name) or chron.get(u.language_dll_name))
+        for r in rows:
+            u = dat.civs[0].units[r["id"]]
+            s = _unit_stats_block(u)
+            r.update({
+                "art": (art / f"{r['icon']}.png").exists(),
+                "hp": int(s["hp"]), "attack": int(s["attack"] or 0),
+                "ma": int(s["melee_armor"] or 0), "pa": int(s["pierce_armor"] or 0),
+                "range": s["range"] or 0,
+                "cost": {res[rc.type]: int(rc.amount) for rc in u.creatable.resource_costs
+                         if rc.type in res and rc.amount > 0},
+            })
+        _UNIT_CATALOG_CACHE[dat_path] = rows
+    rows = _UNIT_CATALOG_CACHE[dat_path]
+    look_for = request.args.get("look_for")
+    if look_for not in (None, ""):
+        try:
+            target = dat.civs[0].units[int(look_for)]
+        except (ValueError, IndexError):
+            return jsonify({"status": "error", "units": []}), 400
+        units = dat.civs[0].units
+        rows = [r for r in rows if appearance_ok(units[r["id"]], target)]
+    return jsonify({"status": "ok", "units": rows})
+
+
 @app.route("/api/builder/added-line-info")
 def api_builder_added_line_info():
     """A line's defaults for the side panel: the AI role its base implies and,
@@ -3232,7 +3277,24 @@ def api_builder_node_info():
         "line_before": lines["before"].get(nid, []),
         "forms": len(forms),
         "upgrade": upgrade,
+        "desc": _unit_desc(dat, nid),
     })
+
+
+def _unit_desc(dat, uid: int) -> str:
+    """The second line of the unit's Castle tooltip (+21000), its description,
+    as plain text: "Strong vs. cavalry." for the Spearman.  Read through
+    Gaia's copy, which a build never renames."""
+    import re as _re
+    from civ_appender import _string_table
+    try:
+        sid = dat.civs[0].units[uid].language_dll_name
+    except (IndexError, TypeError, AttributeError):
+        return ""
+    lines = (_string_table().get(sid + 21000) or "").split("\\n")
+    if len(lines) < 2 or lines[1].startswith("<GREY>"):
+        return ""
+    return _re.sub(r"<[^>]*>", "", lines[1]).strip()
 
 
 # Parsed in the background on first use: the preview must never block on the

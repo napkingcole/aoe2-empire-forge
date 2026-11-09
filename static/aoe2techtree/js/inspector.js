@@ -353,24 +353,38 @@
 
     // ── "+ Add Unit" lines ──────────────────────────────────────────────────
     const AGE_NAMES = ['Dark Age', 'Feudal Age', 'Castle Age', 'Imperial Age'];
-    // Every unit a building trains, with name / icon / class, and the AI's
-    // unit lines (/api/builder/add-unit-options).
-    let catalog = { byId: {}, roles: [], loaded: false };
+    // Every military unit in the player's game, grouped (/api/builder/unit-catalog),
+    // and the AI's unit lines (roles, /api/builder/add-unit-options).
+    let catalog = { byId: {}, units: [], roles: [], loaded: false };
     const lineInfoCache = {};     // "base:role" -> /api/builder/added-line-info
+    const lookCache = {};         // base -> the looks it may wear
 
     function loadCatalog() {
-        const dat = window.getDatPath ? window.getDatPath() : '';
-        fetch('/api/builder/add-unit-options?building=-1&dat_path=' + encodeURIComponent(dat))
-            .then(r => r.json())
-            .then(r => {
-                if (r.status !== 'ok') return;
-                for (const b of r.other) catalog.byId[b.id] = b;
-                catalog.roles = r.roles;
-                catalog.loaded = true;
-                // Labels and pictures of added lines come from here.
-                if (edits.added_lines.length) window._ttRelayout?.();
-            })
-            .catch(() => {});
+        if (catalog.loading) return;
+        catalog.loading = true;
+        Promise.all([
+            fetch('/api/builder/unit-catalog?' + datQuery().slice(1)).then(r => r.json()),
+            fetch('/api/builder/add-unit-options?building=-1' + datQuery()).then(r => r.json()),
+        ]).then(([units, opts]) => {
+            catalog.loading = false;
+            if (units.status !== 'ok') return;
+            catalog.units = units.units;
+            for (const u of units.units) catalog.byId[u.id] = u;
+            // A base saved before the catalog had it (or one it now dedupes away).
+            for (const b of (opts.other || [])) if (!catalog.byId[b.id]) catalog.byId[b.id] = Object.assign({ art: true }, b);
+            catalog.roles = opts.roles || [];
+            catalog.loaded = true;
+            // Labels and pictures of added lines come from here.
+            if (edits.added_lines.length) window._ttRelayout?.();
+        }).catch(() => { catalog.loading = false; });
+    }
+
+    function looksFor(base) {
+        if (!lookCache[base]) {
+            lookCache[base] = fetch(`/api/builder/unit-catalog?look_for=${base}${datQuery()}`)
+                .then(r => r.json()).then(r => r.units || []).catch(() => []);
+        }
+        return lookCache[base];
     }
 
     function lineInfo(base, role) {
@@ -385,6 +399,15 @@
 
     function baseName(id) { return (catalog.byId[id] || {}).name || `unit ${id}`; }
     function baseIcon(id) { return (catalog.byId[id] || {}).icon; }
+    // A unit's picture: the tree's own art when it has some, else the game's
+    // icon read from the player's install (heroes, scenario units).
+    function unitImage(id) {
+        const u = catalog.byId[id];
+        if (u && u.art) return `${_imgroot}/Unit/${u.icon}.png`;
+        return `/api/unit-icon/${id}?${datQuery().slice(1)}`;
+    }
+    // What a line's nodes show: its look's picture when it wears one.
+    function lineImage(line) { return unitImage(line.appearance ?? line.base); }
 
     // added_lines.default_names: tier 1 the base's (or tier 1's own) name,
     // the last "Elite …", any between "Veteran …" / "Heavy …".
@@ -401,6 +424,39 @@
         const ref = addedRef(key);
         return ref ? (ref.tier.name || defaultTierName(ref)) : '';
     }
+    // What the tree's hover shows for a tier: the base with every edit up to
+    // this tier carried on (as renderAdded), the line's description or the
+    // base's, and for a later tier the upgrade into it.
+    async function addedTip(key) {
+        const ref = addedRef(key);
+        if (!ref) return null;
+        const { line, n, tier } = ref;
+        const [base, defs] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role)]);
+        if (!base || base.status !== 'ok') return { name: tierName(key), desc: line.description || '' };
+        const carried = {};
+        for (let i = 0; i <= n; i++) Object.assign(carried, line.tiers[i].edits || {});
+        const stat = f => carried[f] !== undefined ? carried[f] : base[f];
+        let upgrade = null;
+        if (n) {
+            const def = defs && defs.status === 'ok' ? defs.upgrades[String(tier.age)] : null;
+            const own = tier.upgrade || {};
+            upgrade = {
+                cost: own.cost || (def && def.cost) || null,
+                time: own.time !== undefined ? own.time : def && def.time,
+            };
+        }
+        return {
+            name: tierName(key),
+            age: tier.age, n, of: line.tiers.length,
+            cost: Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, base.cost, carried.cost || {}),
+            hp: stat('hp'), attack: base.fights ? stat('attack') : null,
+            melee: stat('melee'), pierce: stat('pierce'),
+            range: base.fights ? stat('range') : null,
+            desc: line.description || base.desc || '',
+            upgrade,
+        };
+    }
+
     function tierItemId(line, n) { return `Unit_a${line.id}_${n}_${line.building}`; }
 
     // A line changed shape (a tier, an age, the base): save, redraw the tree,
@@ -418,61 +474,184 @@
         relayout(tierItemId(line, 0));
     }
 
-    function pickerRows(list, buildingId) {
-        return list.map(b => `<button type="button" class="tt-insp-pick" data-base="${b.id}" data-name="${esc(b.name.toLowerCase())}">
-            <img src="${_imgroot}/Unit/${b.icon}.png" alt="" onerror="this.style.visibility='hidden'">
-            <span>${esc(b.name)}</span></button>`).join('');
+    // ── The unit picker window ──────────────────────────────────────────────
+    // One large window, like the wizard's unique-unit and hero pickers: every
+    // military unit in the game, by group and kind, with a search.
+    const GROUPS = [
+        ['here', 'Trained here'], ['all', 'All'], ['standard', 'Standard'], ['regional', 'Regional'],
+        ['unique', 'Unique'], ['chronicles', 'Chronicles'], ['scenario', 'Scenario'], ['hero', 'Heroes'],
+    ];
+    const GROUP_BADGE = { regional: ['R', 'vanilla'], unique: ['U', 'custom'], chronicles: ['C', 'chronicles'],
+                          scenario: ['S', 'scenario'], hero: ['H', 'hero'] };
+    const badge = g => GROUP_BADGE[g] ? `<span class="uu-badge uu-badge-${GROUP_BADGE[g][1]}">${GROUP_BADGE[g][0]}</span>` : '';
+    const KINDS = [
+        ['all', 'All kinds'], ['infantry', 'Infantry', [6, 35]], ['archers', 'Archers & gunpowder', [0, 36, 44]],
+        ['cavalry', 'Cavalry', [12, 23, 47]], ['siege', 'Siege', [13, 55]], ['monks', 'Monks', [18]],
+        ['ships', 'Ships', [2, 20, 21, 22]],
+    ];
+    let pickerEl = null, pickerModal = null;
+    const pickerState = { group: null, kind: 'all', q: '' };
+
+    function pickerShell() {
+        if (pickerEl) return pickerEl;
+        pickerEl = document.createElement('div');
+        pickerEl.className = 'modal fade tt-unit-picker';
+        pickerEl.tabIndex = -1;
+        pickerEl.setAttribute('aria-hidden', 'true');
+        pickerEl.innerHTML = `<div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable modal-fullscreen-lg-down">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div><h5 class="modal-title" id="tt-pick-title"></h5>
+                        <div class="small text-muted" id="tt-pick-sub"></div></div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <input type="search" id="tt-pick-search" class="form-control form-control-sm"
+                            style="max-width:16rem" placeholder="Search units" aria-label="Search units" autocomplete="off">
+                        <select id="tt-pick-kind" class="form-select form-select-sm" style="max-width:13rem" aria-label="Kind">
+                            ${KINDS.map(([k, label]) => `<option value="${k}">${label}</option>`).join('')}</select>
+                        <span id="tt-pick-count" class="text-muted small"></span>
+                    </div>
+                    <div class="btn-group btn-group-sm flex-wrap mb-3" role="group" id="tt-pick-groups"></div>
+                    <div class="uu-grid tt-pick-grid" id="tt-pick-grid"></div>
+                </div>
+                <div class="modal-footer small text-muted justify-content-start" id="tt-pick-foot">
+                    ${badge('regional')} Regional · ${badge('unique')} Unique · ${badge('chronicles')} Chronicles ·
+                    ${badge('scenario')} Scenario · ${badge('hero')} Hero<span class="tt-pick-heronote"> (trains like any unit here: no hero rules)</span> ·
+                    Press <i class="fa-solid fa-play mx-1"></i> to see one move.
+                </div>
+            </div></div>`;
+        document.body.appendChild(pickerEl);
+        pickerModal = new bootstrap.Modal(pickerEl);
+        pickerEl.addEventListener('show.bs.modal', () => document.body.classList.add('tt-picker-open'));
+        pickerEl.addEventListener('hidden.bs.modal', () => document.body.classList.remove('tt-picker-open'));
+        return pickerEl;
+    }
+
+    function cardStats(u) {
+        const parts = [`<i class="fa-solid fa-heart"></i> ${u.hp}`];
+        if (u.attack) parts.push(`<i class="fa-solid fa-khanda"></i> ${u.attack}`);
+        parts.push(`<i class="fa-solid fa-shield-halved"></i> ${u.ma}/${u.pa}`);
+        if (u.range >= 1) parts.push(`<i class="fa-solid fa-bullseye"></i> ${Math.round(u.range * 10) / 10}`);
+        return parts.join(' ');
+    }
+
+    // opts: {title, sub, building, pool (looks) | null, current, ownLook, onPick(id|null)}
+    async function openUnitPicker(opts) {
+        const el = pickerShell();
+        if (!catalog.loaded) loadCatalog();
+        el.querySelector('#tt-pick-title').textContent = opts.title;
+        el.querySelector('#tt-pick-sub').textContent = opts.sub || '';
+        el.querySelector('.tt-pick-heronote').hidden = !!opts.pool;
+        const grid = el.querySelector('#tt-pick-grid');
+        const search = el.querySelector('#tt-pick-search');
+        const kindSel = el.querySelector('#tt-pick-kind');
+        const groupsEl = el.querySelector('#tt-pick-groups');
+        grid.innerHTML = typeof _loaderHtml === 'function' ? _loaderHtml('Loading units…') : 'Loading units…';
+        pickerModal.show();
+        let picked = false;
+        el.addEventListener('hidden.bs.modal', () => { if (!picked) opts.onCancel?.(); }, { once: true });
+
+        let pool = opts.pool ? await opts.pool : null;
+        while (!pool && !catalog.loaded) {
+            await new Promise(r => setTimeout(r, 300));
+            if (!el.classList.contains('show')) return;
+        }
+        // The Dock trains ships only, and no other building trains them.
+        const naval = opts.building === 45;
+        const units = (pool || catalog.units).filter(u => opts.pool || u.naval === naval);
+        const here = opts.building != null ? units.filter(u => (u.at || []).includes(opts.building)) : [];
+        const groups = GROUPS.filter(([g]) => g === 'all' || (g === 'here' ? here.length
+            : units.some(u => u.group === g)));
+        if (!groups.some(([g]) => g === pickerState.group)) pickerState.group = here.length ? 'here' : 'all';
+        if (opts.pool) pickerState.group = 'all';
+
+        groupsEl.innerHTML = groups.map(([g, label]) => {
+            const n = g === 'here' ? here.length : g === 'all' ? units.length : units.filter(u => u.group === g).length;
+            return `<button type="button" class="btn btn-outline-secondary" data-group="${g}">${label} <span class="opacity-50">${n}</span></button>`;
+        }).join('');
+        const draw = () => {
+            groupsEl.querySelectorAll('[data-group]').forEach(b => b.classList.toggle('active', b.dataset.group === pickerState.group));
+            const q = search.value.trim().toLowerCase();
+            const kind = KINDS.find(k => k[0] === kindSel.value);
+            const list = (pickerState.group === 'here' ? here : pickerState.group === 'all' ? units
+                : units.filter(u => u.group === pickerState.group))
+                .filter(u => !q || u.name.toLowerCase().includes(q))
+                .filter(u => !kind[2] || kind[2].includes(u.cls));
+            el.querySelector('#tt-pick-count').textContent = `${list.length} unit${list.length === 1 ? '' : 's'}`;
+            const own = opts.ownLook ? `<div class="uu-card${opts.current == null ? ' selected' : ''}" data-pick="">
+                    <img class="uu-card-icon" src="${unitImage(opts.ownLook)}" alt="">
+                    <div class="uu-card-name">Its own look</div></div>` : '';
+            grid.innerHTML = own + list.map(u => `<div class="uu-card${u.id === opts.current ? ' selected' : ''}" data-pick="${u.id}"
+                    title="${esc(u.name)}">
+                    ${typeof _previewBtnHtml === 'function' ? _previewBtnHtml(u.id, u.name) : ''}
+                    ${badge(u.group)}
+                    <img class="uu-card-icon" src="${unitImage(u.id)}" alt="" loading="lazy">
+                    <div class="uu-card-name">${esc(u.name)}</div>
+                    <div class="tt-pick-stats">${cardStats(u)}</div>
+                </div>`).join('') || (own ? '' : `<div class="text-muted small fst-italic">${units.length
+                    ? 'No units match.' : opts.pool ? 'No other look fits this unit\'s kind and size.' : 'Point Empire Forge at your game (step 1) to list its units.'}</div>`);
+            if (typeof _wirePreviewButtons === 'function') _wirePreviewButtons(grid);
+            grid.querySelectorAll('[data-pick]').forEach(card => card.addEventListener('click', () => {
+                picked = true;
+                pickerModal.hide();
+                opts.onPick(card.dataset.pick === '' ? null : +card.dataset.pick);
+            }));
+        };
+        groupsEl.querySelectorAll('[data-group]').forEach(b => b.addEventListener('click', () => {
+            pickerState.group = b.dataset.group;
+            draw();
+        }));
+        search.value = '';
+        search.oninput = draw;
+        kindSel.value = 'all';
+        kindSel.onchange = draw;
+        draw();
+        setTimeout(() => search.focus({ preventScroll: true }), 200);
     }
 
     // The "+" was clicked (item.add), or a line's base is being changed (item.rebase).
     function renderPicker(item) {
         const ctx = item.add;
-        const bases = Object.values(catalog.byId).sort((a, b) => a.name.localeCompare(b.name));
-        const here = bases.filter(b => b.at.includes(ctx.building));
-        const other = bases.filter(b => !b.at.includes(ctx.building));
-        const title = ctx.line ? 'Change the base unit' : 'Add a unit';
-        panel.innerHTML = `<div class="tt-insp-head"><div>
-                <div class="tt-insp-title">${title}</div>
-                <div class="tt-insp-kind">${esc(ctx.buildingName || '')} · ${AGE_NAMES[ctx.age - 1]}</div>
-            </div></div>
-            <div class="tt-insp-note">${ctx.line
-                ? 'Every tier is a copy of this unit; your edits stay.'
-                : 'Pick the unit to copy. It becomes a new line in this building, starting in this age; you can add later tiers, rename it and change its stats next.'}</div>
-            ${catalog.loaded ? '' : '<div class="tt-insp-loading">Loading units…</div>'}
-            <input type="search" class="tt-insp-num tt-insp-text tt-insp-search" id="tt-pick-search"
-                placeholder="Search units" autocomplete="off" spellcheck="false">
-            <div class="tt-insp-section">Trained here</div>
-            <div class="tt-insp-picks">${pickerRows(here) || '<div class="tt-insp-note">None.</div>'}</div>
-            <div class="tt-insp-section">Other units</div>
-            <div class="tt-insp-picks">${pickerRows(other)}</div>
-            ${ctx.line ? '<button type="button" class="tt-insp-reset" id="tt-pick-cancel">Cancel</button>' : ''}`;
-        const search = panel.querySelector('#tt-pick-search');
-        search.addEventListener('input', () => {
-            const q = search.value.trim().toLowerCase();
-            panel.querySelectorAll('.tt-insp-pick').forEach(b => {
-                b.hidden = q !== '' && !b.dataset.name.includes(q);
-            });
-        });
-        search.focus({ preventScroll: true });
-        panel.querySelectorAll('.tt-insp-pick').forEach(btn => btn.addEventListener('click', () => {
-            const base = +btn.dataset.base;
-            if (ctx.line) {
-                const line = edits.added_lines.find(l => l.id === ctx.line);
-                if (!line) return;
-                line.base = base;
-                const look = catalog.byId[line.appearance];
-                if (look && look.cls !== (catalog.byId[base] || {}).cls) line.appearance = null;
-                relayout(tierItemId(line, ctx.n || 0));
-            } else {
-                addLine(ctx.building, ctx.age, base);
-            }
-        }));
-        panel.querySelector('#tt-pick-cancel')?.addEventListener('click', () => {
-            const line = edits.added_lines.find(l => l.id === ctx.line);
+        const line = ctx.line ? edits.added_lines.find(l => l.id === ctx.line) : null;
+        const back = () => {
             const again = line && known[tierItemId(line, ctx.n || 0)];
             if (again) select(again[0], again[1]);
+            else { current = null; markSelected(null); mount(panel); }
+        };
+        panel.innerHTML = `<div class="tt-insp-head"><div>
+                <div class="tt-insp-title">${line ? 'Change the base unit' : 'Add a unit'}</div>
+                <div class="tt-insp-kind">${esc(ctx.buildingName || '')} · ${AGE_NAMES[ctx.age - 1]}</div>
+            </div></div>
+            <div class="tt-insp-note">${line
+                ? 'Every tier is a copy of this unit; your edits stay.'
+                : 'Pick the unit to copy. It becomes a new line in this building, starting in this age; you can add later tiers, rename it and change its stats next.'}</div>
+            <button type="button" class="tt-insp-reset" id="tt-pick-open">Choose a unit…</button>`;
+        const open = () => openUnitPicker({
+            title: line ? 'Change the base unit' : `Add a unit to the ${ctx.buildingName || 'building'}`,
+            sub: line ? 'Every tier is a copy of this unit; your edits stay.'
+                : `Starting in the ${AGE_NAMES[ctx.age - 1]}. Any unit fights the way it does in the game; heroes train like any unit here, without hero rules.`,
+            building: ctx.building, current: line ? line.base : null,
+            onCancel: line ? back : null,
+            onPick: base => {
+                if (line) {
+                    line.base = base;
+                    // A look must fit the new base's kind and size; the build drops one that doesn't.
+                    looksFor(base).then(looks => {
+                        if (line.appearance != null && !looks.some(l => l.id === line.appearance)) {
+                            line.appearance = null;
+                            relayout(tierItemId(line, ctx.n || 0));
+                        }
+                    });
+                    relayout(tierItemId(line, ctx.n || 0));
+                } else {
+                    addLine(ctx.building, ctx.age, base);
+                }
+            },
         });
-        if (!catalog.loaded) setTimeout(() => { if (current && current.item === item) render(); }, 600);
+        panel.querySelector('#tt-pick-open').addEventListener('click', open);
+        open();
     }
 
     function lineSection(ref, item, defs) {
@@ -497,10 +676,7 @@
         const roleName = id => (catalog.roles.find(r => r.id === id) || {}).name;
         const auto = defs && defs.default_role != null ? roleName(defs.default_role) || `line ${defs.default_role}` : null;
         const roles = catalog.roles.map(r => `<option value="${r.id}" ${r.id === line.role ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
-        const cls = (catalog.byId[line.base] || {}).cls;
-        const looks = Object.values(catalog.byId).filter(b => b.cls === cls && b.id !== line.base)
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map(b => `<option value="${b.id}" ${b.id === line.appearance ? 'selected' : ''}>${esc(b.name)}</option>`).join('');
+        const look = line.appearance != null ? catalog.byId[line.appearance] : null;
         return `<div class="tt-insp-line">
             <div class="tt-insp-section">Added line</div>
             <div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Copy of</span>
@@ -517,8 +693,10 @@
             <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-role">Computer player trains it as</label>
                 <select id="tt-line-role"><option value="">${auto ? `Automatic: ${esc(auto)}` : 'Automatic (no line found; the computer player won\'t train it)'}</option>${roles}</select></div>
             ${line.tiers.length > 1 ? `<div class="tt-insp-note">The computer player trains the first tier only: it researches just the upgrades it knows by name.</div>` : ''}
-            <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-look">Appearance</label>
-                <select id="tt-line-look"><option value="">Its own</option>${looks}</select></div>
+            <div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Appearance</span>
+                <span class="tt-insp-basename">${line.appearance == null ? 'Its own'
+                    : esc(look ? look.name : `unit ${line.appearance}`)}</span>
+                <button type="button" class="tt-insp-link" id="tt-line-look">change</button></div>
             <button type="button" class="tt-insp-reset" id="tt-line-remove">Remove this line</button>
         </div>`;
     }
@@ -554,10 +732,15 @@
             line.description = e.target.value.replace(/\s+/g, ' ').trim().slice(0, 300);
             later();
         });
-        panel.querySelector('#tt-line-look')?.addEventListener('change', e => {
-            line.appearance = e.target.value === '' ? null : +e.target.value;
-            later();
-        });
+        panel.querySelector('#tt-line-look')?.addEventListener('click', () => openUnitPicker({
+            title: 'Choose a look',
+            sub: `Units of the same kind and size as the ${baseName(line.base)}, so the art fits. The last tier wears the look's Elite when it has one.`,
+            pool: looksFor(line.base), current: line.appearance, ownLook: line.base,
+            onPick: id => {
+                line.appearance = id;
+                relayout(tierItemId(line, n));
+            },
+        }));
         panel.querySelector('#tt-line-base')?.addEventListener('click', () => {
             select({ id: '__rebase', add: { building: line.building, age: line.tiers[0].age,
                      buildingName: item.added.buildingName, line: line.id, n } }, current.element_height);
@@ -587,9 +770,8 @@
         const key = item.node_id;
         const [base, defs] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role)]);
         if (!current || current.item !== item) return;
-        const icon = baseIcon(line.base);
         panel.innerHTML = `<div class="tt-insp-head">
-                ${icon !== undefined ? `<img class="tt-insp-icon" src="${_imgroot}/Unit/${icon}.png" alt="">` : ''}
+                <img class="tt-insp-icon" src="${lineImage(line)}" alt="">
                 <div>
                     <div class="tt-insp-title">${esc(tierName(key))}</div>
                     <div class="tt-insp-kind">Added unit · tier ${n + 1} of ${line.tiers.length} · ${AGE_NAMES[tier.age - 1]}</div>
@@ -1024,8 +1206,10 @@
             else { current = null; mount(panel); }
         },
         addedLines: () => edits.added_lines,
+        addedTip,
         tierName,
         baseIcon,
+        lineImage,
         load(e) {
             edits = { unit_edits: clone(e && e.unit_edits), tech_edits: clone(e && e.tech_edits),
                       added_lines: Array.isArray(e && e.added_lines) ? JSON.parse(JSON.stringify(e.added_lines)) : [] };

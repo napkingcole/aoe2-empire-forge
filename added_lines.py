@@ -82,6 +82,125 @@ def game_unit_lines(dat_path=None) -> list[dict]:
     return _LINES_CACHE[key]
 
 
+# ── The unit picker's catalog ────────────────────────────────────────────────
+
+NAVAL_CLASSES = (2, 20, 21, 22)      # trade cog, transport, fishing ship, warship
+_CIVILIAN, _ANIMAL = 4, 10
+CATALOG_GROUPS = ("standard", "regional", "unique", "chronicles", "scenario", "hero")
+
+
+def _tree_availability(dat_path) -> tuple[dict[int, set[str]], dict[str, str], set[int], dict[int, str]]:
+    """From the player's own files: unit id -> the civs whose tree has it
+    (CivTechTrees/*.json), civ -> era ("base", "antiquity") and the unique
+    units civilizations.json names, with the civ each belongs to."""
+    from build_civ import _find_adjacent_json
+    avail: dict[int, set[str]] = {}
+    era: dict[str, str] = {}
+    uus: dict[int, str] = {}
+    civs_json = _find_adjacent_json(Path(dat_path), "civilizations.json")
+    try:
+        for c in json.loads(civs_json.read_text(encoding="utf-8"))["civilization_list"]:
+            name = c.get("tech_tree_name") or c.get("internal_name")
+            if not name or c.get("internal_name") == "Gaia":
+                continue
+            era[name.upper()] = c.get("era") or "base"
+            for k in ("unique_unit_id", "elite_unique_unit_id"):
+                if isinstance(c.get(k), int) and c[k] >= 0:
+                    uus[c[k]] = name.upper()
+    except (AttributeError, OSError, ValueError, KeyError):
+        pass
+    folder = civs_json.parent / "CivTechTrees" if civs_json is not None else None
+    for f in sorted(folder.glob("*.json")) if folder is not None and folder.is_dir() else ():
+        civ = f.stem.upper()
+        try:
+            nodes = json.loads(f.read_text(encoding="utf-8")).get("civ_techs_units") or []
+        except (OSError, ValueError):
+            continue
+        for n in nodes:
+            if n.get("Use Type") == "Unit" and n.get("Node Status") != "NotAvailable":
+                avail.setdefault(int(n["Node ID"]), set()).add(civ)
+    return avail, era, set(uus), uus
+
+
+_CHRONICLES_STRINGS: dict = {}
+
+
+def chronicles_strings() -> dict[int, str]:
+    """The Chronicles units' names (405xxx), which live in the game's paphos
+    key-value file rather than the main one _string_table reads."""
+    from civ_appender import _STRING_LINE_RE, _strings_source
+    src = _strings_source()
+    key = str(src)
+    if key not in _CHRONICLES_STRINGS:
+        table: dict[int, str] = {}
+        path = src.parent / "key-value-paphos-strings-utf8.txt" if src else None
+        try:
+            if path is not None and path.exists():
+                with open(path, encoding="utf-8") as fh:
+                    for line in fh:
+                        m = _STRING_LINE_RE.match(line)
+                        if m:
+                            table[int(m.group(1))] = m.group(2)
+        except OSError:
+            pass
+        _CHRONICLES_STRINGS.clear()
+        _CHRONICLES_STRINGS[key] = table
+    return _CHRONICLES_STRINGS[key]
+
+
+def is_military(unit) -> bool:
+    """A unit that fights (or converts and heals): what "+ Add Unit" offers."""
+    from heroes import can_fight
+    return bool(unit is not None and unit.type == 70 and unit.creatable is not None
+                and unit.hit_points > 0 and unit.class_ not in (_CIVILIAN, _ANIMAL)
+                and can_fight(unit))
+
+
+def unit_catalog(dat, dat_path, name_of) -> list[dict]:
+    """Every military unit a line can copy, one per name, grouped for the
+    picker: standard (most civs have it), regional (a few), unique (one civ, or
+    a civ's unique unit), chronicles (only the Chronicles civs), scenario (no
+    civ trains it) and hero.  [{id, name, group, cls, at, naval}]"""
+    from heroes import is_hero
+    avail, era, uus, uu_civ = _tree_availability(dat_path)
+    base_civs = {c for c, e in era.items() if e == "base"} or set().union(*avail.values()) if avail else set()
+    half = max(2, len(base_civs) // 2)
+    units = dat.civs[0].units
+    rows = []
+    for uid, u in enumerate(units):
+        if not is_military(u):
+            continue
+        name = name_of(u)
+        if not name:
+            continue
+        at = sorted({tl.unit_id for tl in u.creatable.train_locations if tl.unit_id >= 0})
+        civs = avail.get(uid, set())
+        if is_hero(u):
+            group = "hero"
+        elif uid in uus:
+            group = "chronicles" if era.get(uu_civ[uid]) == "antiquity" else "unique"
+        elif civs:
+            mine = civs & base_civs
+            group = ("chronicles" if not mine else "standard" if len(mine) >= half
+                     else "unique" if len(mine) == 1 else "regional")
+        elif at or u.hide_in_editor:
+            continue            # trained somewhere no tree shows: campaign copies
+        else:
+            group = "scenario"
+        rows.append({"id": uid, "name": name, "group": group, "cls": u.class_, "at": at,
+                     "naval": u.class_ in NAVAL_CLASSES, "in_tree": bool(civs),
+                     "icon": u.icon_id})
+    # One per name: a tree's unit before a copy of it, then the lowest id.
+    rows.sort(key=lambda r: (r["name"].casefold(), not r["in_tree"], r["id"]))
+    out, seen = [], set()
+    for r in rows:
+        if r["name"].casefold() in seen:
+            continue
+        seen.add(r["name"].casefold())
+        out.append(r)
+    return out
+
+
 def default_role(unit_lines: list[dict], base: int) -> int | None:
     """The LineID of the AI line holding the base unit, or None."""
     return next((int(l["LineID"]) for l in unit_lines
@@ -136,6 +255,16 @@ def _tooltip(dat, base: int, name: str, desc: str = "") -> str | None:
 
 # ── Building the lines ───────────────────────────────────────────────────────
 
+def _upgrades_into_absent(dat, tech, present: set[int]) -> bool:
+    """A unit upgrade (Heavy Camel, Elite Battle Elephant) whose units the civ
+    has none of.  The tree page draws these as unit nodes, not tech nodes, so
+    the tech list never says they are off."""
+    if not 0 <= tech.effect_id < len(dat.effects):
+        return False
+    ups = [c for c in dat.effects[tech.effect_id].effect_commands if c.type == EC_UPGRADE]
+    return bool(ups) and not any(int(c.b) in present or int(c.a) in present for c in ups)
+
+
 def _occupied(dat, civ_index: int, civ_def: dict, building: int) -> set[int]:
     """Buttons the civ already uses at `building`: its units' and the techs it
     can research there.  A tech the tree page draws counts only when the tree
@@ -152,10 +281,13 @@ def _occupied(dat, civ_index: int, civ_def: dict, building: int) -> set[int]:
     tt = dat.effects[dat.civs[civ_index].tech_tree_id]
     disabled = {int(c.d) for c in tt.effect_commands if c.type == 102}
     drawn, tree = _editor_nodes()["techs"], _tree_tech_ids(civ_def)
+    present = _civ_present_units(civ_def, dat, civ_index)
     for tid, t in enumerate(dat.techs):
         if t.civ not in (-1, civ_index) or tid in disabled:
             continue
         if tid in drawn and tree and tid not in tree and t.civ == -1:
+            continue
+        if _upgrades_into_absent(dat, t, present):
             continue
         used |= {rl.button_id for rl in t.research_locations if rl.location_id == building}
     return used
@@ -170,7 +302,9 @@ def _pick_buttons(used: set[int], tiers: int) -> tuple[int | None, int | None]:
     below = train + 5
     if below not in used and below not in _RESERVED:
         return train, below
-    return train, next((b for b in _ANY_BUTTONS if b not in used and b != train), None)
+    # The top row of each page is for units; an upgrade never goes there.
+    return train, next((b for b in _ANY_BUTTONS
+                        if b not in used and b != train and (b - 1) % 20 >= 5), None)
 
 
 def _hotkey(grid: tuple, building: int, button: int, fallback: int) -> int:
@@ -299,7 +433,10 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         dat._ef_added_lines[(civ_index, line["id"])] = list(ids)   # custom cards' "line" target
 
         # Unnamed tiers follow tier 1's name: "Guard" -> "Elite Guard".
-        stem = tiers[0]["name"] or _display_name(src.language_dll_name, src.name) or unit_label(dat, 0, base)
+        from civ_appender import _string_table
+        sid = src.language_dll_name
+        stem = (tiers[0]["name"] or _string_table().get(sid) or chronicles_strings().get(sid)
+                or _display_name(sid, src.name) or unit_label(dat, 0, base))
         names = [t["name"] or d for t, d in zip(tiers, default_names(stem, len(tiers)))]
         look = line.get("appearance")
         look_last = look_elite(dat, look) if look is not None else None
@@ -312,6 +449,9 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             u.creatable.train_locations = [TrainLocation(
                 train_time=tl0.train_time if tl0 else 30, unit_id=building,
                 button_id=train_btn, hot_key_id=hk_train)]
+            # A hero's copy is a unit like any other: no gold border, no
+            # regeneration, convertible (hero status is creatable.hero_mode).
+            u.creatable.hero_mode = 0
             _write_edits(u, edits)
             wear = look_last if (n == len(ids) - 1 and look_last is not None) else look
             if wear is not None:
