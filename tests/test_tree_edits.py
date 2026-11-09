@@ -75,6 +75,25 @@ check("with the Cavalier edited too, the Paladin takes the Cavalier's (latest, n
 check("a later tier's own edit wins", _flow_down(LINE, {38: "k", 569: "p"})[569] == "p")
 check("nothing flows upward", 38 not in _flow_down(LINE, {283: "c"}))
 
+print("\n=== tree-editor name pool (per mod) ===")
+from civ_appender import (CAMPAIGN_STRING_POOL, EDITOR_STRING_POOL,  # noqa: E402
+                          _SID_OFFSETS, _UNOVERRIDABLE_SIDS, _claimed_pool_indices)
+claimed_ids = {CAMPAIGN_STRING_POOL[i] + o for i in _claimed_pool_indices() for o in _SID_OFFSETS}
+ed_ids = [sid + o for sid in EDITOR_STRING_POOL for o in _SID_OFFSETS]
+check("every editor id is a pool id (an existing vanilla string)",
+      set(EDITOR_STRING_POOL) <= set(CAMPAIGN_STRING_POOL))
+check("no editor id or derived id is claimed by another block (UUs, UTs, heroes, Unhinged...)",
+      not (set(ed_ids) & claimed_ids))
+check("no two editor allocations share a derived id", len(ed_ids) == len(set(ed_ids)))
+check("none lands where a mod can't override (civ-picker 91000-91734, lobby 170000s)",
+      not any(a <= x <= b for x in ed_ids for a, b in _UNOVERRIDABLE_SIDS))
+check(f"room for hundreds of names per mod ({len(EDITOR_STRING_POOL)})", len(EDITOR_STRING_POOL) >= 500)
+n = norm_unit_edits({"38": {"name": "  Holy\n  Knight\t", "hp": 150}, "4": {"name": "x" * 60},
+                     "5": {"name": 7}, "6": {"name": "   "}})
+check("a name is trimmed to one line", n["38"]["name"] == "Holy Knight", n)
+check("capped at 40 characters", len(n["4"]["name"]) == 40, n)
+check("non-text and blank names are dropped", "5" not in n and "6" not in n, n)
+
 try:
     from dat_reader import find_game_dat, load_dat
     dat_path = find_game_dat()
@@ -215,6 +234,87 @@ plain = dict(draft, unit_edits={}, tech_edits={})
 with contextlib.redirect_stdout(io.StringIO()):
     apply_civ_with_overrides(dat2, _draft_to_civ_def(plain), SLOT, plain)
 check("no ghost tech without tech edits", not any(t.name == "Tech tree edits" for t in dat2.techs))
+
+print("\n=== renames ===")
+dat3 = load_dat(str(dat_path))
+OTHER = 5 if SLOT != 5 else 6                     # any civ but ours
+MONK, MONK_RELIC, CART, CART_FULL = 125, 286, 128, 204
+MILITIA, MAA, PALADIN, MAA_TECH, PALADIN_TECH = 74, 75, 569, 222, 265
+named = dict(draft, unit_edits={
+    str(KNIGHT): {"name": "Holy Knight", "hp": 150},
+    str(TREB_PACKED): {"name": "Siege Engine"},
+    str(VILLAGER): {"name": "Peasant"},
+    str(MONK): {"name": "Priest"},
+    str(MILITIA): {"name": "Footman"},
+    str(MAA): {"name": "Sergeant"},
+    str(PALADIN): {"name": "Holy Paladin"},
+})
+with contextlib.redirect_stdout(io.StringIO()):
+    r3, uu3 = apply_civ_with_overrides(dat3, _draft_to_civ_def(named), SLOT, named)
+u3, ren = dat3.civs[SLOT].units, r3.get("renamed_units", {})
+texts = {e["sid"]: e for e in r3["bonus_results"]["extra_unit_strings"]}
+said = lambda uid: texts.get(u3[uid].language_dll_name, {}).get("name")   # noqa: E731
+check("the Knight is renamed", said(KNIGHT) == "Holy Knight", said(KNIGHT))
+check("from the editor pool, with creation and help ids derived from it",
+      u3[KNIGHT].language_dll_name in EDITOR_STRING_POOL
+      and u3[KNIGHT].language_dll_creation == u3[KNIGHT].language_dll_name + 1000
+      and u3[KNIGHT].language_dll_help == u3[KNIGHT].language_dll_name + 100000)
+check("another civ's Knight keeps its name",
+      dat3.civs[OTHER].units[KNIGHT].language_dll_name == dat3.civs[1].units[KNIGHT].language_dll_name)
+check("the Cavalier (not renamed) keeps its name",
+      u3[CAVALIER].language_dll_name == dat3.civs[1].units[CAVALIER].language_dll_name)
+check("both Trebuchet forms, keeping 'Packed'",
+      (said(TREB_PACKED), said(TREB)) == ("Siege Engine (Packed)", "Siege Engine"),
+      (said(TREB_PACKED), said(TREB)))
+check("both villagers, the jobs untouched",
+      (said(VILLAGER), said(VILLAGER_F)) == ("Peasant (Male)", "Peasant (Female)")
+      and u3[BUILDER].language_dll_name == dat3.civs[1].units[BUILDER].language_dll_name,
+      (said(VILLAGER), said(VILLAGER_F)))
+check("the Monk with a relic follows", (said(MONK), said(MONK_RELIC)) == ("Priest", "Priest with Relic"),
+      (said(MONK), said(MONK_RELIC)))
+k = texts[u3[KNIGHT].language_dll_name]
+check("the tooltips are the game's own, renamed, with the stat tokens the engine fills",
+      k["ext_text"].startswith("Create <b>Holy Knight<b> (<cost>)") and "<hp> <attack>" in k["ext_text"]
+      and "Heavy Cavalry" in k["ext_text"] and k["help_text"] == k["ext_text"]
+      and k["ext_sid"] == k["sid"] + 21000, k["ext_text"])
+
+# The upgrade button: the shared tech renamed for this civ by type=8 Set Name /
+# Set Description, never copied (the AI researches it by id).
+techs3 = {e["sid"]: e for e in r3["bonus_results"].get("extra_tech_strings", [])}
+names_cmds = [(c.a, c.b, int(c.d)) for t in dat3.techs if t.name == "Upgrade names" and t.civ == SLOT
+              for c in dat3.effects[t.effect_id].effect_commands if c.type == 8]
+by_tech = {(a, b): d for a, b, d in names_cmds}
+pal = techs3.get(by_tech.get((PALADIN_TECH, 7)), {})
+check("the Paladin upgrade is renamed for this civ",
+      pal.get("name") == "Holy Paladin" and pal.get("label") == "Upgrade to Holy Paladin (<cost>)"
+      and by_tech.get((PALADIN_TECH, 8)) == by_tech.get((PALADIN_TECH, 7), 0) + 1000, (pal, by_tech))
+check("its hover is the game's, with every renamed unit's name",
+      pal.get("hover", "").startswith("Upgrade to <b>Holy Paladin<b> (<cost>)")
+      and "Holy Paladins" in pal.get("hover", ""), pal.get("hover"))
+maa = techs3.get(by_tech.get((MAA_TECH, 7)), {})
+check("Men-at-Arms -> Sergeants, Militia -> Footman in the Man-at-Arms upgrade",
+      "Upgrades your Footman" in maa.get("hover", "") and "Sergeants" in maa.get("hover", ""),
+      maa.get("hover"))
+check("the shared techs keep their own ids and names",
+      dat3.techs[PALADIN_TECH].language_dll_name == load_dat(str(dat_path)).techs[PALADIN_TECH].language_dll_name
+      and not any(t.civ == SLOT and t.name == dat3.techs[PALADIN_TECH].name for t in dat3.techs))
+check("only upgrade buttons are renamed (the Knight has none)", set(a for a, _, _ in names_cmds) == {MAA_TECH, PALADIN_TECH},
+      names_cmds)
+check("one pool id per distinct name", len(set(ren.values())) == len(texts) - 0
+      and len(set(ren.values())) == len({e["name"] for e in texts.values()}))
+uu_ids = {uu3.get("unit_id"), uu3.get("elite_id")} - {None}
+check("the unique unit is not renamed here", not (uu_ids & set(ren)))
+
+ct = Path(dat_path).parent / "CivTechTrees"
+gj = next((p for p in ct.glob("*.json") if p.stem.lower() == "goths"), None) if ct.exists() else None
+if gj is not None:
+    import json as _json
+    from build_civ import _patch_per_civ_techtree
+    with contextlib.redirect_stdout(io.StringIO()):
+        out = _json.loads(_patch_per_civ_techtree(gj, _draft_to_civ_def(named), dat3, SLOT, civ_result=r3))
+    knights = [nd for nd in out["civ_techs_units"] if nd.get("Node ID") == KNIGHT]
+    check("the F2 tree names the Knight node from its new id",
+          knights and knights[0]["Name String ID"] == u3[KNIGHT].language_dll_name, knights[:1])
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")

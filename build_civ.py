@@ -1098,6 +1098,19 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
         print(f"  CivTechTrees/{civ_json_path.name}: resource camps → "
               f"{' + '.join(picked) or 'standard'} ({swapped} nodes)")
 
+    # Units renamed on the tree page (civ_overrides._apply_unit_names) own a
+    # pool id; point their nodes at it, as the Chronicles retarget does.
+    renamed = (civ_result or {}).get("renamed_units") or {}
+    if renamed:
+        from civ_appender import _help_sid
+        for key in ("civ_techs_units", "civ_techs_buildings"):
+            for node in data.get(key, []):
+                sid = renamed.get(node.get("Node ID")) if node.get("Use Type") == "Unit" else None
+                if sid is not None:
+                    node["Name String ID"] = sid
+                    node["Help String ID"] = _help_sid(sid)
+                    changed += 1
+
     print(f"  CivTechTrees/{civ_json_path.name}: {changed} nodes updated")
     return json.dumps(data, separators=(",", ":")).encode("utf-8")
 
