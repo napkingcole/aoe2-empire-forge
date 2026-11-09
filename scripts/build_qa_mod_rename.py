@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Test mod for unit rename + the infantry-vs-villagers fix (2026-11-09).
-One civ over the Franks' full tree, built through build_all like any mod.
+Two civs over the Franks' full tree, built through build_all like any mod.
 
-  QA Rename (over Britons)  tree-page renames: Footman (Militia), Holy Knight
+  QA Token  (over Britons)  renamed upgrade buttons show "(<cost>)"
+  QA Literal (over Franks)  ... and "(Cost: 100f, 40g)"; otherwise the same
+
+  Both: tree-page renames: Footman (Militia), Sergeant (Man-at-Arms), Holy Knight
                             / Holy Paladin, Siege Engine (Trebuchet, packed
                             and unpacked), Abbot (Monk, and the relic-carrying
                             Monk), Peasant (both Villagers); card 203 at x25,
@@ -20,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import build_all                                            # noqa: E402
+import civ_overrides                                        # noqa: E402
 from build_qa_mod_branch import civ, preset, tree_from      # noqa: E402
 from dat_reader import find_game_dat                        # noqa: E402
 
@@ -28,17 +32,32 @@ CONQUISTADOR = 13
 RENAMES = {74: "Footman", 75: "Sergeant", 38: "Holy Knight", 569: "Holy Paladin",
            331: "Siege Engine", 125: "Abbot", 83: "Peasant"}
 
-QA = [
-    ("britons", civ(
-        "QA Rename", "Rename",
-        share_description="Test: renamed Militia, Knight, Paladin, Trebuchet, Monk and Villager; infantry one-shot villagers.",
+LITERAL_SLOT = 2                                    # the Franks' slot
+
+
+def renamed_civ(alias, tagline, how):
+    return civ(
+        alias, tagline,
+        share_description=f"Test: renamed Militia, Man-at-Arms, Knight, Paladin, Trebuchet, Monk and "
+                          f"Villager; upgrade buttons show their cost {how}; infantry one-shot villagers.",
         unique_unit={"km_idx": CONQUISTADOR, "name": "", "description": ""},
         bonuses=[{"id": 203, "multiplier": 25}],
         castle_ut=preset(2, "castle"), imperial_ut=preset(0, "imperial"),
         tree=tree_from("FRANKS.json"),
         unit_edits={str(u): {"name": n} for u, n in RENAMES.items()},
-    )),
+    )
+
+
+QA = [
+    ("britons", renamed_civ("QA Token", "Token", "through the game's <cost> token")),
+    ("franks", renamed_civ("QA Literal", "Literal", "as written-out numbers")),
 ]
+
+# One round tries both ways of showing a renamed upgrade's cost
+# (civ_overrides.UPGRADE_COST_STYLE): the Franks' slot gets the literal one.
+_name_upgrade_techs = civ_overrides._name_upgrade_techs
+civ_overrides._name_upgrade_techs = lambda dat, slot, names, civ_result, style=None: \
+    _name_upgrade_techs(dat, slot, names, civ_result, "literal" if slot == LITERAL_SLOT else "token")
 
 
 def main() -> None:
