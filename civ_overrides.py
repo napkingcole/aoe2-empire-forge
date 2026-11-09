@@ -757,7 +757,7 @@ def _apply_unit_edits(dat, slot: int, overrides: dict) -> int:
     # difference, so they keep their own (a Barracks gains 300 HP and 1 armour
     # an age: edited to 2000 in the Dark Age, it is 2900 in Imperial).
     for uid, e in sorted(edits.items()):
-        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus")}
+        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus", "name")}
         if not (0 <= uid < len(units) and units[uid] is not None):
             continue
         node_now = read_unit_stats(units[uid])
@@ -858,6 +858,80 @@ def _apply_tech_edits(dat, slot: int, overrides: dict, warnings: list) -> int:
     return len(cmds)
 
 
+def _apply_unit_names(dat, slot: int, overrides: dict, civ_result: dict,
+                      uu_info: dict | None) -> int:
+    """The tree page's renames.  A unit's name is its language_dll_name, and
+    units are per civ, so pointing this civ's copy at a fresh pool id renames
+    it here only.  The id comes from the mod-wide editor block (_editor_sid);
+    the name, "Create …" label and both tooltips go out through
+    extra_unit_strings, which all three routes write, and `renamed_units`
+    {unit: sid} lets the F2 tree viewer name the node the same way.
+
+    Every form named after the node is renamed with it, keeping what tells
+    the forms apart: the node's name less any "(…)" is the stem, and a form
+    whose name starts with it keeps the rest ("Trebuchet (Packed)" and
+    "Trebuchet" -> "Siege Engine (Packed)" and "Siege Engine"; "Monk with
+    Relic" -> "Priest with Relic").  Forms named otherwise (the villager jobs)
+    keep their names.  Each distinct new name takes one pool id.  The civ's unique unit and
+    hero are named on their own wizard steps, so they are left alone here.
+    Runs after the stat edits, so the tooltips quote the edited numbers.
+
+    The upgrade TECH keeps its name: techs are shared by every civ, and a
+    per-civ copy would hide the upgrade from the AI (it researches by id) and
+    from cards that discount that tech."""
+    from civ_appender import (_OWN_STRING_NAMES, _creation_sid, _display_name, _editor_sid,
+                              _extended_tooltip_sid, _help_sid)
+    from civ_schema import norm_unit_edits
+    names = {int(k): e["name"] for k, e in norm_unit_edits(overrides.get("unit_edits")).items()
+             if e.get("name")}
+    own = {uu_info.get("unit_id"), uu_info.get("elite_id")} if uu_info else set()
+    units = dat.civs[slot].units
+    template = dat.civs[1].units
+    renamed = civ_result.setdefault("renamed_units", {})
+    extra = civ_result.setdefault("bonus_results", {}).setdefault("extra_unit_strings", [])
+    import re
+    shown = lambda u: _display_name(u.language_dll_name, u.name) or ""   # noqa: E731
+    for uid, name in sorted(names.items()):
+        node = units[uid] if 0 <= uid < len(units) else None
+        if node is None or uid in own or uid in renamed:
+            continue
+        stem = re.sub(r"\s*\(.*\)$", "", shown(node)).strip()
+        texts: dict[int, str] = {}                       # form -> its new name
+        for f in unit_forms(dat, units, uid):
+            u = units[f]
+            if u is None:
+                continue
+            t = shown(u)
+            if f == uid or (stem and t.startswith(stem)):
+                texts[f] = name + (t[len(stem):] if stem and t.startswith(stem) else "")
+        sids: dict[str, int] = {}
+        for f, text in texts.items():                    # node first: unit_forms order
+            if text not in sids:
+                sids[text] = _editor_sid(dat)
+                _OWN_STRING_NAMES[sids[text]] = text     # what logs and previews show
+            sid = sids[text]
+            u = units[f]
+            u.language_dll_name = sid
+            u.language_dll_creation = _creation_sid(sid)
+            u.language_dll_help = _help_sid(sid)
+            renamed[f] = sid
+        for text, sid in sids.items():
+            u = units[next(f for f, t in texts.items() if t == text)]
+            where = ""
+            if u.creatable and u.creatable.train_locations:
+                b = u.creatable.train_locations[0].unit_id
+                bu = template[b] if 0 <= b < len(template) else None
+                where = shown(bu) if bu else ""
+            extra.append({
+                "sid": sid, "name": text, "desc_sid": _help_sid(sid),
+                "help_text": format_unit_tooltip_help(
+                    u, name, extra=f"Trainable at {where}." if where else ""),
+                "ext_sid": _extended_tooltip_sid(sid),
+                "ext_text": format_unit_extended_tooltip(u, name),
+            })
+    return len(renamed)
+
+
 # ── The whole DAT write for one civ ───────────────────────────────────────────
 
 def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
@@ -878,5 +952,6 @@ def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
     _refresh_uu_tooltips(dat, slot, civ_result)
     _apply_hero_unit(dat, slot, overrides)
     _apply_unit_edits(dat, slot, overrides)
+    _apply_unit_names(dat, slot, overrides, civ_result, uu_info)
     _apply_tech_edits(dat, slot, overrides, civ_result.setdefault("warnings", []))
     return civ_result, uu_info

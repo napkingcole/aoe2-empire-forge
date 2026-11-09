@@ -64,6 +64,18 @@
 
     // ── edit bookkeeping ────────────────────────────────────────────────────
     function unitEdit(id) { return edits.unit_edits[String(id)] || {}; }
+
+    // A renamed unit's name (civ_overrides._apply_unit_names), or '' for the
+    // game's.  The tree's labels and tooltip read it too (main.js _nodeName).
+    // The civ's unique unit (the Castle's UniqueUnit node) is named on its own
+    // wizard step; regional units share the node type and can be renamed.
+    function canRename(item) {
+        return kindOf(item) === 'unit'
+            && !(item.node_type === 'UniqueUnit' && /_82$/.test(item.id));
+    }
+    function nameOf(item) {
+        return canRename(item) ? (unitEdit(item.node_id).name || '') : '';
+    }
     function techEdit(id) { return edits.tech_edits[String(id)] || {}; }
 
     function setUnitField(id, field, value) {
@@ -151,6 +163,7 @@
     // ── tree decoration ─────────────────────────────────────────────────────
     function decorate(item, element_height) {
         known[item.id] = [item, element_height];
+        window._ttRelabel?.(item, element_height);
         const id = `${item.id}_edited`;
         document.getElementById(id)?.remove();
         if (!isEdited(item)) return;
@@ -375,8 +388,8 @@
         const focused = focusKey(document.activeElement);
         const scrollTop = panel.scrollTop;
         const kind = kindOf(item);
-        const name = (typeof formatName === 'function' && data.strings)
-            ? formatName(data.strings[item.name_string_id] || item.name) : item.name;
+        const name = nameOf(item) || ((typeof formatName === 'function' && data.strings)
+            ? formatName(data.strings[item.name_string_id] || item.name) : item.name);
         const icon = typeof _imgroot === 'string' && item.picture_index !== undefined
             ? `${_imgroot}/${item.use_type}/${item.picture_index}.png` : '';
         panel.innerHTML = `<div class="tt-insp-head">
@@ -451,7 +464,14 @@
         else if (inf.forms > 1)
             notes.push(`This unit has ${inf.forms} forms in the game (${inf.id === 83 ? 'one per villager task' : 'packed, carrying and so on'}); the change reaches all of them.`);
 
+        const nameRow = kind === 'unit' && current && canRename(current.item) ? `
+            <div class="tt-insp-row tt-insp-name-row">${label('tt-insp-name', 'Name', inf.name, e.name !== undefined)}
+                <input type="text" class="tt-insp-num tt-insp-text${e.name ? ' is-edited' : ''}" id="tt-insp-name"
+                    maxlength="40" autocomplete="off" spellcheck="false"
+                    placeholder="${esc(inf.name)}" value="${esc(e.name || '')}"></div>` : '';
+
         return `
+            ${nameRow}
             ${notes.map(n => `<div class="tt-insp-note">${esc(n)}</div>`).join('')}
             <div class="tt-insp-section">Stats <span class="tt-insp-fu-status" id="tt-insp-fu-status">working out upgrades…</span></div>
             <div class="tt-insp-grid">${rows}
@@ -527,6 +547,12 @@
         if (kind === 'tech') {
             wireTechCost(body, 'tt-insp-tech', inf);
         } else {
+            const nm = body.querySelector('#tt-insp-name');
+            nm?.addEventListener('change', () => {
+                const v = nm.value.replace(/\s+/g, ' ').trim().slice(0, 40);
+                setUnitField(inf.id, 'name', v && v !== inf.name ? v : null);
+                rerender();
+            });
             for (const [f, , step, min, max] of STAT_FIELDS) {
                 const el = body.querySelector(`#tt-insp-${f}`);
                 if (!el) continue;
@@ -635,6 +661,7 @@
     }
 
     window.ttInspector = {
+        nameOf,
         treeChanged,
         mount,
         select,

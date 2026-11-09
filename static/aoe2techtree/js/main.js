@@ -1225,7 +1225,7 @@ function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
     const content = document.getElementById('helptext__content');
     if (!panel || !content) return;
 
-    const name = formatName(data.strings[itemToDraw.name_string_id] || '?');
+    const name = _nodeName(itemToDraw);
     const idParts = itemToDraw.id.split('_');  // e.g. ["Unit","4","87"]
     const dataType = idParts[0];               // "Unit", "Tech", "Building"
     const dataId   = idParts[1];
@@ -1308,6 +1308,23 @@ function drawGrid(building, element_height, tree_height, draw, index) {
     }
 }
 
+// A node's label: the side panel's rename if it has one, else the game's.
+function _nodeName(item) {
+    const own = window.ttInspector?.nameOf(item);
+    return formatName(own || data.strings[item.name_string_id] || '?');
+}
+
+// Redraw a node's label after a rename (or its undo); a no-op when unchanged.
+window._ttRelabel = function (item, element_height) {
+    const el = document.getElementById(item.id + '_text');
+    if (!el) return;
+    const want = _nodeName(item).toString();
+    if (el.textContent === want.replace(/\n/g, '')) return;
+    SVG(el).text(want)
+        .cx(item.x + element_height / 2)
+        .y(item.y + element_height * 0.67);
+};
+
 function drawItem(itemToDraw, element_height, tree_height, draw) {
     const item = draw.group().attr({ id: itemToDraw.id }).addClass('node');
     item.rect(element_height, element_height).attr({
@@ -1315,7 +1332,7 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
         id: `${itemToDraw.id}_bg`
     }).move(itemToDraw.x, itemToDraw.y);
 
-    const name = formatName(data.strings[itemToDraw.name_string_id]);
+    const name = _nodeName(itemToDraw);
     // Text anchored near the card bottom. SVG.js splits on \n → two tspans stacking downward,
     // so position the first line high enough that the second line still clears the card edge.
     item.text(name.toString())
@@ -1772,6 +1789,8 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             letter-spacing: 0; font: 400 12px 'Inter', sans-serif; padding: 0; color: #6b3f06; }
         .tt-insp-fu { font-size: 11.5px; color: #5a3d14; min-height: 0; line-height: 1.3; }
         .tt-insp-fu:empty { display: none; }
+        .tt-insp-text { font-variant-numeric: normal; }
+        .tt-insp-name-row { margin-bottom: 4px; }
         .tt-insp-fu b { color: #2e1d08; font-weight: 700; }
         .tt-insp-fu[title]:not([title=""]) { cursor: help; }
         .tt-insp-bonus .tt-insp-fu { grid-column: 1 / -1; margin-top: -2px; }

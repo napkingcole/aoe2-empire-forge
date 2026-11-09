@@ -3354,6 +3354,62 @@ _CHRONICLES_SID_KEYS: list = [
 CHRONICLES_SIDS: dict = {k: _campaign_sid(CHRONICLES_UNIT_POOL_OFFSET + i)
                          for i, k in enumerate(_CHRONICLES_SID_KEYS)}
 
+
+# ── Tree-editor names (renamed and added units), allocated per MOD ───────────
+# Every other block reserves a fixed slice per civ slot, which would leave the
+# editor 8 ids a civ.  These are handed out in order across the whole build
+# instead (_editor_sid), so a 10-civ mod has ~50 a civ.  Eligible: the pool ids
+# no block claims, whose derived ids (+1000, +21000, +100000, +150000) stay
+# clear of every claimed id's own and of the ranges a mod can't override
+# (91000-91734: the civ-picker DLL text; 170000-170999: lobby UI), and of each
+# other.  Only the NAME must be a real vanilla id; derived ids need not exist
+# (a confirmed custom UU's +21000 exists in 4 of 126).  Pure arithmetic over
+# the pool, so the list is the same on every machine (539 ids, 2026-11-09).
+# Unhinged Empires (~/Sites/aoe2/build.py) takes the pool from this index on.
+EXTERNAL_MOD_POOL_START = 1700
+_SID_OFFSETS = (0, DLL_CREATION_OFFSET, DLL_CREATION_OFFSET + 20000, DLL_HELP_OFFSET,
+                DLL_TECH_TREE_OFFSET)
+_UNOVERRIDABLE_SIDS = ((91000, 91734), (170000, 170999))
+
+
+def _claimed_pool_indices() -> set[int]:
+    per_civ = MAX_TOTAL_CIVS
+    return (set(range(0, per_civ * KM_UU_POOL_SLOTS_PER_CIV))
+            | set(range(UT_POOL_OFFSET, CHRONICLES_UNIT_POOL_OFFSET + len(CHRONICLES_SIDS)))
+            | set(range(UT_POOL_OFFSET + 0, UT_POOL_OFFSET + per_civ * UT_POOL_SLOTS_PER_CIV))
+            | set(range(UT_HELP_POOL_OFFSET, UT_HELP_POOL_OFFSET + per_civ * UT_HELP_SLOTS_PER_CIV + 1))
+            | set(range(EXTERNAL_MOD_POOL_START, len(CAMPAIGN_STRING_POOL))))
+
+
+def _editor_pool() -> list[int]:
+    claimed = _claimed_pool_indices()
+    taken = {CAMPAIGN_STRING_POOL[i] + o for i in claimed for o in _SID_OFFSETS}
+    out: list[int] = []
+    for i, sid in enumerate(CAMPAIGN_STRING_POOL):
+        if i in claimed:
+            continue
+        ids = {sid + o for o in _SID_OFFSETS}
+        if ids & taken or any(a <= x <= b for x in ids for a, b in _UNOVERRIDABLE_SIDS):
+            continue
+        out.append(sid)
+        taken |= ids
+    return out
+
+
+EDITOR_STRING_POOL: list[int] = _editor_pool()
+
+
+def _editor_sid(dat: DatFile) -> int:
+    """The next tree-editor name id for this build (one DatFile = one mod)."""
+    n = getattr(dat, "_ef_editor_sids", 0)
+    if n >= len(EDITOR_STRING_POOL):
+        raise ValueError(
+            f"This mod renames or adds more units than the game has spare names for "
+            f"({len(EDITOR_STRING_POOL)} across all its civs). Build fewer civs at once, "
+            f"or rename or add fewer units.")
+    dat._ef_editor_sids = n + 1
+    return EDITOR_STRING_POOL[n]
+
 _TRAIN_BUILDING_NAMES = {82: "Castle", 12: "Barracks", 101: "Stable", 87: "Archery Range"}
 
 def _apply_unit_skin(dat: DatFile, civ_index: int, spec: dict,

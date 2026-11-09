@@ -426,8 +426,19 @@ def _id_key(k) -> str | None:
     return str(i) if i >= 0 else None
 
 
+UNIT_NAME_MAX = 40
+
+
+def norm_unit_name(raw) -> str:
+    """A unit's new name: one line, no control characters, at most 40 long."""
+    if not isinstance(raw, str):
+        return ""
+    text = " ".join("".join(c if c.isprintable() else " " for c in raw).split())
+    return text[:UNIT_NAME_MAX].strip()
+
+
 def norm_unit_edits(raw) -> dict:
-    """{"<unit id>": {hp, attack, melee, pierce, range, reload, speed, los,
+    """{"<unit id>": {name, hp, attack, melee, pierce, range, reload, speed, los,
     train, cost: {food, wood, stone, gold}, bonus: {"<class>": amount}}}."""
     out: dict = {}
     if not isinstance(raw, dict):
@@ -437,6 +448,9 @@ def norm_unit_edits(raw) -> dict:
         if key is None or not isinstance(e, dict):
             continue
         clean: dict = {}
+        name = norm_unit_name(e.get("name"))
+        if name:
+            clean["name"] = name
         for f, (kind, lo, hi) in _UNIT_EDIT_FIELDS.items():
             if e.get(f) is not None and (v := _num(e[f], kind, lo, hi)) is not None:
                 clean[f] = v
