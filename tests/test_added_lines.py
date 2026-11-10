@@ -89,6 +89,7 @@ PIKEMAN_TECH, HALBERDIER_TECH, CAVALIER_TECH, SAVAR_TECH = 197, 429, 209, 526
 SAVAR = 1813
 SKIRM, ESKIRM, HC, ESKIRM_TECH = 7, 6, 5, 98
 CAVALIER, PALADIN, PALADIN_TECH = 283, 569, 265
+BOMBARD, HOUFNICE = 36, 1709
 HERO = 160                     # Richard the Lionheart (creatable.hero_mode 1)
 units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
 draft = {
@@ -125,6 +126,8 @@ draft = {
         {"id": 9, "building": 101, "base": SAVAR, "replaces": KNIGHT, "tiers": [{"age": 3}]},  # not an upgrade
         # Two Imperial tiers, like Cavalier and Paladin.
         {"id": 10, "building": 101, "base": KNIGHT, "tiers": [{"age": 3, "name": "Rider"}, {"age": 4}, {"age": 4}]},
+        # An extension into another unit: the Bombard Cannon upgrades into a Houfnice.
+        {"id": 11, "building": 49, "base": HOUFNICE, "from": BOMBARD, "tiers": [{"age": 4}, {"age": 4}]},
     ],
 }
 dat = load_dat(str(dat_path))
@@ -134,8 +137,8 @@ with contextlib.redirect_stdout(out):
     r, _ = apply_civ_with_overrides(dat, _draft_to_civ_def(draft), SLOT, draft)
 lines = r.get("added_lines") or []
 check("every line built but an extension of a unit that still upgrades, and a replaced first unit",
-      [l["id"] for l in lines] == [1, 2, 3, 4, 6, 7, 8, 10], ([l["id"] for l in lines], r["warnings"]))
-guard, knights, hero, ext, hcx, rcav, rpal, two = lines
+      [l["id"] for l in lines] == [1, 2, 3, 4, 6, 7, 8, 10, 11], ([l["id"] for l in lines], r["warnings"]))
+guard, knights, hero, ext, hcx, rcav, rpal, two, houf = lines
 ids = guard["units"]
 U = dat.civs[SLOT].units
 
@@ -234,6 +237,9 @@ check("F2: the new tier hangs off the vanilla unit",
       [(nd["Node Type"], nd.get("Link ID"), nd["Link Node Type"]) for nd in xn])
 check("the AI's line is the vanilla unit's", ext["role"] == added_lines.default_role(added_lines.game_unit_lines(), ESKIRM)
       and ext["role"] is not None, ext["role"])
+
+check("extended into another unit, a tier is named for that unit (Houfnice, not Elite Bombard Cannon)",
+      houf["names"] == ["Houfnice", "Elite Houfnice"], houf["names"])
 
 print("\n=== two tiers in one age ===")
 _, t2, t3 = (dat.techs[x] for x in two["techs"])
@@ -346,7 +352,7 @@ dat3 = load_dat(str(dat_path))
 no_stable = dict(draft, tree=dict(draft["tree"], buildings=[b for b in buildings if b != 101]))
 with contextlib.redirect_stdout(io.StringIO()):
     r3, _ = apply_civ_with_overrides(dat3, _draft_to_civ_def(no_stable), SLOT, no_stable)
-check("is not built (the page hides it too)", [l["id"] for l in r3["added_lines"]] == [1, 3, 4, 6],
+check("is not built (the page hides it too)", [l["id"] for l in r3["added_lines"]] == [1, 3, 4, 6, 11],
       [l["id"] for l in r3["added_lines"]])
 
 print("\n=== two civs in one build ===")
@@ -375,6 +381,34 @@ check("Chronicles units are named from the game's own strings", (cat.get(2110) o
 check("military only: no Villager, no Trade Cart, no animals",
       not ({83, 128, 594} & set(cat)), sorted({83, 128, 594} & set(cat)))
 check("one per name", len({r["name"].casefold() for r in cat.values()}) == len(cat))
+
+print("\n=== suggested upgrades (the \"+\" under a vanilla unit) ===")
+from copy import deepcopy  # noqa: E402
+import civ_appender  # noqa: E402
+rows = list(cat.values())
+sug = lambda frm: {s["name"]: s for s in added_lines.suggested_upgrades(dat2, frm, rows)}   # noqa: E731
+rbe = sug(1134).get("Royal Battle Elephant") or {}
+check("a card's unit after its vanilla one, with its stats and price (Royal Battle Elephant)",
+      rbe.get("base") == 1134 and rbe.get("edits") == {"hp": 330, "attack": 15, "pierce": 4}
+      and rbe.get("upgrade") == {"cost": {"food": 1200, "gold": 1000}, "time": 200}, rbe)
+check("the Royal Lancer wears the Cuman Chief, a look it may wear",
+      (sug(1372).get("Royal Lancer") or {}).get("appearance") == 1268
+      and civ_appender.appearance_ok(dat2.civs[0].units[1268], dat2.civs[0].units[1372]))
+# The suggestion's edits on the unit it copies give the card's own unit.
+civ_appender._setup_royal_battle_elephant_unit(dat2)
+mine = deepcopy(dat2.civs[SLOT].units[1134])
+added_lines._write_edits(mine, rbe.get("edits") or {})
+card = dat2.civs[SLOT].units[1180]
+stat = lambda u: (u.hit_points, u.type_50.displayed_attack, sorted((a.class_, a.amount) for a in u.type_50.attacks),   # noqa: E731
+                  sorted((a.class_, a.amount) for a in u.type_50.armours), u.creatable.displayed_pierce_armour)
+check("which is the card's unit, stat for stat", stat(mine) == stat(card), (stat(mine), stat(card)))
+houf = sug(BOMBARD).get("Houfnice") or {}
+t787 = dat2.techs[787]
+check("the game's own upgrade into a unit few civs have, at its price (Houfnice)",
+      houf.get("base") == HOUFNICE and houf.get("upgrade", {}).get("cost")
+      == {{0: "food", 1: "wood", 2: "stone", 3: "gold"}[c.type]: c.amount for c in t787.resource_costs if c.amount > 0}, houf)
+check("an upgrade the tree has a node for is left to the node (Paladin), others offered (Savar)",
+      "Paladin" not in sug(CAVALIER) and "Savar" in sug(CAVALIER), list(sug(CAVALIER)))
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")

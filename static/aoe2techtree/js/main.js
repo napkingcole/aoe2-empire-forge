@@ -2085,6 +2085,9 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
         .tt-unit-picker .tt-pick-stats { font-size: .68rem; opacity: .75; line-height: 1.2; }
         .tt-unit-picker .tt-pick-stats i { font-size: .6rem; margin-left: 2px; }
+        .tt-unit-picker .tt-pick-suggest { padding: 8px 10px 10px; border-radius: 6px;
+            background: rgba(184,134,11,.10); border: 1px solid rgba(184,134,11,.35); }
+        .tt-unit-picker .tt-pick-suggest-head { font-weight: 600; font-size: .8rem; margin-bottom: 6px; }
         .tt-unit-picker .uu-badge-hero { background: #b8860b; color: #fff; }
         .tt-unit-picker .modal-footer .uu-badge { position: static; }
         .tt-unit-picker .modal-body { min-height: 60vh; }

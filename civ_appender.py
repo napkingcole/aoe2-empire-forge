@@ -3544,6 +3544,23 @@ _STEPPE_LANCER       = 1370
 _ELITE_STEPPE_LANCER = 1372
 _ROYAL_LANCER        = 1181   # spare slot HLETRIEN
 
+# What each card's unit is, in the tree editor's terms: the stats its setup
+# writes over the unit it copies, its upgrade's price, and its look.  The cards
+# and the tree's suggested upgrades (added_lines.suggested_upgrades) read this
+# one table.  The Imperial Scorpion's stronger pass-through bolts (projectile
+# 1113) are the card's alone: a tree tier can't edit a projectile.
+CARD_UPGRADE_UNITS: dict[int, dict] = {
+    308: {"from": _HEAVY_SCORPION, "name": "Imperial Scorpion",
+          "edits": {"hp": 60, "attack": 18},
+          "upgrade": {"cost": {"food": 1200, "wood": 1000}, "time": 150}},
+    309: {"from": _ELITE_BATTLE_ELEPHANT, "name": "Royal Battle Elephant",
+          "edits": {"hp": 330, "attack": 15, "pierce": 4},
+          "upgrade": {"cost": {"food": 1200, "gold": 1000}, "time": 200}},
+    310: {"from": _ELITE_STEPPE_LANCER, "name": "Royal Lancer",
+          "edits": {"hp": 100, "attack": 13}, "appearance": 1268,      # the Cuman Chief
+          "upgrade": {"cost": {"food": 1200, "gold": 900}, "time": 100}},
+}
+
 # Vanilla hotkey IDs for the predecessor tech at the same building/button slot.
 # AoE2 DE's hotkey binding is keyed per-tech (not per button position), so the
 # "next tier" research must reuse its predecessor's hot_key_id for the S/D
@@ -3694,12 +3711,13 @@ def _setup_imperial_scorpion_unit(dat: DatFile) -> None:
         u.language_dll_name     = IMP_SCORPION_NAME_SID
         u.language_dll_help     = _help_sid(IMP_SCORPION_NAME_SID)
         u.language_dll_creation = _creation_sid(IMP_SCORPION_NAME_SID)
-        u.hit_points = 60
+        e = CARD_UPGRADE_UNITS[308]["edits"]
+        u.hit_points = e["hp"]
         if u.type_50:
-            u.type_50.displayed_attack = 18
+            u.type_50.displayed_attack = e["attack"]
             for atk in u.type_50.attacks:
                 if atk.class_ == 3:   # ranged/pierce damage class
-                    atk.amount = 18
+                    atk.amount = e["attack"]
             u.type_50.projectile_unit_id = _IMP_SCORPION_PROJECTILE
         if u.creatable:
             u.creatable.secondary_projectile_unit = _IMP_SCORPION_PROJECTILE
@@ -3741,17 +3759,18 @@ def _setup_royal_battle_elephant_unit(dat: DatFile) -> None:
         u.language_dll_name     = ROYAL_ELEPHANT_NAME_SID
         u.language_dll_help     = _help_sid(ROYAL_ELEPHANT_NAME_SID)
         u.language_dll_creation = _creation_sid(ROYAL_ELEPHANT_NAME_SID)
-        u.hit_points = 330
+        e = CARD_UPGRADE_UNITS[309]["edits"]
+        u.hit_points = e["hp"]
         if u.type_50:
-            u.type_50.displayed_attack = 15
+            u.type_50.displayed_attack = e["attack"]
             for atk in u.type_50.attacks:
                 if atk.class_ == 4:   # melee damage class
-                    atk.amount = 15
+                    atk.amount = e["attack"]
             for arm in u.type_50.armours:
                 if arm.class_ == 3:   # pierce armour class
-                    arm.amount = 4
+                    arm.amount = e["pierce"]
         if u.creatable:
-            u.creatable.displayed_pierce_armour = 4
+            u.creatable.displayed_pierce_armour = e["pierce"]
         u.enabled = 0
         civ.units[_ROYAL_ELEPHANT] = u
 
@@ -3779,19 +3798,25 @@ def _setup_royal_lancer_unit(dat: DatFile) -> None:
         u.language_dll_name     = ROYAL_LANCER_NAME_SID
         u.language_dll_help     = _help_sid(ROYAL_LANCER_NAME_SID)
         u.language_dll_creation = _creation_sid(ROYAL_LANCER_NAME_SID)
-        u.hit_points = 100
+        e = CARD_UPGRADE_UNITS[310]["edits"]
+        u.hit_points = e["hp"]
         u.standing_graphic = (10510, 10511)
         u.dying_graphic = 10509
         if u.type_50:
-            u.type_50.displayed_attack = 13
+            u.type_50.displayed_attack = e["attack"]
             u.type_50.attack_graphic = 10508
             for atk in u.type_50.attacks:
                 if atk.class_ == 4:   # melee damage class
-                    atk.amount = 13
+                    atk.amount = e["attack"]
         if u.dead_fish:
             u.dead_fish.walking_graphic = 10513
         u.enabled = 0
         civ.units[_ROYAL_LANCER] = u
+
+
+def _card_upgrade_costs(bonus_id: int) -> list[tuple[int, int]]:
+    res = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
+    return [(res[r], a) for r, a in CARD_UPGRADE_UNITS[bonus_id]["upgrade"]["cost"].items()]
 
 
 def _add_upgrade_tier_tech(dat: DatFile, civ_index: int, *, name: str,
@@ -5573,8 +5598,8 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _add_upgrade_tier_tech(
             dat, civ_index, name="Imperial Scorpion",
             from_units=[_SCORPION, _HEAVY_SCORPION], to_unit=_IMP_SCORPION,
-            prereq_tech=239, location=49, button=8, research_time=150,
-            icon_id=38, costs=[(0, 1200), (1, 1000)],
+            prereq_tech=239, location=49, button=8, research_time=CARD_UPGRADE_UNITS[308]["upgrade"]["time"],
+            icon_id=38, costs=_card_upgrade_costs(308),
             hot_key_id=_HEAVY_SCORPION_HOTKEY,
             name_sid=IMP_SCORPION_NAME_SID,
         )
@@ -5606,8 +5631,8 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _add_upgrade_tier_tech(
             dat, civ_index, name="Royal Battle Elephant",
             from_units=[_BATTLE_ELEPHANT, _ELITE_BATTLE_ELEPHANT], to_unit=_ROYAL_ELEPHANT,
-            prereq_tech=631, location=101, button=9, research_time=200,
-            icon_id=121, costs=[(0, 1200), (3, 1000)],
+            prereq_tech=631, location=101, button=9, research_time=CARD_UPGRADE_UNITS[309]["upgrade"]["time"],
+            icon_id=121, costs=_card_upgrade_costs(309),
             hot_key_id=_ELITE_BATTLE_ELEPHANT_HOTKEY,
             name_sid=ROYAL_ELEPHANT_NAME_SID,
         )
@@ -5629,8 +5654,8 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _add_upgrade_tier_tech(
             dat, civ_index, name="Royal Lancer",
             from_units=[_STEPPE_LANCER, _ELITE_STEPPE_LANCER], to_unit=_ROYAL_LANCER,
-            prereq_tech=715, location=101, button=9, research_time=100,
-            icon_id=123, costs=[(0, 1200), (3, 900)],
+            prereq_tech=715, location=101, button=9, research_time=CARD_UPGRADE_UNITS[310]["upgrade"]["time"],
+            icon_id=123, costs=_card_upgrade_costs(310),
             hot_key_id=_ELITE_STEPPE_LANCER_HOTKEY,
             name_sid=ROYAL_LANCER_NAME_SID,
         )

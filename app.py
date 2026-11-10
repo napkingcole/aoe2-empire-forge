@@ -3127,7 +3127,9 @@ def api_builder_unit_catalog():
     """The tree page's unit picker: every military unit in the player's game
     (added_lines.unit_catalog), grouped, with the stats its cards show.
     ?look_for=<unit id> keeps only the looks that unit may wear
-    (civ_appender.appearance_ok), for the Appearance picker."""
+    (civ_appender.appearance_ok), for the Appearance picker;
+    ?suggest_for=<unit id> instead returns the upgrades suggested after that
+    unit (added_lines.suggested_upgrades)."""
     import added_lines
     from civ_appender import _string_table, appearance_ok
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
@@ -3153,6 +3155,14 @@ def api_builder_unit_catalog():
             })
         _UNIT_CATALOG_CACHE[dat_path] = rows
     rows = _UNIT_CATALOG_CACHE[dat_path]
+    suggest_for = request.args.get("suggest_for")
+    if suggest_for not in (None, ""):
+        # The "+" under a vanilla unit: the upgrades past it worth offering first.
+        try:
+            frm = int(suggest_for)
+        except ValueError:
+            return jsonify({"status": "error", "units": []}), 400
+        return jsonify({"status": "ok", "suggested": added_lines.suggested_upgrades(dat, frm, rows)})
     look_for = request.args.get("look_for")
     if look_for not in (None, ""):
         try:

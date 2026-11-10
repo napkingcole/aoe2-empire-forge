@@ -387,6 +387,15 @@
         return lookCache[base];
     }
 
+    const suggestCache = {};
+    function suggestionsFor(from) {
+        if (!suggestCache[from]) {
+            suggestCache[from] = fetch(`/api/builder/unit-catalog?suggest_for=${from}${datQuery()}`)
+                .then(r => r.json()).then(r => r.suggested || []).catch(() => []);
+        }
+        return suggestCache[from];
+    }
+
     function lineInfo(base, role, from) {
         const key = `${base}:${role ?? ''}:${from ?? ''}`;
         if (!lineInfoCache[key]) {
@@ -432,7 +441,8 @@
         const { line, n } = ref;
         if (line.replaces != null) return line.tiers[0].name || baseName(line.base);
         if (line.from != null) {
-            const first = line.tiers[0].name;
+            // Named for its unit when that isn't the one extended (Houfnice).
+            const first = line.tiers[0].name || (line.base !== line.from ? baseName(line.base) : '');
             if (first) return n ? extensionNames(first, line.tiers.length - 1)[n - 1] : first;
             return extensionNames(baseName(line.from), line.tiers.length)[n];
         }
@@ -497,9 +507,18 @@
         window._ttRelayout?.();
     }
 
-    function addLine(building, age, base, from, replaces) {
+    // preset: a suggested upgrade (added_lines.suggested_upgrades) — its name,
+    // stats, upgrade price and look go into the tier as ordinary edits.
+    function addLine(building, age, base, from, replaces, preset) {
         const id = Math.max(0, ...edits.added_lines.map(l => l.id)) + 1;
         const line = { id, building, base, role: null, appearance: null, tiers: [{ age, name: '' }] };
+        if (preset) {
+            const t = line.tiers[0];
+            if (preset.source === 'card') t.name = preset.name;
+            if (preset.edits) t.edits = clone(preset.edits);
+            if (preset.upgrade) t.upgrade = clone(preset.upgrade);
+            if (preset.appearance != null) line.appearance = preset.appearance;
+        }
         if (from != null) line.from = from;
         if (replaces != null) line.replaces = replaces;
         edits.added_lines.push(line);
@@ -548,6 +567,10 @@
                         <select id="tt-pick-kind" class="form-select form-select-sm" style="max-width:13rem" aria-label="Kind">
                             ${KINDS.map(([k, label]) => `<option value="${k}">${label}</option>`).join('')}</select>
                         <span id="tt-pick-count" class="text-muted small"></span>
+                    </div>
+                    <div id="tt-pick-suggest" class="tt-pick-suggest mb-3" hidden>
+                        <div class="tt-pick-suggest-head">Suggested</div>
+                        <div class="uu-grid tt-pick-grid" id="tt-pick-suggest-grid"></div>
                     </div>
                     <div class="btn-group btn-group-sm flex-wrap mb-3" role="group" id="tt-pick-groups"></div>
                     <div class="uu-grid tt-pick-grid" id="tt-pick-grid"></div>
@@ -634,12 +657,39 @@
             grid.querySelectorAll('[data-pick]').forEach(card => card.addEventListener('click', () => {
                 picked = true;
                 pickerModal.hide();
-                opts.onPick(card.dataset.pick === '' ? null : +card.dataset.pick);
+                const id = card.dataset.pick === '' ? null : +card.dataset.pick;
+                // The game's own upgrade into this unit brings its price, picked here or above.
+                opts.onPick(id, sug.find(p => p.source === 'game' && p.base === id));
             }));
         };
         groupsEl.querySelectorAll('[data-group]').forEach(b => b.addEventListener('click', () => {
             pickerState.group = b.dataset.group;
             draw();
+        }));
+        const sugEl = el.querySelector('#tt-pick-suggest');
+        const sug = opts.suggested ? await opts.suggested : [];
+        sugEl.hidden = !sug.length;
+        const sugGrid = el.querySelector('#tt-pick-suggest-grid');
+        const price = c => Object.entries(c || {}).map(([r, a]) => `${a}${r[0]}`).join(' ');
+        sugGrid.innerHTML = sug.map((p, i) => {
+            const u = catalog.byId[p.base] || {};
+            const st = Object.assign({ hp: u.hp, attack: u.attack, ma: u.ma, pa: u.pa, range: u.range },
+                p.edits ? { hp: p.edits.hp ?? u.hp, attack: p.edits.attack ?? u.attack,
+                            ma: p.edits.melee ?? u.ma, pa: p.edits.pierce ?? u.pa } : {});
+            const why = p.source === 'card' ? 'As the bonus card made it' : `The game's own ${esc(p.tech || p.name)} upgrade`;
+            return `<div class="uu-card" data-suggest="${i}" title="${why}">
+                ${typeof _previewBtnHtml === 'function' ? _previewBtnHtml(p.appearance ?? p.base, p.name) : ''}
+                <img class="uu-card-icon" src="${unitImage(p.appearance ?? p.base)}" alt="" loading="lazy">
+                <div class="uu-card-name">${esc(p.name)}</div>
+                <div class="tt-pick-stats">${cardStats(st)}</div>
+                <div class="tt-pick-stats">Upgrade ${price(p.upgrade && p.upgrade.cost)}</div>
+            </div>`;
+        }).join('');
+        if (typeof _wirePreviewButtons === 'function') _wirePreviewButtons(sugGrid);
+        sugGrid.querySelectorAll('[data-suggest]').forEach(card => card.addEventListener('click', () => {
+            picked = true;
+            pickerModal.hide();
+            opts.onPick(sug[+card.dataset.suggest].base, sug[+card.dataset.suggest]);
         }));
         search.value = '';
         search.oninput = draw;
@@ -663,7 +713,8 @@
             sub: `The ${fromName} upgrades into it in the ${AGE_NAMES[age - 1]} (you can change the age next). `
                 + `Pick the ${fromName} itself to make a stronger copy of it, like the Imperial Skirmisher.`,
             building: item.building_id, current: from, first: from,
-            onPick: base => addLine(item.building_id, age, base, from),
+            suggested: suggestionsFor(from),
+            onPick: (base, preset) => addLine(item.building_id, age, base, from, null, preset),
         });
     }
 

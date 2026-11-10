@@ -204,6 +204,41 @@ def unit_catalog(dat, dat_path, name_of) -> list[dict]:
     return out
 
 
+def suggested_upgrades(dat, frm: int, catalog: list[dict]) -> list[dict]:
+    """What the "+" under a vanilla unit offers first: the bonus cards' units
+    past it (Royal Battle Elephant after the Elite Battle Elephant), with their
+    stats, upgrade price and look, then the game's own upgrades out of it that
+    only a few civs get (Houfnice, Imperial Camel Rider, Imperial Skirmisher),
+    at their own price.  An upgrade the tree has a node for (Paladin) is left
+    to that node.  [{base, name, edits?, appearance?, upgrade: {cost, time}, source}]"""
+    from civ_appender import CARD_UPGRADE_UNITS, _display_name, _editor_nodes
+    nodes = set(_editor_nodes()["units"])
+    out = [{"base": frm, "name": c["name"], "edits": dict(c["edits"]),
+            "appearance": c.get("appearance"), "upgrade": c["upgrade"], "source": "card"}
+           for c in CARD_UPGRADE_UNITS.values() if c["from"] == frm]
+    rows = {r["id"]: r for r in catalog}
+    res = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+    seen = {frm}
+    for t in dat.techs:
+        loc = next((rl for rl in t.research_locations if rl.location_id >= 0), None)
+        if loc is None or not 0 <= t.effect_id < len(dat.effects):
+            continue
+        for c in dat.effects[t.effect_id].effect_commands:
+            to = int(c.b)
+            if c.type != EC_UPGRADE or int(c.a) != frm or to in seen:
+                continue
+            row = rows.get(to)
+            if row is None or to in nodes:
+                continue
+            seen.add(to)
+            out.append({"base": to, "name": row["name"], "source": "game",
+                        "tech": _display_name(t.language_dll_name, t.name) or t.name,
+                        "upgrade": {"cost": {res[rc.type]: int(rc.amount) for rc in t.resource_costs
+                                             if rc.type in res and rc.amount > 0},
+                                    "time": loc.research_time}})
+    return out
+
+
 def default_role(unit_lines: list[dict], base: int) -> int | None:
     """The LineID of the AI line holding the base unit, or None."""
     return next((int(l["LineID"]) for l in unit_lines
@@ -550,10 +585,11 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             fsid = target[frm].language_dll_name
             fname = (_string_table().get(fsid) or chronicles_strings().get(fsid)
                      or _display_name(fsid, target[frm].name))
-            defaults = (default_names(tiers[0]["name"], len(tiers)) if tiers[0]["name"]
+            # Tier 1 is named for its unit when that isn't the one extended
+            # (Bombard Cannon -> Houfnice, not "Elite Bombard Cannon").
+            first = tiers[0]["name"] or (stem if base != frm else None)
+            defaults = ([first] + extension_names(first, len(tiers) - 1) if first   # "Sergeant" -> "Elite Sergeant"
                         else extension_names(fname, len(tiers)))
-            if tiers[0]["name"] and len(tiers) > 1:        # "Sergeant" -> "Elite Sergeant"
-                defaults = [tiers[0]["name"]] + extension_names(tiers[0]["name"], len(tiers) - 1)
         else:
             defaults = default_names(stem, len(tiers))
         names = [t["name"] or d for t, d in zip(tiers, defaults)]
