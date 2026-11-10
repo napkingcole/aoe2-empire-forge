@@ -757,7 +757,7 @@ def _apply_unit_edits(dat, slot: int, overrides: dict) -> int:
     # difference, so they keep their own (a Barracks gains 300 HP and 1 armour
     # an age: edited to 2000 in the Dark Age, it is 2900 in Imperial).
     for uid, e in sorted(edits.items()):
-        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus", "name", "age")}
+        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus", "name", "age", "skin")}
         if not (0 <= uid < len(units) and units[uid] is not None):
             continue
         node_now = read_unit_stats(units[uid])
@@ -1068,6 +1068,33 @@ def age_move_plan(dat, tid: int) -> dict:
     return {"ok": True, "age": _age_of_req(dat, ages[0]), "needs": [] if k == 1 else others, "why": ""}
 
 
+def _apply_unit_skins(dat, slot: int, overrides: dict, civ_result: dict) -> int:
+    """A unit edit's "skin": another civ's version of the same unit, its art
+    on every form of it (the Athenians' Palintonon on the Trebuchet, packed
+    and unpacked).  Same unit ids, so every tech, card and AI rule that names
+    the unit still does.  The name is the edit's own "name" (the page sets it
+    with the look).  Returns the number of units dressed."""
+    from civ_appender import copy_unit_skin, skin_source_civ, unit_label
+    from civ_schema import norm_unit_edits
+    units, n = dat.civs[slot].units, 0
+    _shown = lambda u: unit_label(dat, slot, u.id)   # noqa: E731
+    for uid, e in sorted((int(k), e) for k, e in norm_unit_edits(overrides.get("unit_edits")).items()):
+        if "skin" not in e or not 0 <= uid < len(units) or units[uid] is None:
+            continue
+        src = skin_source_civ(dat, e["skin"])
+        if src is None:
+            civ_result.setdefault("warnings", []).append(
+                f"{_shown(units[uid])}: no {e['skin']} civ in this game to take its look from — kept its own")
+            continue
+        for f in unit_forms(dat, units, uid):
+            ref = src.units[f] if f < len(src.units) else None
+            if ref is not None:
+                copy_unit_skin(ref, units[f])
+                n += 1
+        print(f"       {_shown(units[uid])}: the {e['skin']}' look")
+    return n
+
+
 def _apply_age_moves(dat, slot: int, overrides: dict, civ_result: dict) -> int:
     """The tree page's "Available from" (an "age" in a unit or tech edit):
     the unit's enabling tech, or the tech itself, an age or more earlier for
@@ -1142,5 +1169,6 @@ def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
     _apply_unit_edits(dat, slot, overrides)
     _apply_tech_edits(dat, slot, overrides, civ_result.setdefault("warnings", []))
     _apply_age_moves(dat, slot, overrides, civ_result)
+    _apply_unit_skins(dat, slot, overrides, civ_result)
     _apply_unit_names(dat, slot, overrides, civ_result, uu_info)
     return civ_result, uu_info

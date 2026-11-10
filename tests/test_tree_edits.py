@@ -316,6 +316,39 @@ if gj is not None:
     check("the F2 tree names the Knight node from its new id",
           knights and knights[0]["Name String ID"] == u3[KNIGHT].language_dll_name, knights[:1])
 
+print("\n=== a look: another civ's version of the unit ===")
+import civ_appender  # noqa: E402
+import civ_schema  # noqa: E402
+from civ_schema import norm_unit_edits  # noqa: E402
+dat4 = load_dat(str(dat_path))
+skins = {s["name"]: s for s in civ_appender.unit_skins(dat4, TREB_PACKED)}
+check("the Trebuchet offers the Chronicles civs' Palintonon",
+      "Palintonon (Packed)" in skins and "Athenians" in skins["Palintonon (Packed)"]["civs"], list(skins))
+check("the Monk offers none (its look is the identity step's)", civ_appender.unit_skins(dat4, MONK) == [])
+check("the normalizer keeps a look; an added tier's edits don't",
+      norm_unit_edits({"331": {"skin": " Athenians\n"}}) == {"331": {"skin": "Athenians"}}
+      and "edits" not in civ_schema.norm_added_lines([{"id": 1, "building": 12, "base": 93,
+          "tiers": [{"age": 2, "edits": {"skin": "Athenians"}}]}])[0]["tiers"][0])
+looked = dict(draft, unit_edits={str(TREB_PACKED): {"name": "Palintonon", "skin": "Athenians"},
+                                 str(KNIGHT): {"skin": "Nobody"}})
+with contextlib.redirect_stdout(io.StringIO()):
+    r4, _ = apply_civ_with_overrides(dat4, _draft_to_civ_def(looked), SLOT, looked)
+    civ_appender._create_bonus_handler(dat4, 457, OTHER, 1, [], [])      # the card, on another civ
+u4, ath = dat4.civs[SLOT].units, civ_appender.skin_source_civ(dat4, "Athenians").units
+art = lambda u: (u.standing_graphic, u.dying_graphic, u.icon_id, u.dead_fish.walking_graphic,   # noqa: E731
+                 u.type_50.attack_graphic)
+check("both forms, packed and unpacked, wear the Athenians' art",
+      art(u4[TREB_PACKED]) == art(ath[TREB_PACKED]) and art(u4[TREB]) == art(ath[TREB]))
+check("the same art card 457 gives",
+      art(u4[TREB]) == art(dat4.civs[OTHER].units[TREB]) and art(u4[TREB_PACKED]) == art(dat4.civs[OTHER].units[TREB_PACKED]))
+texts4 = {e["sid"]: e["name"] for e in r4["bonus_results"]["extra_unit_strings"]}
+check("named with it, both forms", (texts4.get(u4[TREB].language_dll_name), texts4.get(u4[TREB_PACKED].language_dll_name))
+      == ("Palintonon", "Palintonon (Packed)"),
+      (texts4.get(u4[TREB].language_dll_name), texts4.get(u4[TREB_PACKED].language_dll_name)))
+check("stats untouched", u4[TREB].hit_points == ath[TREB].hit_points == before[TREB].hit_points)
+check("a civ the game hasn't got: kept its own look, and says so",
+      art(u4[KNIGHT]) == art(dat4.civs[1].units[KNIGHT]) and any("Nobody" in w for w in r4["warnings"]), r4["warnings"])
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

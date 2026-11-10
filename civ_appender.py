@@ -3415,10 +3415,57 @@ def _editor_sid(dat: DatFile) -> int:
 
 _TRAIN_BUILDING_NAMES = {82: "Castle", 12: "Barracks", 101: "Stable", 87: "Archery Range"}
 
+def copy_unit_skin(ref, dst) -> None:
+    """Dress `dst` in `ref`'s art: _UNIT_SKIN_FIELDS, nothing else."""
+    for field in _UNIT_SKIN_FIELDS:
+        if isinstance(field, tuple):
+            a, b = getattr(dst, field[0], None), getattr(ref, field[0], None)
+            if a is not None and b is not None:
+                setattr(a, field[1], deepcopy(getattr(b, field[1])))
+        else:
+            setattr(dst, field, deepcopy(getattr(ref, field)))
+
+
+def skin_source_civ(dat: DatFile, civ_name: str):
+    """The civ named `civ_name`, as the game shipped it, or None."""
+    return next((c for c in [*_original_civs(dat).values(), *dat.civs] if c.name == civ_name), None)
+
+
+def unit_skins(dat: DatFile, uid: int) -> list[dict]:
+    """Other civs' own versions of one unit slot: same unit, their art and
+    their name — the Athenians' Trebuchet is the Palintonon, the Chronicles
+    civs' Knight the Lancer.  Only versions that differ from the Britons' in
+    both look and name, one per look.  The Monk is left out: its look is the
+    identity step's own choice (CLAUDE.md quirk 12).
+    [{civ (the one the build copies), civ_index, name, icon_id, civs (all with it)}]"""
+    from added_lines import chronicles_strings
+    if uid in _MONK_SKIN_UNITS:
+        return []
+    names, chron = _string_table(), chronicles_strings()
+    shown = lambda u: names.get(u.language_dll_name) or chron.get(u.language_dll_name)   # noqa: E731
+    base = _original_civ(dat, 1).units[uid] if uid < len(_original_civ(dat, 1).units) else None
+    if base is None:
+        return []
+    out: dict = {}                                   # look -> its entry, first civ first
+    for i in range(1, len(dat.civs)):
+        c = _original_civ(dat, i)
+        u = c.units[uid] if uid < len(c.units) else None
+        if u is None or u.standing_graphic == base.standing_graphic:
+            continue
+        nm = shown(u)
+        if not nm or nm == shown(base):
+            continue
+        key = tuple(u.standing_graphic) if isinstance(u.standing_graphic, (list, tuple)) else u.standing_graphic
+        entry = out.setdefault(key, {"civ": c.name, "civ_index": i, "name": nm,
+                                     "icon_id": u.icon_id, "civs": []})
+        entry["civs"].append(c.name)
+    return list(out.values())
+
+
 def _apply_unit_skin(dat: DatFile, civ_index: int, spec: dict,
                      extra_unit_strings: list | None) -> bool:
     # By vanilla name, and as shipped: a replaced slot keeps its vanilla name.
-    src = next((c for c in [*_original_civs(dat).values(), *dat.civs] if c.name == spec["source_civ"]), None)
+    src = skin_source_civ(dat, spec["source_civ"])
     if src is None:
         print(f"       WARNING: {spec['name']}: no {spec['source_civ']} civ in this DAT — skipped")
         return True
@@ -3427,13 +3474,7 @@ def _apply_unit_skin(dat: DatFile, civ_index: int, spec: dict,
         dst, ref = units[uid], src.units[uid]
         if dst is None or ref is None:
             continue
-        for field in _UNIT_SKIN_FIELDS:
-            if isinstance(field, tuple):
-                a, b = getattr(dst, field[0], None), getattr(ref, field[0], None)
-                if a is not None and b is not None:
-                    setattr(a, field[1], deepcopy(getattr(b, field[1])))
-            else:
-                setattr(dst, field, deepcopy(getattr(ref, field)))
+        copy_unit_skin(ref, dst)
     _name_chronicles_units(dat, civ_index, spec, {}, None, extra_unit_strings)
     cmds = []
     for uid, pct in spec.get("attack_bonus", {}).items():

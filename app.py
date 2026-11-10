@@ -2690,7 +2690,11 @@ def api_unit_icon(unit_id: int):
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path:
         return ("", 404)
-    units = _get_dat(dat_path).civs[0].units
+    dat = _get_dat(dat_path)
+    # ?civ=N: that civ's own version of the unit (a Look: the Athenians' Palintonon).
+    civ = request.args.get("civ", type=int)
+    from civ_appender import _original_civ
+    units = (_original_civ(dat, civ) if civ is not None and 0 <= civ < len(dat.civs) else dat.civs[0]).units
     if not 0 <= unit_id < len(units) or units[unit_id] is None:
         return ("", 404)
     icon_id = units[unit_id].icon_id
@@ -3227,7 +3231,7 @@ def api_builder_node_info():
     Read from the Britons, the template every custom civ clones, so they are
     exactly what an edit replaces.  ?kind=unit|building|tech&id=N."""
     import civ_overrides as co
-    from civ_appender import _display_name
+    from civ_appender import _display_name, unit_skins
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path or not Path(dat_path).exists():
         return jsonify({"status": "no_dat"})
@@ -3301,6 +3305,8 @@ def api_builder_node_info():
         "upgrade": upgrade,
         "desc": _unit_desc(dat, nid),
         "age_move": _age_move_info(dat, co.enabling_tech(dat, 1, nid)) if kind == "unit" else None,
+        # Other civs' versions of it, for the Look row (Palintonon for the Trebuchet).
+        "skins": unit_skins(dat, nid) if kind == "unit" else [],
     })
 
 

@@ -211,6 +211,7 @@
     function decorate(item, element_height) {
         known[item.id] = [item, element_height];
         window._ttRelabel?.(item, element_height);
+        lookImage(item);
         const id = `${item.id}_edited`;
         document.getElementById(id)?.remove();
         if (!isEdited(item)) return;
@@ -226,6 +227,24 @@
         // Below the overlay, so clicks still reach the node.
         const overlay = document.getElementById(`${item.id}_overlay`);
         group.insertBefore(dot, overlay);
+    }
+
+    // A unit wearing another civ's look shows that civ's picture on the tree.
+    function lookImage(item) {
+        if (item.added || item.add || kindOf(item) !== 'unit') return;
+        const img = document.getElementById(`${item.id}_img`);
+        if (!img) return;
+        const skin = unitEdit(item.node_id).skin;
+        if (!img.dataset.own) img.dataset.own = img.getAttribute('href') || img.getAttribute('xlink:href') || '';
+        const set = url => { img.setAttribute('href', url); img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', url); };
+        if (!skin) {
+            if ((img.getAttribute('href') || '') !== img.dataset.own) set(img.dataset.own);
+            return;
+        }
+        info('unit', item.node_id).then(inf => {
+            const s = (inf && inf.skins || []).find(x => x.civ === unitEdit(item.node_id).skin);
+            if (s) set(skinIcon(item.node_id, s));
+        });
     }
 
     function redecorate() {
@@ -1191,6 +1210,7 @@
 
         return `
             ${nameRow}
+            ${kind === 'unit' && !addedRef(inf.id) ? lookRow(inf) : ''}
             ${notes.map(n => `<div class="tt-insp-note">${esc(n)}</div>`).join('')}
             <div class="tt-insp-section">Stats <span class="tt-insp-fu-status" id="tt-insp-fu-status">working out upgrades…</span></div>
             <div class="tt-insp-grid">${rows}
@@ -1207,6 +1227,29 @@
             ${inf.upgrade ? upgradeSection(inf.upgrade) : ''}
             ${(Object.keys(e).length || (inf.upgrade && edits.tech_edits[String(inf.upgrade.id)]))
                 ? '<button type="button" class="tt-insp-reset" id="tt-insp-reset">Reset everything on this unit</button>' : ''}`;
+    }
+
+    // Look: another civ's own version of this unit, its art and its name on
+    // the same unit (civ_overrides._apply_unit_skins) — the Palintonon is the
+    // Athenians' Trebuchet.
+    const skinName = s => s.name.replace(/\s*\(.*\)$/, '');
+    const civList = cs => cs.length > 2 ? `${cs[0]} and ${cs.length - 1} more` : cs.join(' and ');
+    function skinIcon(id, s) {
+        return `/api/unit-icon/${id}?civ=${s.civ_index}${datQuery()}`;
+    }
+    function lookRow(inf) {
+        const skins = inf.skins || [];
+        if (!skins.length) return '';
+        const own = unitEdit(inf.id).skin;
+        const chip = (val, img, nm, sub, title) => `<button type="button" class="tt-insp-look${(own || '') === val ? ' selected' : ''}"
+                data-skin="${esc(val)}" title="${esc(title)}">
+                <img src="${esc(img)}" alt="" loading="lazy"><span>${esc(nm)}<small>${esc(sub)}</small></span></button>`;
+        return `<div class="tt-insp-section">Look</div>
+            <div class="tt-insp-looks">
+                ${chip('', `/api/unit-icon/${inf.id}?${datQuery().slice(1)}`, inf.name.replace(/\s*\(.*\)$/, ''), 'its own', '')}
+                ${skins.map(s => chip(s.civ, skinIcon(inf.id, s), skinName(s), civList(s.civs), s.civs.join(', '))).join('')}
+            </div>
+            <div class="tt-insp-note">Another civilization's own version of this unit: its art and name. It stays the same unit, so its upgrades and bonuses still reach it.</div>`;
     }
 
     function lineName(uid) {
@@ -1269,6 +1312,16 @@
         if (kind === 'tech') {
             wireTechCost(body, 'tt-insp-tech', inf);
         } else {
+            body.querySelectorAll('[data-skin]').forEach(b => b.addEventListener('click', () => {
+                const skins = inf.skins || [];
+                const next = skins.find(s => s.civ === b.dataset.skin) || null;
+                // The name follows the look, unless the player named it themselves.
+                const e = unitEdit(inf.id);
+                const auto = !e.name || skins.some(s => skinName(s) === e.name);
+                setUnitField(inf.id, 'skin', next ? next.civ : null);
+                if (auto) setUnitField(inf.id, 'name', next ? skinName(next) : null);
+                rerender();
+            }));
             const nm = body.querySelector('#tt-insp-name');
             nm?.addEventListener('change', () => {
                 const v = nm.value.replace(/\s+/g, ' ').trim().slice(0, 40);

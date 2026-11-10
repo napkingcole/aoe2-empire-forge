@@ -2088,6 +2088,15 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         .tt-unit-picker .tt-pick-suggest { padding: 8px 10px 10px; border-radius: 6px;
             background: rgba(184,134,11,.10); border: 1px solid rgba(184,134,11,.35); }
         .tt-unit-picker .tt-pick-suggest-head { font-weight: 600; font-size: .8rem; margin-bottom: 6px; }
+        .tt-insp-looks { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+        .tt-insp-look { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 3px; cursor: pointer;
+            border: 1px solid rgba(110,75,30,.45); border-radius: 5px; background: rgba(255,250,235,.55);
+            color: #2e1d08; font-size: 12px; font-weight: 600; text-align: left; }
+        .tt-insp-look img { width: 30px; height: 30px; border-radius: 3px; }
+        .tt-insp-look small { display: block; font-weight: 400; opacity: .7; font-size: 10.5px; }
+        .tt-insp-look:hover { background: rgba(255,250,235,.85); }
+        .tt-insp-look.selected { border-color: #7a5424; box-shadow: 0 0 0 2px rgba(184,134,11,.55);
+            background: linear-gradient(#f6e2a8, #e2c27a); }
         .tt-unit-picker .uu-badge-hero { background: #b8860b; color: #fff; }
         .tt-unit-picker .modal-footer .uu-badge { position: static; }
         .tt-unit-picker .modal-body { min-height: 60vh; }

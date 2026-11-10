@@ -441,7 +441,8 @@ def norm_unit_name(raw) -> str:
 
 def norm_unit_edits(raw) -> dict:
     """{"<unit id>": {name, hp, attack, melee, pierce, range, reload, speed, los,
-    train, cost: {food, wood, stone, gold}, bonus: {"<class>": amount}}}."""
+    train, cost: {food, wood, stone, gold}, bonus: {"<class>": amount},
+    age: 1-4, skin: "<civ>"}}."""
     out: dict = {}
     if not isinstance(raw, dict):
         return out
@@ -459,6 +460,10 @@ def norm_unit_edits(raw) -> dict:
         cost = _norm_cost(e.get("cost"))
         if cost is not None:
             clean["cost"] = cost
+        # A look: another civ's version of the same unit (civ_overrides._apply_unit_skins).
+        skin = e.get("skin")
+        if isinstance(skin, str) and (skin := "".join(ch for ch in skin if ch.isprintable()).strip()[:40]):
+            clean["skin"] = skin
         # "Available from": the age it becomes available in (civ_overrides._apply_age_moves).
         if e.get("age") is not None and (a := _num(e["age"], int, 1, 4)) is not None:
             clean["age"] = a
@@ -548,7 +553,7 @@ def norm_added_lines(raw) -> list:
                     or (len(tiers) >= 2 and tiers[-2]["age"] == age):
                 continue
             tier: dict = {"age": age, "name": norm_unit_name(t.get("name"))}
-            edits = norm_unit_edits({"0": dict(t.get("edits") or {}, name=None, age=None)}).get("0")
+            edits = norm_unit_edits({"0": dict(t.get("edits") or {}, name=None, age=None, skin=None)}).get("0")
             if edits:
                 tier["edits"] = edits
             if tiers or frm is not None:                 # a new line's tier 1 has no upgrade
