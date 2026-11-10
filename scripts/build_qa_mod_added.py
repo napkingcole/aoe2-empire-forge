@@ -17,6 +17,10 @@ upgrades have something to ride), built through build_all like any mod.
     Archery   "Imperial Skirmisher" after the Elite Skirmisher, 45 HP.     [round 3]
     Stable    Paladin upgrade gives a Savar copy, named Savar.             [round 3]
     Earlier   Knight in Feudal, Pikeman in Feudal, Gold Mining in Dark.    [round 3]
+    Stable    Battle Elephant line ON; "Royal Battle Elephant" after the Elite,
+              the suggested one: 330 HP, 15 attack, 4 pierce, 1200f/1000g.  [round 5]
+    Siege WS  "Houfnice" after the Bombard Cannon, the game's own price.   [round 5]
+    Castle    Trebuchet wearing the Palintonon look (Athenians), named so. [round 5]
     Cards     Spearmen +25% HP (233) also reaches the Guard line.
 
     venv/bin/python scripts/build_qa_mod_added.py   # writes ignore/qa_added/
@@ -39,6 +43,7 @@ SAVAR, CHU_KO_NU = 1813, 73
 CONQUISTADOR = 13
 HOPLITE, RICHARD = 2110, 160          # Chronicles; a hero (Richard the Lionheart)
 CHAMPION, ELITE_SKIRM, PALADIN, PIKEMAN, GOLD_MINING = 567, 6, 569, 358, 55
+BATTLE_ELEPHANT, ELITE_BATTLE_ELEPHANT, BOMBARD, HOUFNICE, TREB_PACKED = 1132, 1134, 36, 1709, 331
 
 LINES = [
     {"id": 1, "building": 12, "base": SPEARMAN,
@@ -58,7 +63,16 @@ LINES = [
     {"id": 7, "building": 87, "base": ELITE_SKIRM, "from": ELITE_SKIRM,
      "tiers": [{"age": 4, "edits": {"hp": 45}}]},
     {"id": 8, "building": 101, "base": SAVAR, "replaces": PALADIN, "tiers": [{"age": 4}]},
+    # Round 5: suggested upgrades, as the picker fills them in.
+    {"id": 9, "building": 101, "base": ELITE_BATTLE_ELEPHANT, "from": ELITE_BATTLE_ELEPHANT,
+     "tiers": [{"age": 4, "name": "Royal Battle Elephant", "edits": {"hp": 330, "attack": 15, "pierce": 4},
+                "upgrade": {"cost": {"food": 1200, "gold": 1000}, "time": 200}}]},
+    {"id": 10, "building": 49, "base": HOUFNICE, "from": BOMBARD,
+     "tiers": [{"age": 4, "upgrade": {"cost": {"food": 1100, "gold": 800}, "time": 140}}]},
 ]
+
+TREE = tree_from("FRANKS.json")
+TREE["units"] += [BATTLE_ELEPHANT, ELITE_BATTLE_ELEPHANT]
 
 QA = [
     ("britons", civ(
@@ -70,10 +84,12 @@ QA = [
         custom_bonuses=[{"targets": [{"type": "line", "id": 2, "name": "Knight"}],
                          "effects": [{"attr": "hp", "op": "add", "value": 20}]}],
         castle_ut=preset(2, "castle"), imperial_ut=preset(0, "imperial"),
-        tree=tree_from("FRANKS.json"),
+        tree=TREE,
         added_lines=LINES,
         # Round 3: available earlier.
-        unit_edits={str(KNIGHT): {"age": 2}, str(PIKEMAN): {"age": 2}},
+        unit_edits={str(KNIGHT): {"age": 2}, str(PIKEMAN): {"age": 2},
+                    # Round 5: a look.
+                    str(TREB_PACKED): {"name": "Palintonon", "skin": "Athenians"}},
         tech_edits={str(GOLD_MINING): {"age": 1}},
     )),
 ]
