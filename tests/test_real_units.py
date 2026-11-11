@@ -55,6 +55,7 @@ from wizard_build import _draft_to_civ_def  # noqa: E402
 SLOT = 1
 GENITOUR, ELITE_GENITOUR, CONDOTTIERO = 1010, 1012, 882
 MISSIONARY, TURTLE, CARAVEL, FLAMING_CAMEL = 775, 831, 1004, 1263
+IMMORTAL, ELITE_IMMORTAL = 2101, 2102
 units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
 draft = {
     "alias": "Real", "architecture": 2, "language": 0, "bonuses": [], "team_bonuses": [],
@@ -62,7 +63,7 @@ draft = {
     "castle_ut": {"mode": "vanilla", "effects": [{"id": 3, "multiplier": 1}]},
     "imperial_ut": {"mode": "vanilla", "effects": [{"id": 12, "multiplier": 1}]},
     "tree": {"units": units + [GENITOUR, ELITE_GENITOUR, CONDOTTIERO, MISSIONARY, TURTLE, CARAVEL,
-                               FLAMING_CAMEL],
+                               FLAMING_CAMEL, IMMORTAL, ELITE_IMMORTAL],
              "buildings": buildings, "techs": techs},
 }
 dat = load_dat(str(dat_path))
@@ -89,6 +90,36 @@ enables = {int(c.a) for t in owned.values() if 0 <= t.effect_id < len(dat.effect
 for uid, name in ((MISSIONARY, "Missionary"), (TURTLE, "Turtle Ship"), (CARAVEL, "Caravel"),
                   (FLAMING_CAMEL, "Flaming Camel")):
     check(f"{name}: a tech of this civ's own enables it (the card's, copied)", uid in enables)
+
+print("\n=== the picker's list ===")
+import added_lines  # noqa: E402
+at = {b: {r["base"] for r in added_lines.real_units(dat, b, [])} for b in (12, 87, 82, 104, 45)}
+check("each building offers its own (Genitour at the Range, Immortal at the Castle, Missionary at the Monastery)",
+      GENITOUR in at[87] and IMMORTAL in at[82] and MISSIONARY in at[104] and TURTLE in at[45]
+      and 1699 in at[12], at)
+check("replacements are not offered here (Legionary, Savar, Scythian Horse Archer)",
+      not {1793, 1813, 2485} & set().union(*at.values()))
+gen = next(r for r in added_lines.real_units(dat, 87, []) if r["base"] == GENITOUR)
+check("with its Elite and its age", gen["elite"] == ELITE_GENITOUR and gen["age"] == 3, gen)
+
+print("\n=== F2 ===")
+from build_civ import _patch_per_civ_techtree  # noqa: E402
+from dat_reader import find_civtechtrees  # noqa: E402
+src = find_civtechtrees(dat_path)
+if src is None or not (src / "BRITONS.json").exists():
+    print("  skip  no CivTechTrees folder")
+else:
+    with contextlib.redirect_stdout(io.StringIO()):
+        raw = _patch_per_civ_techtree(src / "BRITONS.json", _draft_to_civ_def(draft), dat, SLOT, r)
+    f2 = {n["Node ID"]: n for n in json.loads(raw)["civ_techs_units"]}
+    want = (GENITOUR, ELITE_GENITOUR, CONDOTTIERO, MISSIONARY, TURTLE, CARAVEL, IMMORTAL, ELITE_IMMORTAL)
+    check("every real unit a shipped tree draws gets its node, lit",
+          all(u in f2 and f2[u]["Node Status"] == "ResearchedCompleted" for u in want),
+          {u: (f2.get(u) or {}).get("Node Status") for u in want})
+    check("the Elite hangs off its unit", f2[ELITE_GENITOUR].get("Link ID") == GENITOUR
+          and f2[ELITE_IMMORTAL].get("Link ID") == IMMORTAL)
+    check("a Castle unit comes in as a regional unit, not the civ's unique unit",
+          f2[IMMORTAL]["Node Type"] == "RegionalUnit", f2[IMMORTAL]["Node Type"])
 
 print("\nPASS" if not failures else "\nFAIL", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

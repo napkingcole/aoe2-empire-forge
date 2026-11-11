@@ -239,6 +239,63 @@ def suggested_upgrades(dat, frm: int, catalog: list[dict]) -> list[dict]:
     return out
 
 
+# The game's own units a civ can add from the tree, beyond the layout's nodes:
+# the ones a card used to unlock (regional units locked to their owner civ, the
+# KM catalog's), and the two only a team bonus gave.  Each is [base, elite?].
+# Replacements (Legionary, Savar, Scythian Horse Archer) are not here: they
+# take a line's place rather than adding one.
+_TEAM_BONUS_UNITS = ((1010, 1012), (882,))       # Genitour, Condottiero
+
+
+def real_unit_lines() -> list[tuple[int, ...]]:
+    from civ_appender import KM_UNIT_CARDS, _UNLOCK_UNIT_BONUSES
+    out = [tuple(spec["units"]) for spec in _UNLOCK_UNIT_BONUSES.values() if not spec.get("replaces")
+           and not {1793, 1813} & set(spec["units"])]
+    out += [tuple(ids) for ids in KM_UNIT_CARDS.values()]
+    return out + list(_TEAM_BONUS_UNITS)
+
+
+def _make_avail_age(dat, unit: int) -> int:
+    """The age a unit becomes available in: its make-avail tech's age
+    requirement (101-103 → 2-4), else Dark."""
+    ages = {101: 2, 102: 3, 103: 4}
+    for t in dat.techs:
+        if 0 <= t.effect_id < len(dat.effects) and any(
+                c.type == EC_ENABLE and int(c.a) == unit and int(c.b) != 0
+                for c in dat.effects[t.effect_id].effect_commands):
+            got = [ages[r] for r in t.required_techs if r in ages]
+            if got:
+                return max(got)
+    return 1
+
+
+def real_units(dat, building: int | None, catalog: list[dict]) -> list[dict]:
+    """The "+" at a building offers first the game's own units it can train
+    there that only a card or a team bonus used to give (Missionary at the
+    Monastery, Genitour at the Archery Range): added as themselves, with their
+    own Elite upgrade, not as a copy.  `building` None: every building's, one
+    entry per building a unit trains at (the Temple Guard has two).
+    [{base, elite, units, name, age, building, ...row}]"""
+    from civ_appender import unit_label
+    rows = {r["id"]: r for r in catalog}
+    out = []
+    for ids in real_unit_lines():
+        u = dat.civs[0].units[ids[0]]
+        if u is None or u.creatable is None:
+            continue
+        at = list(dict.fromkeys(tl.unit_id for tl in u.creatable.train_locations if tl.unit_id >= 0))
+        for b in at if building is None else [building] if building in at else []:
+            row = dict(rows.get(ids[0]) or {"id": ids[0], "icon": u.icon_id,
+                                            "name": unit_label(dat, 0, ids[0]).split(" (", 1)[-1][:-1]})
+            row.update(base=ids[0], elite=ids[1] if len(ids) > 1 else None, units=list(ids),
+                       age=_make_avail_age(dat, ids[0]), building=b, source="real",
+                       elite_icon=(dat.civs[0].units[ids[1]].icon_id if len(ids) > 1 else None),
+                       elite_name=((rows.get(ids[1]) or {}).get("name")
+                                   or unit_label(dat, 0, ids[1]).split(" (", 1)[-1][:-1]) if len(ids) > 1 else None)
+            out.append(row)
+    return sorted(out, key=lambda r: (r["building"], r["age"], r["name"]))
+
+
 def default_role(unit_lines: list[dict], base: int) -> int | None:
     """The LineID of the AI line holding the base unit, or None."""
     return next((int(l["LineID"]) for l in unit_lines

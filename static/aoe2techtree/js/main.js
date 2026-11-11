@@ -1066,6 +1066,12 @@ function _disableBuildingItems(building, element_height) {
 function _toggleNode(item, element_height) {
     // An added line is removed from its panel, and a "+" only adds.
     if (item.added || item.add) return;
+    // A real unit a "+" added: off takes it out (its Elite with it), so its
+    // node goes; the "+" brings it back.
+    if (item.real) {
+        if (_isSelected(item)) window._ttSetTreeUnits([], item.real.units);
+        return;
+    }
     // The siege ship is owned by the wizard's picker and the regional second
     // unique units by their bonus cards — neither decision lives in this tree.
     if (_isExternallyControlled(item)) return;
@@ -1358,7 +1364,7 @@ function drawGrid(building, element_height, tree_height, draw, index) {
 // A node's label: the side panel's rename if it has one, else the game's.
 function _nodeName(item) {
     const own = window.ttInspector?.nameOf(item);
-    return formatName(own || data.strings[item.name_string_id] || '?');
+    return formatName(own || data.strings[item.name_string_id] || item.name || '?');
 }
 
 // Redraw a node's label after a rename (or its undo); a no-op when unchanged.
@@ -1463,7 +1469,8 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
             }
         });
     if (_canEdit) window.ttInspector?.decorate(itemToDraw, element_height);
-    if (_canEdit && itemToDraw.use_type === 'Unit' && _ADD_LINE_BUILDINGS.has(itemToDraw.building_id)) {
+    if (_canEdit && itemToDraw.use_type === 'Unit' && _ADD_LINE_BUILDINGS.has(itemToDraw.building_id)
+            && !_REAL_ONLY_BUILDINGS.has(itemToDraw.building_id)) {
         _drawExtendButton(item, itemToDraw, element_height);
     }
 }
@@ -1484,7 +1491,8 @@ window._ttCanExtend = _canExtend;
 // the replacement rides that upgrade.
 function _canReplace(item) {
     return _canEdit && item.use_type === 'Unit' && !item.added && item.node_type === 'UnitUpgrade'
-        && _isSelected(item) && _ADD_LINE_BUILDINGS.has(item.building_id);
+        && _isSelected(item) && _ADD_LINE_BUILDINGS.has(item.building_id)
+        && !_REAL_ONLY_BUILDINGS.has(item.building_id);
 }
 window._ttCanReplace = _canReplace;
 
@@ -1542,7 +1550,75 @@ function _stripCastleUuAndUt(treeData) {
 // ── "+ Add Unit" (added_lines.py) ────────────────────────────────────────────
 // Buildings that can take an added line; the Castle's second unit is the
 // unique-unit step's.
-const _ADD_LINE_BUILDINGS = new Set([12, 87, 101, 49, 45, 104, 109]);
+const _ADD_LINE_BUILDINGS = new Set([12, 87, 101, 49, 45, 104, 109, 82]);
+// At the Castle the "+" adds only the game's own units (Immortal, Strategos...):
+// a copy there would be the unique unit step's business.
+const _REAL_ONLY_BUILDINGS = new Set([82]);
+
+// The game's own units a "+" added (added_lines.real_units): in the tree as
+// their real ids, so they build as themselves, with their own Elite upgrade.
+// No civ layout but their owner's has a node for them, so draw a column: the
+// unit in its age, its Elite under it in the Imperial Age.
+function _applyRealUnits(treeData) {
+    const real = window.ttInspector ? window.ttInspector.realUnits() : [];
+    if (!real.length) return;
+    const have = new Set(treeData.units_techs.filter(i => i.use_type === 'Unit').map(i => i.node_id));
+    for (const b of treeData.buildings) {
+        if (!b.grid || !b.grid.length || (_canEdit && !_isSelected(b))) continue;
+        const mine = real.filter(r => r.building === b.node_id && _localtree.units.includes(r.base)
+                                      && !have.has(r.base));
+        if (!mine.length) continue;
+        const rows = b.grid.length;
+        const rowOf = age => { const r = (age - 1) * 2; return r <= b.row ? b.row + 1 : r; };
+        const cols = [];
+        for (const r of mine) {
+            have.add(r.base);
+            const col = new Array(rows).fill(null);
+            const row = rowOf(r.age);
+            if (row >= rows) continue;
+            const id = `Unit_${r.base}_${b.node_id}`;
+            treeData.units_techs.push({
+                id, node_id: r.base, building_id: b.node_id, use_type: 'Unit', node_type: 'Unit',
+                link_id: null, link_node_type: 'BuildingTech', picture_index: r.icon,
+                name: r.name, name_string_id: -1, help_string_id: -1, age_id: r.age, row,
+                real: { units: r.units, base: r.base },
+            });
+            col[row] = id;
+            if (r.elite != null && _localtree.units.includes(r.elite)) {
+                const er = Math.max(rowOf(4), row + 1);
+                if (er < rows) {
+                    const eid = `Unit_${r.elite}_${b.node_id}`;
+                    treeData.units_techs.push({
+                        id: eid, node_id: r.elite, building_id: b.node_id, use_type: 'Unit',
+                        node_type: 'UnitUpgrade', link_id: r.base, link_node_type: 'Unit',
+                        picture_index: r.elite_icon ?? r.icon, name: r.elite_name || `Elite ${r.name}`,
+                        name_string_id: -1, help_string_id: -1, age_id: 4, row: er,
+                        real: { units: [r.elite], base: r.base },
+                    });
+                    col[er] = eid;
+                }
+            }
+            cols.push(col);
+        }
+        if (!cols.length) continue;
+        let at = 0;
+        for (let c = 0; c < b.grid[0].length; c++) {
+            if (b.grid.some(rw => rw[c] && String(rw[c]).startsWith('Unit_'))) at = c + 1;
+        }
+        for (let r = 0; r < rows; r++) b.grid[r].splice(at, 0, ...cols.map(c => c[r]));
+    }
+}
+
+// Add or take out the game's own units a "+" offered.
+window._ttSetTreeUnits = function (add, remove) {
+    for (const id of remove || []) {
+        const i = _localtree.units.indexOf(id);
+        if (i >= 0) _localtree.units.splice(i, 1);
+    }
+    for (const id of add || []) if (!_localtree.units.includes(id)) _localtree.units.push(id);
+    _treeChanged();
+    window._ttRelayout?.();
+};
 
 // Draw the draft's added lines as columns after a building's units, and, while
 // editing, one more column of "+" boxes, one per age the building has.
@@ -1722,6 +1798,7 @@ function civ(civName) {
         _applyBuildingVariantLayout(treeData);
         _applySiegeShipLayout(treeData);
         _applyAgeMoves(treeData);
+        _applyRealUnits(treeData);
         _applyAddedLines(treeData);
         const root = document.getElementById('root');
         if (root) document.getElementById('techtree').removeChild(root);

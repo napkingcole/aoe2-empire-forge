@@ -3167,6 +3167,14 @@ def api_builder_unit_catalog():
         except ValueError:
             return jsonify({"status": "error", "units": []}), 400
         return jsonify({"status": "ok", "suggested": added_lines.suggested_upgrades(dat, frm, rows)})
+    real_for = request.args.get("real_for")
+    if real_for not in (None, ""):
+        # The "+" at a building: the game's own units it can add as themselves.
+        try:
+            bld = None if real_for == "all" else int(real_for)
+        except ValueError:
+            return jsonify({"status": "error", "units": []}), 400
+        return jsonify({"status": "ok", "real": added_lines.real_units(dat, bld, rows)})
     look_for = request.args.get("look_for")
     if look_for not in (None, ""):
         try:

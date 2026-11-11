@@ -407,6 +407,30 @@
     }
 
     const suggestCache = {};
+    // The game's own units a "+" can add as themselves (added_lines.real_units),
+    // every building's, loaded once; the tree redraws when they arrive.
+    let realList = null, realLoading = null;
+    function realUnits() {
+        if (realList) return realList;
+        if (!realLoading) {
+            realLoading = fetch(`/api/builder/unit-catalog?real_for=all${datQuery()}`)
+                .then(r => r.json()).then(r => {
+                    realList = r.real || [];
+                    if (realList.length) window._ttRelayout?.();
+                    return realList;
+                }).catch(() => (realList = []));
+        }
+        return [];
+    }
+    async function realFor(building) {
+        realUnits();
+        const all = realList || await realLoading;
+        return (all || []).filter(r => r.building === building);
+    }
+    function addReal(r) {
+        window._ttSetTreeUnits?.(r.units, []);
+    }
+
     function suggestionsFor(from) {
         if (!suggestCache[from]) {
             suggestCache[from] = fetch(`/api/builder/unit-catalog?suggest_for=${from}${datQuery()}`)
@@ -638,7 +662,10 @@
         }
         // The Dock trains ships only, and no other building trains them.
         const naval = opts.building === 45;
-        const units = (pool || catalog.units).filter(u => opts.pool || u.naval === naval);
+        const units = opts.realOnly ? [] : (pool || catalog.units).filter(u => opts.pool || u.naval === naval);
+        groupsEl.hidden = grid.hidden = !!opts.realOnly;
+        search.hidden = kindSel.hidden = !!opts.realOnly;
+        el.querySelector('#tt-pick-count').hidden = !!opts.realOnly;
         const here = opts.building != null ? units.filter(u => (u.at || []).includes(opts.building)) : [];
         const groups = GROUPS.filter(([g]) => g === 'all' || (g === 'here' ? here.length
             : units.some(u => u.group === g)));
@@ -677,8 +704,9 @@
                 picked = true;
                 pickerModal.hide();
                 const id = card.dataset.pick === '' ? null : +card.dataset.pick;
-                // The game's own upgrade into this unit brings its price, picked here or above.
-                opts.onPick(id, sug.find(p => p.source === 'game' && p.base === id));
+                // The game's own upgrade into this unit brings its price, picked here or
+                // above; a unit the game has as its own line is added as itself.
+                opts.onPick(id, sug.find(p => (p.source === 'game' || p.source === 'real') && p.base === id));
             }));
         };
         groupsEl.querySelectorAll('[data-group]').forEach(b => b.addEventListener('click', () => {
@@ -688,6 +716,7 @@
         const sugEl = el.querySelector('#tt-pick-suggest');
         const sug = opts.suggested ? await opts.suggested : [];
         sugEl.hidden = !sug.length;
+        sugEl.querySelector('.tt-pick-suggest-head').textContent = opts.suggestTitle || 'Suggested';
         const sugGrid = el.querySelector('#tt-pick-suggest-grid');
         const price = c => Object.entries(c || {}).map(([r, a]) => `${a}${r[0]}`).join(' ');
         sugGrid.innerHTML = sug.map((p, i) => {
@@ -695,13 +724,17 @@
             const st = Object.assign({ hp: u.hp, attack: u.attack, ma: u.ma, pa: u.pa, range: u.range },
                 p.edits ? { hp: p.edits.hp ?? u.hp, attack: p.edits.attack ?? u.attack,
                             ma: p.edits.melee ?? u.ma, pa: p.edits.pierce ?? u.pa } : {});
-            const why = p.source === 'card' ? 'As the bonus card made it' : `The game's own ${esc(p.tech || p.name)} upgrade`;
+            const why = p.source === 'card' ? 'As the bonus card made it'
+                : p.source === 'real' ? `The game's own ${esc(p.name)}${p.elite != null ? ', with its Elite upgrade' : ''}`
+                : `The game's own ${esc(p.tech || p.name)} upgrade`;
             return `<div class="uu-card" data-suggest="${i}" title="${why}">
                 ${typeof _previewBtnHtml === 'function' ? _previewBtnHtml(p.appearance ?? p.base, p.name) : ''}
                 <img class="uu-card-icon" src="${unitImage(p.appearance ?? p.base)}" alt="" loading="lazy">
                 <div class="uu-card-name">${esc(p.name)}</div>
                 <div class="tt-pick-stats">${cardStats(st)}</div>
-                <div class="tt-pick-stats">Upgrade ${price(p.upgrade && p.upgrade.cost)}</div>
+                <div class="tt-pick-stats">${p.source === 'real'
+                    ? `${AGE_NAMES[(p.age || 1) - 1]}${p.elite != null ? ' · Elite' : ''}`
+                    : `Upgrade ${price(p.upgrade && p.upgrade.cost)}`}</div>
             </div>`;
         }).join('');
         if (typeof _wirePreviewButtons === 'function') _wirePreviewButtons(sugGrid);
@@ -765,15 +798,28 @@
             </div></div>
             <div class="tt-insp-note">${line
                 ? 'Every tier is a copy of this unit; your edits stay.'
-                : 'Pick the unit to copy. It becomes a new line in this building, starting in this age; you can add later tiers, rename it and change its stats next.'}</div>
+                : typeof _REAL_ONLY_BUILDINGS !== 'undefined' && _REAL_ONLY_BUILDINGS.has(ctx.building)
+                ? 'Pick one of the game\'s own units. It joins the Castle as itself, with its Elite upgrade.'
+                : 'Pick a unit. A regional one joins as the game\'s own; any other becomes a new line, copied, starting in this age, that you can add tiers to, rename and change.'}</div>
             <button type="button" class="tt-insp-reset" id="tt-pick-open">Choose a unit…</button>`;
+        const realOnly = typeof _REAL_ONLY_BUILDINGS !== 'undefined' && _REAL_ONLY_BUILDINGS.has(ctx.building);
         const open = () => openUnitPicker({
             title: line ? 'Change the base unit' : `Add a unit to the ${ctx.buildingName || 'building'}`,
             sub: line ? 'Every tier is a copy of this unit; your edits stay.'
-                : `Starting in the ${AGE_NAMES[ctx.age - 1]}. Any unit fights the way it does in the game; heroes train like any unit here, without hero rules.`,
+                : realOnly ? 'The game\'s own units, each with its Elite upgrade. Your unique unit is chosen on its own step.'
+                : `Starting in the ${AGE_NAMES[ctx.age - 1]}. The units above are added as the game's own, with their Elite upgrade; any other is a copy you can change. Heroes train like any unit here, without hero rules.`,
             building: ctx.building, current: line ? line.base : null,
+            suggested: line ? null : realFor(ctx.building).then(rs => rs.filter(r => !_localtree.units.includes(r.base))),
+            suggestTitle: 'Regional units here',
+            realOnly: !line && realOnly,
             onCancel: line ? back : null,
-            onPick: base => {
+            onPick: (base, preset) => {
+                if (!line && preset && preset.source === 'real') {
+                    addReal(preset);
+                    current = null;
+                    mount(panel);
+                    return;
+                }
                 if (line) {
                     line.base = base;
                     // A look must fit the new base's kind and size; the build drops one that doesn't.
@@ -1459,6 +1505,7 @@
             else { current = null; mount(panel); }
         },
         addedLines: () => edits.added_lines,
+        realUnits,
         addedTip,
         extend,
         canAddTier,

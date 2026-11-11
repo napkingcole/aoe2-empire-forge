@@ -681,6 +681,36 @@ def _inject_regional_unit_nodes(data: dict, tree_units: set,
             injected += len(nodes)
             break  # found in preferred source; stop trying fallbacks
 
+    # The game's own units a tree "+" adds (added_lines.real_unit_lines: the
+    # regional units cards used to unlock, the Genitour, the Chronicles Castle
+    # units...): their node is copied from whichever shipped tree has one —
+    # the owner civ's, where the unit is a UniqueUnit or RegionalUnit.  Taken
+    # in as a RegionalUnit, so no later pass mistakes it for the civ's own
+    # unique unit.  A unit no shipped tree draws gets no node.
+    from added_lines import real_unit_lines
+    wanted = [u for ids in real_unit_lines() for u in ids if u in tree_units and u not in existing_ids]
+    if wanted:
+        def _unit_nodes(src: dict, uid: int) -> list[dict]:
+            return [dict(n) for key in ("civ_techs_units",) for n in src.get(key, [])
+                    if n.get("Node ID") == uid and n.get("Use Type") == "Unit"]
+        files = sorted(p.name for p in civ_json_dir.glob("*.json"))
+        for uid in wanted:
+            for fname in files:
+                src = _load_src(fname)
+                nodes = _unit_nodes(src, uid) if src else []
+                if not nodes:
+                    continue
+                for node in nodes:
+                    node["Node Status"] = STATUS_OK
+                    if node.get("Node Type") == "UniqueUnit":
+                        node["Node Type"] = "RegionalUnit"
+                    if node.get("Link Node Type") == "UniqueUnit":
+                        node["Link Node Type"] = "RegionalUnit"
+                data.setdefault("civ_techs_units", []).extend(nodes[:1])
+                existing_ids.add(uid)
+                injected += 1
+                break
+
     return injected
 
 
