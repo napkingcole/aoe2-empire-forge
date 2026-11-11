@@ -60,6 +60,7 @@ const harness = `
 ${regBlock}
 const _REGIONAL_BUILDING_IDS = new Set(${JSON.stringify(swapIds)});
 let _unlockBonusUnits = UNLOCK_FROM_TEST;
+let _cardOnlyUnits = new Set(Object.values(_unlockBonusUnits).flat().map(Number));
 ${lift('_CIV_UNIQUE_BUILDING_IDS', 'const')}
 ${lift('_filterFullTree', 'function')}
 module.exports = { _filterFullTree, _CIV_UNIQUE_BUILDING_IDS };

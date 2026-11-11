@@ -79,20 +79,9 @@ if ((draft._draftVer || 0) < 4) {
   draft._draftVer = 4;
   saveDraft();
 }
-// Card 51 (Longboats) retired into the tree: since Viking Sagas the Longship is
-// a regional Dock line, not a unique ship.  A draft that picked the card gets
-// the Longship line ticked instead, and no Demolition line, which is what the
-// card built.  Idempotent rather than version-gated, so it is safe for saved
-// files that come in through Edit Civ.  civ_appender derives the same thing at
-// build time for files that never pass through here.
-if ((draft.bonuses || []).some(b => Number(b.id ?? b[0]) === 51)) {
-  draft.bonuses = draft.bonuses.filter(b => Number(b.id ?? b[0]) !== 51);
-  draft.tree = draft.tree || { units: [], buildings: [], techs: [] };
-  const units = new Set((draft.tree.units || []).filter(id => ![1104, 527, 528].includes(id)));
-  units.add(250); units.add(533);
-  draft.tree.units = [...units];
-  saveDraft();
-}
+// Cards retired into the tree, the hero panel or a Look (card 51 Longboats,
+// the unit unlocks, the hero cards, ...) are converted by _retireCards in
+// init(), by the server's retired_cards — the same code every build runs.
 let currentStep = 1;
 let maxStep     = 1;  // highest step ever reached — gates nav dot clicks
 
@@ -2731,6 +2720,29 @@ function wireCustomBonusPicker() {
 // there is no independent state to reconcile.  The map is served by
 // /api/builder/meta so it can't drift from civ_appender._UNLOCK_UNIT_BONUSES.
 let _unlockBonusUnits = {};   // {bonusId: [unitId, ...]}
+let _retiredCardIds   = new Set();  // retired_cards.RETIRED
+let _cardOnlyUnits    = new Set();  // every unlock card's units, retired or not
+
+// A draft carrying a retired unit card (saved before, Edit Civ, a KM import)
+// gets it moved to its home: the unit into the tree, a hero card into the hero
+// panel, the Palintonon to a Look.  One server call, so the wizard and the
+// build convert the same way.
+async function _retireCards() {
+  if (!(draft.bonuses || []).some(b => _retiredCardIds.has(Number(b.id ?? b[0])))) return;
+  try {
+    const res = await fetch('/api/builder/retire-cards', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ draft, dat_path: draft.dat_path || null }),
+    });
+    const out = await res.json();
+    if (!res.ok || !out.draft) return;
+    Object.assign(draft, out.draft);
+    (out.notes || []).forEach(n => console.info('[EF] ' + n));
+    saveDraft();
+  } catch (e) {
+    console.warn('Could not convert retired cards:', e);
+  }
+}
 let _unlockReplaces   = {};   // {bonusId: [unitId, ...]} units the card's unit replaces
 
 function _isUnlockBonus(id) {
@@ -4649,9 +4661,7 @@ function _filterFullTree(data, everything = false) {
   // handful of Unlock cards on a brand-new civ.  Sourced from
   // /api/builder/meta, which mirrors civ_appender._UNLOCK_UNIT_BONUSES, so this
   // list cannot drift from the backend's.
-  const unlockUnits = new Set(
-    Object.values(_unlockBonusUnits || {}).flat().map(Number)
-  );
+  const unlockUnits = _cardOnlyUnits;
 
   return {
     units:     (data.units     || []).filter(id => (everything || !regUnits.has(id)) && !unlockUnits.has(id)),
@@ -4784,11 +4794,17 @@ async function init() {
     window._metaMonks         = meta.monk_skins      || [];
     window._metaMonasteries   = meta.monastery_skins || [];
     window._artVersion        = meta.art_version     || "";
-    _unlockBonusUnits         = meta.unlock_bonuses  || {};
+    // Retired unit cards are not mirrored from the tree any more: the tree is
+    // their home.  _cardOnlyUnits still keeps their units out of a new civ's seed.
+    _retiredCardIds           = new Set((meta.retired_cards || []).map(Number));
+    _cardOnlyUnits            = new Set(Object.values(meta.unlock_bonuses || {}).flat().map(Number));
+    _unlockBonusUnits         = Object.fromEntries(Object.entries(meta.unlock_bonuses || {})
+                                  .filter(([k]) => !_retiredCardIds.has(Number(k))));
     _unlockReplaces           = meta.unlock_replaces || {};
     // A draft with no tree yet (new civ, or one saved before this defaulted to
     // full) gets the wide-open tree before anything reads draft.tree.
     await _seedFullTreeIfEmpty();
+    await _retireCards();
 
     // Reconcile drafts saved before the unlock bonuses existed (or edited in
     // another tab) so the bonus list matches the tree from the first render.

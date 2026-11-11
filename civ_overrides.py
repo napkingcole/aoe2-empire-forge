@@ -1159,7 +1159,16 @@ def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
     the stats preview (fu_stats) sees exactly the DAT a build writes."""
     from civ_appender import apply_civ
     from build_civ import _resolve_uu_info
+    from retired_cards import retire_cards
+    # Retired unit cards move to their home in the tree, hero panel or a Look
+    # before anything reads the civ, so a saved file or KM import keeps what it
+    # had.  In place: the routes read the civ again after this (the hero's
+    # strings come from its hero_unit).
     overrides = civ_def if overrides is None else overrides
+    for n in retire_cards(civ_def, dat):
+        print(f"       {n}")
+    if overrides is not civ_def:
+        retire_cards(overrides, dat)
     civ_result = apply_civ(dat, civ_def, target_slot=slot)
     uu_info = _resolve_uu_info(civ_def, dat, slot, civ_result)
     _override_ut_costs(dat, civ_result, overrides)

@@ -1527,6 +1527,9 @@ def api_builder_meta():
         "art_version": _PREVIEW_VERSION,
         "unlock_bonuses": unlock_bonuses,
         "unlock_replaces": unlock_replaces,
+        # Cards retired into the tree, the hero panel or a Look (retired_cards):
+        # the wizard no longer mirrors these into the bonus list.
+        "retired_cards": sorted(__import__("retired_cards").RETIRED),
         # Display names for the identity scene ("Hagia Sophia" rather than
         # "Byzantines").  Written by scripts/import_km_art.py; absent until that
         # has been run, so the wizard falls back to civ names.
@@ -1929,6 +1932,10 @@ def api_builder_bonuses_catalog():
     # Deprecated bonuses still build for civs that reference them; they are just
     # not offered for new picks. See bonus_names.DEPRECATED_BONUSES.
     hidden_ids = unsupported_ids | set(DEPRECATED_BONUSES)
+    # Unit cards retired into the tech tree, the hero panel or a Look: a civ
+    # that carries one is converted on load (/api/builder/retire-cards).
+    from retired_cards import HERO_CARDS, RETIRED as RETIRED_UNIT_CARDS
+    hidden_ids |= RETIRED_UNIT_CARDS
 
     # ...and, as for unique techs and unique units, a bonus the PLAYER's OWN DAT
     # cannot implement.  A card is built by cloning its techs' effect commands,
@@ -1999,6 +2006,8 @@ def api_builder_bonuses_catalog():
         cards = json.load(f)
 
     def _successor(k: str) -> str | None:
+        if int(k) in RETIRED_UNIT_CARDS:
+            return "the hero panel" if int(k) in HERO_CARDS else "the tech tree"
         if (sup := DEPRECATED_BONUSES.get(int(k))) is not None:
             return names.get(str(sup))
         note = (cards.get(k) or {}).get("_note", "")
@@ -3124,6 +3133,22 @@ def api_builder_add_unit_options():
 
 
 _UNIT_CATALOG_CACHE: dict[str, list] = {}
+
+
+@app.route("/api/builder/retire-cards", methods=["POST"])
+def api_builder_retire_cards():
+    """Move a draft's retired unit cards to their homes (retired_cards): the
+    wizard calls this when it loads a draft that carries one.  Returns the
+    draft, converted, and one note per card moved."""
+    from retired_cards import retire_cards
+    body = request.get_json(silent=True) or {}
+    draft = body.get("draft")
+    if not isinstance(draft, dict):
+        return jsonify({"error": "no draft"}), 400
+    dat_path = _resolve_dat_path(body.get("dat_path"))
+    dat = _get_dat(dat_path) if dat_path and Path(dat_path).exists() else None
+    notes = retire_cards(draft, dat)
+    return jsonify({"draft": draft, "notes": notes})
 
 
 @app.route("/api/builder/unit-catalog")

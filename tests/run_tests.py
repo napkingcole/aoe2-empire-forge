@@ -127,6 +127,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("tree panel upgrade filter",       "test_tree_steps_filter.py",    "build"),
     ("+ Add Unit lines",                "test_added_lines.py",          "build"),
     ("Real units in the tree",          "test_real_units.py",           "build"),
+    ("Retired unit cards",              "test_retired_cards.py",        "build"),
     ("blank-civ seed (python)",         "test_full_seed.py",            "build"),
     ("Longship in the tree",            "test_longship_tree.py",        "build"),
     ("AI unique unit lines",            "test_unit_lines.py",           "build"),

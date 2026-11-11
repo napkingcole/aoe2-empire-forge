@@ -179,6 +179,9 @@ const _BONUS_CONTROLLED_UNITS = new Set([
     1813,         // Savar
 ]);
 const _BONUS_HINT = 'Also adds the matching "Unlock ..." civ bonus on the Bonuses step.';
+// Of those, the ones still mirrored by a card: the replacements.  The others'
+// cards are retired into the tree (retired_cards.py), so the tree is their home.
+const _STILL_CARD_UNITS = new Set([1793, 1813]);
 
 // True for a unit this editor shows but does not own the on/off decision for.
 // Only the picker's siege ships qualify — the bonus-mirrored units are owned
@@ -1203,7 +1206,7 @@ function _variantHint(item) {
     if (item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) {
         return _PICKER_HINT;
     }
-    if (item.use_type === 'Unit' && _BONUS_CONTROLLED_UNITS.has(item.node_id)) {
+    if (item.use_type === 'Unit' && _STILL_CARD_UNITS.has(item.node_id)) {
         return _BONUS_HINT;
     }
     if (item.use_type !== 'Building') return '';

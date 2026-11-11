@@ -54,6 +54,8 @@ ALLOWED = {
     "_draft_to_civ_def",            # wizard_build.py  draft  -> KM civ_def
     "to_draft",                     # civ_schema.py    schema -> draft
     "from_draft",                   # civ_schema.py    draft  -> schema
+    "_card_list", "_tree_units",    # retired_cards.py: rewrite the civ IN PLACE in
+                                    # either shape; the accessors return copies
     "_km_to_draft",                 # app.py           KM     -> draft
     "_attack_bonuses",              # civ_summary.py  the UU catalog's stats, not a civ_def
     "hero_catalog",                 # heroes.py       a hero's attack-bonus stats, not a civ_def
