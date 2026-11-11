@@ -226,8 +226,8 @@ check("which upgrades the vanilla unit into the new tier, and no tech makes it a
 check("a unit that still upgrades further isn't extended, and says why",
       any("Added line 5" in w and "isn't the end of its line" in w for w in r["warnings"]), r["warnings"])
 ht = dat.techs[hcx["techs"][0]]
-check("a line's first unit (Hand Cannoneer): after the age alone, never in the top row",
-      hcx["names"] == ["Elite Hand Cannoneer"] and ht.required_tech_count == 1 and list(ht.required_techs)[0] == 103
+check("a line's first unit (Hand Cannoneer): after the age and the tech that unlocks it (85), never in the top row",
+      hcx["names"] == ["Elite Hand Cannoneer"] and ht.required_tech_count == 2 and list(ht.required_techs)[:2] == [103, 85]
       and (hcx["upgrade_button"] - 1) % 20 >= 5 and U[hcx["units"][0]].hit_points == 60,
       (hcx["names"], list(ht.required_techs), hcx["upgrade_button"]))
 xn = [nd for nd in _added_line_nodes(dat, SLOT, [ext, hcx])]
@@ -240,6 +240,9 @@ check("the AI's line is the vanilla unit's", ext["role"] == added_lines.default_
 
 check("extended into another unit, a tier is named for that unit (Houfnice, not Elite Bombard Cannon)",
       houf["names"] == ["Houfnice", "Elite Houfnice"], houf["names"])
+hft = dat.techs[houf["techs"][0]]
+check("...and its upgrade waits for the Bombard Cannon (188), as the game's own Houfnice does",
+      list(hft.required_techs)[:2] == [103, 188] and hft.required_tech_count == 2, list(hft.required_techs))
 
 print("\n=== two tiers in one age ===")
 _, t2, t3 = (dat.techs[x] for x in two["techs"])

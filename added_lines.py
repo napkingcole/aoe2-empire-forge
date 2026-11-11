@@ -317,6 +317,17 @@ def _producer(dat, civ_index: int, unit: int, building: int) -> int | None:
     return min(found)[2] if found else None
 
 
+def _unlocker(dat, civ_index: int, unit: int) -> int | None:
+    """The tech that makes `unit` available (Bombard Cannon 188), for a unit
+    no tech upgrades into.  The game's own Houfnice (787) requires it, so an
+    extension can't be researched before the unit exists."""
+    found = [(t.civ != civ_index, tid) for tid, t in enumerate(dat.techs)
+             if t.civ in (-1, civ_index) and 0 <= t.effect_id < len(dat.effects)
+             and any(c.type == EC_ENABLE and int(c.a) == unit and int(c.b) == 1
+                     for c in dat.effects[t.effect_id].effect_commands)]
+    return min(found)[1] if found else None
+
+
 def _later_upgrade(dat, civ_index: int, civ_def: dict, unit: int) -> int | None:
     """A tech this civ can still research that upgrades `unit` onward
     (Halberdier while extending the Pikeman): the line doesn't end there."""
@@ -706,7 +717,9 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
                               lang_tech_tree=sid + 150000, hot_key_id=hk_up)
             # After the age and the step before: our previous upgrade, or for an
             # extension's first, the vanilla upgrade into the unit (if it has one).
-            before = techs[-1] if techs else producer
+            # A unit nothing upgrades into waits for the tech that unlocks it.
+            before = techs[-1] if techs else producer if producer is not None else (
+                _unlocker(dat, civ_index, frm) if frm is not None else None)
             tech.required_techs = (AGE_TECHS[age], before if before is not None else -1, -1, -1, -1, -1)
             tech.required_tech_count = 2 if before is not None else 1
             tech.resource_costs = _costs(cost)
