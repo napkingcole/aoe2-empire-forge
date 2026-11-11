@@ -1232,8 +1232,9 @@ function _artQuery() {
 // How a unit looks in the game, rendered by the server from the player's own
 // sprites (game_sprites.py): a still on hover, and Idle / Walk / Attack in a
 // window from each card's play button.
-function _previewSrc(unitId, kind = "still") {
-  return `/api/unit-preview/${unitId}/${kind}${_artQuery()}`;
+// civ: that civ's own version of the unit (a Look: the Athenians' Palintonon).
+function _previewSrc(unitId, kind = "still", civ = null) {
+  return `/api/unit-preview/${unitId}/${kind}${_artQuery()}${civ != null ? `&civ=${civ}` : ""}`;
 }
 
 function _previewImgHtml(unitId) {
@@ -1241,9 +1242,10 @@ function _previewImgHtml(unitId) {
   return `<div class="pop-preview"><img src="${_previewSrc(unitId)}" alt="" onerror="this.parentNode.remove()"></div>`;
 }
 
-function _previewBtnHtml(unitId, name) {
+function _previewBtnHtml(unitId, name, civ = null) {
   if (unitId == null) return "";
   return `<button type="button" class="unit-preview-btn" data-preview-unit="${unitId}" data-preview-name="${_esc(name)}"
+            ${civ != null ? `data-preview-civ="${civ}"` : ""}
             title="See it in the game" aria-label="Preview ${_esc(name)}"><i class="fa-solid fa-play"></i></button>`;
 }
 
@@ -1251,7 +1253,8 @@ function _wirePreviewButtons(container) {
   container.querySelectorAll(".unit-preview-btn").forEach(btn => {
     btn.addEventListener("click", e => {
       e.stopPropagation();                 // the card's own click selects it
-      openUnitPreview(parseInt(btn.dataset.previewUnit, 10), btn.dataset.previewName);
+      openUnitPreview(parseInt(btn.dataset.previewUnit, 10), btn.dataset.previewName,
+                      btn.dataset.previewCiv != null ? parseInt(btn.dataset.previewCiv, 10) : null);
     });
   });
 }
@@ -1293,7 +1296,7 @@ function _startGround(stage, img, meta) {
   _groundRaf = requestAnimationFrame(step);
 }
 
-function openUnitPreview(unitId, name) {
+function openUnitPreview(unitId, name, civ = null) {
   const el = document.getElementById("modal-unit-preview");
   if (!el) return;
   _previewModal = _previewModal || new bootstrap.Modal(el);
@@ -1320,7 +1323,7 @@ function openUnitPreview(unitId, name) {
       if (kind === "walk") meta.then(m => _startGround(stage, img, m));
     };
     img.onerror = () => { status.textContent = "This animation isn't in your game files."; };
-    img.src = _previewSrc(unitId, kind);
+    img.src = _previewSrc(unitId, kind, civ);
   };
   el.querySelectorAll("[data-preview-kind]").forEach(b => { b.onclick = () => show(b.dataset.previewKind); });
   show("idle");

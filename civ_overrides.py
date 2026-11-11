@@ -757,7 +757,7 @@ def _apply_unit_edits(dat, slot: int, overrides: dict) -> int:
     # difference, so they keep their own (a Barracks gains 300 HP and 1 armour
     # an age: edited to 2000 in the Dark Age, it is 2900 in Imperial).
     for uid, e in sorted(edits.items()):
-        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus", "name", "age", "skin")}
+        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus", "name", "age", "skin", "appearance")}
         if not (0 <= uid < len(units) and units[uid] is not None):
             continue
         node_now = read_unit_stats(units[uid])
@@ -1074,12 +1074,27 @@ def _apply_unit_skins(dat, slot: int, overrides: dict, civ_result: dict) -> int:
     and unpacked).  Same unit ids, so every tech, card and AI rule that names
     the unit still does.  The name is the edit's own "name" (the page sets it
     with the look).  Returns the number of units dressed."""
-    from civ_appender import copy_unit_skin, skin_source_civ, unit_label
+    from civ_appender import appearance_ok, copy_unit_look, copy_unit_skin, skin_source_civ, unit_label
     from civ_schema import norm_unit_edits
     units, n = dat.civs[slot].units, 0
     _shown = lambda u: unit_label(dat, slot, u.id)   # noqa: E731
     for uid, e in sorted((int(k), e) for k, e in norm_unit_edits(overrides.get("unit_edits")).items()):
-        if "skin" not in e or not 0 <= uid < len(units) or units[uid] is None:
+        if not 0 <= uid < len(units) or units[uid] is None:
+            continue
+        if "appearance" in e and "skin" not in e:
+            # Another unit's look (the Crusader Knight on the Knight), as an
+            # added line wears one: same kind and size, or it doesn't fit.
+            look = e["appearance"]
+            src = dat.civs[0].units[look] if look < len(dat.civs[0].units) else None
+            if src is not None and appearance_ok(src, units[uid]):
+                copy_unit_look(src, units[uid])
+                n += 1
+                print(f"       {_shown(units[uid])}: {unit_label(dat, 0, look)}'s look")
+            else:
+                civ_result.setdefault("warnings", []).append(
+                    f"{_shown(units[uid])}: unit {look}'s look doesn't fit (not the same kind and size) — kept its own")
+            continue
+        if "skin" not in e:
             continue
         src = skin_source_civ(dat, e["skin"])
         if src is None:

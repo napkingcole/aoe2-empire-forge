@@ -86,6 +86,10 @@ def game_unit_lines(dat_path=None) -> list[dict]:
 
 NAVAL_CLASSES = (2, 20, 21, 22)      # trade cog, transport, fishing ship, warship
 _CIVILIAN, _ANIMAL = 4, 10
+# Class 61: horses, camels and alpacas, and the scenario Repairers, villagers
+# that can fight in the DAT, which the picker offered as scenario units (the
+# user, 2026-11-11).
+_LIVESTOCK = 61
 CATALOG_GROUPS = ("standard", "regional", "unique", "chronicles", "scenario", "hero")
 
 
@@ -152,7 +156,7 @@ def is_military(unit) -> bool:
     """A unit that fights (or converts and heals): what "+ Add Unit" offers."""
     from heroes import can_fight
     return bool(unit is not None and unit.type == 70 and unit.creatable is not None
-                and unit.hit_points > 0 and unit.class_ not in (_CIVILIAN, _ANIMAL)
+                and unit.hit_points > 0 and unit.class_ not in (_CIVILIAN, _ANIMAL, _LIVESTOCK)
                 and can_fight(unit))
 
 

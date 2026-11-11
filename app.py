@@ -2731,20 +2731,23 @@ _PREVIEW_VERSION = "v4"        # bump when game_sprites' output changes;
 _PREVIEWS_WARMED: set[str] = set()
 
 
-def _preview_path(dat_path: str, unit_id: int, kind: str) -> Path:
+def _preview_path(dat_path: str, unit_id: int, kind: str, civ: int | None = None) -> Path:
     game = hashlib.md5(str(Path(dat_path).resolve()).encode()).hexdigest()[:10]
-    return _cache_dir() / f"previews-{_PREVIEW_VERSION}" / game / f"{kind}_{unit_id}.webp"
+    mine = f"_civ{civ}" if civ is not None else ""
+    return _cache_dir() / f"previews-{_PREVIEW_VERSION}" / game / f"{kind}_{unit_id}{mine}.webp"
 
 
-def _render_preview(dat_path: str, unit_id: int, kind: str) -> Path | None:
+def _render_preview(dat_path: str, unit_id: int, kind: str, civ: int | None = None) -> Path | None:
     """The cached preview, rendered from the player's sprites on first ask:
-    kind "still" (first idle frame) or one of game_sprites.ANIMATIONS."""
+    kind "still" (first idle frame) or one of game_sprites.ANIMATIONS.
+    `civ`: that civ's own version of the unit (a Look: the Palintonon)."""
     import game_sprites
-    cached = _preview_path(dat_path, unit_id, kind)
+    from civ_appender import _original_civ
+    cached = _preview_path(dat_path, unit_id, kind, civ)
     if cached.exists():
         return cached
     dat = _get_dat(dat_path)
-    units = dat.civs[0].units
+    units = (_original_civ(dat, civ) if civ is not None and 0 <= civ < len(dat.civs) else dat.civs[0]).units
     if not 0 <= unit_id < len(units) or units[unit_id] is None:
         return None
     unit = units[unit_id]
@@ -2922,7 +2925,7 @@ def api_unit_preview(unit_id: int, kind: str):
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path:
         return ("", 404)
-    path = _render_preview(dat_path, unit_id, kind)
+    path = _render_preview(dat_path, unit_id, kind, request.args.get("civ", type=int))
     if path is None:
         return ("", 404)
     return send_file(path, mimetype="image/webp", max_age=0)
@@ -3267,7 +3270,7 @@ def api_builder_node_info():
     Read from the Britons, the template every custom civ clones, so they are
     exactly what an edit replaces.  ?kind=unit|building|tech&id=N."""
     import civ_overrides as co
-    from civ_appender import _display_name, unit_skins
+    from civ_appender import APPEARANCE_KINDS, _display_name, unit_skins
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path or not Path(dat_path).exists():
         return jsonify({"status": "no_dat"})
@@ -3343,6 +3346,8 @@ def api_builder_node_info():
         "age_move": _age_move_info(dat, co.enabling_tech(dat, 1, nid)) if kind == "unit" else None,
         # Other civs' versions of it, for the Look row (Palintonon for the Trebuchet).
         "skins": unit_skins(dat, nid) if kind == "unit" else [],
+        # Whether it may wear another unit's look (civ_appender.appearance_ok's kinds).
+        "looks": kind == "unit" and u.class_ in APPEARANCE_KINDS,
     })
 
 

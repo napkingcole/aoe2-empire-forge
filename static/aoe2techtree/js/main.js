@@ -1204,7 +1204,7 @@ function _variantHint(item) {
         return _PICKER_HINT;
     }
     if (item.real && item.real.restore) {
-        return `The game's own ${item.name}, in this line's place. Untick it to go back.`;
+        return `The game's own ${item.name}, in this line's place. "Undo" in the panel gives the line back.`;
     }
     if (item.use_type !== 'Building') return '';
     if (_REGIONAL_BUILDING_IDS.has(item.node_id)) {
@@ -1470,7 +1470,7 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
         });
     if (_canEdit) window.ttInspector?.decorate(itemToDraw, element_height);
     if (_canEdit && itemToDraw.use_type === 'Unit' && _ADD_LINE_BUILDINGS.has(itemToDraw.building_id)
-            && !_REAL_ONLY_BUILDINGS.has(itemToDraw.building_id)) {
+            && !_SIEGE_ONLY_BUILDINGS.has(itemToDraw.building_id)) {
         _drawExtendButton(item, itemToDraw, element_height);
     }
 }
@@ -1493,7 +1493,7 @@ window._ttCanExtend = _canExtend;
 // Scythian Horse Archer for the Cavalry Archer).
 function _canReplace(item) {
     if (!_canEdit || item.use_type !== 'Unit' || item.added || item.real || !_isSelected(item)
-            || !_ADD_LINE_BUILDINGS.has(item.building_id) || _REAL_ONLY_BUILDINGS.has(item.building_id)) return false;
+            || !_ADD_LINE_BUILDINGS.has(item.building_id) || _SIEGE_ONLY_BUILDINGS.has(item.building_id)) return false;
     return item.node_type === 'UnitUpgrade'
         || (window.ttInspector?.realReplacements() || []).some(r => r.replaces.includes(item.node_id));
 }
@@ -1554,28 +1554,37 @@ function _stripCastleUuAndUt(treeData) {
 // Buildings that can take an added line; the Castle's second unit is the
 // unique-unit step's.
 const _ADD_LINE_BUILDINGS = new Set([12, 87, 101, 49, 45, 104, 109, 82]);
-// At the Castle the "+" adds only the game's own units (Immortal, Strategos...):
-// a copy there would be the unique unit step's business.
-const _REAL_ONLY_BUILDINGS = new Set([82]);
+// At the Castle the "+" adds siege only (the user, 2026-11-11): a unit there is
+// the unique unit step's business.  No upgrade after or replacement either.
+const _SIEGE_ONLY_BUILDINGS = new Set([82]);
 
 // The game's own units a "+" added (added_lines.real_units): in the tree as
 // their real ids, so they build as themselves, with their own Elite upgrade.
 // No civ layout but their owner's has a node for them, so draw a column: the
 // unit in its age, its Elite under it in the Imperial Age.
+// The tree's own art when it has the unit's picture, else the game's icon read
+// from the player's install (the Chronicles units: the Scythian Horse Archer).
+function _realImage(id) {
+    return window.ttInspector && window.ttInspector.unitImage ? window.ttInspector.unitImage(id) : undefined;
+}
+
 function _applyRealUnits(treeData) {
     const real = window.ttInspector ? window.ttInspector.realUnits() : [];
     if (!real.length) return;
-    const have = new Set(treeData.units_techs.filter(i => i.use_type === 'Unit').map(i => i.node_id));
+    // Per building: a unit that trains at two (the Temple Guard, at the Barracks
+    // and the Monastery) is drawn at both, as the Muisca's own tree draws it.
+    const key = (u, b) => `${u}@${b}`;
+    const have = new Set(treeData.units_techs.filter(i => i.use_type === 'Unit').map(i => key(i.node_id, i.building_id)));
     for (const b of treeData.buildings) {
         if (!b.grid || !b.grid.length || (_canEdit && !_isSelected(b))) continue;
         const mine = real.filter(r => r.building === b.node_id && _localtree.units.includes(r.base)
-                                      && !have.has(r.base));
+                                      && !have.has(key(r.base, b.node_id)));
         if (!mine.length) continue;
         const rows = b.grid.length;
         const rowOf = age => { const r = (age - 1) * 2; return r <= b.row ? b.row + 1 : r; };
         const cols = [];
         for (const r of mine) {
-            have.add(r.base);
+            have.add(key(r.base, b.node_id));
             const col = new Array(rows).fill(null);
             const row = rowOf(r.age);
             if (row >= rows) continue;
@@ -1583,7 +1592,7 @@ function _applyRealUnits(treeData) {
             treeData.units_techs.push({
                 id, node_id: r.base, building_id: b.node_id, use_type: 'Unit', node_type: 'Unit',
                 link_id: null, link_node_type: 'BuildingTech', picture_index: r.icon,
-                name: r.name, name_string_id: -1, help_string_id: -1, age_id: r.age, row,
+                image_url: _realImage(r.base), name: r.name, name_string_id: -1, help_string_id: -1, age_id: r.age, row,
                 real: { units: r.units, base: r.base },
             });
             col[row] = id;
@@ -1594,7 +1603,8 @@ function _applyRealUnits(treeData) {
                     treeData.units_techs.push({
                         id: eid, node_id: r.elite, building_id: b.node_id, use_type: 'Unit',
                         node_type: 'UnitUpgrade', link_id: r.base, link_node_type: 'Unit',
-                        picture_index: r.elite_icon ?? r.icon, name: r.elite_name || `Elite ${r.name}`,
+                        picture_index: r.elite_icon ?? r.icon, image_url: _realImage(r.elite),
+                        name: r.elite_name || `Elite ${r.name}`,
                         name_string_id: -1, help_string_id: -1, age_id: 4, row: er,
                         real: { units: [r.elite], base: r.base },
                     });
@@ -1637,6 +1647,7 @@ function _applyRealReplacements(treeData) {
                 }
                 Object.assign(it, {
                     node_id: to, name: r.names[String(to)] || r.name, picture_index: r.icons[String(to)],
+                    image_url: _realImage(to),
                     name_string_id: -1, help_string_id: -1,
                     real: { units: r.units, base: r.base, restore: r.replaces },
                 });
@@ -2136,7 +2147,19 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             border: 2px solid #6b4a1c; box-shadow: 0 0 0 1px #d9b86a, 0 3px 6px rgba(0,0,0,.35); }
         .tt-insp-include { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer;
             padding: 7px 10px; background: rgba(110,75,30,.12); border: 1px solid rgba(110,75,30,.25); border-radius: 5px; }
-        .tt-insp-include input { accent-color: #8a5a12; width: 15px; height: 15px; }
+        /* A checkbox dressed as a switch: crimson off, green on. */
+        .tt-insp-include input { appearance: none; -webkit-appearance: none; flex: none; margin: 0; cursor: inherit;
+            position: relative; width: 36px; height: 20px; border-radius: 10px;
+            background: #8C2020; border: 1px solid #6D1818; box-shadow: inset 0 1px 3px rgba(0,0,0,.35);
+            transition: background .15s, border-color .15s; }
+        .tt-insp-include input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+            border-radius: 50%; background: linear-gradient(#fbf3dc, #e2cf9e); box-shadow: 0 1px 2px rgba(0,0,0,.45);
+            transition: transform .15s; }
+        .tt-insp-include input:checked { background: #3f6b1e; border-color: #2c4d14; }
+        .tt-insp-include input:checked::after { transform: translateX(16px); }
+        .tt-insp-include input:focus-visible { outline: 2px solid #b8860b; outline-offset: 2px; }
+        .tt-insp-include input:disabled { opacity: .6; }
+        @media (prefers-reduced-motion: reduce) { .tt-insp-include input, .tt-insp-include input::after { transition: none; } }
         .tt-insp-include.is-locked { cursor: default; opacity: .75; }
         .tt-insp-section { margin: 18px 0 8px; font: 700 13px 'Cinzel', 'Times New Roman', serif;
             letter-spacing: .06em; color: #5a3306; padding-bottom: 4px;
@@ -2203,15 +2226,9 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         .tt-unit-picker .tt-pick-suggest { padding: 8px 10px 10px; border-radius: 6px;
             background: rgba(184,134,11,.10); border: 1px solid rgba(184,134,11,.35); }
         .tt-unit-picker .tt-pick-suggest-head { font-weight: 600; font-size: .8rem; margin-bottom: 6px; }
-        .tt-insp-looks { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
-        .tt-insp-look { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 3px; cursor: pointer;
-            border: 1px solid rgba(110,75,30,.45); border-radius: 5px; background: rgba(255,250,235,.55);
-            color: #2e1d08; font-size: 12px; font-weight: 600; text-align: left; }
-        .tt-insp-look img { width: 30px; height: 30px; border-radius: 3px; }
-        .tt-insp-look small { display: block; font-weight: 400; opacity: .7; font-size: 10.5px; }
-        .tt-insp-look:hover { background: rgba(255,250,235,.85); }
-        .tt-insp-look.selected { border-color: #7a5424; box-shadow: 0 0 0 2px rgba(184,134,11,.55);
-            background: linear-gradient(#f6e2a8, #e2c27a); }
+        .tt-insp-lookrow { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 10px 0 2px; }
+        .tt-insp-lookrow .tt-insp-label { flex: none; }
+        .tt-insp-lookimg { width: 26px; height: 26px; border-radius: 3px; flex: none; }
         .tt-unit-picker .uu-badge-hero { background: #b8860b; color: #fff; }
         .tt-unit-picker .modal-footer .uu-badge { position: static; }
         .tt-unit-picker .modal-body { min-height: 60vh; }

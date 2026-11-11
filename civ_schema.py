@@ -444,7 +444,7 @@ def norm_unit_name(raw) -> str:
 def norm_unit_edits(raw) -> dict:
     """{"<unit id>": {name, hp, attack, melee, pierce, range, reload, speed, los,
     train, cost: {food, wood, stone, gold}, bonus: {"<class>": amount},
-    age: 1-4, skin: "<civ>"}}."""
+    age: 1-4, skin: "<civ>", appearance: <unit id>}}."""
     out: dict = {}
     if not isinstance(raw, dict):
         return out
@@ -466,6 +466,9 @@ def norm_unit_edits(raw) -> dict:
         skin = e.get("skin")
         if isinstance(skin, str) and (skin := "".join(ch for ch in skin if ch.isprintable()).strip()[:40]):
             clean["skin"] = skin
+        # Or another unit's look on it (the Crusader Knight on the Knight).
+        if e.get("appearance") is not None and (look := _num(e["appearance"], int, 0, _SHORT)) is not None:
+            clean["appearance"] = look
         # "Available from": the age it becomes available in (civ_overrides._apply_age_moves).
         if e.get("age") is not None and (a := _num(e["age"], int, 1, 4)) is not None:
             clean["age"] = a

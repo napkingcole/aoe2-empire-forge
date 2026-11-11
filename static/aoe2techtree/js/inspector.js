@@ -229,14 +229,16 @@
         group.insertBefore(dot, overlay);
     }
 
-    // A unit wearing another civ's look shows that civ's picture on the tree.
+    // A unit wearing another civ's or unit's look shows that picture on the tree.
     function lookImage(item) {
         if (item.added || item.add || kindOf(item) !== 'unit') return;
         const img = document.getElementById(`${item.id}_img`);
         if (!img) return;
         const skin = unitEdit(item.node_id).skin;
+        const wear = unitEdit(item.node_id).appearance;
         if (!img.dataset.own) img.dataset.own = img.getAttribute('href') || img.getAttribute('xlink:href') || '';
         const set = url => { img.setAttribute('href', url); img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', url); };
+        if (!skin && wear != null) return set(unitImage(wear));
         if (!skin) {
             if ((img.getAttribute('href') || '') !== img.dataset.own) set(img.dataset.own);
             return;
@@ -602,6 +604,8 @@
         ['cavalry', 'Cavalry', [12, 23, 47]], ['siege', 'Siege', [13, 55]], ['monks', 'Monks', [18]],
         ['ships', 'Ships', [2, 20, 21, 22]],
     ];
+    // What the Castle's "+" offers: siege weapons and scorpions (the Kind filter's "Siege").
+    const SIEGE_CLASSES = KINDS.find(k => k[0] === 'siege')[2];
     let pickerEl = null, pickerModal = null;
     const pickerState = { group: null, kind: 'all', q: '' };
 
@@ -681,7 +685,8 @@
         }
         // The Dock trains ships only, and no other building trains them.
         const naval = opts.building === 45;
-        const units = opts.realOnly ? [] : (pool || catalog.units).filter(u => opts.pool || u.naval === naval);
+        const units = opts.realOnly ? [] : (pool || catalog.units).filter(u => opts.pool || u.naval === naval)
+            .filter(u => !opts.classes || opts.classes.includes(u.cls));
         groupsEl.hidden = grid.hidden = !!opts.realOnly;
         search.hidden = kindSel.hidden = !!opts.realOnly;
         el.querySelector('#tt-pick-count').hidden = !!opts.realOnly;
@@ -706,9 +711,17 @@
                 .filter(u => !kind[2] || kind[2].includes(u.cls))
                 .sort((a, b) => (b.id === opts.first) - (a.id === opts.first));
             el.querySelector('#tt-pick-count').textContent = `${list.length} unit${list.length === 1 ? '' : 's'}`;
-            const own = opts.ownLook ? `<div class="uu-card${opts.current == null ? ' selected' : ''}" data-pick="">
+            const own = (opts.ownLook ? `<div class="uu-card${(opts.ownSelected ?? opts.current == null) ? ' selected' : ''}" data-pick="">
+                    ${typeof _previewBtnHtml === 'function' ? _previewBtnHtml(opts.ownLook, 'Its own look') : ''}
                     <img class="uu-card-icon" src="${unitImage(opts.ownLook)}" alt="">
-                    <div class="uu-card-name">Its own look</div></div>` : '';
+                    <div class="uu-card-name">Its own look</div></div>` : '')
+                // Other civs' own versions of the unit (the Palintonon), first.
+                + (opts.skins || []).filter(k => !q || k.name.toLowerCase().includes(q)).map(k => `
+                    <div class="uu-card${k.civ === opts.currentSkin ? ' selected' : ''}" data-skin-pick="${esc(k.civ)}" title="${esc(k.title)}">
+                    ${typeof _previewBtnHtml === 'function' ? _previewBtnHtml(opts.ownLook, k.name, k.civ_index) : ''}
+                    <img class="uu-card-icon" src="${esc(k.img)}" alt="" loading="lazy">
+                    <div class="uu-card-name">${esc(k.name)}</div>
+                    <div class="tt-pick-stats">${esc(k.sub)}</div></div>`).join('');
             grid.innerHTML = own + list.map(u => `<div class="uu-card${u.id === opts.current ? ' selected' : ''}" data-pick="${u.id}"
                     title="${esc(u.name)}">
                     ${typeof _previewBtnHtml === 'function' ? _previewBtnHtml(u.id, u.name) : ''}
@@ -719,6 +732,11 @@
                 </div>`).join('') || (own ? '' : `<div class="text-muted small fst-italic">${units.length
                     ? 'No units match.' : opts.pool ? 'No other look fits this unit\'s kind and size.' : 'Point Empire Forge at your game (step 1) to list its units.'}</div>`);
             if (typeof _wirePreviewButtons === 'function') _wirePreviewButtons(grid);
+            grid.querySelectorAll('[data-skin-pick]').forEach(card => card.addEventListener('click', () => {
+                picked = true;
+                pickerModal.hide();
+                opts.onSkin(card.dataset.skinPick);
+            }));
             grid.querySelectorAll('[data-pick]').forEach(card => card.addEventListener('click', () => {
                 picked = true;
                 pickerModal.hide();
@@ -816,6 +834,7 @@
     function renderPicker(item) {
         const ctx = item.add;
         const line = ctx.line ? edits.added_lines.find(l => l.id === ctx.line) : null;
+        const siegeOnly = typeof _SIEGE_ONLY_BUILDINGS !== 'undefined' && _SIEGE_ONLY_BUILDINGS.has(ctx.building);
         const back = () => {
             const again = line && known[tierItemId(line, ctx.n || 0)];
             if (again) select(again[0], again[1]);
@@ -827,20 +846,19 @@
             </div></div>
             <div class="tt-insp-note">${line
                 ? 'Every tier is a copy of this unit; your edits stay.'
-                : typeof _REAL_ONLY_BUILDINGS !== 'undefined' && _REAL_ONLY_BUILDINGS.has(ctx.building)
-                ? 'Pick one of the game\'s own units. It joins the Castle as itself, with its Elite upgrade.'
+                : siegeOnly
+                ? 'Pick a siege weapon: it becomes a new line, copied, starting in this age. Castle units are chosen on the unique unit step.'
                 : 'Pick a unit. A regional one joins as the game\'s own; any other becomes a new line, copied, starting in this age, that you can add tiers to, rename and change.'}</div>
             <button type="button" class="tt-insp-reset" id="tt-pick-open">Choose a unit…</button>`;
-        const realOnly = typeof _REAL_ONLY_BUILDINGS !== 'undefined' && _REAL_ONLY_BUILDINGS.has(ctx.building);
         const open = () => openUnitPicker({
             title: line ? 'Change the base unit' : `Add a unit to the ${ctx.buildingName || 'building'}`,
             sub: line ? 'Every tier is a copy of this unit; your edits stay.'
-                : realOnly ? 'The game\'s own units, each with its Elite upgrade. Your unique unit is chosen on its own step.'
+                : siegeOnly ? `Siege weapons only, starting in the ${AGE_NAMES[ctx.age - 1]}: a copy you can change. Your unique unit is chosen on its own step.`
                 : `Starting in the ${AGE_NAMES[ctx.age - 1]}. The units above are added as the game's own, with their Elite upgrade; any other is a copy you can change. Heroes train like any unit here, without hero rules.`,
             building: ctx.building, current: line ? line.base : null,
-            suggested: line ? null : realFor(ctx.building).then(rs => rs.filter(r => !_localtree.units.includes(r.base))),
+            suggested: line || siegeOnly ? null : realFor(ctx.building).then(rs => rs.filter(r => !_localtree.units.includes(r.base))),
             suggestTitle: 'Regional units here',
-            realOnly: !line && realOnly,
+            classes: siegeOnly ? SIEGE_CLASSES : null,
             onCancel: line ? back : null,
             onPick: (base, preset) => {
                 if (!line && preset && preset.source === 'real') {
@@ -1123,6 +1141,14 @@
         </label>${note ? `<div class="tt-insp-note">${esc(note)}</div>` : ''}`;
     }
 
+    // A replacement (the Savar on the Paladin's node) isn't on or off: undoing
+    // it gives the line back (main.js _toggleNode).
+    function undoRow(item, name) {
+        const was = item.real.restore[item.real.units.indexOf(item.node_id)] ?? item.real.restore[0];
+        return `<div class="tt-insp-note">The game's own ${esc(String(name).replace(/\n/g, ' '))}, in this line's place.</div>
+            <button type="button" class="tt-insp-reset" id="tt-insp-undo">Undo: back to the ${esc(baseName(was))}</button>`;
+    }
+
     function numInput(attrs) {
         const { id, value, base, step, min, max, disabled, title } = attrs;
         return `<input type="number" class="tt-insp-num${value !== undefined && value !== null ? ' is-edited' : ''}"
@@ -1176,8 +1202,8 @@
         const kind = kindOf(item);
         const name = nameOf(item) || ((typeof formatName === 'function' && data.strings)
             ? formatName(data.strings[item.name_string_id] || item.name) : item.name);
-        const icon = typeof _imgroot === 'string' && item.picture_index !== undefined
-            ? `${_imgroot}/${item.use_type}/${item.picture_index}.png` : '';
+        const icon = item.image_url || (typeof _imgroot === 'string' && item.picture_index !== undefined
+            ? `${_imgroot}/${item.use_type}/${item.picture_index}.png` : '');
         panel.innerHTML = `<div class="tt-insp-head">
                 ${icon ? `<img class="tt-insp-icon" src="${esc(icon)}" alt="">` : ''}
                 <div>
@@ -1185,7 +1211,7 @@
                     <div class="tt-insp-kind">${kind === 'tech' ? 'Technology' : kind === 'building' ? 'Building' : 'Unit'}</div>
                 </div>
             </div>
-            ${includeRow(item)}
+            ${item.real && item.real.restore ? undoRow(item, name) : includeRow(item)}
             ${window._ttCanExtend?.(item) ? `<button type="button" class="tt-insp-reset" id="tt-insp-extend"
                 title="A further upgrade for this line, like the Imperial Skirmisher">Add an upgrade after it…</button>` : ''}
             ${window._ttCanReplace?.(item) ? `<button type="button" class="tt-insp-reset" id="tt-insp-replace"
@@ -1193,6 +1219,17 @@
             <div id="tt-insp-body"><div class="tt-insp-loading">Loading stats…</div></div>`;
         panel.querySelector('#tt-insp-extend')?.addEventListener('click', () => extend(item));
         panel.querySelector('#tt-insp-replace')?.addEventListener('click', () => replace(item));
+        const undo = panel.querySelector('#tt-insp-undo');
+        undo?.addEventListener('click', () => {
+            if (!undo.dataset.armed) {
+                undo.dataset.armed = '1';
+                undo.textContent = 'Click again to undo the replacement';
+                return;
+            }
+            _toggleNode(item, current.element_height);
+            _treeChanged();
+            later();
+        });
         panel.querySelector('#tt-insp-include')?.addEventListener('change', () => {
             _toggleNode(item, current.element_height);
             _treeChanged();
@@ -1314,17 +1351,48 @@
     }
     function lookRow(inf) {
         const skins = inf.skins || [];
-        if (!skins.length) return '';
-        const own = unitEdit(inf.id).skin;
-        const chip = (val, img, nm, sub, title) => `<button type="button" class="tt-insp-look${(own || '') === val ? ' selected' : ''}"
-                data-skin="${esc(val)}" title="${esc(title)}">
-                <img src="${esc(img)}" alt="" loading="lazy"><span>${esc(nm)}<small>${esc(sub)}</small></span></button>`;
-        return `<div class="tt-insp-section">Look</div>
-            <div class="tt-insp-looks">
-                ${chip('', `/api/unit-icon/${inf.id}?${datQuery().slice(1)}`, inf.name.replace(/\s*\(.*\)$/, ''), 'its own', '')}
-                ${skins.map(s => chip(s.civ, skinIcon(inf.id, s), skinName(s), civList(s.civs), s.civs.join(', '))).join('')}
-            </div>
-            <div class="tt-insp-note">Another civilization's own version of this unit: its art and name. It stays the same unit, so its upgrades and bonuses still reach it.</div>`;
+        if (!skins.length && !inf.looks) return '';
+        const e = unitEdit(inf.id);
+        const skin = e.skin && skins.find(s => s.civ === e.skin);
+        const wear = e.appearance != null ? (catalog.byId[e.appearance] || {}).name || `unit ${e.appearance}` : null;
+        const now = skin ? `${skinName(skin)} (${civList(skin.civs)})` : wear || 'Its own';
+        const img = skin ? skinIcon(inf.id, skin) : e.appearance != null ? unitImage(e.appearance) : null;
+        return `<div class="tt-insp-lookrow"><span class="tt-insp-label">Look</span>
+                ${img ? `<img class="tt-insp-lookimg" src="${esc(img)}" alt="">` : ''}
+                <span class="tt-insp-basename">${esc(now)}</span>
+                <button type="button" class="tt-insp-link" id="tt-insp-look">change</button></div>`;
+    }
+
+    function pickLook(inf) {
+        const skins = inf.skins || [];
+        const e = unitEdit(inf.id);
+        const own = inf.name.replace(/\s*\(.*\)$/, '');
+        // The name follows a civ's version, unless the player named it themselves.
+        const autoName = () => { const n = unitEdit(inf.id).name; return !n || skins.some(s => skinName(s) === n); };
+        openUnitPicker({
+            title: `Choose a look for the ${own}`,
+            sub: 'Another civilization\'s own version of it (its art and name), or another unit of the same kind '
+                + 'and size. It stays the same unit, so its upgrades and bonuses still reach it.',
+            pool: inf.looks ? looksFor(inf.id) : Promise.resolve([]),
+            current: e.skin ? null : e.appearance, ownLook: inf.id,
+            ownSelected: !e.skin && e.appearance == null, currentSkin: e.skin || null,
+            skins: skins.map(s => ({ civ: s.civ, civ_index: s.civ_index, name: skinName(s), sub: civList(s.civs),
+                                     title: s.civs.join(', '), img: skinIcon(inf.id, s) })),
+            onSkin: civ => {
+                const auto = autoName();
+                setUnitField(inf.id, 'appearance', null);
+                setUnitField(inf.id, 'skin', civ);
+                const s = skins.find(x => x.civ === civ);
+                if (auto) setUnitField(inf.id, 'name', s ? skinName(s) : null);
+                later();
+            },
+            onPick: id => {
+                if (autoName()) setUnitField(inf.id, 'name', null);
+                setUnitField(inf.id, 'skin', null);
+                setUnitField(inf.id, 'appearance', id);
+                later();
+            },
+        });
     }
 
     function lineName(uid) {
@@ -1387,16 +1455,7 @@
         if (kind === 'tech') {
             wireTechCost(body, 'tt-insp-tech', inf);
         } else {
-            body.querySelectorAll('[data-skin]').forEach(b => b.addEventListener('click', () => {
-                const skins = inf.skins || [];
-                const next = skins.find(s => s.civ === b.dataset.skin) || null;
-                // The name follows the look, unless the player named it themselves.
-                const e = unitEdit(inf.id);
-                const auto = !e.name || skins.some(s => skinName(s) === e.name);
-                setUnitField(inf.id, 'skin', next ? next.civ : null);
-                if (auto) setUnitField(inf.id, 'name', next ? skinName(next) : null);
-                rerender();
-            }));
+            body.querySelector('#tt-insp-look')?.addEventListener('click', () => pickLook(inf));
             const nm = body.querySelector('#tt-insp-name');
             nm?.addEventListener('change', () => {
                 const v = nm.value.replace(/\s+/g, ' ').trim().slice(0, 40);
@@ -1542,6 +1601,7 @@
         tierName,
         baseIcon,
         lineImage,
+        unitImage,
         load(e) {
             edits = { unit_edits: clone(e && e.unit_edits), tech_edits: clone(e && e.tech_edits),
                       added_lines: Array.isArray(e && e.added_lines) ? JSON.parse(JSON.stringify(e.added_lines)) : [] };
