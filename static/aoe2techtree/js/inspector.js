@@ -409,18 +409,37 @@
     const suggestCache = {};
     // The game's own units a "+" can add as themselves (added_lines.real_units),
     // every building's, loaded once; the tree redraws when they arrive.
-    let realList = null, realLoading = null;
+    // With them, the game's own units that take a line's place
+    // (added_lines.real_replacements: the Savar for the Paladin).
+    let realList = null, realLoading = null, realReps = [];
     function realUnits() {
         if (realList) return realList;
         if (!realLoading) {
             realLoading = fetch(`/api/builder/unit-catalog?real_for=all${datQuery()}`)
                 .then(r => r.json()).then(r => {
                     realList = r.real || [];
-                    if (realList.length) window._ttRelayout?.();
+                    realReps = r.replacements || [];
+                    if (realList.length || realReps.length) window._ttRelayout?.();
                     return realList;
                 }).catch(() => (realList = []));
         }
         return [];
+    }
+    function realReplacements() {
+        realUnits();
+        return realReps;
+    }
+    // The game's units that can take this unit's place, not already picked.
+    async function replacementsFor(nodeId) {
+        realUnits();
+        if (!realList) await realLoading;
+        return realReps.filter(r => r.replaces.includes(nodeId) && !_localtree.units.includes(r.base));
+    }
+    // A replacement in: its units into the tree, the ones it replaces out.
+    function pickReplacement(r) {
+        window._ttSetTreeUnits?.(r.units, r.replaces);
+        current = null;
+        mount(panel);
     }
     async function realFor(building) {
         realUnits();
@@ -725,6 +744,7 @@
                 p.edits ? { hp: p.edits.hp ?? u.hp, attack: p.edits.attack ?? u.attack,
                             ma: p.edits.melee ?? u.ma, pa: p.edits.pierce ?? u.pa } : {});
             const why = p.source === 'card' ? 'As the bonus card made it'
+                : p.replaces ? `The game's own ${esc(p.name)}, in the line's place`
                 : p.source === 'real' ? `The game's own ${esc(p.name)}${p.elite != null ? ', with its Elite upgrade' : ''}`
                 : `The game's own ${esc(p.tech || p.name)} upgrade`;
             return `<div class="uu-card" data-suggest="${i}" title="${why}">
@@ -732,8 +752,8 @@
                 <img class="uu-card-icon" src="${unitImage(p.appearance ?? p.base)}" alt="" loading="lazy">
                 <div class="uu-card-name">${esc(p.name)}</div>
                 <div class="tt-pick-stats">${cardStats(st)}</div>
-                <div class="tt-pick-stats">${p.source === 'real'
-                    ? `${AGE_NAMES[(p.age || 1) - 1]}${p.elite != null ? ' · Elite' : ''}`
+                <div class="tt-pick-stats">${p.replaces ? 'Takes the line\'s place'
+                    : p.source === 'real' ? `${AGE_NAMES[(p.age || 1) - 1]}${p.elite != null ? ' · Elite' : ''}`
                     : `Upgrade ${price(p.upgrade && p.upgrade.cost)}`}</div>
             </div>`;
         }).join('');
@@ -766,7 +786,8 @@
                 + `Pick the ${fromName} itself to make a stronger copy of it, like the Imperial Skirmisher.`,
             building: item.building_id, current: from, first: from,
             suggested: suggestionsFor(from),
-            onPick: (base, preset) => addLine(item.building_id, age, base, from, null, preset),
+            onPick: (base, preset) => preset && preset.replaces ? pickReplacement(preset)
+                : addLine(item.building_id, age, base, from, null, preset),
         });
     }
 
@@ -774,12 +795,20 @@
     // upgrade stays, and a hidden tech after it turns the result into ours.
     function replace(item) {
         const name = (window._ttNodeName ? window._ttNodeName(item) : baseName(item.node_id)).replace(/\n/g, ' ');
+        // A line's first unit (the Cavalry Archer) only the game's own can replace.
+        const realOnly = item.node_type !== 'UnitUpgrade';
         openUnitPicker({
             title: `Replace the ${name}`,
-            sub: `Researching the ${name} upgrade gives this unit instead, and the button takes its name. `
-                + `The button keeps the ${name}'s picture: the game can't change a technology's picture for one civilization.`,
+            sub: realOnly ? `The game's own unit that takes the ${name}'s line, as its civilization has it.`
+                : `The game's own units above take its place as themselves. Any other: researching the ${name} `
+                + `upgrade gives a copy of it instead, and the button takes its name. The button keeps the `
+                + `${name}'s picture: the game can't change a technology's picture for one civilization.`,
             building: item.building_id,
-            onPick: base => addLine(item.building_id, item.age_id || 1, base, null, item.node_id),
+            suggested: replacementsFor(item.node_id),
+            suggestTitle: 'The game\'s own',
+            realOnly,
+            onPick: (base, preset) => preset && preset.replaces ? pickReplacement(preset)
+                : addLine(item.building_id, item.age_id || 1, base, null, item.node_id),
         });
     }
 
@@ -1506,6 +1535,7 @@
         },
         addedLines: () => edits.added_lines,
         realUnits,
+        realReplacements,
         addedTip,
         extend,
         canAddTier,

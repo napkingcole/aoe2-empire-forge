@@ -2728,7 +2728,10 @@ let _cardOnlyUnits    = new Set();  // every unlock card's units, retired or not
 // panel, the Palintonon to a Look.  One server call, so the wizard and the
 // build convert the same way.
 async function _retireCards() {
-  if (!(draft.bonuses || []).some(b => _retiredCardIds.has(Number(b.id ?? b[0])))) return;
+  // ...and a draft from before the tree held replacements gets its one-time
+  // tree cleanup (retired_cards.TREE_VERSION), once.
+  if ((draft.tree_version || 1) >= 2
+      && !(draft.bonuses || []).some(b => _retiredCardIds.has(Number(b.id ?? b[0])))) return;
   try {
     const res = await fetch('/api/builder/retire-cards', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4797,7 +4800,8 @@ async function init() {
     // Retired unit cards are not mirrored from the tree any more: the tree is
     // their home.  _cardOnlyUnits still keeps their units out of a new civ's seed.
     _retiredCardIds           = new Set((meta.retired_cards || []).map(Number));
-    _cardOnlyUnits            = new Set(Object.values(meta.unlock_bonuses || {}).flat().map(Number));
+    _cardOnlyUnits            = new Set([...Object.values(meta.unlock_bonuses || {}).flat(),
+                                          ...(meta.seed_excluded_units || [])].map(Number));
     _unlockBonusUnits         = Object.fromEntries(Object.entries(meta.unlock_bonuses || {})
                                   .filter(([k]) => !_retiredCardIds.has(Number(k))));
     _unlockReplaces           = meta.unlock_replaces || {};

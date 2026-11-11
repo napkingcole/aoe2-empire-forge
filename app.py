@@ -1530,6 +1530,8 @@ def api_builder_meta():
         # Cards retired into the tree, the hero panel or a Look (retired_cards):
         # the wizard no longer mirrors these into the bonus list.
         "retired_cards": sorted(__import__("retired_cards").RETIRED),
+        # Units only a deliberate pick puts in a tree: never in a new civ's seed.
+        "seed_excluded_units": sorted(__import__("retired_cards").SEED_EXCLUDED_UNITS),
         # Display names for the identity scene ("Hagia Sophia" rather than
         # "Byzantines").  Written by scripts/import_km_art.py; absent until that
         # has been run, so the wizard falls back to civ names.
@@ -3199,7 +3201,8 @@ def api_builder_unit_catalog():
             bld = None if real_for == "all" else int(real_for)
         except ValueError:
             return jsonify({"status": "error", "units": []}), 400
-        return jsonify({"status": "ok", "real": added_lines.real_units(dat, bld, rows)})
+        return jsonify({"status": "ok", "real": added_lines.real_units(dat, bld, rows),
+                        "replacements": added_lines.real_replacements(dat, rows)})
     look_for = request.args.get("look_for")
     if look_for not in (None, ""):
         try:

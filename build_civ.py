@@ -31,7 +31,7 @@ from dat_reader import find_game_dat, load_dat, dat_info
 from civ_appender import (apply_civ, _KM_UU_TECHS, _KM_UU_NAMES, get_km_uu_index,
                           get_civ_bonuses, get_team_bonuses,
                           UNSUPPORTED_UNIQUE_BUILDINGS, _apply_unit_replacements,
-                          _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS, _help_sid,
+                          _UNLOCK_UNIT_BONUSES, CHRONICLES_SIDS, _help_sid, LINE_REPLACEMENTS,
                           _civ_present_units)
 import km_custom_uu
 
@@ -579,18 +579,53 @@ _OPT_IN_UNIT_NODE_SOURCES: dict[int, list[str]] = {
 }
 
 
-def _retarget_replaced_nodes(data: dict, unit_ids: set, dat, slot) -> int:
-    """A replacement unit takes over the replaced line's nodes in the viewer:
-    with the Scythian Horse Archer card, the Cavalry Archer and Heavy Cavalry
-    Archer nodes become the Scythian and Elite Scythian (no civ's tree file has
-    a Scythian node to copy).  Only Unit nodes — Husbandry shares Node ID 39."""
+_SHIPPED_UNIT_NODES: dict[tuple[str, int], dict | None] = {}
+
+
+def _shipped_unit_node(civ_json_dir: Path | None, uid: int) -> dict | None:
+    """The first shipped CivTechTrees node drawing unit uid (Savar: the
+    Persians'), for its name, strings and picture."""
+    if civ_json_dir is None or not Path(civ_json_dir).is_dir():
+        return None
+    key = (str(civ_json_dir), uid)
+    if key not in _SHIPPED_UNIT_NODES:
+        _SHIPPED_UNIT_NODES[key] = None
+        for f in sorted(Path(civ_json_dir).glob("*.json")):
+            try:
+                nodes = json.loads(f.read_text(encoding="utf-8")).get("civ_techs_units", [])
+            except (OSError, ValueError, AttributeError):
+                continue
+            hit = next((n for n in nodes if n.get("Node ID") == uid and n.get("Use Type") == "Unit"), None)
+            if hit is not None:
+                _SHIPPED_UNIT_NODES[key] = hit
+                break
+    return _SHIPPED_UNIT_NODES[key]
+
+
+def _retarget_replaced_nodes(data: dict, unit_ids: set, dat, slot,
+                             civ_json_dir: Path | None = None) -> int:
+    """A replacement unit takes over the replaced line's nodes in the viewer
+    (civ_appender.LINE_REPLACEMENTS): the Paladin node becomes the Savar, the
+    Cavalry Archer and Heavy Cavalry Archer the Scythian and Elite Scythian.
+    Names, strings and picture come from the unit's shipped node (the
+    Persians' Savar), or our Chronicles strings where no civ has one.  A
+    replaced unit with no pair (the Champion, after the Legionary) is taken
+    out, as the Romans' tree has none.  Only Unit nodes — Husbandry shares
+    Node ID 39."""
     remap: dict[int, int] = {}
-    for spec in _UNLOCK_UNIT_BONUSES.values():
-        if spec.get("replaces") and set(spec["units"]) & unit_ids:
+    gone: set[int] = set()
+    for spec in LINE_REPLACEMENTS.values():
+        if set(spec["units"]) & unit_ids:
             remap.update(zip(spec["replaces"], spec["units"]))
-    if not remap:
+            gone |= set(spec["replaces"][len(spec["units"]):])
+    if not remap and not gone:
         return 0
     changed = 0
+    nodes = data.get("civ_techs_units", [])
+    for node in list(nodes):
+        if node.get("Use Type") == "Unit" and node.get("Node ID") in gone:
+            nodes.remove(node)
+            changed += 1
     for key in ("civ_techs_units", "civ_techs_buildings"):
         for node in data.get(key, []):
             if node.get("Use Type") != "Unit":
@@ -598,15 +633,21 @@ def _retarget_replaced_nodes(data: dict, unit_ids: set, dat, slot) -> int:
             old = node.get("Node ID")
             if old in remap:
                 new = remap[old]
-                spec_names = next(sp["names"] for sp in _UNLOCK_UNIT_BONUSES.values()
-                                  if new in sp.get("names", {}))
-                sid = CHRONICLES_SIDS[("unit", new)]
                 node["Node ID"] = new
-                node["Name"] = spec_names[new]
-                node["Name String ID"] = sid
-                node["Help String ID"] = _help_sid(sid)
-                if dat is not None and slot is not None:
-                    node["Picture Index"] = dat.civs[slot].units[new].icon_id
+                shipped = _shipped_unit_node(civ_json_dir, new)
+                if shipped is not None:
+                    for f in ("Name", "Name String ID", "Help String ID", "Picture Index"):
+                        if f in shipped:
+                            node[f] = shipped[f]
+                else:
+                    spec_names = next(sp["names"] for sp in _UNLOCK_UNIT_BONUSES.values()
+                                      if new in sp.get("names", {}))
+                    sid = CHRONICLES_SIDS[("unit", new)]
+                    node["Name"] = spec_names[new]
+                    node["Name String ID"] = sid
+                    node["Help String ID"] = _help_sid(sid)
+                    if dat is not None and slot is not None:
+                        node["Picture Index"] = dat.civs[slot].units[new].icon_id
                 changed += 1
             if node.get("Link ID") in remap:
                 node["Link ID"] = remap[node["Link ID"]]
@@ -1121,7 +1162,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
         return changed
 
     # Before the status pass, so the retargeted nodes are judged as the new units.
-    retargeted = _retarget_replaced_nodes(data, unit_ids, dat, slot)
+    retargeted = _retarget_replaced_nodes(data, unit_ids, dat, slot, civ_json_path.parent)
     changed  = retargeted + patch_nodes(data.get("civ_techs_buildings", []))
     changed += patch_nodes(data.get("civ_techs_units",     []))
 

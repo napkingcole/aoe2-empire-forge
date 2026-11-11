@@ -58,6 +58,8 @@ MISSIONARY, TURTLE, CARAVEL, FLAMING_CAMEL = 775, 831, 1004, 1263
 IMMORTAL, ELITE_IMMORTAL = 2101, 2102
 units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
 draft = {
+    # Picked in today's tree, not left over from the old full seed (retired_cards.TREE_VERSION).
+    "tree_version": 2,
     "alias": "Real", "architecture": 2, "language": 0, "bonuses": [], "team_bonuses": [],
     "unique_unit": {"km_idx": 11},
     "castle_ut": {"mode": "vanilla", "effects": [{"id": 3, "multiplier": 1}]},

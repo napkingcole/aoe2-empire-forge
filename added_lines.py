@@ -218,6 +218,7 @@ def suggested_upgrades(dat, frm: int, catalog: list[dict]) -> list[dict]:
            for c in CARD_UPGRADE_UNITS.values() if c["from"] == frm]
     rows = {r["id"]: r for r in catalog}
     res = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+    replacements = real_replacements(dat, catalog)
     seen = {frm}
     for t in dat.techs:
         loc = next((rl for rl in t.research_locations if rl.location_id >= 0), None)
@@ -226,6 +227,11 @@ def suggested_upgrades(dat, frm: int, catalog: list[dict]) -> list[dict]:
         for c in dat.effects[t.effect_id].effect_commands:
             to = int(c.b)
             if c.type != EC_UPGRADE or int(c.a) != frm or to in seen:
+                continue
+            rep = next((r for r in replacements if r["base"] == to), None)
+            if rep is not None:
+                seen.add(to)
+                out.append(dict(rep))       # the game's own unit in the line's place
                 continue
             row = rows.get(to)
             if row is None or to in nodes:
@@ -294,6 +300,30 @@ def real_units(dat, building: int | None, catalog: list[dict]) -> list[dict]:
                                    or unit_label(dat, 0, ids[1]).split(" (", 1)[-1][:-1]) if len(ids) > 1 else None)
             out.append(row)
     return sorted(out, key=lambda r: (r["building"], r["age"], r["name"]))
+
+
+def real_replacements(dat, catalog: list[dict]) -> list[dict]:
+    """The game's own units that take a line's place (civ_appender.
+    LINE_REPLACEMENTS): the Savar for the Paladin, the Scythian Horse Archer
+    for the Cavalry Archer line.  The tree draws the unit on the replaced
+    node, and offers it from that node's "Replace" and from the "+" under
+    the unit before it.  [{base, units, replaces, line, building, name, names,
+    icons, source: "real"}]"""
+    from civ_appender import LINE_REPLACEMENTS, unit_label
+    rows = {r["id"]: r for r in catalog}
+    name = lambda u: (rows.get(u) or {}).get("name") or unit_label(dat, 0, u).split(" (", 1)[-1][:-1]  # noqa: E731
+    out = []
+    for bid, spec in LINE_REPLACEMENTS.items():
+        units = list(spec["units"])
+        u = dat.civs[0].units[units[0]]
+        if u is None or u.creatable is None or not u.creatable.train_locations:
+            continue
+        out.append({"card": bid, "base": units[0], "units": units, "replaces": list(spec["replaces"]),
+                    "line": bool(spec.get("line")), "building": u.creatable.train_locations[0].unit_id,
+                    "name": name(units[0]), "icon": u.icon_id, "source": "real",
+                    "names": {str(x): name(x) for x in units},
+                    "icons": {str(x): dat.civs[0].units[x].icon_id for x in units}})
+    return out
 
 
 def default_role(unit_lines: list[dict], base: int) -> int | None:

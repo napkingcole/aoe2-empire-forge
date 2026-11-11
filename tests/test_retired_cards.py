@@ -28,8 +28,8 @@ def check(label, cond, extra=""):
         print(f"  FAIL {label}" + (f" — {extra}" if extra else ""))
 
 
-from retired_cards import (HERO_CARDS, LOOK_CARDS, RETIRED, UNIT_CARDS,  # noqa: E402
-                           UPGRADE_CARDS, retire_cards)
+from retired_cards import (HERO_CARDS, LOOK_CARDS, REPLACEMENT_CARDS, RETIRED,  # noqa: E402
+                           UNIT_CARDS, UPGRADE_CARDS, retire_cards)
 
 # The audit (memory: project_unlock_cards_retirement), by group.
 AUDIT_RETIRED = {
@@ -38,9 +38,9 @@ AUDIT_RETIRED = {
     338, 344, 349,                                         # heroes
     53, 286, 308, 309, 310,                                # upgrades past a line's end
     457,                                                   # Palintonon
+    282, 307, 416, 314, 417, 456, 362, 402,                # replacements (step 3)
 }
-STILL_CARDS = {282, 307, 416, 314, 417, 456, 362, 402,    # replacements: step 3
-               103, 332, 360, 99, 283, 352, 221, 300}     # earlier-age cards: kept
+STILL_CARDS = {103, 332, 360, 99, 283, 352, 221, 300}     # earlier-age cards: kept
 
 print("=== the table ===")
 check("every audited card is retired", AUDIT_RETIRED <= RETIRED, sorted(AUDIT_RETIRED - RETIRED))
@@ -49,7 +49,7 @@ check("nothing else is (replacements and earlier-age cards stay cards)",
 
 units, buildings, techs = json.loads((ROOT / "my_civs" / "19_Cannoneers.json").read_text(encoding="utf-8"))["tree"] \
     if (ROOT / "my_civs" / "19_Cannoneers.json").exists() else ([4, 24, 36, 330, 542, 1134, 1372, 331], [], [])
-for u in (36, 330, 542, 1134, 1372, 331):        # the units the upgrade cards extend
+for u in (36, 330, 542, 1134, 1372, 331, 473, 567, 569, 441, 532, 39, 474):   # extended / replaced
     if u not in units:
         units = units + [u]
 
@@ -74,6 +74,10 @@ def home_of(bid, d):
     """Where card bid went in converted draft d, or None."""
     if bid in UNIT_CARDS:
         return "tree" if set(UNIT_CARDS[bid]) <= set(d["tree"]["units"]) else None
+    if bid in REPLACEMENT_CARDS:
+        add, gone = REPLACEMENT_CARDS[bid]
+        t = set(d["tree"]["units"])
+        return "tree" if add <= t and not gone & t else None
     if bid == 51:
         return "tree" if {250, 533} <= set(d["tree"]["units"]) else None
     if bid in HERO_CARDS:
@@ -156,6 +160,71 @@ retire_cards(d, dat)
 once = copy.deepcopy(d)
 check("idempotent", retire_cards(d, dat) == [] and d == once)
 
+print("\n=== replacements: the game's own unit in the line's place ===")
+d = draft_with(417, 307)
+retire_cards(d, dat)
+t = set(d["tree"]["units"])
+check("Savar in, Paladin out; KM's Legionary (307) as 416: Legionary in, Two-Handed Swordsman and Champion out",
+      {1813, 1793} <= t and not {569, 473, 567} & t and not d["bonuses"])
+from civ_appender import _tree_unit_ids, get_civ_bonuses  # noqa: E402
+for unit, card, gone in ((1813, 417, {569}), (1793, 416, {473, 567}), (1707, 282, {441}),
+                         (1302, 362, {532}), (2485, 456, {39, 474})):
+    civ = {"tree": {"units": list(units) + [unit]}, "bonuses": []}
+    check(f"a tree with {unit}: builds as card {card} and without {sorted(gone)}",
+          card in {e[0] for e in get_civ_bonuses(civ)} and not gone & _tree_unit_ids(civ))
+civ = {"tree": {"units": list(units) + [1302]}, "bonuses": [{"id": 402, "multiplier": 1}]}
+check("...and a KM duplicate card on top doesn't build it twice",
+      [e[0] for e in get_civ_bonuses(civ)].count(362) + [e[0] for e in get_civ_bonuses(civ)].count(402) == 1)
+if dat is not None:
+    import added_lines  # noqa: E402
+    sug = {frm: [(r["base"], r["source"]) for r in added_lines.suggested_upgrades(dat, frm, [])]
+           for frm in (283, 546, 529, 77)}
+    check("the \"+\" under the unit before offers the game's own (Savar, Winged Hussar, Dragon Ship, Legionary)",
+          sug == {283: [(1813, "real")], 546: [(1707, "real")], 529: [(1302, "real")], 77: [(1793, "real")]}, sug)
+    reps = {r["base"]: r for r in added_lines.real_replacements(dat, [])}
+    check("the tree page's table: Scythian replaces the line from its first unit, at the Archery Range",
+          reps[2485]["line"] and reps[2485]["building"] == 87 and reps[1813]["replaces"] == [569], reps.get(2485))
+    from build_civ import _retarget_replaced_nodes  # noqa: E402
+    from dat_reader import find_civtechtrees  # noqa: E402
+    src = find_civtechtrees(dat_path)
+    if src is not None and (src / "BRITONS.json").exists():
+        data = json.loads((src / "BRITONS.json").read_text(encoding="utf-8"))
+        _retarget_replaced_nodes(data, {1813, 1793, 1707, 1302, 2485, 2486}, dat, 1, src)
+        f2 = {n["Node ID"]: n for n in data["civ_techs_units"] if n.get("Use Type") == "Unit"}
+        check("F2: the Paladin's node is the Savar, with the Persians' strings, under the Cavalier",
+              f2.get(1813, {}).get("Name String ID") == 14703 and f2[1813].get("Link ID") == 283
+              and 569 not in f2, f2.get(1813))
+        check("F2: the Legionary takes the Two-Handed Swordsman's node; the Champion's is gone",
+              1793 in f2 and not {473, 567} & set(f2))
+        check("F2: Winged Hussar, Dragon Ship and both Scythians take their nodes",
+              {1707, 1302, 2485, 2486} <= set(f2) and not {441, 532, 39, 474} & set(f2)
+              and f2[2486].get("Link ID") == 2485)
+
+print("\n=== the old full tree's Winged Hussar and Dragon Ship ===")
+d = draft_with()
+d["tree"]["units"] += [1707, 1302]
+notes = retire_cards(d, dat)
+check("a civ from before, holding them without their cards: they leave (it never built them)",
+      not {1707, 1302} & set(d["tree"]["units"]) and d["tree_version"] == 2
+      and sum("left the tree" in n for n in notes) == 2, notes)
+d = draft_with()
+d["tree"]["units"] += [775, 1004, 1010, 882]
+retire_cards(d, dat)
+check("...and so do the KM catalog's units and the team-bonus units",
+      not {775, 1004, 1010, 882} & set(d["tree"]["units"]))
+d = draft_with(282)
+d["tree"]["units"] += [1707, 1302]
+retire_cards(d, dat)
+check("...the one whose card it held stays", 1707 in d["tree"]["units"] and 1302 not in d["tree"]["units"])
+d = draft_with()
+d["tree"]["units"] += [1707]
+d["tree_version"] = 2
+check("a civ past the cleanup keeps what its tree picked", retire_cards(d, dat) == [] and 1707 in d["tree"]["units"])
+from civ_schema import from_draft, to_draft  # noqa: E402
+from wizard_build import _draft_to_civ_def  # noqa: E402
+check("the stamp survives saving, loading and the build's conversion",
+      to_draft(from_draft(d)).get("tree_version") == 2 and _draft_to_civ_def(d).get("tree_version") == 2)
+
 print("\n=== a KM file ===")
 km = {"alias": "KM", "bonuses": [[[405, 1], [43, 1], [338, 1], [3, 1]], [11], [], [], []],
       "tree": [list(units), list(buildings), list(techs)]}
@@ -173,12 +242,14 @@ check("retired cards are not offered", not offered & RETIRED, sorted(offered & R
 check("...and an older civ is told where each went",
       all(cat["retired"]["civ"].get(str(b), {}).get("successor") in ("the tech tree", "the hero panel")
           for b in (405, 43, 309, 457, 338)), {b: cat["retired"]["civ"].get(str(b)) for b in (405, 338)})
-check("the replacements are still offered", {416, 417, 456} <= offered, sorted({416, 417, 456} - offered))
 r = client.post("/api/builder/retire-cards", json={"draft": draft_with(405, 338)}).get_json()
 check("/api/builder/retire-cards converts a draft",
       not r["draft"]["bonuses"] and r["draft"]["hero_unit"]["base_unit_id"] == 1966 and len(r["notes"]) == 2, r.get("notes"))
 meta = client.get("/api/builder/meta").get_json()
 check("meta names the retired cards", set(meta.get("retired_cards", [])) == RETIRED)
+check("meta keeps the replacement, KM and team-bonus units out of a new civ's seed",
+      {1707, 1302, 1813, 1793, 2485, 2486, 775, 831, 1004, 1263, 1010, 882}
+      <= set(meta.get("seed_excluded_units", [])))
 
 if dat is None:
     print("  skip  no game DAT found")
@@ -189,7 +260,8 @@ print("\n=== a build of a civ that still carries the cards ===")
 from civ_overrides import apply_civ_with_overrides  # noqa: E402
 SLOT = 1
 km = {"alias": "KM", "architecture": 2, "language": 0,
-      "bonuses": [[[405, 1], [43, 1], [338, 1], [457, 1], [309, 1]], [11], [[3, 1]], [[12, 1]], []],
+      "bonuses": [[[405, 1], [43, 1], [338, 1], [457, 1], [309, 1], [417, 1], [282, 1], [362, 1]],
+                  [11], [[3, 1]], [[12, 1]], []],
       "tree": [list(units), list(buildings), list(techs)]}
 out = io.StringIO()
 with contextlib.redirect_stdout(out):
@@ -210,6 +282,16 @@ check("the Trebuchet wears the Athenians' Palintonon",
 check("the Royal Battle Elephant is built as the tree's added line",
       any(rec["units"] and dat.civs[SLOT].units[rec["units"][0]].hit_points == 330 for rec in r.get("added_lines") or []),
       [(rec["units"]) for rec in r.get("added_lines") or []])
+
+own_up = {int(c.b) for t in owned for c in dat.effects[t.effect_id].effect_commands if c.type == 3}
+check("Savar and Dragon Ship: this civ's own copy of the game's upgrade", {1813, 1302} <= own_up,
+      sorted(own_up & {1813, 1302}))
+wh = dat.techs[786]
+check("Winged Hussar: the game's upgrade, re-pointed at this civ's copy of its trigger (card 282)",
+      any(r >= 0 and r not in (115, 254, 788, 789) for r in wh.required_techs), wh.required_techs)
+tt = dat.effects[civ.tech_tree_id].effect_commands
+off = {int(c.d) for c in tt if c.type == 102}
+check("the Paladin, Hussar and Fast Fire Ship upgrades are off", {265, 428, 246} <= off, sorted({265, 428, 246} - off))
 
 print("\nPASS" if not failures else "\nFAIL", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

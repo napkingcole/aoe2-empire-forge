@@ -178,10 +178,6 @@ const _BONUS_CONTROLLED_UNITS = new Set([
     1793,         // Legionary
     1813,         // Savar
 ]);
-const _BONUS_HINT = 'Also adds the matching "Unlock ..." civ bonus on the Bonuses step.';
-// Of those, the ones still mirrored by a card: the replacements.  The others'
-// cards are retired into the tree (retired_cards.py), so the tree is their home.
-const _STILL_CARD_UNITS = new Set([1793, 1813]);
 
 // True for a unit this editor shows but does not own the on/off decision for.
 // Only the picker's siege ships qualify — the bonus-mirrored units are owned
@@ -1071,8 +1067,9 @@ function _toggleNode(item, element_height) {
     if (item.added || item.add) return;
     // A real unit a "+" added: off takes it out (its Elite with it), so its
     // node goes; the "+" brings it back.
+    // A replacement (the Savar for the Paladin) gives the line back.
     if (item.real) {
-        if (_isSelected(item)) window._ttSetTreeUnits([], item.real.units);
+        if (_isSelected(item)) window._ttSetTreeUnits(item.real.restore || [], item.real.units);
         return;
     }
     // The siege ship is owned by the wizard's picker and the regional second
@@ -1206,8 +1203,8 @@ function _variantHint(item) {
     if (item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) {
         return _PICKER_HINT;
     }
-    if (item.use_type === 'Unit' && _STILL_CARD_UNITS.has(item.node_id)) {
-        return _BONUS_HINT;
+    if (item.real && item.real.restore) {
+        return `The game's own ${item.name}, in this line's place. Untick it to go back.`;
     }
     if (item.use_type !== 'Building') return '';
     if (_REGIONAL_BUILDING_IDS.has(item.node_id)) {
@@ -1492,10 +1489,13 @@ window._ttCanExtend = _canExtend;
 
 // Can this unit be replaced?  Only one an upgrade gives (Paladin, not Knight):
 // the replacement rides that upgrade.
+// A line's first unit, only when the game has a unit for its place (the
+// Scythian Horse Archer for the Cavalry Archer).
 function _canReplace(item) {
-    return _canEdit && item.use_type === 'Unit' && !item.added && item.node_type === 'UnitUpgrade'
-        && _isSelected(item) && _ADD_LINE_BUILDINGS.has(item.building_id)
-        && !_REAL_ONLY_BUILDINGS.has(item.building_id);
+    if (!_canEdit || item.use_type !== 'Unit' || item.added || item.real || !_isSelected(item)
+            || !_ADD_LINE_BUILDINGS.has(item.building_id) || _REAL_ONLY_BUILDINGS.has(item.building_id)) return false;
+    return item.node_type === 'UnitUpgrade'
+        || (window.ttInspector?.realReplacements() || []).some(r => r.replaces.includes(item.node_id));
 }
 window._ttCanReplace = _canReplace;
 
@@ -1609,6 +1609,40 @@ function _applyRealUnits(treeData) {
             if (b.grid.some(rw => rw[c] && String(rw[c]).startsWith('Unit_'))) at = c + 1;
         }
         for (let r = 0; r < rows; r++) b.grid[r].splice(at, 0, ...cols.map(c => c[r]));
+    }
+}
+
+// The game's own units that took a line's place (added_lines.real_replacements):
+// the replaced nodes become them, where they stand (the Paladin's node is the
+// Savar), and a replaced unit with no pair (the Champion, after the Legionary)
+// goes.  The build's F2 tree does the same (build_civ._retarget_replaced_nodes).
+function _applyRealReplacements(treeData) {
+    const reps = window.ttInspector ? window.ttInspector.realReplacements() : [];
+    for (const r of reps) {
+        if (!_localtree.units.includes(r.base)) continue;
+        r.replaces.forEach((rid, i) => {
+            const items = treeData.units_techs.filter(it => it.use_type === 'Unit' && it.node_id === rid
+                                                            && it.building_id === r.building);
+            for (const it of items) {
+                const to = r.units[i];
+                if (to === undefined) {
+                    treeData.units_techs.splice(treeData.units_techs.indexOf(it), 1);
+                    for (const b of treeData.buildings) {
+                        for (const row of b.grid || []) {
+                            const c = row.indexOf(it.id);
+                            if (c >= 0) row[c] = null;
+                        }
+                    }
+                    continue;
+                }
+                Object.assign(it, {
+                    node_id: to, name: r.names[String(to)] || r.name, picture_index: r.icons[String(to)],
+                    name_string_id: -1, help_string_id: -1,
+                    real: { units: r.units, base: r.base, restore: r.replaces },
+                });
+                for (const o of treeData.units_techs) if (o.link_id === rid && o.building_id === r.building) o.link_id = to;
+            }
+        });
     }
 }
 
@@ -1801,6 +1835,7 @@ function civ(civName) {
         _applyBuildingVariantLayout(treeData);
         _applySiegeShipLayout(treeData);
         _applyAgeMoves(treeData);
+        _applyRealReplacements(treeData);
         _applyRealUnits(treeData);
         _applyAddedLines(treeData);
         const root = document.getElementById('root');

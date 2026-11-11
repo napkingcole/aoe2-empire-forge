@@ -215,6 +215,7 @@ def to_draft(schema: dict) -> dict:
         "castle_ut":    _ut(s.get("castle_ut"), "castle"),
         "imperial_ut":  _ut(s.get("imperial_ut"), "imperial"),
         "tree":         tree,
+        "tree_version": s.get("tree_version"),
         "long_range_ship":       s.get("long_range_ship"),
         "long_range_ship_elite": s.get("long_range_ship_elite", True),
         "starting_scout":        s.get("starting_scout"),
@@ -334,6 +335,7 @@ def from_draft(draft: dict) -> dict:
         "imperial_ut":  _ut_out(draft.get("imperial_ut"), "imperial"),
 
         "tree": tree_out,
+        "tree_version": draft.get("tree_version"),
         "long_range_ship":         draft.get("long_range_ship"),
         "long_range_ship_elite":   draft.get("long_range_ship_elite", True),
         "starting_scout":          draft.get("starting_scout"),

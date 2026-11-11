@@ -172,8 +172,9 @@ for path in CORPUS:
     declared = set(tree.get("units", []) if isinstance(tree, dict)
                    else (tree[0] if isinstance(tree, list) and tree else []))
     # ...after any picked replacement, which the accessor applies on purpose
-    # (the Scythian Horse Archer takes the Cavalry Archer line out of the tree).
-    declared = _apply_unit_replacements({int(u) for u in declared})
+    # (the Scythian Horse Archer takes the Cavalry Archer line out of the tree;
+    # a carried replacement card does the same, Winged Hussar 282 the Hussar).
+    declared = _apply_unit_replacements({int(u) for u in declared}, civ_def)
     if declared and got["tree_units"] != declared:
         bad.append(f"{path.name}: tree units {got['tree_units']} != {declared}")
     # Accessors are reads.  get_civ_bonuses appends derived unlocks to its own

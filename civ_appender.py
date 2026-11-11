@@ -3264,6 +3264,22 @@ KM_UNIT_CARDS: dict[int, tuple[int, ...]] = {
     322: (1263,),        # Flaming Camel
 }
 
+# The game's own units that take a line's place, each with what it replaces,
+# paired in order: the first replaced unit's node becomes the first unit, and
+# so on; a replaced unit with no pair (the Champion, after the Legionary) goes.
+# "line" replaces a line from its first unit; the others take its last
+# upgrade, as their civs have them.  The tree holds the unit (card derived in
+# get_civ_bonuses); the card is retired into it (retired_cards).
+LINE_REPLACEMENTS: dict[int, dict] = {
+    456: {"units": (2485, 2486), "replaces": (39, 474), "line": True},   # Scythian Horse Archer
+    416: {"units": (1793,), "replaces": (473, 567)},   # Legionary: Two-Handed Swordsman, Champion
+    417: {"units": (1813,), "replaces": (569,)},       # Savar: Paladin
+    282: {"units": (1707,), "replaces": (441,)},       # Winged Hussar: Hussar
+    362: {"units": (1302,), "replaces": (532,)},       # Dragon Ship: Fast Fire Ship
+}
+# KM's duplicates of the same cards (same techs).
+REPLACEMENT_CARD_ALIASES = {307: 416, 314: 417, 402: 362}
+
 # Tree units that may need their unlock techs copied (step 6b of apply_civ):
 # unit -> its make-avail tech and elite upgrade, in that order.
 _CIV_LOCKED_TREE_UNITS: dict[int, tuple[int, ...]] = {
@@ -3292,11 +3308,12 @@ def _apply_unit_replacements(units: set, civ_def: dict | None = None) -> set:
     raw = _raw_civ_bonus_ids(civ_def)
     for bid in raw & RETIRED_INTO_TREE.keys():
         out = (out - RETIRED_INTO_TREE[bid]["remove"]) | RETIRED_INTO_TREE[bid]["add"]
-    for bid, spec in _UNLOCK_UNIT_BONUSES.items():
+    cards = raw | {REPLACEMENT_CARD_ALIASES[b] for b in raw & REPLACEMENT_CARD_ALIASES.keys()}
+    for bid, spec in LINE_REPLACEMENTS.items():
         # From the tree or from the card itself: a card-only Scythian Horse
         # Archer left the Cavalry Archer in the tree, where it held button 3
         # though the card hides it (#108).
-        if spec.get("replaces") and (out & set(spec["units"]) or bid in raw):
+        if out & set(spec["units"]) or bid in cards:
             out -= set(spec["replaces"])
     return out
 
@@ -6168,6 +6185,11 @@ def get_civ_bonuses(civ_def: dict) -> list:
                 entries.append([bid, 1])
         for bid, ids in KM_UNIT_CARDS.items():
             if bid not in have and units.intersection(ids):
+                entries.append([bid, 1])
+        for bid, spec in LINE_REPLACEMENTS.items():
+            dupes = {a for a, b in REPLACEMENT_CARD_ALIASES.items() if b == bid}
+            if bid not in have and not dupes & have and units.intersection(spec["units"]) \
+                    and bid not in _UNLOCK_UNIT_BONUSES:
                 entries.append([bid, 1])
     return entries
 

@@ -18,26 +18,33 @@ retire_cards() rewrites a civ in place.  It runs when the wizard loads a draft
 converted on its way in and no hidden card is kept.  It is idempotent: a
 converted civ carries none of these cards.
 
-Not here yet: the replacement cards (282 Winged Hussar, 307/416 Legionary,
-314/417 Savar, 456 Scythian Horse Archer, 362/402 Dragon Ship) wait for the
-whole-line replacement; the earlier-age cards stay cards (user, 2026-11-10).
+The replacement cards (282 Winged Hussar, 307/416 Legionary, 314/417 Savar,
+456 Scythian Horse Archer, 362/402 Dragon Ship) go into the tree as the game's
+own unit in the replaced line's place (civ_appender.LINE_REPLACEMENTS).  The
+earlier-age cards stay cards (user, 2026-11-10).
 """
 from __future__ import annotations
 
 import copy
 
-from civ_appender import CARD_UPGRADE_UNITS, KM_UNIT_CARDS, _UNLOCK_UNIT_BONUSES
+from civ_appender import (CARD_UPGRADE_UNITS, KM_UNIT_CARDS, LINE_REPLACEMENTS,
+                          REPLACEMENT_CARD_ALIASES, _UNLOCK_UNIT_BONUSES)
 from civ_schema import RETIRED_INTO_TREE
 
-# Card -> the units it made trainable.  Replacements (Legionary, Savar, the
-# Scythian Horse Archer) take a line's place and are left as cards for now.
+# Card -> the units it made trainable.  Replacements are REPLACEMENT_CARDS.
 UNIT_CARDS: dict[int, tuple[int, ...]] = {
     **{bid: tuple(spec["units"]) for bid, spec in _UNLOCK_UNIT_BONUSES.items()
-       if not spec.get("replaces") and bid not in (416, 417)},
+       if bid not in LINE_REPLACEMENTS},
     361: tuple(_UNLOCK_UNIT_BONUSES[412]["units"]),   # Mounted Trebuchet, KM's copy of 412
     298: tuple(_UNLOCK_UNIT_BONUSES[415]["units"]),   # Thirisadai, KM's copy of 415
     **KM_UNIT_CARDS,                                  # Missionary, Turtle Ship, Caravel, Flaming Camel
     61: (185,),                                       # Slinger: a tree node already
+}
+
+# Card -> (units added, units they replace), KM's duplicates included.
+REPLACEMENT_CARDS: dict[int, tuple[frozenset, frozenset]] = {
+    bid: (frozenset(LINE_REPLACEMENTS[to]["units"]), frozenset(LINE_REPLACEMENTS[to]["replaces"]))
+    for bid, to in {**{b: b for b in LINE_REPLACEMENTS}, **REPLACEMENT_CARD_ALIASES}.items()
 }
 
 HERO_CARDS: dict[int, int] = {338: 1966, 344: 1978, 349: 1954}   # Liu Bei, Sun Jian, Cao Cao
@@ -59,7 +66,23 @@ UPGRADE_CARDS: dict[int, tuple[int, int, int | None]] = {
     310: (101, CARD_UPGRADE_UNITS[310]["from"], None),  # Royal Lancer
 }
 
-RETIRED = frozenset(UNIT_CARDS) | frozenset(HERO_CARDS) | frozenset(LOOK_CARDS) \
+# Before the tree could hold them (2026-11-10/11), these units built only
+# from a card, and the old full-tree seed held them all, doing nothing: the
+# Winged Hussar and Dragon Ship, the KM catalog's units, and the Genitour and
+# Condottiero (a team bonus never put them in a tree).  A civ from then that
+# holds one without its card drops it, so it builds as it did; TREE_VERSION
+# marks a civ already past that, whose tree holds them by choice.
+TREE_VERSION = 2
+_SEEDED_BEFORE: dict[int, tuple[int, ...]] = {
+    1707: (282,), 1302: (362, 402),
+    **{u: (bid,) for bid, ids in KM_UNIT_CARDS.items() for u in ids},
+    1010: (), 1012: (), 882: (),
+}
+# Never in a new civ's seed: units only a deliberate pick puts in a tree.
+SEED_EXCLUDED_UNITS = frozenset(_SEEDED_BEFORE) | frozenset(
+    u for spec in LINE_REPLACEMENTS.values() for u in spec["units"])
+
+RETIRED = frozenset(UNIT_CARDS) | frozenset(REPLACEMENT_CARDS) | frozenset(HERO_CARDS) | frozenset(LOOK_CARDS) \
     | frozenset(UPGRADE_CARDS) | frozenset(RETIRED_INTO_TREE)
 
 
@@ -119,24 +142,30 @@ def retire_cards(civ: dict, dat=None) -> list[str]:
     """Move every retired card on `civ` to its home, in place.  `dat` prices
     the game's own upgrades (53, 286); without it those two stay cards.
     Returns one line per card moved, for the build log and the wizard."""
-    cards = _card_list(civ)
-    if not cards:
-        return []
-    ids = [i for i in (_card_id(e) for e in cards) if i in RETIRED]
-    if not ids:
-        return []
+    cards = _card_list(civ) or []
     units = _tree_units(civ)
     notes: list[str] = []
+    if (civ.get("tree_version") or 1) < TREE_VERSION:
+        held = {_card_id(e) for e in cards}
+        for uid, need in _SEEDED_BEFORE.items():
+            if units and uid in units and not held & set(need):
+                units[:] = [u for u in units if u != uid]
+                notes.append(f"Unit {uid} left the tree: it came with the old full tree, and only its card built it")
+        civ["tree_version"] = TREE_VERSION
+    ids = [i for i in (_card_id(e) for e in cards) if i in RETIRED]
+    if not ids:
+        return notes
     done: set[int] = set()
     for bid in dict.fromkeys(ids):
-        if bid in UNIT_CARDS or bid in RETIRED_INTO_TREE:
+        if bid in UNIT_CARDS or bid in RETIRED_INTO_TREE or bid in REPLACEMENT_CARDS:
             # No tree at all means "leave the tree alone" (the slot's own); a
             # unit list of one card's units would switch everything else off.
             if not units:
                 continue
-            add = RETIRED_INTO_TREE[bid]["add"] if bid in RETIRED_INTO_TREE else UNIT_CARDS[bid]
-            if bid in RETIRED_INTO_TREE:
-                units[:] = [u for u in units if u not in RETIRED_INTO_TREE[bid]["remove"]]
+            add, remove = (RETIRED_INTO_TREE[bid]["add"], RETIRED_INTO_TREE[bid]["remove"]) \
+                if bid in RETIRED_INTO_TREE else REPLACEMENT_CARDS[bid] if bid in REPLACEMENT_CARDS \
+                else (UNIT_CARDS[bid], ())
+            units[:] = [u for u in units if u not in remove]
             units.extend(u for u in sorted(add) if u not in units)
             notes.append(f"Card {bid} is now in the tech tree (units {', '.join(map(str, sorted(add)))})")
         elif bid in HERO_CARDS:
