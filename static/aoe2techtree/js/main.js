@@ -143,16 +143,6 @@ const _REGIONAL_UNIT_IDS = new Set(
 const _REGIONAL_LINE_TECH_IDS = new Set(
     _REGIONAL_GROUPS.flatMap(g => g.lines).flatMap(l => l.techs || []));
 
-// ── Picker-controlled units ──────────────────────────────────────────────────
-// The siege ship is one Dock button with five candidates plus an elite toggle —
-// more than the tree's on/off vocabulary can express — so it is chosen in the
-// wizard's Siege Ship picker instead, and the backend rebuilds tree[0] from that
-// choice.  The nodes stay visible in the Dock (that's where you'd look for
-// them) but can't be toggled here, or the tree would show a ship the build
-// won't produce.  builder.js keeps the displayed selection in sync.
-const _PICKER_CONTROLLED_UNITS = new Set([420, 691, 2633, 1795, 1948]);
-const _PICKER_HINT = 'Chosen with the Siege Ship picker, next to the tech tree button.';
-
 // ── Bonus-mirrored units ─────────────────────────────────────────────────────
 // Regional / second unique units whose make-avail tech is locked to its owner
 // civ (tech.civ, not the tech-tree effect), so the backend has to reassign the
@@ -179,24 +169,20 @@ const _BONUS_CONTROLLED_UNITS = new Set([
     1813,         // Savar
 ]);
 
-// True for a unit this editor shows but does not own the on/off decision for.
-// Only the picker's siege ships qualify — the bonus-mirrored units are owned
-// here, and merely publish their state to the Bonuses step.
-function _isExternallyControlled(item) {
-    return item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id);
-}
-
-// Every shipped layout reserves the same Dock cells for these: the Cannon
-// Galleon and its elite in the last column, and whichever variant the civ has
-// in column 1 row 7.  FULL.json has them stripped, so a from-scratch tree used
-// to show no siege ship at all — the nodes are put back at render time instead
-// of editing 54 layout files.  Only the picked variant occupies the variant
-// cell, exactly as each real civ's layout does.
+// The Dock's siege ship is the tree's (2026-11-11; the wizard's Siege Ship
+// picker before): the Cannon Galleon and its Elite toggle like any node, and the
+// Catapult Galleon, Dromon and Lou Chuan take the Cannon Galleon's node as a
+// replacement (civ_appender.SIEGE_SHIP_REPLACEMENTS, offered from its panel).
+// Every shipped layout reserves the same Dock cells: the Cannon Galleon and its
+// elite in the last column, the civ's variant in column 1 row 7.  FULL.json has
+// them stripped, so the two are put back at render time instead of editing 54
+// layout files; a layout's own variant node goes, as the replacement draws it.
 const _DOCK_BUILDING_ID = 45;
 // role → the cell the shipped layouts normally use.  420 and 691 are their
 // own roles; the three variants share the single 'variant' cell.
 const _SIEGE_SHIP_CELLS = { 420: [6, 6], 691: [6, 7], variant: [1, 7] };
 const _SIEGE_VARIANT_IDS = [2633, 1795, 1948];
+const _SIEGE_SHIP_IDS = new Set([420, 691, ..._SIEGE_VARIANT_IDS]);
 const _SIEGE_SHIP_NODES = {
     420: {
         age_id: 4, building_id: 45, building_in_new_column: null,
@@ -886,21 +872,17 @@ function _unfoldRegionalColumn(treeData, swap) {
     _setColumns(_findBuilding(treeData, swap.id), cols);
 }
 
-// Put the Dock's siege ship where every shipped layout keeps it, showing the
-// one the picker chose (crossed if the draft doesn't include it) and dropping
-// any variant belonging to a different civ's layout.
+// Put the Cannon Galleon and its Elite where every shipped layout keeps them
+// (crossed when the tree doesn't hold them), and take out any variant node: a
+// variant in the tree is drawn on the Cannon Galleon's node by
+// _applyRealReplacements, which runs after this.
 function _applySiegeShipLayout(treeData) {
     const dock = _findBuilding(treeData, _DOCK_BUILDING_ID);
     if (!dock || !dock.grid.length) return;
 
-    const chosenVariant = _SIEGE_VARIANT_IDS.find(id => _localtree.units.includes(id)) || null;
     const wanted = [420, 691];
-    if (chosenVariant) wanted.push(chosenVariant);
 
-    // Clear every siege node out of the Dock, then place the ones we want.
-    // This also evicts, say, the Aztec Catapult Galleon when the picker says
-    // Lou Chuan — otherwise the layout's variant would sit there crossed out
-    // while the actual choice had nowhere to show.  Remember where each one was
+    // Clear every siege node out of the Dock, then place the two.  Remember where each one was
     // first: a few layouts don't use the usual cells (the Burgundian Dock has no
     // Fast Fire Ship, so their Cannon Galleon sits a column over), and putting a
     // node back where its own layout had it beats any rule we could invent.
@@ -908,7 +890,7 @@ function _applySiegeShipLayout(treeData) {
     const drop = new Set();
     for (const item of treeData.units_techs) {
         if (item.building_id !== _DOCK_BUILDING_ID) continue;
-        if (!_PICKER_CONTROLLED_UNITS.has(item.node_id)) continue;
+        if (!_SIEGE_SHIP_IDS.has(item.node_id)) continue;
         drop.add(item.id);
         const role = _SIEGE_VARIANT_IDS.includes(item.node_id) ? 'variant' : item.node_id;
         for (let r = 0; r < dock.grid.length; r++) {
@@ -1045,10 +1027,6 @@ function _addNodeCross(item, element_height) {
 }
 
 function _disableSingle(item, element_height) {
-    // Cascades (e.g. switching the Dock off) must not strip the picker's ship
-    // either — the backend puts it back, so removing it here would only make
-    // the tree disagree with the build.
-    if (_isExternallyControlled(item)) return;
     const key = _useTypeKey(item.use_type);
     if (!key) return;
     const arr = _localtree[key];
@@ -1072,10 +1050,6 @@ function _toggleNode(item, element_height) {
         if (_isSelected(item)) window._ttSetTreeUnits(item.real.restore || [], item.real.units);
         return;
     }
-    // The siege ship is owned by the wizard's picker and the regional second
-    // unique units by their bonus cards — neither decision lives in this tree.
-    if (_isExternallyControlled(item)) return;
-
     if (item.use_type === 'Building') {
         // Town Center and House can never be toggled.
         if (HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) return;
@@ -1200,9 +1174,6 @@ function _costHtml(costObj) {
 // Explain what clicking a camp / regional building does — the swap is the one
 // interaction in the editor that isn't a plain on/off toggle.
 function _variantHint(item) {
-    if (item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) {
-        return _PICKER_HINT;
-    }
     if (item.real && item.real.restore) {
         return `The game's own ${item.name}, in this line's place. "Undo" in the panel gives the line back.`;
     }
@@ -2378,11 +2349,9 @@ function _fillAll() {
     // Regional replacement units (Champi, Hei Guang, Rocket Cart, Armored/Siege Elephant)
     // are excluded — standard lines (Militia, Knight, Mangonel, Ram) are kept.
     if (!_currentCivName) return;
-    // The picker owns the siege ship — carry the current choice across.
-    const keepShips = _localtree.units.filter(id => _PICKER_CONTROLLED_UNITS.has(id));
     loadJson(_treeroot + '/' + _currentCivName.toUpperCase() + '.json', function (treeData) {
-        _localtree = { units: keepShips.slice(), buildings: [], techs: [] };
-        const seen = { units: new Set(keepShips), buildings: new Set(), techs: new Set() };
+        _localtree = { units: [], buildings: [], techs: [] };
+        const seen = { units: new Set(), buildings: new Set(), techs: new Set() };
         const push = (key, id) => {
             if (seen[key].has(id)) return;   // layouts can list a node twice
             seen[key].add(id);
@@ -2401,14 +2370,18 @@ function _fillAll() {
             // A line-owned tech is only meaningful with its line, which "Enable
             // All" has just skipped.
             if (key === 'techs' && _REGIONAL_LINE_TECH_IDS.has(item.node_id)) continue;
-            // Never enable a siege ship the picker didn't ask for.
-            if (_isExternallyControlled(item)) continue;
+            // A siege ship variant replaces the Cannon Galleon: a deliberate
+            // pick, like the other replacements, never "all".
+            if (key === 'units' && _SIEGE_VARIANT_IDS.includes(item.node_id)) continue;
             // Second unique units are opt-in extras, and Bolas Rider / Xianbei
             // Raider would land on the Cavalry Archer's button — "Enable All"
             // should not quietly hand out a colliding tree.
             if (key === 'units' && _BONUS_CONTROLLED_UNITS.has(item.node_id)) continue;
             if (key) push(key, item.node_id);
         }
+        // Drawn in every Dock (_applySiegeShipLayout), though FULL.json has neither.
+        push('units', 420);
+        push('units', 691);
         civ(_currentCivName);
         _treeChanged();
     });
@@ -2416,9 +2389,7 @@ function _fillAll() {
 
 function _disableAll() {
     // Resets to the standard camps — the regional building is a deliberate pick.
-    // The siege ship survives: it belongs to the picker, not to this tree.
-    const keepShips = _localtree.units.filter(id => _PICKER_CONTROLLED_UNITS.has(id));
-    _localtree = { units: keepShips, buildings: [], techs: [] };
+    _localtree = { units: [], buildings: [], techs: [] };
     _localtree.buildings = [...HARD_ALWAYS_ON_BUILDINGS, ..._CAMP_BUILDING_IDS];
     if (_currentCivName) civ(_currentCivName);
     _treeChanged();

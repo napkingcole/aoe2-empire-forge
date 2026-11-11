@@ -121,7 +121,7 @@ function showStep(n) {
     }
   }
   if (n === 1) renderScene();      // a card picked since (460) can change it
-  if (n === 2) { renderLRSPicker(); renderDemoShipNotice(); warmTreeSteps(); }
+  if (n === 2) { renderDemoShipNotice(); warmTreeSteps(); }
   if (n === 6 || n === 7) initUTPanel(n);
 
   const btnPrev = document.getElementById("btn-prev");
@@ -2817,7 +2817,7 @@ let _cardOnlyUnits    = new Set();  // every unlock card's units, retired or not
 async function _retireCards() {
   // ...and a draft from before the tree held replacements gets its one-time
   // tree cleanup (retired_cards.TREE_VERSION), once.
-  if ((draft.tree_version || 1) >= 2
+  if ((draft.tree_version || 1) >= (window._treeVersion || 3)
       && !(draft.bonuses || []).some(b => _retiredCardIds.has(Number(b.id ?? b[0])))) return;
   try {
     const res = await fetch('/api/builder/retire-cards', {
@@ -4362,58 +4362,21 @@ function _wireUUAdvanced() {
     ?.addEventListener("hide.bs.collapse",  () => document.getElementById("ua-chevron")?.classList.remove("fa-rotate-180"));
 }
 
-// ── Long-range ship picker ────────────────────────────────────────────────────
-
-const _LRS_OPTIONS = [
-  { id: "none",             label: "None",             img: null },
-  { id: "cannon_galleon",   label: "Cannon Galleon",   img: "/static/aoe2techtree/img/Unit/55.png" },
-  { id: "catapult_galleon", label: "Catapult Galleon",  img: "/static/aoe2techtree/img/Unit/591.png" },
-  { id: "dromon",           label: "Dromon",            img: "/static/aoe2techtree/img/Unit/406.png" },
-  { id: "lou_chuan",        label: "Lou Chuan",         img: "/static/aoe2techtree/img/Unit/431.png" },
-];
-
-const _LRS_NOTES = {
-  none:             "Your civ will have no siege ship.",
-  cannon_galleon:   "Standard Cannon Galleon. Use the elite checkbox to include the Elite upgrade.",
-  catapult_galleon: "Catapult Galleon replaces Cannon Galleon. No elite upgrade.",
-  dromon:           "Byzantine-style Dromon. No elite upgrade.",
-  lou_chuan:        "Chinese-style Lou Chuan. No elite upgrade.",
-};
-
-// Only Cannon Galleon has an elite upgrade (unit 691 — Elite Cannon Galleon)
-const _LRS_HAS_ELITE = new Set(["cannon_galleon"]);
-
-// Siege ship unit IDs ↔ picker option ids.  The picker is the sole control (the
-// backend discards all of these from tree[0] and re-adds from the draft), so
-// these two maps keep the tech tree and the picker showing the same thing.
-// Variants are checked before the Cannon Galleon: a civ that has both listed
-// (several do) is really a variant civ.
-const _LRS_UNIT_OF = { cannon_galleon: 420, catapult_galleon: 2633, dromon: 1795, lou_chuan: 1948 };
-const _LRS_ELITE_UNIT = 691;
-const _LRS_UNIT_IDS = new Set([...Object.values(_LRS_UNIT_OF), _LRS_ELITE_UNIT]);
-
-// Read a civ's unit list and work out which picker option it corresponds to.
-function _lrsFromUnits(units) {
-  const has = new Set(units);
-  for (const id of ["catapult_galleon", "dromon", "lou_chuan", "cannon_galleon"]) {
-    if (has.has(_LRS_UNIT_OF[id])) return { ship: id, elite: has.has(_LRS_ELITE_UNIT) };
+// ── The Dock's siege ship ─────────────────────────────────────────────────────
+// It lives in the tree (2026-11-11; a Siege Ship picker before): the Cannon
+// Galleon and its Elite are nodes like any other, and the Catapult Galleon,
+// Dromon and Lou Chuan take their line's place (civ_appender.
+// SIEGE_SHIP_REPLACEMENTS).  A seed from FULL.json (which has no Cannon
+// Galleon) gets the standard Dock, as the picker's default gave: the Cannon
+// Galleon and its Elite, no variant.  A civ's own template is taken as
+// shipped, its variant over the Cannon Galleon some list beside it.
+const _SIEGE_SHIPS = Object.freeze({ cg: 420, elite: 691, variants: [2633, 1795, 1948] });
+function _withSiegeShip(units, seed) {
+  const cg = id => id === _SIEGE_SHIPS.cg || id === _SIEGE_SHIPS.elite;
+  if (seed) {
+    return [...units.filter(id => !cg(id) && !_SIEGE_SHIPS.variants.includes(id)), _SIEGE_SHIPS.cg, _SIEGE_SHIPS.elite];
   }
-  return { ship: "none", elite: false };
-}
-
-// Rewrite a unit list so the siege ship matches the picker exactly — used on
-// every tree open so the Dock can't show a ship the build won't produce.
-function _applyLrsToUnits(units) {
-  const out = units.filter(id => !_LRS_UNIT_IDS.has(id));
-  const ship = draft.long_range_ship || "cannon_galleon";
-  const base = _LRS_UNIT_OF[ship];
-  if (base !== undefined) {
-    out.push(base);
-    if (_LRS_HAS_ELITE.has(ship) && draft.long_range_ship_elite !== false) {
-      out.push(_LRS_ELITE_UNIT);
-    }
-  }
-  return out;
+  return _SIEGE_SHIPS.variants.some(id => units.includes(id)) ? units.filter(id => !cg(id)) : units;
 }
 
 // Unique ship bonuses that lock the Demo Ship line.
@@ -4463,57 +4426,6 @@ function renderDemoShipNotice() {
   } else {
     notice.classList.add("d-none");
   }
-}
-
-function renderLRSPicker() {
-  const container  = document.getElementById("lrs-chips");
-  const eliteRow   = document.getElementById("lrs-elite-row");
-  const eliteCheck = document.getElementById("lrs-elite-check");
-  const noteEl     = document.getElementById("lrs-note");
-  if (!container) return;
-
-  const current  = draft.long_range_ship || null;
-  const hasElite = _LRS_HAS_ELITE.has(current || "cannon_galleon");
-
-  container.innerHTML = _LRS_OPTIONS.map(opt => {
-    const sel = opt.id === current || (opt.id === "cannon_galleon" && current === null);
-    const imgHtml = opt.img
-      ? `<img src="${opt.img}" class="lrs-chip-img" alt="${opt.label}">`
-      : `<span class="lrs-chip-none-icon"><i class="fa-solid fa-ban"></i></span>`;
-    return `<button type="button" class="lrs-chip${sel ? " lrs-chip--selected" : ""}"
-               data-lrs="${opt.id}">${imgHtml}<span>${opt.label}</span></button>`;
-  }).join("");
-
-  container.querySelectorAll(".lrs-chip").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const val = btn.dataset.lrs;
-      draft.long_range_ship = (val === "cannon_galleon") ? null : val;
-      // Default elite to true when switching to a type that has one
-      if (_LRS_HAS_ELITE.has(val || "cannon_galleon") && draft.long_range_ship_elite == null) {
-        draft.long_range_ship_elite = true;
-      }
-      saveDraft();
-      renderLRSPicker();
-    });
-  });
-
-  // Elite checkbox: show only for Cannon Galleon, hide otherwise
-  if (eliteRow) eliteRow.classList.toggle("d-none", !hasElite);
-  if (eliteCheck && hasElite) {
-    eliteCheck.checked = draft.long_range_ship_elite !== false; // default true
-    eliteCheck.onchange = () => {
-      draft.long_range_ship_elite = eliteCheck.checked;
-      saveDraft();
-    };
-  }
-
-  const noteKey = current || "cannon_galleon";
-  if (noteEl) {
-    noteEl.textContent = _LRS_NOTES[noteKey] || "";
-    noteEl.classList.toggle("d-none", !_LRS_NOTES[noteKey]);
-  }
-
-  renderDemoShipNotice();
 }
 
 // ── Effect-command meter ──────────────────────────────────────────────────────
@@ -4754,7 +4666,7 @@ function _filterFullTree(data, everything = false) {
   const unlockUnits = _cardOnlyUnits;
 
   return {
-    units:     (data.units     || []).filter(id => (everything || !regUnits.has(id)) && !unlockUnits.has(id)),
+    units:     _withSiegeShip((data.units || []).filter(id => (everything || !regUnits.has(id)) && !unlockUnits.has(id)), true),
     buildings: (data.buildings || []).filter(id => !regBldgs.has(id)
                                                 && !_CIV_UNIQUE_BUILDING_IDS.has(id)),
     techs:     (data.techs     || []).filter(id => everything || !regTechs.has(id)),
@@ -4812,25 +4724,13 @@ document.getElementById("btn-open-tree").addEventListener("click", async () => {
         const full = _filterFullTree(data, templateVal === "everything");
         treeToLoad = [full.units, full.buildings, full.techs];
       } else {
-        treeToLoad = [data.units, data.buildings, data.techs];
-        // Adopt the template civ's siege ship.  The picker is the only control
-        // the backend honours, so loading the Aztecs without this gave you the
-        // Aztec tree with a Frankish Cannon Galleon.
-        const lrs = _lrsFromUnits(data.units);
-        draft.long_range_ship = (lrs.ship === "cannon_galleon") ? null : lrs.ship;
-        if (_LRS_HAS_ELITE.has(lrs.ship)) draft.long_range_ship_elite = lrs.elite;
-        saveDraft();
-        renderLRSPicker();
+        treeToLoad = [_withSiegeShip(data.units || [], false), data.buildings, data.techs];
       }
     } catch (e) {
       alert("Failed to load tech tree data. Please try again.");
       return;
     }
   }
-
-  // Whatever we're about to show, the Dock's siege ship comes from the picker —
-  // never from the tree — so make the tree agree before it renders.
-  if (treeToLoad) treeToLoad[0] = _applyLrsToUnits(treeToLoad[0]);
 
   window.showTechtree(civName, treeToLoad, "/static");
 });
@@ -4884,6 +4784,7 @@ async function init() {
     window._metaMonks         = meta.monk_skins      || [];
     window._metaMonasteries   = meta.monastery_skins || [];
     window._artVersion        = meta.art_version     || "";
+    window._treeVersion       = meta.tree_version    || 3;   // retired_cards.TREE_VERSION
     // Retired unit cards are not mirrored from the tree any more: the tree is
     // their home.  _cardOnlyUnits still keeps their units out of a new civ's seed.
     _retiredCardIds           = new Set((meta.retired_cards || []).map(Number));

@@ -1127,10 +1127,7 @@
     function includeRow(item) {
         let note = '';
         let locked = false;
-        if (typeof _isExternallyControlled === 'function' && _isExternallyControlled(item)) {
-            locked = true;
-            note = 'Set by the Siege Ship picker or a bonus card, not here.';
-        } else if (item.use_type === 'Building' && HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) {
+        if (item.use_type === 'Building' && HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) {
             locked = true;
             note = 'Every civ has a Town Center.';
         }

@@ -28,7 +28,7 @@ from __future__ import annotations
 import copy
 
 from civ_appender import (CARD_UPGRADE_UNITS, KM_UNIT_CARDS, LINE_REPLACEMENTS,
-                          REPLACEMENT_CARD_ALIASES, _UNLOCK_UNIT_BONUSES)
+                          REPLACEMENT_CARD_ALIASES, SIEGE_SHIP_REPLACEMENTS, _UNLOCK_UNIT_BONUSES)
 from civ_schema import RETIRED_INTO_TREE
 
 # Card -> the units it made trainable.  Replacements are REPLACEMENT_CARDS.
@@ -72,7 +72,16 @@ UPGRADE_CARDS: dict[int, tuple[int, int, int | None]] = {
 # Condottiero (a team bonus never put them in a tree).  A civ from then that
 # holds one without its card drops it, so it builds as it did; TREE_VERSION
 # marks a civ already past that, whose tree holds them by choice.
-TREE_VERSION = 2
+# Version 3 (2026-11-11): the Dock's siege ship moved from the wizard's Siege
+# Ship picker (long_range_ship, long_range_ship_elite) into the tree, which the
+# build had overridden with the picker's choice.  A civ from before gets that
+# choice written into its tree once, and loses the two fields.
+TREE_VERSION = 3
+_PICKER_SHIPS = {None: 420, "cannon_galleon": 420, "catapult_galleon": 2633,
+                 "dromon": 1795, "lou_chuan": 1948, "none": None}
+CANNON_GALLEON, ELITE_CANNON_GALLEON = 420, 691
+SIEGE_SHIP_UNITS = frozenset((CANNON_GALLEON, ELITE_CANNON_GALLEON)) | frozenset(
+    u for spec in SIEGE_SHIP_REPLACEMENTS.values() for u in spec["units"])
 _SEEDED_BEFORE: dict[int, tuple[int, ...]] = {
     1707: (282,), 1302: (362, 402),
     **{u: (bid,) for bid, ids in KM_UNIT_CARDS.items() for u in ids},
@@ -80,7 +89,7 @@ _SEEDED_BEFORE: dict[int, tuple[int, ...]] = {
 }
 # Never in a new civ's seed: units only a deliberate pick puts in a tree.
 SEED_EXCLUDED_UNITS = frozenset(_SEEDED_BEFORE) | frozenset(
-    u for spec in LINE_REPLACEMENTS.values() for u in spec["units"])
+    u for spec in (*LINE_REPLACEMENTS.values(), *SIEGE_SHIP_REPLACEMENTS.values()) for u in spec["units"])
 
 RETIRED = frozenset(UNIT_CARDS) | frozenset(REPLACEMENT_CARDS) | frozenset(HERO_CARDS) | frozenset(LOOK_CARDS) \
     | frozenset(UPGRADE_CARDS) | frozenset(RETIRED_INTO_TREE)
@@ -145,12 +154,26 @@ def retire_cards(civ: dict, dat=None) -> list[str]:
     cards = _card_list(civ) or []
     units = _tree_units(civ)
     notes: list[str] = []
-    if (civ.get("tree_version") or 1) < TREE_VERSION:
+    version = civ.get("tree_version") or 1
+    if version < 2:
         held = {_card_id(e) for e in cards}
         for uid, need in _SEEDED_BEFORE.items():
             if units and uid in units and not held & set(need):
                 units[:] = [u for u in units if u != uid]
                 notes.append(f"Unit {uid} left the tree: it came with the old full tree, and only its card built it")
+    if version < 3:
+        ship = civ.pop("long_range_ship", None)
+        elite = civ.pop("long_range_ship_elite", True)
+        # No tree means the slot's own, siege ship included: nothing to write.
+        if units:
+            base = _PICKER_SHIPS.get(ship, CANNON_GALLEON)
+            units[:] = [u for u in units if u not in SIEGE_SHIP_UNITS]
+            if base is not None:
+                units.append(base)
+                if base == CANNON_GALLEON and elite is not False:
+                    units.append(ELITE_CANNON_GALLEON)
+            notes.append(f"The Dock's siege ship is in the tech tree now (was the picker's: {ship or 'cannon_galleon'})")
+    if version < TREE_VERSION:
         civ["tree_version"] = TREE_VERSION
     ids = [i for i in (_card_id(e) for e in cards) if i in RETIRED]
     if not ids:

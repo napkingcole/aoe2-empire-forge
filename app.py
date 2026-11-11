@@ -1532,6 +1532,8 @@ def api_builder_meta():
         "retired_cards": sorted(__import__("retired_cards").RETIRED),
         # Units only a deliberate pick puts in a tree: never in a new civ's seed.
         "seed_excluded_units": sorted(__import__("retired_cards").SEED_EXCLUDED_UNITS),
+        # A draft below it gets retired_cards' one-time tree upgrades on load.
+        "tree_version": __import__("retired_cards").TREE_VERSION,
         # Display names for the identity scene ("Hagia Sophia" rather than
         # "Byzantines").  Written by scripts/import_km_art.py; absent until that
         # has been run, so the wizard falls back to civ names.

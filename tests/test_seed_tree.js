@@ -62,8 +62,10 @@ const _REGIONAL_BUILDING_IDS = new Set(${JSON.stringify(swapIds)});
 let _unlockBonusUnits = UNLOCK_FROM_TEST;
 let _cardOnlyUnits = new Set(Object.values(_unlockBonusUnits).flat().map(Number));
 ${lift('_CIV_UNIQUE_BUILDING_IDS', 'const')}
+${lift('_SIEGE_SHIPS', 'const')}
+${lift('_withSiegeShip', 'function')}
 ${lift('_filterFullTree', 'function')}
-module.exports = { _filterFullTree, _CIV_UNIQUE_BUILDING_IDS };
+module.exports = { _filterFullTree, _withSiegeShip, _CIV_UNIQUE_BUILDING_IDS };
 `;
 
 // civ_appender._UNLOCK_UNIT_BONUSES, mirrored by /api/builder/meta. Kept here as
@@ -131,6 +133,17 @@ console.log('\n=== A blank civ carries no regional unit line, or its techs ===')
   check('the union really does contain Cranequins (not vacuous)',
         union.techs.has(1452),
         'data.json has no 1452 — refresh static/aoe2techtree/data from upstream');
+}
+
+console.log('\n=== A blank civ\'s Dock: the Cannon Galleon line (2026-11-11) ===');
+{
+  // The tree owns the siege ship now; FULL.json has no Cannon Galleon, and the
+  // picker's default (the Cannon Galleon and its Elite) has to come from the seed.
+  check('the Cannon Galleon and its Elite are seeded', seedUnits.has(420) && seedUnits.has(691));
+  check('no siege ship variant is seeded (a deliberate pick)', ![2633, 1795, 1948].some(u => seedUnits.has(u)));
+  check("a civ's own template keeps its variant over the Cannon Galleon it lists too",
+        T._withSiegeShip([4, 420, 691, 1795], false).join() === '4,1795'
+        && T._withSiegeShip([4, 420, 691], false).join() === '4,420,691');
 }
 
 console.log('\n=== A blank civ carries no civ-unique buildings ===');

@@ -29,7 +29,7 @@ def check(label, cond, extra=""):
 
 
 from retired_cards import (HERO_CARDS, LOOK_CARDS, REPLACEMENT_CARDS, RETIRED,  # noqa: E402
-                           UNIT_CARDS, UPGRADE_CARDS, retire_cards)
+                           TREE_VERSION, UNIT_CARDS, UPGRADE_CARDS, retire_cards)
 
 # The audit (memory: project_unlock_cards_retirement), by group.
 AUDIT_RETIRED = {
@@ -205,7 +205,7 @@ d = draft_with()
 d["tree"]["units"] += [1707, 1302]
 notes = retire_cards(d, dat)
 check("a civ from before, holding them without their cards: they leave (it never built them)",
-      not {1707, 1302} & set(d["tree"]["units"]) and d["tree_version"] == 2
+      not {1707, 1302} & set(d["tree"]["units"]) and d["tree_version"] == TREE_VERSION
       and sum("left the tree" in n for n in notes) == 2, notes)
 d = draft_with()
 d["tree"]["units"] += [775, 1004, 1010, 882]
@@ -218,12 +218,52 @@ retire_cards(d, dat)
 check("...the one whose card it held stays", 1707 in d["tree"]["units"] and 1302 not in d["tree"]["units"])
 d = draft_with()
 d["tree"]["units"] += [1707]
-d["tree_version"] = 2
+d["tree_version"] = TREE_VERSION
 check("a civ past the cleanup keeps what its tree picked", retire_cards(d, dat) == [] and 1707 in d["tree"]["units"])
 from civ_schema import from_draft, to_draft  # noqa: E402
 from wizard_build import _draft_to_civ_def  # noqa: E402
 check("the stamp survives saving, loading and the build's conversion",
-      to_draft(from_draft(d)).get("tree_version") == 2 and _draft_to_civ_def(d).get("tree_version") == 2)
+      to_draft(from_draft(d)).get("tree_version") == TREE_VERSION
+      and _draft_to_civ_def(d).get("tree_version") == TREE_VERSION)
+
+print("\n=== the Dock's siege ship: from the picker into the tree (version 3) ===")
+CG, ECG, CATG, DROMON, LOU = 420, 691, 2633, 1795, 1948
+SIEGE = {CG, ECG, CATG, DROMON, LOU}
+
+
+def ships_after(version, **picker):
+    d = draft_with()
+    d["tree"]["units"] = [u for u in d["tree"]["units"] if u not in SIEGE] + [CG, CATG]   # the old tree's noise
+    d["tree_version"] = version
+    d.update(picker)
+    notes = retire_cards(d, dat)
+    return d, {u for u in d["tree"]["units"] if u in SIEGE}, notes
+
+
+d, got, notes = ships_after(2, long_range_ship="dromon")
+check("a Dromon picked: the tree holds the Dromon alone, and the picker's fields go",
+      got == {DROMON} and "long_range_ship" not in d and "long_range_ship_elite" not in d
+      and d["tree_version"] == TREE_VERSION and any("siege ship" in n for n in notes), (got, notes))
+check("...no pick was the Cannon Galleon and its Elite", ships_after(2)[1] == {CG, ECG})
+check("...the Elite unticked: the Cannon Galleon alone",
+      ships_after(2, long_range_ship_elite=False)[1] == {CG})
+check("...None: no siege ship", ships_after(2, long_range_ship="none")[1] == set())
+check("...the Lou Chuan and the Catapult Galleon",
+      ships_after(1, long_range_ship="lou_chuan")[1] == {LOU}
+      and ships_after(1, long_range_ship="catapult_galleon")[1] == {CATG})
+check("a civ already on version 3: its tree is its own", ships_after(TREE_VERSION, long_range_ship="dromon")[1] == {CG, CATG})
+km_ships = {"alias": "KM", "bonuses": [[], [11], [], [], []], "tree": [[4, 74, DROMON, CG], [], []]}
+retire_cards(km_ships, dat)
+check("a KM file (no picker in KM): the Cannon Galleon and Elite, as the picker's default gave",
+      {u for u in km_ships["tree"][0] if u in SIEGE} == {CG, ECG}, km_ships["tree"][0])
+bare = {"bonuses": [], "long_range_ship": "dromon"}
+retire_cards(bare, dat)
+check("no tree (the slot's own): nothing written, the fields still go",
+      "tree" not in bare and "long_range_ship" not in bare)
+check("a variant in the tree beside the Cannon Galleon wins (as the picker had it)",
+      _tree_unit_ids({"tree": {"units": [CG, ECG, DROMON]}}) & SIEGE == {DROMON})
+check("a new civ's seed never holds a variant (a deliberate pick)",
+      {CATG, DROMON, LOU} <= __import__("retired_cards").SEED_EXCLUDED_UNITS)
 
 print("\n=== a KM file ===")
 km = {"alias": "KM", "bonuses": [[[405, 1], [43, 1], [338, 1], [3, 1]], [11], [], [], []],
@@ -244,7 +284,8 @@ check("...and an older civ is told where each went",
           for b in (405, 43, 309, 457, 338)), {b: cat["retired"]["civ"].get(str(b)) for b in (405, 338)})
 r = client.post("/api/builder/retire-cards", json={"draft": draft_with(405, 338)}).get_json()
 check("/api/builder/retire-cards converts a draft",
-      not r["draft"]["bonuses"] and r["draft"]["hero_unit"]["base_unit_id"] == 1966 and len(r["notes"]) == 2, r.get("notes"))
+      not r["draft"]["bonuses"] and r["draft"]["hero_unit"]["base_unit_id"] == 1966
+      and sum(n.startswith("Card ") for n in r["notes"]) == 2, r.get("notes"))
 meta = client.get("/api/builder/meta").get_json()
 check("meta names the retired cards", set(meta.get("retired_cards", [])) == RETIRED)
 check("meta keeps the replacement, KM and team-bonus units out of a new civ's seed",
@@ -292,6 +333,36 @@ check("Winged Hussar: the game's upgrade, re-pointed at this civ's copy of its t
 tt = dat.effects[civ.tech_tree_id].effect_commands
 off = {int(c.d) for c in tt if c.type == 102}
 check("the Paladin, Hussar and Fast Fire Ship upgrades are off", {265, 428, 246} <= off, sorted({265, 428, 246} - off))
+
+print("\n=== a build with the Dromon in its tree ===")
+from wizard_build import _draft_to_civ_def  # noqa: E402,F811
+
+
+def makes(uid):
+    return {tid for tid, t in enumerate(dat.techs) if 0 <= t.effect_id < len(dat.effects) and t.civ == -1
+            and any(c.type == 2 and int(c.a) == uid and int(c.b) != 0 for c in dat.effects[t.effect_id].effect_commands)}
+
+
+def ship_build(ship_units):
+    draft = {"tree_version": TREE_VERSION, "alias": "Ships", "architecture": 2, "language": 0,
+             "bonuses": [], "team_bonuses": [], "unique_unit": {"km_idx": 11},
+             "castle_ut": {"mode": "vanilla", "effects": [{"id": 3, "multiplier": 1}]},
+             "imperial_ut": {"mode": "vanilla", "effects": [{"id": 12, "multiplier": 1}]},
+             "tree": {"units": [u for u in units if u not in SIEGE] + ship_units,
+                      "buildings": list(buildings), "techs": list(techs)}}
+    with contextlib.redirect_stdout(io.StringIO()):
+        apply_civ_with_overrides(dat, _draft_to_civ_def(draft), SLOT, draft)
+    tt = dat.effects[dat.civs[SLOT].tech_tree_id].effect_commands
+    return {int(c.a) for c in tt if c.type == 8}, {int(c.d) for c in tt if c.type == 102}
+
+
+on, off = ship_build([DROMON])
+check("the Dromon is unlocked, the Cannon Galleon switched off",
+      makes(DROMON) & on and not makes(DROMON) & off and makes(CG) <= off,
+      (sorted(makes(DROMON)), sorted(on & makes(DROMON)), sorted(makes(CG) - off)))
+on, off = ship_build([CG, ECG])
+check("the Cannon Galleon line ticked: it stays on, no Dromon",
+      not makes(CG) & off and not makes(DROMON) & on, (sorted(makes(CG) & off), sorted(makes(DROMON) & on)))
 
 print("\nPASS" if not failures else "\nFAIL", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

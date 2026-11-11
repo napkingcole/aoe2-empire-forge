@@ -309,15 +309,16 @@ def real_units(dat, building: int | None, catalog: list[dict]) -> list[dict]:
 def real_replacements(dat, catalog: list[dict]) -> list[dict]:
     """The game's own units that take a line's place (civ_appender.
     LINE_REPLACEMENTS): the Savar for the Paladin, the Scythian Horse Archer
-    for the Cavalry Archer line.  The tree draws the unit on the replaced
-    node, and offers it from that node's "Replace" and from the "+" under
-    the unit before it.  [{base, units, replaces, line, building, name, names,
-    icons, source: "real"}]"""
-    from civ_appender import LINE_REPLACEMENTS, unit_label
+    for the Cavalry Archer line, and the Dock's siege ship variants for the
+    Cannon Galleon (SIEGE_SHIP_REPLACEMENTS, no card behind them).  The tree
+    draws the unit on the replaced node, and offers it from that node's
+    "Replace" and from the "+" under the unit before it.  [{card, base, units,
+    replaces, line, building, name, names, icons, source: "real"}]"""
+    from civ_appender import LINE_REPLACEMENTS, SIEGE_SHIP_REPLACEMENTS, unit_label
     rows = {r["id"]: r for r in catalog}
     name = lambda u: (rows.get(u) or {}).get("name") or unit_label(dat, 0, u).split(" (", 1)[-1][:-1]  # noqa: E731
     out = []
-    for bid, spec in LINE_REPLACEMENTS.items():
+    for bid, spec in {**LINE_REPLACEMENTS, **SIEGE_SHIP_REPLACEMENTS}.items():
         units = list(spec["units"])
         u = dat.civs[0].units[units[0]]
         if u is None or u.creatable is None or not u.creatable.train_locations:

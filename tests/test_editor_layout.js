@@ -4,8 +4,9 @@
 //
 //   _applyBuildingVariantLayout  Settlement / Folwark / Mule Cart vs the
 //                                standard Mill, Lumber Camp and Mining Camp
-//   _applySiegeShipLayout        the Dock's siege ship, owned by the wizard's
-//                                picker rather than by the tree
+//   _applySiegeShipLayout        the Dock's Cannon Galleon and Elite, put back
+//                                in every layout (FULL.json has neither);
+//                                a variant is a replacement on its node
 //
 // Both synthesise nodes into whichever civ layout is loaded, so the sweeps
 // below run every shipped layout against every selection combination.
@@ -20,7 +21,8 @@ const harness = `
 ${src}
 module.exports = {
   applyLayout: (t) => { _applyBuildingVariantLayout(t); _applySiegeShipLayout(t); },
-  SIEGE: _PICKER_CONTROLLED_UNITS,
+  SIEGE: _SIEGE_SHIP_IDS,
+  applyReplacements: _applyRealReplacements,
   SIEGE_VARIANTS: _SIEGE_VARIANT_IDS,
   toggle: _toggleNode,
   setLocaltree: (t) => { _localtree = t; },
@@ -273,37 +275,15 @@ console.log('\n=== Click semantics ===');
   check('unrelated building not intercepted', T.handleClick(12) === false);
 }
 
-console.log('\n=== Siege ship: the picker\'s choice always has a Dock node ===');
+console.log('\n=== Siege ship: the tree\'s, the Cannon Galleon in every Dock (2026-11-11) ===');
 {
   const dockUnits = (tree) => tree.units_techs
     .filter(i => i.building_id === 45 && T.SIEGE.has(i.node_id))
     .map(i => i.node_id).sort((a, b) => a - b);
 
-  // From scratch (FULL layout) the nodes used to be missing entirely.
-  for (const [ship, label] of [[420, 'Cannon Galleon'], [2633, 'Catapult Galleon'],
-                               [1795, 'Dromon'], [1948, 'Lou Chuan']]) {
-    const units = ship === 420 ? [420, 691] : [ship];
-    const tree = render('FULL', []);   // buildings only; set units separately
-    T.setLocaltree({ units, buildings: [109, 621, 68, 562, 584], techs: [] });
-    const t2 = loadTree('FULL');
-    T.applyLayout(t2);
-    auditLayout(t2, `FULL ${label}`);
-    check(`FULL: ${label} has a Dock node`, dockUnits(t2).includes(ship), JSON.stringify(dockUnits(t2)));
-    check(`FULL: ${label} — no other variant shown`,
-          T.SIEGE_VARIANTS.filter(v => v !== ship && dockUnits(t2).includes(v)).length === 0,
-          JSON.stringify(dockUnits(t2)));
-  }
-
-  // A civ layout that ships a different variant must yield to the picker.
-  T.setLocaltree({ units: [1948], buildings: [109, 621, 68, 562, 584], techs: [] });
-  const aztec = loadTree('AZTECS');
-  T.applyLayout(aztec);
-  auditLayout(aztec, 'AZTECS with Lou Chuan picked');
-  check('Aztec layout + Lou Chuan: Catapult Galleon evicted', !dockUnits(aztec).includes(2633),
-        JSON.stringify(dockUnits(aztec)));
-  check('Aztec layout + Lou Chuan: Lou Chuan placed', dockUnits(aztec).includes(1948));
-
-  // Every layout, every ship — nodes land and the layout stays sane.
+  // Whatever the tree holds, every layout draws the Cannon Galleon and its Elite
+  // (crossed when off) and no variant node: a variant is drawn on the Cannon
+  // Galleon's node by the replacement step.
   const names = fs.readdirSync(path.join(ROOT, 'static/aoe2techtree/data/trees'))
                   .filter(f => f.endsWith('.json')).map(f => f.replace('.json', ''));
   const bad = [];
@@ -312,11 +292,7 @@ console.log('\n=== Siege ship: the picker\'s choice always has a Dock node ===')
       T.setLocaltree({ units: units.slice(), buildings: [109, 621, 68, 562, 584], techs: [] });
       const tree = loadTree(name);
       try { T.applyLayout(tree); } catch (e) { bad.push(`${name} [${units}]: ${e.message}`); continue; }
-      const shown = dockUnits(tree);
-      for (const u of units) if (!shown.includes(u)) bad.push(`${name} [${units}]: ${u} missing`);
-      for (const v of T.SIEGE_VARIANTS) {
-        if (!units.includes(v) && shown.includes(v)) bad.push(`${name} [${units}]: stray variant ${v}`);
-      }
+      if (dockUnits(tree).join() !== '420,691') bad.push(`${name} [${units}]: dock shows ${dockUnits(tree)}`);
       // Cells must not be double-booked or dangling.
       const index = {};
       for (const it of tree.units_techs) index[it.id] = it;
@@ -336,19 +312,22 @@ console.log('\n=== Siege ship: the picker\'s choice always has a Dock node ===')
       }
     }
   }
-  check(`${names.length} layouts × 5 siege selections`, bad.length === 0, bad.slice(0, 6).join('; '));
-}
+  check(`${names.length} layouts × 5 siege selections: Cannon Galleon and Elite, no stray variant`,
+        bad.length === 0, bad.slice(0, 6).join('; '));
 
-console.log('\n=== Siege ship nodes are locked in the tree ===');
-{
-  T.setLocaltree({ units: [2633], buildings: [109, 621, 68, 562, 584], techs: [] });
-  const ships = () => T.getLocaltree().units.filter(id => T.SIEGE.has(id));
-  T.toggle({ use_type: 'Unit', node_id: 2633, id: 'Unit_2633_45', building_id: 45 }, 60);
-  check('cannot toggle the picked ship off', ships().join() === '2633');
-  T.toggle({ use_type: 'Unit', node_id: 420, id: 'Unit_420_45', building_id: 45 }, 60);
-  check('cannot toggle another ship on', ships().join() === '2633');
-  check('hint points at the picker',
-        T.hint({ use_type: 'Unit', node_id: 420 }).includes('Siege Ship picker'));
+  // The Dromon picked: the Cannon Galleon's node becomes it, the Elite's goes.
+  global.window.ttInspector = { realReplacements: () => [{
+    base: 1795, units: [1795], replaces: [420, 691], building: 45, name: 'Dromon',
+    names: { 1795: 'Dromon' }, icons: { 1795: 406 } }] };
+  T.setLocaltree({ units: [1795], buildings: [109, 621, 68, 562, 584, 45], techs: [] });
+  const byz = loadTree('FULL');
+  T.applyLayout(byz);
+  T.applyReplacements(byz);
+  delete global.window.ttInspector;
+  check('a Dromon in the tree takes the Cannon Galleon\'s node; the Elite\'s goes',
+        dockUnits(byz).join() === '1795', JSON.stringify(dockUnits(byz)));
+  check('no node says it is set by a picker',
+        !T.hint({ use_type: 'Unit', node_id: 420 }).toLowerCase().includes('picker'));
   check('non-siege units unaffected', T.hint({ use_type: 'Unit', node_id: 74 }) === '');
 }
 

@@ -1474,27 +1474,10 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         print(f"       Dropped {len(_unsupported)} unique building(s) this builder "
               f"cannot grant: {sorted(_unsupported)}")
 
-    # ── Long-range ship override ──────────────────────────────────────────────
-    # The picker controls which long-range ship the civ gets at the Dock.
-    # CG (420) and Elite CG (691) are no longer in FULL.json, so they are
-    # added here based on long_range_ship + long_range_ship_elite.
-    _LRS_UNIT_MAP = {
-        None:               420,    # default: Cannon Galleon
-        "cannon_galleon":   420,    # upgrades to Elite CG (691)
-        "catapult_galleon": 2633,   # no vanilla elite upgrade
-        "dromon":           1795,
-        "lou_chuan":        1948,
-        "none":             None,   # explicitly no long-range ship
-    }
-    _LRS_HAS_ELITE = {None, "cannon_galleon"}   # only CG has an elite upgrade
-    _ELITE_CG = 691
-    _lrs      = civ_def.get("long_range_ship")           # None → CG default
-    _lrs_elite = civ_def.get("long_range_ship_elite", True)
-
-    # Remove all LRS variants the user may have toggled in the SVG tree;
-    # the picker controls which one is added back below.
-    for _lrs_uid in (420, 691, 2633, 1795, 1948):
-        tree_units.discard(_lrs_uid)
+    # The Dock's siege ship is the tree's (a variant is a replacement of the
+    # Cannon Galleon line: SIEGE_SHIP_REPLACEMENTS).  A civ from before
+    # 2026-11-11 had it from the wizard's picker, moved into its tree once by
+    # retired_cards (TREE_VERSION 3).
 
     # Demo ships are excluded when the civ has a unique ship bonus (50/69).
     # Longboats (51) left this group for the tree; see RETIRED_INTO_TREE.
@@ -1504,16 +1487,6 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     if _UNIQUE_SHIP_BONUS_IDS & _civ_bonus_ids_early:
         for _u in _DEMO_SHIP_UNITS:
             tree_units.discard(_u)
-
-    base_unit = _LRS_UNIT_MAP.get(_lrs, 420)
-    if base_unit is not None:
-        tree_units.add(base_unit)
-        if _lrs in _LRS_HAS_ELITE and _lrs_elite:
-            tree_units.add(_ELITE_CG)
-        print(f"       Long-range ship: {_lrs or 'cannon_galleon'} (unit {base_unit})"
-              + (f" + elite ({_ELITE_CG})" if _lrs in _LRS_HAS_ELITE and _lrs_elite else ""))
-    else:
-        print(f"       Long-range ship: none")
 
     # ── Step 0: Build EC type=8 'unlock' map from all civ TT effects.
     # ec8_info[tech_id] = (a, b, c, d) template for the type=8 command.
@@ -3280,6 +3253,18 @@ LINE_REPLACEMENTS: dict[int, dict] = {
 # KM's duplicates of the same cards (same techs).
 REPLACEMENT_CARD_ALIASES = {307: 416, 314: 417, 402: 362}
 
+# The Dock's siege ship variants take the Cannon Galleon line's place, as their
+# civs have them (2026-11-11; the wizard's Siege Ship picker before).  No card
+# stands behind them — a tree unit is all they need — and the F2 viewer draws
+# them from their own shipped node (build_civ._inject_regional_unit_nodes), so
+# only the tree's offer and _apply_unit_replacements read this.  All of them
+# train at Dock button 9, the Cannon Galleon's.
+SIEGE_SHIP_REPLACEMENTS: dict[str, dict] = {
+    "catapult_galleon": {"units": (2633,), "replaces": (420, 691), "line": True},
+    "dromon":           {"units": (1795,), "replaces": (420, 691), "line": True},
+    "lou_chuan":        {"units": (1948,), "replaces": (420, 691), "line": True},
+}
+
 # Tree units that may need their unlock techs copied (step 6b of apply_civ):
 # unit -> its make-avail tech and elite upgrade, in that order.
 _CIV_LOCKED_TREE_UNITS: dict[int, tuple[int, ...]] = {
@@ -3314,6 +3299,9 @@ def _apply_unit_replacements(units: set, civ_def: dict | None = None) -> set:
         # Archer left the Cavalry Archer in the tree, where it held button 3
         # though the card hides it (#108).
         if out & set(spec["units"]) or bid in cards:
+            out -= set(spec["replaces"])
+    for spec in SIEGE_SHIP_REPLACEMENTS.values():
+        if out & set(spec["units"]):
             out -= set(spec["replaces"])
     return out
 
