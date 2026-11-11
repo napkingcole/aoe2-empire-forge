@@ -18,7 +18,14 @@ openage (doc/media/sld-files.md):
            u16 command count; (u8 skip, u8 draw) pairs over 4x4 blocks in
            row order; then the drawn blocks — DXT1 (main, damage) or BC4
            (shadow, player) at 8 bytes each.  flags & 0x80: skipped blocks keep
-           the previous frame's pixels.
+           the previous frame's pixels — which frame is not written down.
+           Read as the frame just before, land units are right (a Keshik's
+           idle); ships are not: their oars left specks where they had been,
+           though the game draws them clean.  Ships' kept blocks come from the
+           facing's first whole frame (`from_key`; the user picked it by eye
+           2026-11-11, and it is as good or better on all 28 ship sprites
+           that keep blocks).  The Keshik's idle read that way keeps a ghost
+           spear, so it isn't the rule for everything.
   The outline layer (0x04) has a different layout; previews don't need it.
 
 Frames run angle by angle, frame_count per angle; angle 0 faces east and they
@@ -194,16 +201,19 @@ def _copy_overlap(previous: tuple, box: tuple, img: np.ndarray) -> None:
         img[oy1 - y1:oy2 - y1, ox1 - x1:ox2 - x1] = pimg[oy1 - py1:oy2 - py1, ox1 - px1:ox2 - px1]
 
 
-def render_frame(data: bytes, index: int, frames: list[dict] | None = None) -> tuple[np.ndarray, tuple]:
+def render_frame(data: bytes, index: int, frames: list[dict] | None = None,
+                 from_key: bool = False) -> tuple[np.ndarray, tuple]:
     """(RGBA canvas uint8, hotspot) for frame `index`: half-strength shadow,
     then the colour layer with its player-colour mask painted Player 1 Blue.
-    Decodes from the nearest earlier frame that doesn't reuse its predecessor."""
+    Decodes from the nearest earlier frame that doesn't reuse its predecessor
+    (the key) — every frame since, or with `from_key` the key alone (ships,
+    see the header)."""
     frames = frames or frame_index(data)
     start = index
     while start > 0 and frames[start]["reuses"]:
         start -= 1
     prev: dict = {}
-    for i in range(start, index + 1):
+    for i in ((start, index) if from_key and index != start else range(start, index + 1)):
         layers = _decode(data, frames[i], prev)
     fr = frames[index]
     canvas = np.zeros((fr["h"], fr["w"], 4), dtype=np.float32)
@@ -298,17 +308,19 @@ def unit_frames(dat, dat_path, unit, kind: str, angle: int = SOUTH_WEST,
     """Every frame of one of a unit's animations at one facing, as RGBA images
     cropped to what any frame draws, and the frame time in ms at Normal speed.
     `still` stops after the first frame.  None when the game has no sprite."""
-    return graphic_frames(dat, dat_path, unit_graphic(unit, kind), angle, still)
+    return graphic_frames(dat, dat_path, unit_graphic(unit, kind), angle, still, from_key=is_ship(unit))
 
 
 def graphic_frames(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST,
                    still: bool = False, under: tuple = (),
-                   min_ms: int = MIN_FRAME_MS, anchor: list | None = None) -> tuple[list[Image.Image], int] | None:
+                   min_ms: int = MIN_FRAME_MS, anchor: list | None = None,
+                   from_key: bool = False) -> tuple[list[Image.Image], int] | None:
     """unit_frames for any DAT graphic — one a unit's task plays (a Villager
     building), not only its idle, walk and attack.  `under` adds (graphic id,
     x, y) layers drawn first: a Town Center preview's shadow lives on another
     piece of the building (scene_art).  `anchor`, when given, receives the
-    hotspot's (x, y) in the cropped frames: where the unit stands."""
+    hotspot's (x, y) in the cropped frames: where the unit stands.
+    `from_key`: render_frame's, for a ship."""
     parts = []
     for gid, ox, oy in (*under, *_layers(dat, graphic_id)):
         g = dat.graphics[gid]
@@ -342,7 +354,7 @@ def graphic_frames(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST,
     for i in picks:
         canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         for sprite, first, per, ox, oy in parts:
-            img, (hx, hy) = render_frame(sprite.data, first + (i % per), sprite.frames)
+            img, (hx, hy) = render_frame(sprite.data, first + (i % per), sprite.frames, from_key)
             canvas.alpha_composite(Image.fromarray(img, "RGBA"), (size // 2 - hx + ox, size // 2 - hy + oy))
         drawn = canvas.getbbox()
         kept.append((canvas.crop(drawn), drawn) if drawn else (None, None))
@@ -381,13 +393,13 @@ def still_webp(dat, dat_path, unit) -> bytes | None:
 
 def animation_webp(dat, dat_path, unit, kind: str) -> bytes | None:
     """A looping animated WebP of one of the unit's ANIMATIONS."""
-    return graphic_webp(dat, dat_path, unit_graphic(unit, kind))
+    return graphic_webp(dat, dat_path, unit_graphic(unit, kind), from_key=is_ship(unit))
 
 
-def graphic_webp(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST) -> bytes | None:
+def graphic_webp(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST, from_key: bool = False) -> bytes | None:
     """A looping animated WebP of any DAT graphic."""
     import io
-    got = graphic_frames(dat, dat_path, graphic_id, angle)
+    got = graphic_frames(dat, dat_path, graphic_id, angle, from_key=from_key)
     if got is None:
         return None
     frames, ms = got
@@ -415,6 +427,10 @@ WAKE_PARTS = ("back", "front")
 WAKE_SIZES = ((75, "small"), (139, "medium"), (10 ** 6, "large"))
 
 
+def is_ship(unit) -> bool:
+    return unit.class_ in SHIP_CLASSES
+
+
 def particles_folder(dat_path) -> Path | None:
     graphics = graphics_folder(dat_path) if dat_path else None
     folder = graphics.parents[1] / "particles" if graphics is not None else None
@@ -435,7 +451,7 @@ def _particle(dat_path, name: str) -> dict | None:
 
 def wake_size(dat, dat_path, unit) -> str | None:
     """small / medium / large for a ship (WAKE_SIZES), None for any other unit."""
-    if unit.class_ not in SHIP_CLASSES:
+    if not is_ship(unit):
         return None
     g = unit_graphic(unit, "walk")
     got = graphic_frames(dat, dat_path, g, still=True) if g >= 0 else None

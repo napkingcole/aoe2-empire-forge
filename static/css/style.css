@@ -1073,7 +1073,7 @@ details[open] > summary::before {
 }
 .unit-preview-stage.ground-pending { background-image: none; }
 /* A ship at rest rises and falls on the water (builder.js adds it on Idle). */
-@keyframes ship-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(4px); } }
+@keyframes ship-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
 .unit-preview-stage > img.ship-bob { animation: ship-bob 2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .unit-preview-stage > img.ship-bob { animation: none; } }
 .unit-preview-stage > canvas.unit-preview-wake {

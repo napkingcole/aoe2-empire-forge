@@ -138,6 +138,25 @@ else:
     hull_x2 = gs.find_sprite(dat_path, dat.graphics[gs._layers(dat, galley)[0][0]].file_name)
     check("a War Galley's sprite scale comes from its hull",
           gs.sprite_scale(dat, dat_path, galley) == (2 if hull_x2 and hull_x2.stem.endswith("_x2") else 1))
+    # Ships keep blocks from the facing's first frame (game_sprites header):
+    # read from the frame before, the Dragon Ship's oars left specks behind.
+    def specks(frames):
+        n = 0
+        for f in frames:
+            o = (np.asarray(f)[..., 3] > 128).astype(int)
+            q = np.pad(o, 1)
+            near = sum(q[1 + dy:1 + dy + o.shape[0], 1 + dx:1 + dx + o.shape[1]]
+                       for dy in (-1, 0, 1) for dx in (-1, 0, 1)) - o
+            n += int(((o == 1) & (near <= 1)).sum())
+        return n
+    dragon = gs.unit_graphic(units[1302], "walk")
+    clean = specks(gs.unit_frames(dat, dat_path, units[1302], "walk")[0])
+    chained = specks(gs.graphic_frames(dat, dat_path, dragon)[0])
+    check(f"the Dragon Ship rows clean ({clean} stray pixels, {chained} read from the frame before)",
+          gs.is_ship(units[1302]) and clean * 10 < chained, (clean, chained))
+    check("a land unit still reads from the frame before (the Keshik's idle: no ghost spear)",
+          not gs.is_ship(units[1228]) and gs.unit_frames(dat, dat_path, units[1228], "idle")[0][5].tobytes()
+          == gs.graphic_frames(dat, dat_path, gs.unit_graphic(units[1228], "idle"))[0][5].tobytes())
     if gs.particles_folder(dat_path) is None:
         print("  skip  no particles folder")
     else:

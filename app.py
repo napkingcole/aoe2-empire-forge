@@ -2724,10 +2724,11 @@ def api_unit_icon(unit_id: int):
     return send_file(cached, mimetype="image/webp", max_age=0)
 
 
-_PREVIEW_VERSION = "v4"        # bump when game_sprites' output changes;
+_PREVIEW_VERSION = "v5"        # bump when game_sprites' output changes;
                                # prune_caches() deletes the older folders
                                # (v2: kept blocks across a moved box — square holes;
-                               #  v3: frames under 20 ms dropped — browsers slowed them)
+                               #  v3: frames under 20 ms dropped — browsers slowed them;
+                               #  v5: ships' kept blocks from the key — oar specks)
 _PREVIEWS_WARMED: set[str] = set()
 
 
@@ -2937,7 +2938,7 @@ def api_unit_preview_wake(unit_id: int):
         effect = game_sprites.wake_effect(dat_path, size) if size else None
         anchor: list = []
         if effect and game_sprites.graphic_frames(dat, dat_path, game_sprites.unit_graphic(unit, "walk"),
-                                                  anchor=anchor) is None:
+                                                  anchor=anchor, from_key=True) is None:
             effect = None
         _WAKE_ANCHORS[key] = {"size": size, "anchor": anchor, **effect} if effect else {}
     return jsonify(_WAKE_ANCHORS[key])
