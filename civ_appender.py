@@ -1528,6 +1528,11 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
                     tid = int(c.a)
                     if tid not in ec8_info:
                         ec8_info[tid] = (int(c.a), int(c.b), int(c.c), c.d)
+    # Opt-in techs no civ's tree unlocks, only a team bonus (quirk 5: "a tech
+    # no civ unlocks has no template and needs an explicit entry").
+    for tid in _TEAM_ONLY_OPTIN_TECHS:
+        if tid < len(dat.techs):
+            ec8_info.setdefault(tid, (tid, 12, -1, 1.0))
     ec8_unit_techs: dict[int, list[int]] = {}
     for tech_id, _ in ec8_info.items():
         if tech_id >= len(dat.techs):
@@ -3240,6 +3245,24 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
           "replaces": (39, 474)},
 }
 
+
+# Units the game gives only through a team bonus, which a civ can also have
+# in its own tree: the Genitour (Berbers' team bonus 1) and the Condottiero
+# (Italians' team bonus 16).  Both are switched off for everyone by tech 79
+# Disable Regionals, and no civ's tech tree unlocks them, so the tree's type=8
+# has no template to copy — these are it, in vanilla's make-avail shape
+# (b=12, c=-1, d=1, as the team bonuses themselves write).
+_TEAM_ONLY_OPTIN_TECHS = (601, 599, 522)   # Genitour, Elite Genitour, Condottiero
+
+# The KM catalog's own unit cards, whose units the tree now holds instead: a
+# civ whose tree has the unit gets the card (get_civ_bonuses), so a tree node
+# builds exactly what the card did.  Their techs are the catalog's.
+KM_UNIT_CARDS: dict[int, tuple[int, ...]] = {
+    43: (775,),          # Missionary
+    50: (831, 832),      # Turtle Ship, Elite
+    69: (1004, 1006),    # Caravel, Elite
+    322: (1263,),        # Flaming Camel
+}
 
 # Tree units that may need their unlock techs copied (step 6b of apply_civ):
 # unit -> its make-avail tech and elite upgrade, in that order.
@@ -6142,6 +6165,9 @@ def get_civ_bonuses(civ_def: dict) -> list:
         have = {e[0] for e in entries if isinstance(e, (list, tuple)) and e}
         for bid, spec in _UNLOCK_UNIT_BONUSES.items():
             if bid not in have and units.intersection(spec["units"]):
+                entries.append([bid, 1])
+        for bid, ids in KM_UNIT_CARDS.items():
+            if bid not in have and units.intersection(ids):
                 entries.append([bid, 1])
     return entries
 
