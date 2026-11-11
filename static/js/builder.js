@@ -1230,7 +1230,7 @@ function _artQuery() {
 
 // ── Unit previews ─────────────────────────────────────────────────────────────
 // How a unit looks in the game, rendered by the server from the player's own
-// sprites (game_sprites.py): a still on hover, and Idle / Walk / Attack in a
+// sprites (game_sprites.py): a still on hover, and Idle / Move / Attack in a
 // window from each card's play button.
 // civ: that civ's own version of the unit (a Look: the Athenians' Palintonon).
 function _previewSrc(unitId, kind = "still", civ = null) {
@@ -1391,6 +1391,10 @@ function openUnitPreview(unitId, name, civ = null) {
     status.innerHTML = _loaderHtml("Rendering from your game…", true);
     status.classList.remove("d-none");
     img.classList.add("d-none");
+    // A ship's idle is one still frame: it rides the swell instead
+    // (.ship-bob, the user's idea 2026-11-11).
+    img.classList.remove("ship-bob");
+    meta.then(m => img.classList.toggle("ship-bob", kind === "idle" && !!(m && m.water)));
     img.onload = () => {
       // 1.5x, the same for every unit so sizes compare as in the game (the
       // sprites are sharp enough), capped to the window.
