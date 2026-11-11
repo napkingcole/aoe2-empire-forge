@@ -180,8 +180,9 @@ check("an unedited upgrade defaults to the role's vanilla upgrade (Halberdier)",
       {(c.type, c.amount) for c in up3.resource_costs if c.amount}
       == {(c.type, c.amount) for c in halb.resource_costs if c.amount}
       and up3.icon_id == halb.icon_id)
-check("upgrades are EC_UPGRADE from the tier before",
-      [(c.type, int(c.a), int(c.b)) for c in dat.effects[up3.effect_id].effect_commands] == [(3, ids[1], ids[2])])
+check("upgrades are EC_UPGRADE from every tier before, as the game's own (Champion 264: 74, 75, 77, 473)",
+      [(c.type, int(c.a), int(c.b)) for c in dat.effects[up3.effect_id].effect_commands]
+      == [(3, ids[1], ids[2]), (3, ids[0], ids[2])])
 
 print("\n=== buttons ===")
 check("never the fifth column (the building's commands: rally point)",
@@ -220,8 +221,9 @@ check("its upgrade follows the vanilla one: same button, after it and the age",
       [(rl.location_id, rl.button_id) for rl in xt.research_locations] == [(87, prod_btn)]
       and list(xt.required_techs)[:2] == [103, ESKIRM_TECH] and xt.required_tech_count == 2,
       ([(rl.location_id, rl.button_id) for rl in xt.research_locations], list(xt.required_techs)))
-check("which upgrades the vanilla unit into the new tier, and no tech makes it available instead",
-      [(c.type, int(c.a), int(c.b)) for c in dat.effects[xt.effect_id].effect_commands] == [(3, ESKIRM, ext["units"][0])]
+check("which upgrades the vanilla unit and the one under it, like the game's Imperial Skirmisher (655: 7 and 6)",
+      [(c.type, int(c.a), int(c.b)) for c in dat.effects[xt.effect_id].effect_commands]
+      == [(3, ESKIRM, ext["units"][0]), (3, 7, ext["units"][0])]
       and len(ext["techs"]) == 1)
 check("a unit that still upgrades further isn't extended, and says why",
       any("Added line 5" in w and "isn't the end of its line" in w for w in r["warnings"]), r["warnings"])
@@ -256,10 +258,11 @@ check("named like any line", two["names"] == ["Rider", "Veteran Rider", "Elite R
 print("\n=== replacing a vanilla upgrade ===")
 y1, y2 = rcav["units"][0], rpal["units"][0]
 h1 = dat.techs[rpal["techs"][0]]
-check("the Paladin upgrade stays; a hidden tech after it upgrades Paladins into ours (Fast Fire Ship 246's shape)",
+check("the Paladin upgrade stays; a hidden tech after it upgrades Paladins (and the line under them) into ours",
       h1.civ == SLOT and [rl.location_id for rl in h1.research_locations] == [-1]
       and list(h1.required_techs)[:1] == [PALADIN_TECH] and h1.required_tech_count == 1
-      and [(c.type, int(c.a), int(c.b)) for c in dat.effects[h1.effect_id].effect_commands] == [(3, PALADIN, y2)],
+      and [(c.type, int(c.a), int(c.b)) for c in dat.effects[h1.effect_id].effect_commands]
+      == [(3, PALADIN, y2), (3, KNIGHT, y2), (3, CAVALIER, y2)],
       (h1.civ, list(h1.required_techs), [(c.type, int(c.a), int(c.b)) for c in dat.effects[h1.effect_id].effect_commands]))
 ptl = next(t for t in U[PALADIN].creatable.train_locations if t.unit_id == 101)
 check("ours trains on the Paladin's button (quirk 3)",
@@ -347,6 +350,13 @@ kk = us.get(knights["sids"][0], {})
 check("the line's own description replaces the base's, quotes escaped",
       'Holy \\"warriors\\".' in kk.get("ext_text", "") and "Heavy Cavalry" not in kk.get("ext_text", ""),
       kk.get("ext_text"))
+hov = added_lines._tooltip(dat, 2110, "Hoplite") or ""
+check("a Chronicles base's tooltip comes from the paphos strings: description and stats (Hoplite)",
+      hov.startswith("Create <b>Hoplite<b> (<cost>)") and "Greek regional" in hov and "<hp>" in hov, hov)
+hk = us.get(hero["sids"][0], {}).get("ext_text", "")
+check("a hero's copy, with no tooltip to copy, still shows its stats in F2 and on the button",
+      hk.startswith("Create <b>") and "(<cost>)" in hk and "<hp> <attack>" in hk
+      and us.get(hero["sids"][0], {}).get("help_text") == hk, hk)
 check("upgrade button label and hover", ts.get(guard["tech_sids"][0], {}).get("label") == "Upgrade to Veteran Guard"
       and "(<cost>)" in ts.get(guard["tech_sids"][0], {}).get("hover", ""), ts.get(guard["tech_sids"][0]))
 

@@ -142,7 +142,9 @@ def rich_unit_tooltip(dat, unit_id, name: str, desc: str = "") -> str | None:
     except (IndexError, TypeError, AttributeError):
         return None
     from civ_appender import _string_table
-    template = _string_table().get(sid + 21000) or ""
+    from added_lines import chronicles_strings
+    # Chronicles units (the Hoplite, 405007) keep theirs in the paphos file.
+    template = _string_table().get(sid + 21000) or chronicles_strings().get(sid + 21000) or ""
     if "(<cost>)" not in template:
         return None
     lines = template.split("\\n")
@@ -539,13 +541,14 @@ _OPT_IN_UNIT_NODE_SOURCES: dict[int, list[str]] = {
     873:  ["DRAVIDIANS.json",  "BENGALIS.json"],  # Elephant Archer
     875:  ["DRAVIDIANS.json",  "BENGALIS.json"],  # Elite Elephant Archer
     1132: ["BURMESE.json",     "BENGALIS.json"],  # Battle Elephant
-    1133: ["BURMESE.json",     "BENGALIS.json"],  # Elite Battle Elephant
+    1134: ["BURMESE.json",     "BENGALIS.json"],  # Elite Battle Elephant (1133 is its corpse)
     1370: ["MONGOLS.json",     "CUMANS.json"],     # Steppe Lancer
-    1371: ["MONGOLS.json",     "CUMANS.json"],     # Elite Steppe Lancer
+    1372: ["MONGOLS.json",     "CUMANS.json"],     # Elite Steppe Lancer
     1744: ["BENGALIS.json",    "DRAVIDIANS.json"], # Armored Elephant
     1746: ["BENGALIS.json",    "DRAVIDIANS.json"], # Siege Elephant (elite upgrade)
     1795: ["BYZANTINES.json"],            # Dromon
     1901: ["CHINESE.json",     "KOREANS.json"],    # Fire Lancer
+    1903: ["CHINESE.json",     "KOREANS.json"],    # Elite Fire Lancer
     1904: ["CHINESE.json",     "KOREANS.json"],    # Rocket Cart
     1907: ["CHINESE.json",     "KOREANS.json"],    # Heavy Rocket Cart
     1942: ["SHU.json",         "WEI.json"],        # Traction Trebuchet
@@ -553,6 +556,16 @@ _OPT_IN_UNIT_NODE_SOURCES: dict[int, list[str]] = {
     1946: ["SHU.json",         "WEI.json"],        # Heavy Hei Guang Cavalry
     1948: ["CHINESE.json",     "SHU.json"],        # Lou Chuan
     2150: ["ACHAEMENIDS.json"],           # War Chariot
+    2151: ["ACHAEMENIDS.json"],           # Elite War Chariot
+    329:  ["SARACENS.json",    "PERSIANS.json"],   # Camel Rider
+    330:  ["SARACENS.json",    "PERSIANS.json"],   # Heavy Camel Rider
+    751:  ["AZTECS.json",      "MAYANS.json"],     # Eagle Scout
+    753:  ["AZTECS.json",      "MAYANS.json"],     # Eagle Warrior
+    752:  ["AZTECS.json",      "MAYANS.json"],     # Elite Eagle Warrior
+    2700: ["FRANKS.json",      "BRITONS.json"],    # Mounted Crossbowman (Viking Sagas)
+    2701: ["FRANKS.json",      "BRITONS.json"],    # Heavy Mounted Crossbowman
+    2703: ["VIKINGS.json",     "DANES.json"],      # Varangian Guard (Viking Sagas)
+    2704: ["VIKINGS.json",     "DANES.json"],      # Elite Varangian Guard
     2550: ["INCAS.json",       "MAPUCHE.json"],    # Champi Scout
     2552: ["INCAS.json",       "MAPUCHE.json"],    # Champi Warrior
     2554: ["INCAS.json",       "MAPUCHE.json"],    # Elite Champi Warrior

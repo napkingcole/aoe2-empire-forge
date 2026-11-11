@@ -206,12 +206,26 @@ for uid, sources in _OPT_IN_UNIT_NODE_SOURCES.items():
                 found = True
     if not found:
         bad.append(f"{uid} ({', '.join(sources)})")
-# Pre-existing gap, reported not asserted: these entries never match because the
-# node is a UniqueUnit (Dragon Ship 1302) or has no node of its own at all
-# (1133 / 1371 — the elite upgrade is folded into the base node's Link ID).
-print("  note  unresolved entries (pre-existing): " + ("; ".join(bad) or "none"))
-check("every resolvable opt-in unit still resolves",
-      all(int(b.split()[0]) in {1133, 1371, 1302} for b in bad), "; ".join(bad))
+# Dragon Ship 1302 has no unit node in any shipped tree (it's card 362's).
+# 1133 and 1371 used to sit here, explained away as "folded into the base
+# node": they were wrong ids (1133 is the elephant's corpse); the Elite Battle
+# Elephant is 1134 and the Elite Steppe Lancer 1372 — F2 showed no Elite
+# Battle Elephant and an added Royal one floating free (in game, 2026-11-10).
+print("  note  unresolved entries: " + ("; ".join(bad) or "none"))
+check("every opt-in unit resolves to a node in its source trees (Dragon Ship aside)",
+      all(int(b.split()[0]) == 1302 for b in bad), "; ".join(bad))
+# The other way round: a regional unit whose node links to one in the table
+# (an elite after its base) is in the table too, or F2 loses the line's middle.
+linked = {}
+for p in sorted(SRCDIR.glob("*.json")):
+    with open(p, encoding="utf-8") as f:
+        src = json.load(f)
+    for n in src.get("civ_techs_units", []):
+        if n.get("Node Type") == "RegionalUnit" and n.get("Link ID") in _OPT_IN_UNIT_NODE_SOURCES:
+            linked.setdefault(n["Node ID"], n.get("Name"))
+missing = {u: nm for u, nm in linked.items() if u not in _OPT_IN_UNIT_NODE_SOURCES}
+check("every regional unit after a table unit is in the table too (Elite Battle Elephant, Elite Fire Lancer...)",
+      not missing, missing)
 
 # ── Issue #46: UT nodes retarget whatever DE calls their Node Type ────────────
 # Viking Sagas retyped the Castle UT nodes "Research" → "UniqueTech".  The

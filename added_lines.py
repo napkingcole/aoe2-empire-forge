@@ -317,6 +317,36 @@ def _producer(dat, civ_index: int, unit: int, building: int) -> int | None:
     return min(found)[2] if found else None
 
 
+def _earlier(dat, unit: int) -> list[int]:
+    """Every unit the game upgrades into `unit`, all the way down (Militia,
+    Man-at-Arms, Long Swordsman and Two-Handed Swordsman for the Champion).
+    The game's own upgrades name each of them, never just the step before:
+    Champion (264) converts 74, 75, 77 and 473; Imperial Skirmisher (655)
+    7 and 6.  Naming only the step before left Battle Elephants trained
+    before the Elite upgrade unconverted by an added Royal one (in game,
+    2026-11-10)."""
+    into: dict[int, set[int]] = {}
+    for t in dat.techs:
+        if 0 <= t.effect_id < len(dat.effects):
+            for c in dat.effects[t.effect_id].effect_commands:
+                if c.type == EC_UPGRADE and int(c.a) != int(c.b):
+                    into.setdefault(int(c.b), set()).add(int(c.a))
+    seen: list[int] = []
+    todo = [unit]
+    while todo:
+        for a in sorted(into.get(todo.pop(), ())):
+            if a != unit and a not in seen:
+                seen.append(a)
+                todo.append(a)
+    return seen
+
+
+def _upgrades(sources: list[int], to: int) -> list:
+    """One EC_UPGRADE per source, each once, in order."""
+    return [EffectCommand(type=EC_UPGRADE, a=a, b=to, c=-1, d=0.0)
+            for a in dict.fromkeys(sources) if a != to]
+
+
 def _unlocker(dat, civ_index: int, unit: int) -> int | None:
     """The tech that makes `unit` available (Bombard Cannon 188), for a unit
     no tech upgrades into.  The game's own Houfnice (787) requires it, so an
@@ -356,6 +386,14 @@ def _tooltip(dat, base: int, name: str, desc: str = "") -> str | None:
     if rich is None:
         return None
     return "\\n".join(l for l in rich.split("\\n") if not l.startswith("<GREY>"))
+
+
+def _plain_tooltip(name: str, desc: str = "") -> str:
+    """For a base with no tooltip of its own to copy (a hero, Richard the
+    Lionheart): the vanilla shape, whose tokens the engine fills from the unit
+    — cost with resource icons, and the stat line, as in our copied ones."""
+    return "\\n".join([f"Create <b>{name}<b> (<cost>)"] + ([desc] if desc else [])
+                       + ["<hp> <attack> <armor> <piercearmor> <range>"])
 
 
 # ── Building the lines ───────────────────────────────────────────────────────
@@ -634,11 +672,9 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
                 unit.language_dll_name, unit.language_dll_creation = sid, sid + 1000
                 unit.language_dll_help = sid + 100000
             kv = names[n].replace('"', '\\"')
-            hover = _tooltip(dat, base, kv, desc)
+            hover = _tooltip(dat, base, kv, desc) or _plain_tooltip(kv, desc)
             unit_strings.append({"sid": sid, "name": kv, "desc_sid": sid + 100000,
-                                 "help_text": hover or f"Create <b>{kv}<b> (<cost>)",
-                                 "ext_sid": sid + 21000,
-                                 "ext_text": hover or f"Create <b>{kv}<b> (<cost>)"})
+                                 "help_text": hover, "ext_sid": sid + 21000, "ext_text": hover})
 
         # Tier 1: available at its age; later tiers researched.  The role's
         # vanilla upgrade at an age only supplies the defaults: cost, time and,
@@ -654,8 +690,8 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             # tech that waits on it upgrades the result into ours, the way the
             # game's own Fast Fire Ship (246) follows Galleon.  The upgrade
             # button keeps its picture, but takes our name.
-            eff = _append_effect(dat, Effect(name=f"{names[0]} replaces {unit_label(dat, 0, rep)}", effect_commands=[
-                EffectCommand(type=EC_UPGRADE, a=rep, b=ids[0], c=-1, d=0.0)]))
+            eff = _append_effect(dat, Effect(name=f"{names[0]} replaces {unit_label(dat, 0, rep)}",
+                                             effect_commands=_upgrades([rep] + _earlier(dat, rep), ids[0])))
             h1 = _make_tech(f"{names[0]} replaces {unit_label(dat, 0, rep)}", eff, civ_index)
             h1.required_techs, h1.required_tech_count = (producer, -1, -1, -1, -1, -1), 1
             techs = [_append_tech(dat, h1)]
@@ -688,6 +724,7 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
                 hk_up = next((rl.hot_key_id for rl in dat.techs[producer].research_locations
                               if rl.location_id == building), hk_up)
         chain = ([frm] if frm is not None else []) + (ids if rep is None else [])
+        below = _earlier(dat, frm) if frm is not None else []     # the vanilla line under frm
         all_names = ([fname] if frm is not None else []) + names
         for n in range(1, len(chain)):
             k = n if frm is None else n - 1          # index into ids / tiers / names
@@ -706,8 +743,9 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
                 d_cost, d_time = _DEFAULT_UPGRADE[age]
             cost = ({_RES[r]: a for r, a in up["cost"].items()} if "cost" in up else d_cost)
             time = up.get("time", d_time)
-            eff = _append_effect(dat, Effect(name=f"Upgrade to {names[k]}", effect_commands=[
-                EffectCommand(type=EC_UPGRADE, a=chain[n - 1], b=chain[n], c=-1, d=0.0)]))
+            # From every earlier unit of the line, as the game's own upgrades do.
+            eff = _append_effect(dat, Effect(name=f"Upgrade to {names[k]}",
+                                             effect_commands=_upgrades(chain[n - 1::-1] + below, chain[n])))
             sid = _editor_sid(dat)
             _OWN_STRING_NAMES[sid] = names[k]
             tech = _make_tech(f"Upgrade to {names[k]}", eff, civ_index, age_req=AGE_TECHS[age],
