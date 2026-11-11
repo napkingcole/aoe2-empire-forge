@@ -4400,18 +4400,26 @@ function showToast(message) {
   bootstrap.Toast.getOrCreateInstance(el, { delay: 6000 }).show();
 }
 
+// The Turtle Ship and Caravel are tree units now (their cards retired); either
+// takes the demolition line's Dock button (civ_appender._apply_unit_replacements).
+const _BUTTON_EIGHT_SHIP_NAMES = { 831: "Turtle Ship", 1004: "Caravel" };
 function _hasUniqueShipBonus() {
-  const bonuses = draft.bonuses || [];
-  return bonuses.some(b => _UNIQUE_SHIP_BONUS_IDS.has(Number(b.id ?? b[0])));
+  return !!_uniqueShipName();
 }
 
-function _uniqueShipBonusName() {
-  const bonuses = draft.bonuses || [];
-  for (const b of bonuses) {
+function _uniqueShipName() {
+  const units = (draft.tree && draft.tree.units) || [];
+  const fromTree = Object.keys(_BUTTON_EIGHT_SHIP_NAMES).find(id => units.includes(Number(id)));
+  if (fromTree) return _BUTTON_EIGHT_SHIP_NAMES[fromTree];
+  for (const b of draft.bonuses || []) {
     const id = Number(b.id ?? b[0]);
     if (_UNIQUE_SHIP_BONUS_NAMES[id]) return _UNIQUE_SHIP_BONUS_NAMES[id];
   }
-  return "unique ship";
+  return null;
+}
+
+function _uniqueShipBonusName() {
+  return _uniqueShipName() || "unique ship";
 }
 
 function renderDemoShipNotice() {

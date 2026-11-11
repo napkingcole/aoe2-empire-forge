@@ -1479,14 +1479,8 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     # 2026-11-11 had it from the wizard's picker, moved into its tree once by
     # retired_cards (TREE_VERSION 3).
 
-    # Demo ships are excluded when the civ has a unique ship bonus (50/69).
-    # Longboats (51) left this group for the tree; see RETIRED_INTO_TREE.
-    _UNIQUE_SHIP_BONUS_IDS = {50, 69}
-    _DEMO_SHIP_UNITS = {1104, 527, 528}
+    # A Turtle Ship or Caravel drops the demolition line: _apply_unit_replacements.
     _civ_bonus_ids_early = {e[0] for e in get_civ_bonuses(civ_def)}
-    if _UNIQUE_SHIP_BONUS_IDS & _civ_bonus_ids_early:
-        for _u in _DEMO_SHIP_UNITS:
-            tree_units.discard(_u)
 
     # ── Step 0: Build EC type=8 'unlock' map from all civ TT effects.
     # ec8_info[tech_id] = (a, b, c, d) template for the type=8 command.
@@ -3253,6 +3247,9 @@ LINE_REPLACEMENTS: dict[int, dict] = {
 # KM's duplicates of the same cards (same techs).
 REPLACEMENT_CARD_ALIASES = {307: 416, 314: 417, 402: 362}
 
+_DEMO_SHIP_UNITS = frozenset((1104, 527, 528))      # Demolition Raft, Ship, Heavy
+_BUTTON_EIGHT_SHIPS = frozenset((831, 832, 1004, 1006))   # Turtle Ship, Caravel and Elites
+
 # The Dock's siege ship variants take the Cannon Galleon line's place, as their
 # civs have them (2026-11-11; the wizard's Siege Ship picker before).  No card
 # stands behind them — a tree unit is all they need — and the F2 viewer draws
@@ -3303,6 +3300,13 @@ def _apply_unit_replacements(units: set, civ_def: dict | None = None) -> set:
     for spec in SIEGE_SHIP_REPLACEMENTS.values():
         if out & set(spec["units"]):
             out -= set(spec["replaces"])
+    # The Turtle Ship and the Caravel take the Demolition Raft line's Dock
+    # button (8): a civ with either has no demolition ships, from the tree or
+    # from the card (KM).  Here rather than in the build alone, or the button
+    # planner put a tree Caravel on page 2 beside a demolition line the build
+    # then removed, and F2 showed that line (2026-11-11).
+    if out & _BUTTON_EIGHT_SHIPS or raw & {50, 69}:
+        out -= _DEMO_SHIP_UNITS
     return out
 
 
