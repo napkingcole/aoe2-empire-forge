@@ -131,6 +131,31 @@ else:
                       (2612, "War Dog"), (1690, "Warwolf Trebuchet")):
         check(f"{name} renders", gs.still_webp(dat, dat_path, units[uid]) is not None)
 
+    print("\n=== ships: water and the game's wake (2026-11-11) ===")
+    # A galley's own walk graphic has no file, only its hull and sails: the
+    # scale read from it was 1, and the water scrolled at half speed.
+    galley = gs.unit_graphic(units[21], "walk")
+    hull_x2 = gs.find_sprite(dat_path, dat.graphics[gs._layers(dat, galley)[0][0]].file_name)
+    check("a War Galley's sprite scale comes from its hull",
+          gs.sprite_scale(dat, dat_path, galley) == (2 if hull_x2 and hull_x2.stem.endswith("_x2") else 1))
+    if gs.particles_folder(dat_path) is None:
+        print("  skip  no particles folder")
+    else:
+        sizes = {uid: gs.wake_size(dat, dat_path, units[uid]) for uid in (13, 250, 539, 21, 442, 420)}
+        check("wake sizes: Fishing Ship small, Longship and Galley medium, War Galley/Galleon/Cannon Galleon large",
+              sizes == {13: "small", 250: "medium", 539: "medium", 21: "large", 442: "large", 420: "large"}, sizes)
+        check("a land unit has no wake", gs.wake_size(dat, dat_path, units[4]) is None)
+        eff = gs.wake_effect(dat_path, "medium")
+        check("the puff comes from the game's particle file (back and front, scale, life, fades)",
+              eff and set(eff) == {"back", "front"} and eff["back"]["scale"] > 0
+              and eff["back"]["life"][0] <= eff["back"]["life"][1], eff)
+        from PIL import Image
+        import io
+        for part in gs.WAKE_PARTS:
+            strip = Image.open(io.BytesIO(gs.wake_strip(dat_path, part)))
+            check(f"the {part} wake: one facing's 30 frames side by side",
+                  strip.width == 30 * strip.height and strip.getbbox() is not None, strip.size)
+
     print("\n=== the identity scene, from the game ===")
     # Every option the wizard offers draws the game's own sprite (2026-10-23):
     # the bundled pictures had no art for 28 wonders or the South American

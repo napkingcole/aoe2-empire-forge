@@ -1274,14 +1274,49 @@ let _groundRaf = null;
 // screen at standard sprite scale (54 was the first guess; the user tuned it
 // 15% slower by eye, 2026-10-22); the window shows sprites at 1.5x their own.
 const _TILE_PX = 46, _NORMAL_SPEED = 1.7;
+// A ship's wake (game_sprites' "A ship's wake"): the game's own particle puffs,
+// back and front together as its "Combined Wake", dropped at the hull every
+// _WAKE_EVERY ms and left on the water as it scrolls away, each playing its
+// frames once while it fades.  The rate is by eye: the game doesn't say.
+const _WAKE_EVERY = 110;
+const _wakeStrips = {};
+function _wakeStrip(part) {
+  if (!_wakeStrips[part]) {
+    const im = new Image();
+    im.src = `/api/wake/${part}${_artQuery()}`;
+    _wakeStrips[part] = im;
+  }
+  return _wakeStrips[part];
+}
+function _wakeCanvas(stage) {
+  let c = stage.querySelector("canvas.unit-preview-wake");
+  if (!c) {
+    c = document.createElement("canvas");
+    c.className = "unit-preview-wake";
+    c.setAttribute("aria-hidden", "true");
+    stage.prepend(c);
+  }
+  const dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(stage.clientWidth * dpr);
+  c.height = Math.round(stage.clientHeight * dpr);
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ctx;
+}
+function _clearWake(stage) {
+  const c = stage && stage.querySelector("canvas.unit-preview-wake");
+  if (c) c.getContext("2d").clearRect(0, 0, c.width, c.height);
+}
 function _stopGround() {
   if (_groundRaf) cancelAnimationFrame(_groundRaf);
   _groundRaf = null;
 }
-function _startGround(stage, img, meta) {
+function _startGround(stage, img, meta, wake = null) {
   _stopGround();
   if (!meta || !(meta.speed > 0)) return;
-  let x = 0, y = 0, last = null;
+  let x = 0, y = 0, last = null, sinceDrop = _WAKE_EVERY;
+  const ctx = wake ? _wakeCanvas(stage) : null;
+  const puffs = [];
   const step = t => {
     if (last != null && img.naturalWidth) {
       const shown = img.clientWidth / img.naturalWidth;        // the window's own scale
@@ -1289,6 +1324,35 @@ function _startGround(stage, img, meta) {
       const d = pxPerSec * (t - last) / 1000 / Math.SQRT2;
       x += d; y -= d;
       stage.style.backgroundPosition = `${x.toFixed(1)}px ${y.toFixed(1)}px`;
+      if (ctx) {
+        sinceDrop += t - last;
+        if (sinceDrop >= _WAKE_EVERY) {
+          sinceDrop = 0;
+          const sr = stage.getBoundingClientRect(), ir = img.getBoundingClientRect();
+          const at = [ir.left - sr.left + wake.anchor[0] * shown, ir.top - sr.top + wake.anchor[1] * shown];
+          for (const part of ["back", "front"]) {
+            const p = wake[part], life = p.life[0] + Math.random() * (p.life[1] - p.life[0]);
+            puffs.push({ part, p, at, gx: x, gy: y, born: t, life: life * 1000 / _NORMAL_SPEED });
+          }
+        }
+        ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
+        for (let i = puffs.length - 1; i >= 0; i--) {
+          const f = puffs[i], age = t - f.born, strip = _wakeStrip(f.part);
+          if (age >= f.life) { puffs.splice(i, 1); continue; }
+          if (!strip.naturalHeight) continue;
+          const n = Math.max(1, Math.round(strip.naturalWidth / strip.naturalHeight));
+          const src = strip.naturalHeight, frame = Math.min(n - 1, Math.floor(age / f.life * n));
+          const sec = age * _NORMAL_SPEED / 1000, left = (f.life - age) * _NORMAL_SPEED / 1000;
+          let alpha = f.p.alpha[0] + (f.p.alpha[1] - f.p.alpha[0]) * (age / f.life);
+          if (f.p.fade_in > 0) alpha *= Math.min(1, sec / f.p.fade_in);
+          if (f.p.fade_out > 0) alpha *= Math.min(1, left / f.p.fade_out);
+          const size = src * f.p.scale * meta.scale * shown;
+          ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+          ctx.drawImage(strip, frame * src, 0, src, src,
+            f.at[0] + (x - f.gx) - size / 2, f.at[1] + (y - f.gy) - size / 2, size, size);
+        }
+        ctx.globalAlpha = 1;
+      }
     }
     last = t;
     _groundRaf = requestAnimationFrame(step);
@@ -1304,10 +1368,23 @@ function openUnitPreview(unitId, name, civ = null) {
   const img = el.querySelector("#unit-preview-img");
   const status = el.querySelector("#unit-preview-status");
   const stage = el.querySelector(".unit-preview-stage");
+  const civQ = civ != null ? `&civ=${civ}` : "";
   const meta = fetch(`/api/unit-preview/${unitId}/meta${_datQuery()}`).then(r => r.json()).catch(() => null);
-  el.addEventListener("hidden.bs.modal", _stopGround, { once: true });
+  // A ship sails on water; the ground waits for the answer rather than
+  // flashing grass first.
+  stage.classList.remove("water");
+  stage.classList.add("ground-pending");
+  meta.then(m => {
+    stage.classList.toggle("water", !!(m && m.water));
+    stage.classList.remove("ground-pending");
+  });
+  const wake = meta.then(m => m && m.water
+    ? fetch(`/api/unit-preview/${unitId}/wake${_artQuery()}${civQ}`).then(r => r.json()).catch(() => null)
+    : null).then(w => w && w.anchor && w.anchor.length ? w : null);
+  el.addEventListener("hidden.bs.modal", () => { _stopGround(); _clearWake(stage); }, { once: true });
   const show = kind => {
     _stopGround();
+    _clearWake(stage);
     stage.style.backgroundPosition = "0 0";
     el.querySelectorAll("[data-preview-kind]").forEach(b =>
       b.classList.toggle("active", b.dataset.previewKind === kind));
@@ -1320,7 +1397,10 @@ function openUnitPreview(unitId, name, civ = null) {
       img.style.width = `${Math.min(img.naturalWidth * 1.5, 440)}px`;
       status.classList.add("d-none");
       img.classList.remove("d-none");
-      if (kind === "walk") meta.then(m => _startGround(stage, img, m));
+      if (kind === "walk") Promise.all([meta, wake]).then(([m, w]) => {
+        if (w) ["back", "front"].forEach(_wakeStrip);
+        _startGround(stage, img, m, w);
+      });
     };
     img.onerror = () => { status.textContent = "This animation isn't in your game files."; };
     img.src = _previewSrc(unitId, kind, civ);

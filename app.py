@@ -2906,10 +2906,63 @@ def api_unit_preview_meta(unit_id: int):
     if not 0 <= unit_id < len(units) or units[unit_id] is None:
         return jsonify({"speed": 0, "scale": 1})
     unit = units[unit_id]
-    g = dat.graphics[game_sprites.unit_graphic(unit, "walk")] if game_sprites.unit_graphic(unit, "walk") >= 0 else None
-    sprite = game_sprites.find_sprite(dat_path, g.file_name) if g is not None else None
+    walk = game_sprites.unit_graphic(unit, "walk")
+    # Ships sail on water (a galley's own walk graphic has no file: the scale
+    # comes from its hull, or the water scrolled at half speed).
     return jsonify({"speed": round(float(unit.speed), 3),
-                    "scale": 2 if sprite is not None and sprite.stem.endswith("_x2") else 1})
+                    "scale": game_sprites.sprite_scale(dat, dat_path, walk) if walk >= 0 else 1,
+                    "water": unit.class_ in game_sprites.SHIP_CLASSES})
+
+
+_WAKE_ANCHORS: dict = {}               # (dat_path, unit, civ) -> wake answer
+
+
+@app.route("/api/unit-preview/<int:unit_id>/wake")
+def api_unit_preview_wake(unit_id: int):
+    """A ship's wake for the preview window's walk (game_sprites' "A ship's
+    wake"): its size, each part's puff, and where the hull sits in the walk
+    preview's frames, to drop the puffs there.  {} for any other unit."""
+    import game_sprites
+    from civ_appender import _original_civ
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return jsonify({})
+    civ = request.args.get("civ", type=int)
+    key = (dat_path, unit_id, civ)
+    if key not in _WAKE_ANCHORS:
+        dat = _get_dat(dat_path)
+        units = (_original_civ(dat, civ) if civ is not None and 0 <= civ < len(dat.civs) else dat.civs[0]).units
+        unit = units[unit_id] if 0 <= unit_id < len(units) else None
+        size = game_sprites.wake_size(dat, dat_path, unit) if unit is not None else None
+        effect = game_sprites.wake_effect(dat_path, size) if size else None
+        anchor: list = []
+        if effect and game_sprites.graphic_frames(dat, dat_path, game_sprites.unit_graphic(unit, "walk"),
+                                                  anchor=anchor) is None:
+            effect = None
+        _WAKE_ANCHORS[key] = {"size": size, "anchor": anchor, **effect} if effect else {}
+    return jsonify(_WAKE_ANCHORS[key])
+
+
+@app.route("/api/wake/<part>")
+def api_wake_strip(part: str):
+    """One part of a ship's wake, facing south-west: its frames side by side
+    (game_sprites.wake_strip), from the player's game.  404 without it."""
+    import game_sprites
+    if part not in game_sprites.WAKE_PARTS:
+        return ("", 404)
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return ("", 404)
+    cached = _preview_path(dat_path, 0, f"wake-{part}")
+    if not cached.exists():
+        data = game_sprites.wake_strip(dat_path, part)
+        if data is None:
+            return ("", 404)
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cached.with_suffix(f".{threading.get_ident()}.tmp")
+        tmp.write_bytes(data)
+        tmp.replace(cached)
+    return send_file(cached, mimetype="image/webp", max_age=0)
 
 
 @app.route("/api/unit-preview/<int:unit_id>/<kind>")
