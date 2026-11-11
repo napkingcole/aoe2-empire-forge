@@ -627,6 +627,7 @@ function _useTypeKey(useType) {
 }
 
 function _isSelected(item) {
+    if (item.added || item.add) return true;     // added lines are in by being there
     if (item.use_type === 'Building' && HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) return true;
     const key = _useTypeKey(item.use_type);
     if (!key) return true;  // unknown types treated as always-selected
@@ -1063,6 +1064,8 @@ function _disableBuildingItems(building, element_height) {
 }
 
 function _toggleNode(item, element_height) {
+    // An added line is removed from its panel, and a "+" only adds.
+    if (item.added || item.add) return;
     // The siege ship is owned by the wizard's picker and the regional second
     // unique units by their bonus cards — neither decision lives in this tree.
     if (_isExternallyControlled(item)) return;
@@ -1219,11 +1222,48 @@ function _variantHint(item) {
     return '';
 }
 
+// An added line's tier: the stats it will have, read like a vanilla node's.
+function _addedTipHtml(t) {
+    const div = (css, html) => `<div style="${css}">${html}</div>`;
+    const cost = c => _costHtml(c && { Food: c.food, Wood: c.wood, Gold: c.gold, Stone: c.stone });
+    let html = div('font-weight:700;font-size:13px;', _esc(t.name));
+    if (t.cost) html += div('margin-top:4px;font-size:11px;opacity:.8;', `Cost: ${cost(t.cost)}`);
+    if (t.hp !== undefined) {
+        const parts = [`HP ${t.hp}`];
+        if (t.attack) parts.push(`Atk ${t.attack}`);
+        parts.push(`MA ${t.melee}/${t.pierce}`);
+        if (t.range) parts.push(`Range ${t.range}`);
+        html += div('margin-top:2px;font-size:11px;opacity:.7;', parts.join(' · '));
+    }
+    if (t.desc) html += div('margin-top:5px;font-size:11px;line-height:1.4;opacity:.88;', _esc(t.desc));
+    if (t.upgrade && t.upgrade.cost) {
+        html += div('margin-top:5px;font-size:11px;opacity:.8;',
+            `Upgrade: ${cost(t.upgrade.cost)}${t.upgrade.time ? ` (${t.upgrade.time}s)` : ''}`);
+    }
+    if (t.replaces) html += div('margin-top:4px;font-size:11px;opacity:.7;',
+        `Replaces the ${_esc(t.replaces)}: its upgrade gives this unit (the button keeps the ${_esc(t.replaces)}'s picture)`);
+    else if (t.of) html += div('margin-top:4px;font-size:11px;opacity:.7;', `Added unit · tier ${t.n + 1} of ${t.of}`);
+    return html;
+}
+
+function _esc(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
 function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
     const svgX = svgNodeRight; // keep existing references below working
     const panel = document.getElementById('helptext');
     const content = document.getElementById('helptext__content');
     if (!panel || !content) return;
+    if (itemToDraw.added && window.ttInspector) {
+        // Draw the name now; the stats follow once the base unit is read (cached).
+        _tipFor = itemToDraw.id;
+        window.ttInspector.addedTip(itemToDraw.node_id).then(t => {
+            if (!t || _tipFor !== itemToDraw.id || panel.style.display === 'none') return;
+            content.innerHTML = _addedTipHtml(t);
+            _placeEditTooltip(panel, svgNodeLeft, svgX, svgY);
+        });
+    }
 
     const name = _nodeName(itemToDraw);
     const idParts = itemToDraw.id.split('_');  // e.g. ["Unit","4","87"]
@@ -1255,7 +1295,8 @@ function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
         ? `<div style="margin-top:5px;font-size:11px;line-height:1.4;opacity:.88;">${desc}</div>`
         : '';
 
-    const hint = _variantHint(itemToDraw);
+    const hint = _variantHint(itemToDraw) || (itemToDraw.age_moved
+        ? `Available from the ${['Dark', 'Feudal', 'Castle', 'Imperial'][itemToDraw.age_moved - 1]} Age for this civ.` : '');
     const hintLine = hint
         ? `<div style="margin-top:5px;font-size:11px;font-weight:600;color:#7a4a00;">${hint}</div>`
         : '';
@@ -1263,7 +1304,12 @@ function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
     content.innerHTML = `<div style="font-weight:700;font-size:13px;">${name}</div>${costLine}${statsLine}${descLine}${hintLine}${civLine}`;
     document.getElementById('helptext__advanced_stats').innerHTML = '';
     panel.style.display = 'block';
+    _placeEditTooltip(panel, svgNodeLeft, svgX, svgY);
+}
 
+let _tipFor = null;
+
+function _placeEditTooltip(panel, svgNodeLeft, svgX, svgY) {
     // Position near the node
     const treeEl = document.getElementById('techtree');
     const wrap   = treeEl?.parentElement;
@@ -1286,6 +1332,7 @@ function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
 }
 
 function _hideEditTooltip() {
+    _tipFor = null;
     const panel = document.getElementById('helptext');
     if (panel) panel.style.display = 'none';
 }
@@ -1325,7 +1372,28 @@ window._ttRelabel = function (item, element_height) {
         .y(item.y + element_height * 0.67);
 };
 
+// A "+" box (tree page, "+ Add Unit"): a dim square with a plus, brighter on
+// hover; clicking it opens the unit picker for that building and age.
+function _drawAddSlot(slot, element_height, draw) {
+    const g = draw.group().attr({ id: slot.id }).addClass('node tt-add-slot');
+    const x = slot.x, y = slot.y, s = element_height;
+    g.rect(s, s).attr({ id: `${slot.id}_bg`, fill: '#000', 'fill-opacity': 0.15 }).move(x, y).addClass('tt-add-bg');
+    const arm = s * 0.36, w = Math.max(2, s * 0.042);   // ~6px at the usual node size
+    g.rect(arm, w).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - arm) / 2, y + (s - w) / 2);
+    g.rect(w, arm).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - w) / 2, y + (s - arm) / 2);
+    // Hovering one box dims the rest of its column (its building's other ages).
+    const column = () => document.querySelectorAll(`.tt-add-slot[data-building="${slot.add.building}"]`);
+    g.attr({ 'data-building': slot.add.building });
+    g.rect(s, s).attr({ id: `${slot.id}_overlay`, fill: 'transparent' }).addClass('node__overlay')
+        .move(x, y)
+        .mouseover(() => column().forEach(el => { if (el.id !== slot.id) el.classList.add('is-dim'); }))
+        .mouseout(() => column().forEach(el => el.classList.remove('is-dim')))
+        .click(() => window.ttInspector?.select(slot, element_height));
+    g.element('title').words(`Add a unit to the ${slot.add.buildingName} in the ${['Dark', 'Feudal', 'Castle', 'Imperial'][slot.add.age - 1]} Age`);
+}
+
 function drawItem(itemToDraw, element_height, tree_height, draw) {
+    if (itemToDraw.add) return _drawAddSlot(itemToDraw, element_height, draw);
     const item = draw.group().attr({ id: itemToDraw.id }).addClass('node');
     item.rect(element_height, element_height).attr({
         fill: getColourForNodeType(itemToDraw.node_type || itemToDraw.use_type),
@@ -1348,7 +1416,7 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
         .attr({ fill: '#ffffff', opacity: 0.3, id: itemToDraw.id + '_imgph' })
         .move(imgX, itemToDraw.y + 2);
 
-    item.image(_imgroot + '/' + itemToDraw.use_type + '/' + itemToDraw.picture_index + '.png')
+    item.image(itemToDraw.image_url || _imgroot + '/' + itemToDraw.use_type + '/' + itemToDraw.picture_index + '.png')
         .size(imgSize, imgSize)
         .attr({ id: itemToDraw.id + '_img' })
         .move(imgX, itemToDraw.y + 2);
@@ -1395,6 +1463,49 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
             }
         });
     if (_canEdit) window.ttInspector?.decorate(itemToDraw, element_height);
+    if (_canEdit && itemToDraw.use_type === 'Unit' && _ADD_LINE_BUILDINGS.has(itemToDraw.building_id)) {
+        _drawExtendButton(item, itemToDraw, element_height);
+    }
+}
+
+// Is this the last unit of its line, so a tier can be added after it?  Asked
+// on hover, so it follows every on/off click.
+function _canExtend(item) {
+    // An added line's last tier: one more tier, if the line has room.
+    if (item.added) return _canEdit && !!window.ttInspector?.canAddTier(item.node_id);
+    if (!_canEdit || item.use_type !== 'Unit' || !_isSelected(item)
+            || !_ADD_LINE_BUILDINGS.has(item.building_id)) return false;
+    const next = _successorIndex[`${item.building_id}_${item.node_id}`] || [];
+    return !next.some(s => s.added || (s.use_type === 'Unit' && _isSelected(s)));
+}
+window._ttCanExtend = _canExtend;
+
+// Can this unit be replaced?  Only one an upgrade gives (Paladin, not Knight):
+// the replacement rides that upgrade.
+function _canReplace(item) {
+    return _canEdit && item.use_type === 'Unit' && !item.added && item.node_type === 'UnitUpgrade'
+        && _isSelected(item) && _ADD_LINE_BUILDINGS.has(item.building_id);
+}
+window._ttCanReplace = _canReplace;
+
+// A small "+" under the last unit of a line, shown while it's hovered:
+// "add an upgrade after this unit" (an extension, added_lines "from").
+function _drawExtendButton(group, item, element_height) {
+    const r = Math.max(7, element_height * 0.13);
+    const cx = item.x + element_height / 2, cy = item.y + element_height;
+    const btn = group.group().addClass('tt-ext-btn');
+    btn.circle(r * 2).center(cx, cy).attr({ fill: '#3b2a12', stroke: '#f3e2b5', 'stroke-width': 1.5 });
+    const arm = r * 1.1, w = Math.max(1.5, r * 0.22);
+    btn.rect(arm, w).attr({ fill: '#f3e2b5' }).center(cx, cy);
+    btn.rect(w, arm).attr({ fill: '#f3e2b5' }).center(cx, cy);
+    btn.element('title').words(item.added ? 'Add a tier to this line' : 'Add an upgrade after this unit');
+    btn.click(e => {
+        e.stopPropagation();
+        _hideEditTooltip();
+        window.ttInspector?.extend(item, element_height);
+    });
+    group.on('mouseenter', () => group.node.classList.toggle('show-ext', _canExtend(item)));
+    group.on('mouseleave', () => group.node.classList.remove('show-ext'));
 }
 
 function techtreeDoesNotHaveScrollbar() {
@@ -1428,6 +1539,180 @@ function _stripCastleUuAndUt(treeData) {
     }
 }
 
+// ── "+ Add Unit" (added_lines.py) ────────────────────────────────────────────
+// Buildings that can take an added line; the Castle's second unit is the
+// unique-unit step's.
+const _ADD_LINE_BUILDINGS = new Set([12, 87, 101, 49, 45, 104, 109]);
+
+// Draw the draft's added lines as columns after a building's units, and, while
+// editing, one more column of "+" boxes, one per age the building has.
+function _applyAddedLines(treeData) {
+    const lines = window.ttInspector ? window.ttInspector.addedLines() : [];
+    for (const b of treeData.buildings) {
+        if (!_ADD_LINE_BUILDINGS.has(b.node_id) || !b.grid || !b.grid.length) continue;
+        const on = !_canEdit || _isSelected(b);
+        const mine = lines.filter(l => l.building === b.node_id);
+        if (!on || (!mine.length && !_canEdit)) continue;
+        const rows = b.grid.length;
+        // The row for an age: its first row, or the next one if the building
+        // itself sits there (the Stable is drawn in the Feudal row).
+        const rowOf = age => { const r = (age - 1) * 2; return r <= b.row ? b.row + 1 : r; };
+        const name = formatName(data.strings[b.name_string_id] || b.name).replace(/\n/g, ' ');
+        // Extensions first: their tiers go under the unit they upgrade from,
+        // or in a column of their own beside it when the column has no room.
+        for (const line of mine.filter(l => l.from != null)) {
+            const fid = `Unit_${line.from}_${b.node_id}`;
+            const from = treeData.units_techs.find(i => i.id === fid);
+            let col = -1, frow = -1;
+            for (let r = 0; r < rows; r++) { const c = b.grid[r].indexOf(fid); if (c >= 0) { col = c; frow = r; } }
+            if (col < 0 || !from || (_canEdit && !_isSelected(from))) continue;
+            const place = (start, free) => {
+                let prev = start;
+                return line.tiers.map(t => {
+                    const r = Math.max(rowOf(t.age), prev + 1);
+                    prev = r;
+                    return r < rows && r <= (t.age - 1) * 2 + 1 && free(r) ? r : null;
+                });
+            };
+            let target = col, beside = null;
+            let at = place(frow, r => !b.grid[r][col]);
+            if (at.includes(null)) {
+                for (let r = 0; r < rows; r++) b.grid[r].splice(col + 1, 0, null);
+                target = col + 1;
+                beside = fid;
+                at = place(frow - 1, () => true);
+            }
+            const fromName = _nodeName(from).replace(/\n/g, ' ');
+            line.tiers.forEach((t, n) => {
+                if (at[n] === null) return;
+                const id = `Unit_a${line.id}_${n}_${b.node_id}`;
+                treeData.units_techs.push({
+                    id, node_id: `a${line.id}.${n}`, building_id: b.node_id, use_type: 'Unit',
+                    node_type: 'UnitUpgrade',
+                    link_id: n ? `a${line.id}.${n - 1}` : line.from,
+                    link_node_type: n ? 'UnitUpgrade' : from.node_type,
+                    picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
+                    image_url: window.ttInspector.lineImage(line),
+                    name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row: at[n],
+                    beside_of: n === 0 ? beside : null,
+                    added: { line: line.id, n, buildingAge: from.age_id || 1, buildingName: name,
+                             fromName, fromAge: from.age_id || 1, buildingRow: b.row, fromRow: frow },
+                });
+                b.grid[at[n]][target] = id;
+            });
+        }
+        // Replacements take the vanilla unit's place (Savar where the Paladin was).
+        for (const line of mine.filter(l => l.replaces != null)) {
+            const vid = `Unit_${line.replaces}_${b.node_id}`;
+            const v = treeData.units_techs.find(i => i.id === vid);
+            if (!v || (_canEdit && !_isSelected(v))) continue;
+            const id = `Unit_a${line.id}_0_${b.node_id}`;
+            treeData.units_techs.push({
+                id, node_id: `a${line.id}.0`, building_id: b.node_id, use_type: 'Unit',
+                node_type: v.node_type, link_id: v.link_id, link_node_type: v.link_node_type,
+                replaces: v.node_id, replaced_node: v,
+                picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
+                image_url: window.ttInspector.lineImage(line),
+                name: '', name_string_id: -1, help_string_id: -1, age_id: v.age_id, row: v.row,
+                added: { line: line.id, n: 0, buildingAge: v.age_id || 1, buildingName: name,
+                         replacesName: _nodeName(v).replace(/\n/g, ' '), fromAge: v.age_id || 1 },
+            });
+            for (let r = 0; r < rows; r++) {
+                const c = b.grid[r].indexOf(vid);
+                if (c >= 0) b.grid[r][c] = id;
+            }
+        }
+        const cols = [];
+        for (const line of mine.filter(l => l.from == null && l.replaces == null)) {
+            const col = new Array(rows).fill(null);
+            let prev = -1;
+            line.tiers.forEach((t, n) => {
+                const id = `Unit_a${line.id}_${n}_${b.node_id}`;
+                // Two tiers in one age take its two rows (Cavalier, Paladin).
+                const row = Math.max(rowOf(t.age), prev + 1);
+                prev = row;
+                if (row >= rows || row > (t.age - 1) * 2 + 1) return;
+                treeData.units_techs.push({
+                    id, node_id: `a${line.id}.${n}`, building_id: b.node_id, use_type: 'Unit',
+                    node_type: n ? 'UnitUpgrade' : 'Unit',
+                    link_id: n ? `a${line.id}.${n - 1}` : null,
+                    link_node_type: n === 0 ? 'BuildingTech' : n === 1 ? 'Unit' : 'UnitUpgrade',
+                    picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
+                    image_url: window.ttInspector.lineImage(line),
+                    name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row,
+                    added: { line: line.id, n, buildingAge: b.age_id || 1, buildingName: name, buildingRow: b.row },
+                });
+                col[row] = id;
+            });
+            cols.push(col);
+        }
+        if (_canEdit) {
+            const col = new Array(rows).fill(null);
+            for (let age = Math.max(1, b.age_id || 1); age <= 4; age++) {
+                const id = `Add_${b.node_id}_${age}`;
+                const row = rowOf(age);
+                if (row >= rows) continue;
+                treeData.units_techs.push({
+                    id, node_id: id, building_id: b.node_id, use_type: 'Add', node_type: 'AddSlot',
+                    link_id: null, age_id: age, row, name: '', name_string_id: -1,
+                    add: { building: b.node_id, age, buildingName: name },
+                });
+                col[row] = id;
+            }
+            cols.push(col);
+        }
+        if (!cols.length) continue;
+        // After the last column holding a unit, so techs stay at the right.
+        let at = 0;
+        for (let c = 0; c < b.grid[0].length; c++) {
+            if (b.grid.some(r => r[c] && String(r[c]).startsWith('Unit_'))) at = c + 1;
+        }
+        for (let r = 0; r < rows; r++) b.grid[r].splice(at, 0, ...cols.map(c => c[r]));
+    }
+}
+
+// "Available from" an earlier age (an "age" in a unit or tech edit): the node
+// moves up to that age's row when its column has room there, and says so.
+function _applyAgeMoves(treeData) {
+    const e = window.ttInspector ? window.ttInspector.edits() : null;
+    if (!e) return;
+    for (const item of treeData.units_techs) {
+        const ed = item.use_type === 'Unit' ? e.unit_edits[String(item.node_id)]
+            : item.use_type === 'Tech' ? e.tech_edits[String(item.node_id)] : null;
+        const age = ed && ed.age;
+        if (!age || age >= item.age_id) continue;
+        const b = treeData.buildings.find(x => x.node_id === item.building_id);
+        if (!b || !b.grid) continue;
+        let col = -1, row = -1;
+        b.grid.forEach((r, i) => { const c = r.indexOf(item.id); if (c >= 0) { col = c; row = i; } });
+        item.age_moved = age;
+        item.age_id = age;
+        if (col < 0) continue;
+        // Below whatever sits above it in the column (the unit before it).
+        let above = -1;
+        for (let r = row - 1; r >= 0; r--) if (b.grid[r][col]) { above = r; break; }
+        const first = Math.max((age - 1) * 2, b.row + 1);
+        const to = [first, first + 1].find(r => r <= (age - 1) * 2 + 1 && r > above && r < row && !b.grid[r][col]);
+        if (to === undefined) continue;
+        b.grid[row][col] = null;
+        b.grid[to][col] = item.id;
+        item.row = to;
+    }
+}
+
+// The earliest age the panel offers for a node: its building's, and the
+// node before it in its line.
+window._ttMinAge = function (item) {
+    const b = _nodeIndex[`${item.building_id}_${item.building_id}`];
+    const prev = item.link_id != null ? _nodeIndex[`${item.building_id}_${item.link_id}`] : null;
+    return Math.max(b ? b.age_id || 1 : 1, prev && prev.use_type !== 'Building' ? prev.age_id || 1 : 1);
+};
+
+// A line changed shape: redraw (the panel re-opens its node via rebind).
+window._ttRelayout = function () {
+    if (_currentCivName) civ(_currentCivName);
+};
+
 function civ(civName) {
     _currentCivName = civName;
     const era = (data.civs && data.civs[civName]) ? data.civs[civName].era : 'base';
@@ -1436,6 +1721,8 @@ function civ(civName) {
         _stripCastleUuAndUt(treeData);
         _applyBuildingVariantLayout(treeData);
         _applySiegeShipLayout(treeData);
+        _applyAgeMoves(treeData);
+        _applyAddedLines(treeData);
         const root = document.getElementById('root');
         if (root) document.getElementById('techtree').removeChild(root);
 
@@ -1536,12 +1823,15 @@ function civ(civName) {
                     const iId = building.grid[r][c];
                     if (!iId) continue;
                     const item = index[iId];
+                    if (item.add) continue;                  // a "+" box joins nothing
+                    if (item.beside_of) connections.push([item.beside_of, item.id]);
                     if (item.link_id !== -1 && item.link_id !== null) {
                         for (let sr = r - 1; sr >= 0; sr--) {
                             const topId = building.grid[sr][c];
                             if (topId) {
                                 const top = index[topId];
-                                if (item.link_id === top.node_id && item.link_node_type === top.node_type)
+                                if ((item.link_id === top.node_id || item.link_id === top.replaces)
+                                        && item.link_node_type === top.node_type)
                                     connections.push([top.id, item.id]);
                                 break;
                             }
@@ -1569,8 +1859,8 @@ function civ(civName) {
         document.getElementById('techtree').onclick = (e) => { if (e.target.id === 'techtree') hideHelp(); };
 
         // Age row highlights (subtle amber on parchment)
-        draw.rect(tree_width, row_height).attr({ fill: '#7a5010', opacity: 0.12 }).click(hideHelp);
-        draw.rect(tree_width, row_height).attr({ fill: '#7a5010', opacity: 0.12 }).click(hideHelp).y(row_height * 2);
+        draw.rect(tree_width, row_height).attr({ fill: '#7a5010', opacity: 0.2 }).click(hideHelp);
+        draw.rect(tree_width, row_height).attr({ fill: '#7a5010', opacity: 0.2 }).click(hideHelp).y(row_height * 2);
 
         // Age icons
         const icon_height = Math.min(row_height / 2, 112);
@@ -1698,7 +1988,7 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
            torn edges are transparent, so the tree shows around them.  A 9-slice
            border-image keeps the edges at their size however tall the panel is. */
         #tt-inspector-frame {
-            position: absolute; top: 6px; right: 6px; bottom: 6px; width: 380px; z-index: 5;
+            position: absolute; top: 6px; right: 6px; bottom: 6px; width: 390px; z-index: 5;
             border-style: solid; border-width: 30px 28px;
             border-image: url('/static/img/parchment-panel.webp') 60 56 fill / 30px 28px stretch;
             filter: drop-shadow(0 8px 14px rgba(0,0,0,.6)) drop-shadow(0 1px 2px rgba(0,0,0,.4));
@@ -1785,6 +2075,60 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             box-shadow: 0 1px 2px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.5); }
         .tt-insp-x:hover, .tt-insp-add:hover, .tt-insp-reset:hover { background: linear-gradient(#fbecc0, #e9cd8c); }
         .tt-insp-x { padding: 0; line-height: 18px; }
+        /* "+ Add Unit" */
+        .tt-add-slot { cursor: pointer; }
+        .tt-add-slot .tt-add-bg { transition: fill-opacity .12s; }
+        .tt-ext-btn { opacity: 0; pointer-events: none; cursor: pointer; transition: opacity .1s; }
+        .node.show-ext .tt-ext-btn { opacity: 1; pointer-events: all; }
+        .tt-ext-btn:hover circle { fill: #6b4a14; }
+        .tt-unit-picker .tt-pick-grid { max-height: none; overflow: visible;
+            grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+        .tt-unit-picker .tt-pick-stats { font-size: .68rem; opacity: .75; line-height: 1.2; }
+        .tt-unit-picker .tt-pick-stats i { font-size: .6rem; margin-left: 2px; }
+        .tt-unit-picker .tt-pick-suggest { padding: 8px 10px 10px; border-radius: 6px;
+            background: rgba(184,134,11,.10); border: 1px solid rgba(184,134,11,.35); }
+        .tt-unit-picker .tt-pick-suggest-head { font-weight: 600; font-size: .8rem; margin-bottom: 6px; }
+        .tt-insp-looks { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+        .tt-insp-look { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 3px; cursor: pointer;
+            border: 1px solid rgba(110,75,30,.45); border-radius: 5px; background: rgba(255,250,235,.55);
+            color: #2e1d08; font-size: 12px; font-weight: 600; text-align: left; }
+        .tt-insp-look img { width: 30px; height: 30px; border-radius: 3px; }
+        .tt-insp-look small { display: block; font-weight: 400; opacity: .7; font-size: 10.5px; }
+        .tt-insp-look:hover { background: rgba(255,250,235,.85); }
+        .tt-insp-look.selected { border-color: #7a5424; box-shadow: 0 0 0 2px rgba(184,134,11,.55);
+            background: linear-gradient(#f6e2a8, #e2c27a); }
+        .tt-unit-picker .uu-badge-hero { background: #b8860b; color: #fff; }
+        .tt-unit-picker .modal-footer .uu-badge { position: static; }
+        .tt-unit-picker .modal-body { min-height: 60vh; }
+        /* Above the full-screen tree (z-index 9999), and so is the unit preview it opens. */
+        .tt-unit-picker { z-index: 10060; }
+        body.tt-picker-open .modal-backdrop { z-index: 10055; }
+        body.tt-picker-open .modal-backdrop ~ .modal-backdrop { z-index: 10065; }
+        body.tt-picker-open #modal-unit-preview { z-index: 10070; }
+        .tt-add-slot:hover .tt-add-bg { fill-opacity: .32; }
+        .tt-add-slot.is-dim .tt-add-bg { fill-opacity: .06; }
+        .tt-add-slot.is-dim { opacity: .55; }
+        .tt-insp-search { width: 100%; margin: 6px 0 2px; box-sizing: border-box; }
+        .tt-insp-picks { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+        .tt-insp-pick { display: flex; align-items: center; gap: 8px; padding: 3px 6px; text-align: left;
+            border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer;
+            color: #2e1d08; font-size: 12px; }
+        .tt-insp-pick:hover, .tt-insp-pick:focus-visible { background: rgba(255,250,235,.6); border-color: rgba(110,75,30,.45); }
+        .tt-insp-pick img { width: 26px; height: 26px; flex: none; }
+        .tt-insp-pick[hidden] { display: none; }
+        .tt-insp-line { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(110,75,30,.25); }
+        .tt-insp-line .tt-insp-baserow { display: flex; flex-direction: row; align-items: baseline; gap: 8px; text-align: left; }
+        .tt-insp-basename { font-weight: 600; flex: 1; }
+        .tt-insp-tiers { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+        .tt-insp-tier { display: grid; grid-template-columns: 1fr auto 22px; gap: 6px; align-items: center;
+            padding: 2px 4px; border-radius: 4px; }
+        .tt-insp-tier.is-current { background: rgba(255,250,235,.55); outline: 1px solid rgba(110,75,30,.35); }
+        .tt-insp-tier-name { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            background: none !important; border: none !important; box-shadow: none !important; padding: 2px 0; }
+        .tt-insp-tier select, .tt-insp-line select { font-size: 12px; padding: 3px; border: 1px solid rgba(110,75,30,.45);
+            border-radius: 4px; background: rgba(255,250,235,.55); color: #2e1d08; max-width: 100%; }
+        .tt-insp-line .tt-insp-row select { width: 100%; }
+        .tt-insp-desc { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 12px; }
         .tt-insp-link { border: none; background: none; box-shadow: none; text-decoration: underline; text-transform: none;
             letter-spacing: 0; font: 400 12px 'Inter', sans-serif; padding: 0; color: #6b3f06; }
         .tt-insp-fu { font-size: 11.5px; color: #5a3d14; min-height: 0; line-height: 1.3; }
@@ -1947,3 +2291,4 @@ function _disableAll() {
     if (_currentCivName) civ(_currentCivName);
     _treeChanged();
 }
+window._ttNodeName = _nodeName;

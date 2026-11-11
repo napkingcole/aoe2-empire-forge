@@ -4538,7 +4538,8 @@ function warmTreeSteps() {
 }
 
 // The tree's side panel (aoe2techtree/js/inspector.js) reads these.
-window.getTreeEdits = () => ({ unit_edits: draft.unit_edits || {}, tech_edits: draft.tech_edits || {} });
+window.getTreeEdits = () => ({ unit_edits: draft.unit_edits || {}, tech_edits: draft.tech_edits || {},
+                               added_lines: draft.added_lines || [] });
 window.getDatPath = () => draft.dat_path || "";
 window.getDraft = () => draft;
 
@@ -4548,6 +4549,7 @@ window.setTechTree = function (localtree, edits) {
   if (edits) {
     draft.unit_edits = edits.unit_edits || {};
     draft.tech_edits = edits.tech_edits || {};
+    draft.added_lines = edits.added_lines || [];
   }
   let units = localtree[0];
   if (_hasUniqueShipBonus()) {

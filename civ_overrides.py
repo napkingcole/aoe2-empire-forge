@@ -757,7 +757,7 @@ def _apply_unit_edits(dat, slot: int, overrides: dict) -> int:
     # difference, so they keep their own (a Barracks gains 300 HP and 1 armour
     # an age: edited to 2000 in the Dark Age, it is 2900 in Imperial).
     for uid, e in sorted(edits.items()):
-        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus", "name")}
+        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus", "name", "age", "skin")}
         if not (0 <= uid < len(units) and units[uid] is not None):
             continue
         node_now = read_unit_stats(units[uid])
@@ -1015,6 +1015,138 @@ def _name_upgrade_techs(dat, slot: int, names: dict, civ_result: dict) -> int:
     return len(cmds) // 2
 
 
+# ── "Available from": units and techs an age earlier ─────────────────────────
+
+AGE_TECH = {1: 104, 2: 101, 3: 102, 4: 103}          # Dark .. Imperial Age
+
+
+def _age_of_req(dat, tid: int) -> int | None:
+    """The age a requirement stands for: an age tech, or one of the game's
+    "Dupl. Imperial Age" stand-ins (a global, effect-less tech on one age)."""
+    for age, t in AGE_TECH.items():
+        if tid == t:
+            return age
+    if not 0 <= tid < len(dat.techs):
+        return None
+    t = dat.techs[tid]
+    reqs = [r for r in t.required_techs if r >= 0]
+    if (t.civ == -1 and len(reqs) == 1 and t.required_tech_count == 1
+            and not any(rl.location_id >= 0 for rl in t.research_locations)
+            and not (0 <= t.effect_id < len(dat.effects) and dat.effects[t.effect_id].effect_commands)):
+        return next((a for a, at in AGE_TECH.items() if at == reqs[0]), None)
+    return None
+
+
+def enabling_tech(dat, slot: int, unit: int) -> int | None:
+    """The tech that gives a unit: its make-available tech, or the upgrade
+    into it.  None for a unit the building trains from the start (Militia)."""
+    found = []
+    for tid, t in enumerate(dat.techs):
+        if t.civ not in (-1, slot) or not 0 <= t.effect_id < len(dat.effects):
+            continue
+        for c in dat.effects[t.effect_id].effect_commands:
+            if (c.type == 2 and int(c.a) == unit and c.b == 1) or (c.type == 3 and int(c.b) == unit):
+                found.append((t.civ == -1, tid))
+                break
+    return min(found)[1] if found else None
+
+
+def age_move_plan(dat, tid: int) -> dict:
+    """How tech `tid` can be made available earlier, or why it can't:
+    {ok, age (its age now), needs (what the trigger must also require), why}."""
+    t = dat.techs[tid]
+    reqs = [r for r in t.required_techs if r >= 0]
+    ages = [r for r in reqs if _age_of_req(dat, r) is not None]
+    if len(ages) != 1:
+        return {"ok": False, "age": None, "why": "it isn't held back by an age"}
+    others = [r for r in reqs if r not in ages and dat.techs[r].civ == -1]
+    k = t.required_tech_count
+    if k > 1 + len(others):
+        return {"ok": False, "age": _age_of_req(dat, ages[0]), "why": "its requirements are too tangled"}
+    if all(r >= 0 for r in t.required_techs):
+        return {"ok": False, "age": _age_of_req(dat, ages[0]), "why": "it has no requirement slot left"}
+    return {"ok": True, "age": _age_of_req(dat, ages[0]), "needs": [] if k == 1 else others, "why": ""}
+
+
+def _apply_unit_skins(dat, slot: int, overrides: dict, civ_result: dict) -> int:
+    """A unit edit's "skin": another civ's version of the same unit, its art
+    on every form of it (the Athenians' Palintonon on the Trebuchet, packed
+    and unpacked).  Same unit ids, so every tech, card and AI rule that names
+    the unit still does.  The name is the edit's own "name" (the page sets it
+    with the look).  Returns the number of units dressed."""
+    from civ_appender import copy_unit_skin, skin_source_civ, unit_label
+    from civ_schema import norm_unit_edits
+    units, n = dat.civs[slot].units, 0
+    _shown = lambda u: unit_label(dat, slot, u.id)   # noqa: E731
+    for uid, e in sorted((int(k), e) for k, e in norm_unit_edits(overrides.get("unit_edits")).items()):
+        if "skin" not in e or not 0 <= uid < len(units) or units[uid] is None:
+            continue
+        src = skin_source_civ(dat, e["skin"])
+        if src is None:
+            civ_result.setdefault("warnings", []).append(
+                f"{_shown(units[uid])}: no {e['skin']} civ in this game to take its look from — kept its own")
+            continue
+        for f in unit_forms(dat, units, uid):
+            ref = src.units[f] if f < len(src.units) else None
+            if ref is not None:
+                copy_unit_skin(ref, units[f])
+                n += 1
+        print(f"       {_shown(units[uid])}: the {e['skin']}' look")
+    return n
+
+
+def _apply_age_moves(dat, slot: int, overrides: dict, civ_result: dict) -> int:
+    """The tree page's "Available from" (an "age" in a unit or tech edit):
+    the unit's enabling tech, or the tech itself, an age or more earlier for
+    this civ only.
+
+    Vanilla's own shape (the Armenians' 950 / 955 "Pikeman requirement"): a
+    civ-owned trigger with no effect fires at the earlier age (and after the
+    tech's other requirements), and goes in a spare slot of the tech's
+    requirements, where it stands in for the age.  The tech keeps its id, so
+    the AI still researches it by name and nothing that requires it changes.
+    Only earlier: a later age would need the tech switched off and copied.
+    Returns the number of techs moved."""
+    from civ_schema import norm_tech_edits, norm_unit_edits
+    from civ_appender import _append_effect, _append_tech, _make_tech
+    warnings = civ_result.setdefault("warnings", [])
+    wants: dict[int, tuple[int, str, int]] = {}             # tech -> (age, kind, node id)
+    for k, e in norm_unit_edits(overrides.get("unit_edits")).items():
+        if "age" in e:
+            tid = enabling_tech(dat, slot, int(k))
+            if tid is None:
+                from civ_appender import unit_label
+                warnings.append(f"{unit_label(dat, slot, int(k))}: available from the start "
+                                "at its building, so its age can't change.")
+                continue
+            wants[tid] = (e["age"], "Unit", int(k))
+    for k, e in norm_tech_edits(overrides.get("tech_edits")).items():
+        if "age" in e and 0 <= int(k) < len(dat.techs):
+            wants[int(k)] = (e["age"], "Tech", int(k))
+    moved = civ_result.setdefault("age_moves", {})
+    for tid, (age, kind, node) in sorted(wants.items()):
+        t = dat.techs[tid]
+        plan = age_move_plan(dat, tid)
+        if not plan["ok"]:
+            warnings.append(f"{t.name}: can't change its age ({plan['why']}).")
+            continue
+        if age >= plan["age"]:
+            continue                                         # not earlier: nothing to do
+        trig = _make_tech(f"{t.name} requirement (earlier)",
+                          _append_effect(dat, Effect(name=f"{t.name} requirement (earlier)", effect_commands=[])),
+                          slot)
+        need = [AGE_TECH[age]] + plan["needs"]
+        trig.required_techs = tuple(need + [-1] * (6 - len(need)))
+        trig.required_tech_count = len(need)
+        new = _append_tech(dat, trig)
+        reqs = list(t.required_techs)
+        reqs[reqs.index(-1)] = new
+        t.required_techs = tuple(reqs)
+        moved[f"{kind}:{node}"] = age
+        print(f"       Available earlier: {t.name} ({tid}) in age {age}, via tech {new}")
+    return len(moved)
+
+
 # ── The whole DAT write for one civ ───────────────────────────────────────────
 
 def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
@@ -1036,5 +1168,7 @@ def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
     _apply_hero_unit(dat, slot, overrides)
     _apply_unit_edits(dat, slot, overrides)
     _apply_tech_edits(dat, slot, overrides, civ_result.setdefault("warnings", []))
+    _apply_age_moves(dat, slot, overrides, civ_result)
+    _apply_unit_skins(dat, slot, overrides, civ_result)
     _apply_unit_names(dat, slot, overrides, civ_result, uu_info)
     return civ_result, uu_info

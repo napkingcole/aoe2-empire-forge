@@ -30,7 +30,7 @@
     const STAT_ICON = { hp: 'heart', attack: 'attack', melee: 'armor', pierce: 'pierce_armor',
                         range: 'range', reload: 'reload_time', speed: 'speed', los: 'line_of_sight' };
 
-    let edits = { unit_edits: {}, tech_edits: {} };
+    let edits = { unit_edits: {}, tech_edits: {}, added_lines: [] };
     let panel = null;
     let current = null;          // { item, element_height }
     const infoCache = {};        // "kind:id" -> node-info response (a promise)
@@ -63,7 +63,23 @@
     }
 
     // ── edit bookkeeping ────────────────────────────────────────────────────
-    function unitEdit(id) { return edits.unit_edits[String(id)] || {}; }
+    // An added line's tier is keyed "a<line>.<tier>" and its upgrade
+    // "a<line>.<tier>u" (added_lines.py); its edits live on the line itself,
+    // so the same panel code edits a tier as it edits a vanilla unit.
+    const ADDED_KEY = /^a(\d+)\.(\d+)(u?)$/;
+    function addedRef(id) {
+        const m = ADDED_KEY.exec(String(id));
+        if (!m) return null;
+        const line = edits.added_lines.find(l => l.id === +m[1]);
+        const tier = line && line.tiers[+m[2]];
+        return tier ? { line, n: +m[2], tier, up: !!m[3] } : null;
+    }
+
+    function unitEdit(id) {
+        const ref = addedRef(id);
+        if (ref) return Object.assign({}, ref.tier.edits || {}, ref.tier.name ? { name: ref.tier.name } : {});
+        return edits.unit_edits[String(id)] || {};
+    }
 
     // A renamed unit's name (civ_overrides._apply_unit_names), or '' for the
     // game's.  The tree's labels and tooltip read it too (main.js _nodeName).
@@ -74,11 +90,28 @@
             && !(item.node_type === 'UniqueUnit' && /_82$/.test(item.id));
     }
     function nameOf(item) {
+        if (item.added) return tierName(item.node_id);
         return canRename(item) ? (unitEdit(item.node_id).name || '') : '';
     }
-    function techEdit(id) { return edits.tech_edits[String(id)] || {}; }
+    function techEdit(id) {
+        const ref = addedRef(id);
+        if (ref) return ref.tier.upgrade || {};
+        return edits.tech_edits[String(id)] || {};
+    }
 
     function setUnitField(id, field, value) {
+        const ref = addedRef(id);
+        if (ref) {
+            if (field === 'name') ref.tier.name = value || '';
+            else {
+                const e = Object.assign({}, ref.tier.edits);
+                if (value === null || value === undefined) delete e[field];
+                else e[field] = value;
+                if (Object.keys(e).length) ref.tier.edits = e;
+                else delete ref.tier.edits;
+            }
+            return;
+        }
         const k = String(id);
         const e = Object.assign({}, edits.unit_edits[k]);
         if (value === null || value === undefined) delete e[field];
@@ -88,6 +121,15 @@
     }
 
     function setTechField(id, field, value) {
+        const ref = addedRef(id);
+        if (ref) {
+            const e = Object.assign({}, ref.tier.upgrade);
+            if (value === null || value === undefined) delete e[field];
+            else e[field] = value;
+            if (Object.keys(e).length) ref.tier.upgrade = e;
+            else delete ref.tier.upgrade;
+            return;
+        }
         const k = String(id);
         const e = Object.assign({}, edits.tech_edits[k]);
         if (value === null || value === undefined) delete e[field];
@@ -112,6 +154,11 @@
     // Edited = its own edit, its upgrade tech's, or a cost / train time it
     // inherits from an edited ancestor (the build's _flow_down).
     function isEdited(item) {
+        if (item.add) return false;
+        if (item.added) {
+            const ref = addedRef(item.node_id);
+            return !!(ref && (ref.tier.edits || ref.tier.upgrade));
+        }
         const kind = kindOf(item);
         if (kind === 'tech') return !!edits.tech_edits[String(item.node_id)];
         if (edits.unit_edits[String(item.node_id)]) return true;
@@ -164,6 +211,7 @@
     function decorate(item, element_height) {
         known[item.id] = [item, element_height];
         window._ttRelabel?.(item, element_height);
+        lookImage(item);
         const id = `${item.id}_edited`;
         document.getElementById(id)?.remove();
         if (!isEdited(item)) return;
@@ -179,6 +227,24 @@
         // Below the overlay, so clicks still reach the node.
         const overlay = document.getElementById(`${item.id}_overlay`);
         group.insertBefore(dot, overlay);
+    }
+
+    // A unit wearing another civ's look shows that civ's picture on the tree.
+    function lookImage(item) {
+        if (item.added || item.add || kindOf(item) !== 'unit') return;
+        const img = document.getElementById(`${item.id}_img`);
+        if (!img) return;
+        const skin = unitEdit(item.node_id).skin;
+        if (!img.dataset.own) img.dataset.own = img.getAttribute('href') || img.getAttribute('xlink:href') || '';
+        const set = url => { img.setAttribute('href', url); img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', url); };
+        if (!skin) {
+            if ((img.getAttribute('href') || '') !== img.dataset.own) set(img.dataset.own);
+            return;
+        }
+        info('unit', item.node_id).then(inf => {
+            const s = (inf && inf.skins || []).find(x => x.civ === unitEdit(item.node_id).skin);
+            if (s) set(skinIcon(item.node_id, s));
+        });
     }
 
     function redecorate() {
@@ -304,11 +370,654 @@
         });
     }
 
+    // ── "+ Add Unit" lines ──────────────────────────────────────────────────
+    const AGE_NAMES = ['Dark Age', 'Feudal Age', 'Castle Age', 'Imperial Age'];
+    // Every military unit in the player's game, grouped (/api/builder/unit-catalog),
+    // and the AI's unit lines (roles, /api/builder/add-unit-options).
+    let catalog = { byId: {}, units: [], roles: [], loaded: false };
+    const lineInfoCache = {};     // "base:role" -> /api/builder/added-line-info
+    const lookCache = {};         // base -> the looks it may wear
+
+    function loadCatalog() {
+        if (catalog.loading) return;
+        catalog.loading = true;
+        Promise.all([
+            fetch('/api/builder/unit-catalog?' + datQuery().slice(1)).then(r => r.json()),
+            fetch('/api/builder/add-unit-options?building=-1' + datQuery()).then(r => r.json()),
+        ]).then(([units, opts]) => {
+            catalog.loading = false;
+            if (units.status !== 'ok') return;
+            catalog.units = units.units;
+            for (const u of units.units) catalog.byId[u.id] = u;
+            // A base saved before the catalog had it (or one it now dedupes away).
+            for (const b of (opts.other || [])) if (!catalog.byId[b.id]) catalog.byId[b.id] = Object.assign({ art: true }, b);
+            catalog.roles = opts.roles || [];
+            catalog.loaded = true;
+            // Labels and pictures of added lines come from here.
+            if (edits.added_lines.length) window._ttRelayout?.();
+        }).catch(() => { catalog.loading = false; });
+    }
+
+    function looksFor(base) {
+        if (!lookCache[base]) {
+            lookCache[base] = fetch(`/api/builder/unit-catalog?look_for=${base}${datQuery()}`)
+                .then(r => r.json()).then(r => r.units || []).catch(() => []);
+        }
+        return lookCache[base];
+    }
+
+    const suggestCache = {};
+    function suggestionsFor(from) {
+        if (!suggestCache[from]) {
+            suggestCache[from] = fetch(`/api/builder/unit-catalog?suggest_for=${from}${datQuery()}`)
+                .then(r => r.json()).then(r => r.suggested || []).catch(() => []);
+        }
+        return suggestCache[from];
+    }
+
+    function lineInfo(base, role, from) {
+        const key = `${base}:${role ?? ''}:${from ?? ''}`;
+        if (!lineInfoCache[key]) {
+            lineInfoCache[key] = fetch(`/api/builder/added-line-info?base=${base}`
+                    + (role !== null && role !== undefined ? `&role=${role}` : '')
+                    + (from !== null && from !== undefined ? `&from=${from}` : '') + datQuery())
+                .then(r => r.json()).catch(() => ({ status: 'error' }));
+        }
+        return lineInfoCache[key];
+    }
+
+    function baseName(id) { return (catalog.byId[id] || {}).name || `unit ${id}`; }
+    function baseIcon(id) { return (catalog.byId[id] || {}).icon; }
+    // A unit's picture: the tree's own art when it has some, else the game's
+    // icon read from the player's install (heroes, scenario units).
+    function unitImage(id) {
+        const u = catalog.byId[id];
+        if (u && u.art) return `${_imgroot}/Unit/${u.icon}.png`;
+        return `/api/unit-icon/${id}?${datQuery().slice(1)}`;
+    }
+    // What a line's nodes show: its look's picture when it wears one.
+    function lineImage(line) { return unitImage(line.appearance ?? line.base); }
+
+    // added_lines.default_names: tier 1 the base's (or tier 1's own) name,
+    // the last "Elite …", any between "Veteran …" / "Heavy …".
+    function defaultNames(stem, n) {
+        if (n === 1) return [stem];
+        const mid = ['Veteran', 'Heavy'].slice(0, n - 2);
+        return [stem, ...mid.map(m => `${m} ${stem}`), `Elite ${stem}`];
+    }
+    // added_lines.extension_names: the next title the unit hasn't got —
+    // Halberdier -> Elite Halberdier, Elite Skirmisher -> Imperial Skirmisher.
+    const EXTEND_PREFIXES = ['Elite', 'Imperial', 'Royal', 'Legendary'];
+    function extensionNames(fromName, n) {
+        const words = fromName.split(' ');
+        const stem = words.filter(w => !EXTEND_PREFIXES.includes(w)).join(' ') || fromName;
+        const free = EXTEND_PREFIXES.filter(p => !words.includes(p));
+        const out = free.slice(0, n).map(p => `${p} ${stem}`);
+        for (let i = free.length + 1; out.length < n; i++) out.push(`${stem} ${i}`);
+        return out;
+    }
+    function defaultTierName(ref) {
+        const { line, n } = ref;
+        if (line.replaces != null) return line.tiers[0].name || baseName(line.base);
+        if (line.from != null) {
+            // Named for its unit when that isn't the one extended (Houfnice).
+            const first = line.tiers[0].name || (line.base !== line.from ? baseName(line.base) : '');
+            if (first) return n ? extensionNames(first, line.tiers.length - 1)[n - 1] : first;
+            return extensionNames(baseName(line.from), line.tiers.length)[n];
+        }
+        const stem = line.tiers[0].name || baseName(line.base);
+        return defaultNames(stem, line.tiers.length)[n];
+    }
+    function tierName(key) {
+        const ref = addedRef(key);
+        return ref ? (ref.tier.name || defaultTierName(ref)) : '';
+    }
+    // What the tree's hover shows for a tier: the base with every edit up to
+    // this tier carried on (as renderAdded), the line's description or the
+    // base's, and for a later tier the upgrade into it.
+    async function addedTip(key) {
+        const ref = addedRef(key);
+        if (!ref) return null;
+        const { line, n, tier } = ref;
+        const [base, defs] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role, line.from)]);
+        if (!base || base.status !== 'ok') return { name: tierName(key), desc: line.description || '' };
+        const carried = {};
+        for (let i = 0; i <= n; i++) Object.assign(carried, line.tiers[i].edits || {});
+        const stat = f => carried[f] !== undefined ? carried[f] : base[f];
+        let upgrade = null;
+        if (n || line.from != null) {
+            const def = tierUpgradeDefault(defs, line, n);
+            const own = tier.upgrade || {};
+            upgrade = {
+                cost: own.cost || (def && def.cost) || null,
+                time: own.time !== undefined ? own.time : def && def.time,
+            };
+        }
+        return {
+            name: tierName(key),
+            replaces: line.replaces != null ? baseName(line.replaces) : null,
+            age: tier.age, n, of: line.tiers.length,
+            cost: Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, base.cost, carried.cost || {}),
+            hp: stat('hp'), attack: base.fights ? stat('attack') : null,
+            melee: stat('melee'), pierce: stat('pierce'),
+            range: base.fights ? stat('range') : null,
+            desc: line.description || base.desc || '',
+            upgrade,
+        };
+    }
+
+    // The default upgrade for tier n: its age's, and for a second tier in one
+    // age that age's second (added-line-info upgrades_seq; the build agrees).
+    function tierUpgradeDefault(defs, line, n) {
+        if (!defs || defs.status !== 'ok') return null;
+        const age = line.tiers[n].age;
+        const same = line.tiers.slice(0, n).filter(t => t.age === age).length;
+        const seq = (defs.upgrades_seq || {})[String(age)] || [];
+        return seq[Math.min(same, seq.length - 1)] || defs.upgrades[String(age)] || null;
+    }
+
+    function tierItemId(line, n) { return `Unit_a${line.id}_${n}_${line.building}`; }
+
+    // A line changed shape (a tier, an age, the base): save, redraw the tree,
+    // and open `selectId` (a tier's tree id) once it is drawn.
+    function relayout(selectId) {
+        if (selectId) current = { item: { id: selectId }, element_height: current?.element_height };
+        window._ttCommit?.();
+        window._ttRelayout?.();
+    }
+
+    // preset: a suggested upgrade (added_lines.suggested_upgrades) — its name,
+    // stats, upgrade price and look go into the tier as ordinary edits.
+    function addLine(building, age, base, from, replaces, preset) {
+        const id = Math.max(0, ...edits.added_lines.map(l => l.id)) + 1;
+        const line = { id, building, base, role: null, appearance: null, tiers: [{ age, name: '' }] };
+        if (preset) {
+            const t = line.tiers[0];
+            if (preset.source === 'card') t.name = preset.name;
+            if (preset.edits) t.edits = clone(preset.edits);
+            if (preset.upgrade) t.upgrade = clone(preset.upgrade);
+            if (preset.appearance != null) line.appearance = preset.appearance;
+        }
+        if (from != null) line.from = from;
+        if (replaces != null) line.replaces = replaces;
+        edits.added_lines.push(line);
+        relayout(tierItemId(line, 0));
+    }
+
+    // ── The unit picker window ──────────────────────────────────────────────
+    // One large window, like the wizard's unique-unit and hero pickers: every
+    // military unit in the game, by group and kind, with a search.
+    const GROUPS = [
+        ['here', 'Trained here'], ['all', 'All'], ['standard', 'Standard'], ['regional', 'Regional'],
+        ['unique', 'Unique'], ['chronicles', 'Chronicles'], ['scenario', 'Scenario'], ['hero', 'Heroes'],
+    ];
+    const GROUP_BADGE = { regional: ['R', 'vanilla'], unique: ['U', 'custom'], chronicles: ['C', 'chronicles'],
+                          scenario: ['S', 'scenario'], hero: ['H', 'hero'] };
+    const badge = g => GROUP_BADGE[g] ? `<span class="uu-badge uu-badge-${GROUP_BADGE[g][1]}">${GROUP_BADGE[g][0]}</span>` : '';
+    const KINDS = [
+        ['all', 'All kinds'], ['infantry', 'Infantry', [6, 35]], ['archers', 'Archers & gunpowder', [0, 36, 44]],
+        ['cavalry', 'Cavalry', [12, 23, 47]], ['siege', 'Siege', [13, 55]], ['monks', 'Monks', [18]],
+        ['ships', 'Ships', [2, 20, 21, 22]],
+    ];
+    let pickerEl = null, pickerModal = null;
+    const pickerState = { group: null, kind: 'all', q: '' };
+
+    function pickerShell() {
+        // The wizard's unit preview lives in its <main>, which is hidden while
+        // the tree is full screen: it opened at zero size, backdrop only.
+        const preview = document.getElementById('modal-unit-preview');
+        if (preview && preview.parentElement !== document.body) document.body.appendChild(preview);
+        if (pickerEl) return pickerEl;
+        pickerEl = document.createElement('div');
+        pickerEl.className = 'modal fade tt-unit-picker';
+        pickerEl.tabIndex = -1;
+        pickerEl.setAttribute('aria-hidden', 'true');
+        pickerEl.innerHTML = `<div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable modal-fullscreen-lg-down">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div><h5 class="modal-title" id="tt-pick-title"></h5>
+                        <div class="small text-muted" id="tt-pick-sub"></div></div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <input type="search" id="tt-pick-search" class="form-control form-control-sm"
+                            style="max-width:16rem" placeholder="Search units" aria-label="Search units" autocomplete="off">
+                        <select id="tt-pick-kind" class="form-select form-select-sm" style="max-width:13rem" aria-label="Kind">
+                            ${KINDS.map(([k, label]) => `<option value="${k}">${label}</option>`).join('')}</select>
+                        <span id="tt-pick-count" class="text-muted small"></span>
+                    </div>
+                    <div id="tt-pick-suggest" class="tt-pick-suggest mb-3" hidden>
+                        <div class="tt-pick-suggest-head">Suggested</div>
+                        <div class="uu-grid tt-pick-grid" id="tt-pick-suggest-grid"></div>
+                    </div>
+                    <div class="btn-group btn-group-sm flex-wrap mb-3" role="group" id="tt-pick-groups"></div>
+                    <div class="uu-grid tt-pick-grid" id="tt-pick-grid"></div>
+                </div>
+                <div class="modal-footer small text-muted justify-content-start" id="tt-pick-foot">
+                    ${badge('regional')} Regional · ${badge('unique')} Unique · ${badge('chronicles')} Chronicles ·
+                    ${badge('scenario')} Scenario · ${badge('hero')} Hero<span class="tt-pick-heronote"> (trains like any unit here: no hero rules)</span> ·
+                    Press <i class="fa-solid fa-play mx-1"></i> to see one move.
+                </div>
+            </div></div>`;
+        document.body.appendChild(pickerEl);
+        pickerModal = new bootstrap.Modal(pickerEl);
+        pickerEl.addEventListener('show.bs.modal', () => document.body.classList.add('tt-picker-open'));
+        pickerEl.addEventListener('hidden.bs.modal', () => document.body.classList.remove('tt-picker-open'));
+        return pickerEl;
+    }
+
+    function cardStats(u) {
+        const parts = [`<i class="fa-solid fa-heart"></i> ${u.hp}`];
+        if (u.attack) parts.push(`<i class="fa-solid fa-khanda"></i> ${u.attack}`);
+        parts.push(`<i class="fa-solid fa-shield-halved"></i> ${u.ma}/${u.pa}`);
+        if (u.range >= 1) parts.push(`<i class="fa-solid fa-bullseye"></i> ${Math.round(u.range * 10) / 10}`);
+        return parts.join(' ');
+    }
+
+    // opts: {title, sub, building, pool (looks) | null, current, ownLook, onPick(id|null)}
+    async function openUnitPicker(opts) {
+        const el = pickerShell();
+        if (!catalog.loaded) loadCatalog();
+        el.querySelector('#tt-pick-title').textContent = opts.title;
+        el.querySelector('#tt-pick-sub').textContent = opts.sub || '';
+        el.querySelector('.tt-pick-heronote').hidden = !!opts.pool;
+        const grid = el.querySelector('#tt-pick-grid');
+        const search = el.querySelector('#tt-pick-search');
+        const kindSel = el.querySelector('#tt-pick-kind');
+        const groupsEl = el.querySelector('#tt-pick-groups');
+        grid.innerHTML = typeof _loaderHtml === 'function' ? _loaderHtml('Loading units…') : 'Loading units…';
+        pickerModal.show();
+        let picked = false;
+        el.addEventListener('hidden.bs.modal', () => { if (!picked) opts.onCancel?.(); }, { once: true });
+
+        let pool = opts.pool ? await opts.pool : null;
+        while (!pool && !catalog.loaded) {
+            await new Promise(r => setTimeout(r, 300));
+            if (!el.classList.contains('show')) return;
+        }
+        // The Dock trains ships only, and no other building trains them.
+        const naval = opts.building === 45;
+        const units = (pool || catalog.units).filter(u => opts.pool || u.naval === naval);
+        const here = opts.building != null ? units.filter(u => (u.at || []).includes(opts.building)) : [];
+        const groups = GROUPS.filter(([g]) => g === 'all' || (g === 'here' ? here.length
+            : units.some(u => u.group === g)));
+        if (!groups.some(([g]) => g === pickerState.group)) pickerState.group = here.length ? 'here' : 'all';
+        if (opts.first != null) pickerState.group = here.length ? 'here' : 'all';
+        if (opts.pool) pickerState.group = 'all';
+
+        groupsEl.innerHTML = groups.map(([g, label]) => {
+            const n = g === 'here' ? here.length : g === 'all' ? units.length : units.filter(u => u.group === g).length;
+            return `<button type="button" class="btn btn-outline-secondary" data-group="${g}">${label} <span class="opacity-50">${n}</span></button>`;
+        }).join('');
+        const draw = () => {
+            groupsEl.querySelectorAll('[data-group]').forEach(b => b.classList.toggle('active', b.dataset.group === pickerState.group));
+            const q = search.value.trim().toLowerCase();
+            const kind = KINDS.find(k => k[0] === kindSel.value);
+            const list = (pickerState.group === 'here' ? here : pickerState.group === 'all' ? units
+                : units.filter(u => u.group === pickerState.group))
+                .filter(u => !q || u.name.toLowerCase().includes(q))
+                .filter(u => !kind[2] || kind[2].includes(u.cls))
+                .sort((a, b) => (b.id === opts.first) - (a.id === opts.first));
+            el.querySelector('#tt-pick-count').textContent = `${list.length} unit${list.length === 1 ? '' : 's'}`;
+            const own = opts.ownLook ? `<div class="uu-card${opts.current == null ? ' selected' : ''}" data-pick="">
+                    <img class="uu-card-icon" src="${unitImage(opts.ownLook)}" alt="">
+                    <div class="uu-card-name">Its own look</div></div>` : '';
+            grid.innerHTML = own + list.map(u => `<div class="uu-card${u.id === opts.current ? ' selected' : ''}" data-pick="${u.id}"
+                    title="${esc(u.name)}">
+                    ${typeof _previewBtnHtml === 'function' ? _previewBtnHtml(u.id, u.name) : ''}
+                    ${badge(u.group)}
+                    <img class="uu-card-icon" src="${unitImage(u.id)}" alt="" loading="lazy">
+                    <div class="uu-card-name">${esc(u.name)}</div>
+                    <div class="tt-pick-stats">${cardStats(u)}</div>
+                </div>`).join('') || (own ? '' : `<div class="text-muted small fst-italic">${units.length
+                    ? 'No units match.' : opts.pool ? 'No other look fits this unit\'s kind and size.' : 'Point Empire Forge at your game (step 1) to list its units.'}</div>`);
+            if (typeof _wirePreviewButtons === 'function') _wirePreviewButtons(grid);
+            grid.querySelectorAll('[data-pick]').forEach(card => card.addEventListener('click', () => {
+                picked = true;
+                pickerModal.hide();
+                const id = card.dataset.pick === '' ? null : +card.dataset.pick;
+                // The game's own upgrade into this unit brings its price, picked here or above.
+                opts.onPick(id, sug.find(p => p.source === 'game' && p.base === id));
+            }));
+        };
+        groupsEl.querySelectorAll('[data-group]').forEach(b => b.addEventListener('click', () => {
+            pickerState.group = b.dataset.group;
+            draw();
+        }));
+        const sugEl = el.querySelector('#tt-pick-suggest');
+        const sug = opts.suggested ? await opts.suggested : [];
+        sugEl.hidden = !sug.length;
+        const sugGrid = el.querySelector('#tt-pick-suggest-grid');
+        const price = c => Object.entries(c || {}).map(([r, a]) => `${a}${r[0]}`).join(' ');
+        sugGrid.innerHTML = sug.map((p, i) => {
+            const u = catalog.byId[p.base] || {};
+            const st = Object.assign({ hp: u.hp, attack: u.attack, ma: u.ma, pa: u.pa, range: u.range },
+                p.edits ? { hp: p.edits.hp ?? u.hp, attack: p.edits.attack ?? u.attack,
+                            ma: p.edits.melee ?? u.ma, pa: p.edits.pierce ?? u.pa } : {});
+            const why = p.source === 'card' ? 'As the bonus card made it' : `The game's own ${esc(p.tech || p.name)} upgrade`;
+            return `<div class="uu-card" data-suggest="${i}" title="${why}">
+                ${typeof _previewBtnHtml === 'function' ? _previewBtnHtml(p.appearance ?? p.base, p.name) : ''}
+                <img class="uu-card-icon" src="${unitImage(p.appearance ?? p.base)}" alt="" loading="lazy">
+                <div class="uu-card-name">${esc(p.name)}</div>
+                <div class="tt-pick-stats">${cardStats(st)}</div>
+                <div class="tt-pick-stats">Upgrade ${price(p.upgrade && p.upgrade.cost)}</div>
+            </div>`;
+        }).join('');
+        if (typeof _wirePreviewButtons === 'function') _wirePreviewButtons(sugGrid);
+        sugGrid.querySelectorAll('[data-suggest]').forEach(card => card.addEventListener('click', () => {
+            picked = true;
+            pickerModal.hide();
+            opts.onPick(sug[+card.dataset.suggest].base, sug[+card.dataset.suggest]);
+        }));
+        search.value = '';
+        search.oninput = draw;
+        kindSel.value = 'all';
+        kindSel.onchange = draw;
+        draw();
+        setTimeout(() => search.focus({ preventScroll: true }), 200);
+    }
+
+    // The "+" under the last unit of a line: add tiers after it (an extension).
+    // Its first tier starts in the next age (the same one in the Imperial Age),
+    // a copy of that unit unless another is picked.
+    function extend(item) {
+        const ref = addedRef(item.node_id);
+        if (ref) return addTier(ref, item.added);            // an added line: one more tier
+        const from = item.node_id;
+        const fromName = (window._ttNodeName ? window._ttNodeName(item) : baseName(from)).replace(/\n/g, ' ');
+        const age = Math.min(4, (item.age_id || 1) + 1);
+        openUnitPicker({
+            title: `Add an upgrade after the ${fromName}`,
+            sub: `The ${fromName} upgrades into it in the ${AGE_NAMES[age - 1]} (you can change the age next). `
+                + `Pick the ${fromName} itself to make a stronger copy of it, like the Imperial Skirmisher.`,
+            building: item.building_id, current: from, first: from,
+            suggested: suggestionsFor(from),
+            onPick: (base, preset) => addLine(item.building_id, age, base, from, null, preset),
+        });
+    }
+
+    // Replace a unit an upgrade gives (Paladin) with another: the vanilla
+    // upgrade stays, and a hidden tech after it turns the result into ours.
+    function replace(item) {
+        const name = (window._ttNodeName ? window._ttNodeName(item) : baseName(item.node_id)).replace(/\n/g, ' ');
+        openUnitPicker({
+            title: `Replace the ${name}`,
+            sub: `Researching the ${name} upgrade gives this unit instead, and the button takes its name. `
+                + `The button keeps the ${name}'s picture: the game can't change a technology's picture for one civilization.`,
+            building: item.building_id,
+            onPick: base => addLine(item.building_id, item.age_id || 1, base, null, item.node_id),
+        });
+    }
+
+    // The "+" was clicked (item.add), or a line's base is being changed (item.rebase).
+    function renderPicker(item) {
+        const ctx = item.add;
+        const line = ctx.line ? edits.added_lines.find(l => l.id === ctx.line) : null;
+        const back = () => {
+            const again = line && known[tierItemId(line, ctx.n || 0)];
+            if (again) select(again[0], again[1]);
+            else { current = null; markSelected(null); mount(panel); }
+        };
+        panel.innerHTML = `<div class="tt-insp-head"><div>
+                <div class="tt-insp-title">${line ? 'Change the base unit' : 'Add a unit'}</div>
+                <div class="tt-insp-kind">${esc(ctx.buildingName || '')} · ${AGE_NAMES[ctx.age - 1]}</div>
+            </div></div>
+            <div class="tt-insp-note">${line
+                ? 'Every tier is a copy of this unit; your edits stay.'
+                : 'Pick the unit to copy. It becomes a new line in this building, starting in this age; you can add later tiers, rename it and change its stats next.'}</div>
+            <button type="button" class="tt-insp-reset" id="tt-pick-open">Choose a unit…</button>`;
+        const open = () => openUnitPicker({
+            title: line ? 'Change the base unit' : `Add a unit to the ${ctx.buildingName || 'building'}`,
+            sub: line ? 'Every tier is a copy of this unit; your edits stay.'
+                : `Starting in the ${AGE_NAMES[ctx.age - 1]}. Any unit fights the way it does in the game; heroes train like any unit here, without hero rules.`,
+            building: ctx.building, current: line ? line.base : null,
+            onCancel: line ? back : null,
+            onPick: base => {
+                if (line) {
+                    line.base = base;
+                    // A look must fit the new base's kind and size; the build drops one that doesn't.
+                    looksFor(base).then(looks => {
+                        if (line.appearance != null && !looks.some(l => l.id === line.appearance)) {
+                            line.appearance = null;
+                            relayout(tierItemId(line, ctx.n || 0));
+                        }
+                    });
+                    relayout(tierItemId(line, ctx.n || 0));
+                } else {
+                    addLine(ctx.building, ctx.age, base);
+                }
+            },
+        });
+        panel.querySelector('#tt-pick-open').addEventListener('click', open);
+        open();
+    }
+
+    // Do these tier ages fit the column?  Each age has two rows (one where the
+    // building itself sits), tiers never go back an age, and an extension
+    // starts beside or below its unit (main.js _applyAddedLines).
+    function agesFit(line, added, ages) {
+        const bRow = added.buildingRow ?? -1;
+        const rowOf = a => { const r = (a - 1) * 2; return r <= bRow ? bRow + 1 : r; };
+        const minAge = added.fromAge || added.buildingAge || 1;
+        let prev = line.from != null ? (added.fromRow ?? 0) - 1 : -1;
+        for (let i = 0; i < ages.length; i++) {
+            const a = ages[i];
+            if (a < minAge || (i && a < ages[i - 1])) return false;
+            const r = Math.max(rowOf(a), prev + 1);
+            if (r > (a - 1) * 2 + 1) return false;
+            prev = r;
+        }
+        return true;
+    }
+    // The ages a new last tier could take, the next age first.
+    function addableAges(line, added) {
+        if (line.replaces != null || line.tiers.length >= 4) return [];
+        const last = line.tiers[line.tiers.length - 1].age;
+        const ages = line.tiers.map(t => t.age);
+        return [last, last + 1, last + 2, last + 3].filter(a => a <= 4 && agesFit(line, added, [...ages, a]));
+    }
+    // The tree's hover "+" on a line's last tier (main.js _canExtend).
+    function canAddTier(key) {
+        const ref = addedRef(key);
+        const it = known[tierItemId(ref?.line || {}, ref?.n)];
+        return !!(ref && it && ref.n === ref.line.tiers.length - 1 && addableAges(ref.line, it[0].added).length);
+    }
+    function addTier(ref, added) {
+        const ages = addableAges(ref.line, added);
+        if (!ages.length) return;
+        const last = ref.line.tiers[ref.line.tiers.length - 1].age;
+        ref.line.tiers.push({ age: ages.find(a => a > last) ?? ages[0], name: '' });
+        relayout(tierItemId(ref.line, ref.line.tiers.length - 1));
+    }
+
+    function lineSection(ref, item, defs) {
+        const { line, n } = ref;
+        const last = line.tiers.length - 1;
+        const tiers = line.tiers.map((t, i) => {
+            const ages = [];
+            for (let a = 1; a <= 4; a++) {
+                const trial = line.tiers.map((x, j) => j === i ? a : x.age);
+                if (a === t.age || agesFit(line, item.added, trial)) {
+                    ages.push(`<option value="${a}" ${a === t.age ? 'selected' : ''}>${AGE_NAMES[a - 1]}</option>`);
+                }
+            }
+            return `<div class="tt-insp-tier${i === n ? ' is-current' : ''}">
+                <button type="button" class="tt-insp-link tt-insp-tier-name" data-goto="${i}">${esc(tierName(`a${line.id}.${i}`))}</button>
+                <select data-age="${i}" title="Age">${ages.join('')}</select>
+                <button type="button" class="tt-insp-x" data-drop="${i}"
+                    title="${line.tiers.length === 1 ? 'Remove this line' : 'Remove this tier'}">×</button>
+            </div>`;
+        }).join('');
+        const addAges = addableAges(line, item.added).sort((a, b) => a - b)
+            .map(a => `<option value="${a}">${AGE_NAMES[a - 1]}</option>`);
+        const roleName = id => (catalog.roles.find(r => r.id === id) || {}).name;
+        const auto = defs && defs.default_role != null ? roleName(defs.default_role) || `line ${defs.default_role}` : null;
+        const roles = catalog.roles.map(r => `<option value="${r.id}" ${r.id === line.role ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+        const look = line.appearance != null ? catalog.byId[line.appearance] : null;
+        const swap = line.replaces != null;
+        const was = swap ? (item.added.replacesName || baseName(line.replaces)) : '';
+        return `<div class="tt-insp-line">
+            <div class="tt-insp-section">${swap ? 'Replacement' : line.from != null ? 'Added upgrade' : 'Added line'}</div>
+            ${swap ? `<div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Replaces</span>
+                <span class="tt-insp-basename">${esc(was)}</span></div>` : ''}
+            ${line.from != null ? `<div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Upgrades from</span>
+                <span class="tt-insp-basename">${esc(item.added.fromName || baseName(line.from))}</span></div>` : ''}
+            <div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Copy of</span>
+                <span class="tt-insp-basename">${esc(baseName(line.base))}</span>
+                <button type="button" class="tt-insp-link" id="tt-line-base">change</button></div>
+            ${swap ? `<div class="tt-insp-note">Researching the ${esc(was)} upgrade gives this unit instead, and the
+                button takes its name. The button keeps the ${esc(was)}'s picture: the game can't change a
+                technology's picture for one civilization. The computer player gets it too, since it still
+                researches the ${esc(was)} upgrade.</div>` : `
+            <div class="tt-insp-tiers">${tiers}</div>
+            ${addAges.length ? `<div class="tt-insp-bonus-add"><select id="tt-line-add">
+                <option value="">Add a tier in…</option>${addAges.join('')}</select></div>` : ''}
+            <div class="tt-insp-note">${line.from != null
+                ? `Each tier is researched at the ${esc(item.added.fromName || '')}'s upgrade button, after the one before, and takes over its train button.`
+                : 'Each tier after the first gets its own upgrade, one row below the unit\'s button.'}
+                A stat you change carries on to later tiers unless they set their own.</div>`}
+            <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-desc">Description</label>
+                <textarea class="tt-insp-num tt-insp-text tt-insp-desc" id="tt-line-desc" rows="3" maxlength="300"
+                    placeholder="The ${esc(baseName(line.base))}'s own description">${esc(line.description || '')}</textarea></div>
+            <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-role">Computer player trains it as</label>
+                <select id="tt-line-role"><option value="">${auto ? `Automatic: ${esc(auto)}` : 'Automatic (no line found; the computer player won\'t train it)'}</option>${roles}</select></div>
+            ${line.tiers.length > 1 ? `<div class="tt-insp-note">The computer player trains the first tier only: it researches just the upgrades it knows by name.</div>` : ''}
+            <div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Appearance</span>
+                <span class="tt-insp-basename">${line.appearance == null ? 'Its own'
+                    : esc(look ? look.name : `unit ${line.appearance}`)}</span>
+                <button type="button" class="tt-insp-link" id="tt-line-look">change</button></div>
+            <button type="button" class="tt-insp-reset" id="tt-line-remove">${swap ? `Undo: back to the ${esc(was)}` : 'Remove this line'}</button>
+        </div>`;
+    }
+
+    function wireLine(ref, item) {
+        const { line, n } = ref;
+        const goto = i => {
+            const again = known[tierItemId(line, i)];
+            if (again) select(again[0], again[1]);
+        };
+        panel.querySelectorAll('[data-goto]').forEach(b => b.addEventListener('click', () => goto(+b.dataset.goto)));
+        panel.querySelectorAll('select[data-age]').forEach(sel => sel.addEventListener('change', () => {
+            line.tiers[+sel.dataset.age].age = +sel.value;
+            relayout(tierItemId(line, n));
+        }));
+        panel.querySelectorAll('[data-drop]').forEach(b => b.addEventListener('click', () => {
+            const i = +b.dataset.drop;
+            if (line.tiers.length === 1) return removeLine(line);
+            line.tiers.splice(i, 1);
+            relayout(tierItemId(line, Math.min(n, line.tiers.length - 1)));
+        }));
+        const add = panel.querySelector('#tt-line-add');
+        add?.addEventListener('change', () => {
+            if (!add.value) return;
+            line.tiers.push({ age: +add.value, name: '' });
+            relayout(tierItemId(line, line.tiers.length - 1));
+        });
+        panel.querySelector('#tt-line-role')?.addEventListener('change', e => {
+            line.role = e.target.value === '' ? null : +e.target.value;
+            later();
+        });
+        panel.querySelector('#tt-line-desc')?.addEventListener('change', e => {
+            line.description = e.target.value.replace(/\s+/g, ' ').trim().slice(0, 300);
+            later();
+        });
+        panel.querySelector('#tt-line-look')?.addEventListener('click', () => openUnitPicker({
+            title: 'Choose a look',
+            sub: `Units of the same kind and size as the ${baseName(line.base)}, so the art fits. The last tier wears the look's Elite when it has one.`,
+            pool: looksFor(line.base), current: line.appearance, ownLook: line.base,
+            onPick: id => {
+                line.appearance = id;
+                relayout(tierItemId(line, n));
+            },
+        }));
+        panel.querySelector('#tt-line-base')?.addEventListener('click', () => {
+            select({ id: '__rebase', add: { building: line.building, age: line.tiers[0].age,
+                     buildingName: item.added.buildingName, line: line.id, n } }, current.element_height);
+        });
+        const rm = panel.querySelector('#tt-line-remove');
+        rm?.addEventListener('click', () => {
+            if (rm.dataset.armed) return removeLine(line);
+            rm.dataset.armed = '1';
+            rm.textContent = line.replaces != null ? 'Click again to undo the replacement' : 'Click again to remove the whole line';
+        });
+    }
+
+    function removeLine(line) {
+        edits.added_lines = edits.added_lines.filter(l => l !== line);
+        current = null;
+        window._ttCommit?.();
+        window._ttRelayout?.();
+        mount(panel);
+    }
+
+    async function renderAdded(item) {
+        const ref = addedRef(item.node_id);
+        if (!ref) { current = null; return mount(panel); }
+        const focused = focusKey(document.activeElement);
+        const scrollTop = panel.scrollTop;
+        const { line, n, tier } = ref;
+        const key = item.node_id;
+        const [base, defs] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role, line.from)]);
+        if (!current || current.item !== item) return;
+        panel.innerHTML = `<div class="tt-insp-head">
+                <img class="tt-insp-icon" src="${lineImage(line)}" alt="">
+                <div>
+                    <div class="tt-insp-title">${esc(tierName(key))}</div>
+                    <div class="tt-insp-kind">${line.replaces != null ? `Replaces the ${esc(item.added.replacesName || '')}`
+                        : `${line.from != null ? `Added upgrade after the ${esc(item.added.fromName || '')}` : 'Added unit'}`
+                          + ` · tier ${n + 1} of ${line.tiers.length}`} · ${AGE_NAMES[tier.age - 1]}</div>
+                </div>
+            </div>
+            ${lineSection(ref, item, defs && defs.status === 'ok' ? defs : null)}
+            <div id="tt-insp-body"></div>`;
+        wireLine(ref, item);
+        const body = panel.querySelector('#tt-insp-body');
+        if (!base || base.status !== 'ok') {
+            body.innerHTML = `<div class="tt-insp-note">${base && base.status === 'no_dat'
+                ? 'Point Empire Forge at your game (step 1) to see and edit stats.' : 'This unit has no stats to edit.'}</div>`;
+            return;
+        }
+        // The tier starts as the base with every earlier tier's edits carried
+        // on (added_lines._flowed_edits), so its boxes show what it will be.
+        const carried = {};
+        for (let i = 0; i < n; i++) Object.assign(carried, line.tiers[i].edits || {});
+        const inf = clone(base);
+        inf.id = key;
+        inf.name = defaultTierName(ref);
+        for (const [f] of STAT_FIELDS) if (carried[f] !== undefined) inf[f] = carried[f];
+        if (carried.train !== undefined) inf.train = carried.train;
+        if (carried.cost) inf.cost = Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, carried.cost);
+        if (carried.bonus) {
+            const b = Object.fromEntries((inf.bonus || []).map(x => [String(x.cls), x.amount]));
+            Object.assign(b, carried.bonus);
+            inf.bonus = Object.entries(b).map(([cls, amount]) => ({ cls: +cls, amount }));
+        }
+        inf.line_before = [];
+        inf.line_after = [];
+        inf.forms = 1;
+        const up = tierUpgradeDefault(defs, line, n);
+        inf.upgrade = (n || line.from != null) && up ? {
+            id: `${key}u`, name: tierName(key), any: true,
+            cost: Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, up.cost),
+            time: up.time,
+        } : null;
+        unitNames[key] = tierName(key);
+        body.innerHTML = unitBody(inf, 'unit');
+        const status = body.querySelector('#tt-insp-fu-status');
+        if (status) status.textContent = '';
+        wire(body, inf, 'unit');
+        redecorate();
+        panel.scrollTop = scrollTop;
+        restoreFocus(focused);
+    }
+
     // ── rendering ───────────────────────────────────────────────────────────
     function mount(el) {
         panel = el;
         if (window.getDatPath) stepsRequest(null);       // start the build now
         loadLines();
+        if (!catalog.loaded) loadCatalog();
         panel.innerHTML = `<div class="tt-insp-empty">
             <div class="tt-insp-empty-title">Inspector</div>
             Click a unit, building or tech to see its stats and edit it.
@@ -385,6 +1094,8 @@
     async function render() {
         if (!panel || !current) return;
         const { item } = current;
+        if (item.add) return renderPicker(item);
+        if (item.added) return renderAdded(item);
         const focused = focusKey(document.activeElement);
         const scrollTop = panel.scrollTop;
         const kind = kindOf(item);
@@ -400,7 +1111,13 @@
                 </div>
             </div>
             ${includeRow(item)}
+            ${window._ttCanExtend?.(item) ? `<button type="button" class="tt-insp-reset" id="tt-insp-extend"
+                title="A further upgrade for this line, like the Imperial Skirmisher">Add an upgrade after it…</button>` : ''}
+            ${window._ttCanReplace?.(item) ? `<button type="button" class="tt-insp-reset" id="tt-insp-replace"
+                title="Its upgrade gives another unit instead, like the Savar for the Paladin">Replace with another unit…</button>` : ''}
             <div id="tt-insp-body"><div class="tt-insp-loading">Loading stats…</div></div>`;
+        panel.querySelector('#tt-insp-extend')?.addEventListener('click', () => extend(item));
+        panel.querySelector('#tt-insp-replace')?.addEventListener('click', () => replace(item));
         panel.querySelector('#tt-insp-include')?.addEventListener('change', () => {
             _toggleNode(item, current.element_height);
             _treeChanged();
@@ -422,12 +1139,33 @@
         // Names for the "From the Knight edit" notes.
         await Promise.all((inf.line_before || []).map(a => info('unit', a)));
         if (!current || current.item !== item) return;
-        body.innerHTML = kind === 'tech' ? techBody(inf) : unitBody(inf, kind);
+        body.innerHTML = ageRow(item, inf, kind) + (kind === 'tech' ? techBody(inf) : unitBody(inf, kind));
+        body.querySelector('#tt-insp-age')?.addEventListener('change', e => {
+            const v = +e.target.value;
+            (kind === 'tech' ? setTechField : setUnitField)(item.node_id, 'age', v === inf.age_move.age ? null : v);
+            relayout(item.id);
+        });
         wire(body, inf, kind);
         redecorate();
         panel.scrollTop = scrollTop;
         restoreFocus(focused);
         if (kind !== 'tech') fillUpgrades(body, inf, kind);
+    }
+
+    // "Available from": an age earlier than the game's, down to its building's
+    // and the unit or tech before it (civ_overrides._apply_age_moves).
+    function ageRow(item, inf, kind) {
+        const mv = inf.age_move;
+        if (!mv || !mv.ok) return '';
+        const own = (kind === 'tech' ? techEdit(item.node_id) : unitEdit(item.node_id)).age;
+        const lo = Math.min(mv.age, window._ttMinAge ? window._ttMinAge(item) : 1);
+        const opts = [];
+        for (let a = lo; a <= mv.age; a++) {
+            opts.push(`<option value="${a}" ${a === (own ?? mv.age) ? 'selected' : ''}>${AGE_NAMES[a - 1]}${a === mv.age ? ' (the game\'s)' : ''}</option>`);
+        }
+        return `<div class="tt-insp-row"><label class="tt-insp-label" for="tt-insp-age">Available from</label>
+            <select id="tt-insp-age" class="${own != null ? 'is-edited' : ''}" ${opts.length < 2 ? 'disabled' : ''}
+                title="${opts.length < 2 ? 'Its building, or what comes before it, isn\'t available any earlier' : ''}">${opts.join('')}</select></div>`;
     }
 
     function label(id, nm, base, edited) {
@@ -472,6 +1210,7 @@
 
         return `
             ${nameRow}
+            ${kind === 'unit' && !addedRef(inf.id) ? lookRow(inf) : ''}
             ${notes.map(n => `<div class="tt-insp-note">${esc(n)}</div>`).join('')}
             <div class="tt-insp-section">Stats <span class="tt-insp-fu-status" id="tt-insp-fu-status">working out upgrades…</span></div>
             <div class="tt-insp-grid">${rows}
@@ -488,6 +1227,29 @@
             ${inf.upgrade ? upgradeSection(inf.upgrade) : ''}
             ${(Object.keys(e).length || (inf.upgrade && edits.tech_edits[String(inf.upgrade.id)]))
                 ? '<button type="button" class="tt-insp-reset" id="tt-insp-reset">Reset everything on this unit</button>' : ''}`;
+    }
+
+    // Look: another civ's own version of this unit, its art and its name on
+    // the same unit (civ_overrides._apply_unit_skins) — the Palintonon is the
+    // Athenians' Trebuchet.
+    const skinName = s => s.name.replace(/\s*\(.*\)$/, '');
+    const civList = cs => cs.length > 2 ? `${cs[0]} and ${cs.length - 1} more` : cs.join(' and ');
+    function skinIcon(id, s) {
+        return `/api/unit-icon/${id}?civ=${s.civ_index}${datQuery()}`;
+    }
+    function lookRow(inf) {
+        const skins = inf.skins || [];
+        if (!skins.length) return '';
+        const own = unitEdit(inf.id).skin;
+        const chip = (val, img, nm, sub, title) => `<button type="button" class="tt-insp-look${(own || '') === val ? ' selected' : ''}"
+                data-skin="${esc(val)}" title="${esc(title)}">
+                <img src="${esc(img)}" alt="" loading="lazy"><span>${esc(nm)}<small>${esc(sub)}</small></span></button>`;
+        return `<div class="tt-insp-section">Look</div>
+            <div class="tt-insp-looks">
+                ${chip('', `/api/unit-icon/${inf.id}?${datQuery().slice(1)}`, inf.name.replace(/\s*\(.*\)$/, ''), 'its own', '')}
+                ${skins.map(s => chip(s.civ, skinIcon(inf.id, s), skinName(s), civList(s.civs), s.civs.join(', '))).join('')}
+            </div>
+            <div class="tt-insp-note">Another civilization's own version of this unit: its art and name. It stays the same unit, so its upgrades and bonuses still reach it.</div>`;
     }
 
     function lineName(uid) {
@@ -521,8 +1283,11 @@
     function techCostBlock(prefix, tech) {
         const e = techEdit(tech.id);
         const shown = Object.assign({}, tech.cost, e.cost || {});
-        const only = RES.filter(r => tech.cost[r] > 0);
+        // A vanilla tech's edit can only scale what it costs; an added line's
+        // upgrade is our own tech and may cost anything (up to three).
+        const only = tech.any ? null : RES.filter(r => tech.cost[r] > 0);
         return `${costBlock(prefix, shown, tech.cost, { only })}
+            <div class="tt-insp-error" id="${prefix}-error"></div>
             <div class="tt-insp-row">${label(`${prefix}-time`, 'Research time', tech.time, e.time !== undefined)}
                 ${numInput({ id: `${prefix}-time`, value: e.time, base: tech.time, step: 1, min: 0, max: SHORT,
                              disabled: !tech.time })}</div>`;
@@ -547,6 +1312,16 @@
         if (kind === 'tech') {
             wireTechCost(body, 'tt-insp-tech', inf);
         } else {
+            body.querySelectorAll('[data-skin]').forEach(b => b.addEventListener('click', () => {
+                const skins = inf.skins || [];
+                const next = skins.find(s => s.civ === b.dataset.skin) || null;
+                // The name follows the look, unless the player named it themselves.
+                const e = unitEdit(inf.id);
+                const auto = !e.name || skins.some(s => skinName(s) === e.name);
+                setUnitField(inf.id, 'skin', next ? next.civ : null);
+                if (auto) setUnitField(inf.id, 'name', next ? skinName(next) : null);
+                rerender();
+            }));
             const nm = body.querySelector('#tt-insp-name');
             nm?.addEventListener('change', () => {
                 const v = nm.value.replace(/\s+/g, ' ').trim().slice(0, 40);
@@ -624,7 +1399,11 @@
         }
 
         body.querySelector('#tt-insp-reset')?.addEventListener('click', () => {
-            if (kind === 'tech') delete edits.tech_edits[String(inf.id)];
+            const ref = addedRef(inf.id);
+            if (ref) {
+                delete ref.tier.edits;
+                delete ref.tier.upgrade;
+            } else if (kind === 'tech') delete edits.tech_edits[String(inf.id)];
             else {
                 delete edits.unit_edits[String(inf.id)];
                 if (inf.upgrade) delete edits.tech_edits[String(inf.upgrade.id)];
@@ -642,6 +1421,12 @@
                     if (!x.disabled) cost[r] = x.value.trim() === '' ? (tech.cost[r] || 0)
                         : clamp(parseFloat(x.value), 0, SHORT, 1) || 0;
                 });
+                const err = body.querySelector(`#${prefix}-error`);
+                if (tech.any && RES.filter(r => cost[r] > 0).length > 3) {
+                    if (err) err.textContent = 'A tech can cost at most three resources.';
+                    return;
+                }
+                if (err) err.textContent = '';
                 setTechField(tech.id, 'cost', costEqual(cost, tech.cost) ? null : cost);
                 later();
             });
@@ -673,8 +1458,16 @@
             if (again) select(again, element_height);
             else { current = null; mount(panel); }
         },
+        addedLines: () => edits.added_lines,
+        addedTip,
+        extend,
+        canAddTier,
+        tierName,
+        baseIcon,
+        lineImage,
         load(e) {
-            edits = { unit_edits: clone(e && e.unit_edits), tech_edits: clone(e && e.tech_edits) };
+            edits = { unit_edits: clone(e && e.unit_edits), tech_edits: clone(e && e.tech_edits),
+                      added_lines: Array.isArray(e && e.added_lines) ? JSON.parse(JSON.stringify(e.added_lines)) : [] };
             current = null;
             for (const k of Object.keys(known)) delete known[k];             // a new drawing
             for (const k of Object.keys(stepsCache)) delete stepsCache[k];   // the draft may have changed

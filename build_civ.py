@@ -142,7 +142,9 @@ def rich_unit_tooltip(dat, unit_id, name: str, desc: str = "") -> str | None:
     except (IndexError, TypeError, AttributeError):
         return None
     from civ_appender import _string_table
-    template = _string_table().get(sid + 21000) or ""
+    from added_lines import chronicles_strings
+    # Chronicles units (the Hoplite, 405007) keep theirs in the paphos file.
+    template = _string_table().get(sid + 21000) or chronicles_strings().get(sid + 21000) or ""
     if "(<cost>)" not in template:
         return None
     lines = template.split("\\n")
@@ -539,13 +541,14 @@ _OPT_IN_UNIT_NODE_SOURCES: dict[int, list[str]] = {
     873:  ["DRAVIDIANS.json",  "BENGALIS.json"],  # Elephant Archer
     875:  ["DRAVIDIANS.json",  "BENGALIS.json"],  # Elite Elephant Archer
     1132: ["BURMESE.json",     "BENGALIS.json"],  # Battle Elephant
-    1133: ["BURMESE.json",     "BENGALIS.json"],  # Elite Battle Elephant
+    1134: ["BURMESE.json",     "BENGALIS.json"],  # Elite Battle Elephant (1133 is its corpse)
     1370: ["MONGOLS.json",     "CUMANS.json"],     # Steppe Lancer
-    1371: ["MONGOLS.json",     "CUMANS.json"],     # Elite Steppe Lancer
+    1372: ["MONGOLS.json",     "CUMANS.json"],     # Elite Steppe Lancer
     1744: ["BENGALIS.json",    "DRAVIDIANS.json"], # Armored Elephant
     1746: ["BENGALIS.json",    "DRAVIDIANS.json"], # Siege Elephant (elite upgrade)
     1795: ["BYZANTINES.json"],            # Dromon
     1901: ["CHINESE.json",     "KOREANS.json"],    # Fire Lancer
+    1903: ["CHINESE.json",     "KOREANS.json"],    # Elite Fire Lancer
     1904: ["CHINESE.json",     "KOREANS.json"],    # Rocket Cart
     1907: ["CHINESE.json",     "KOREANS.json"],    # Heavy Rocket Cart
     1942: ["SHU.json",         "WEI.json"],        # Traction Trebuchet
@@ -553,6 +556,16 @@ _OPT_IN_UNIT_NODE_SOURCES: dict[int, list[str]] = {
     1946: ["SHU.json",         "WEI.json"],        # Heavy Hei Guang Cavalry
     1948: ["CHINESE.json",     "SHU.json"],        # Lou Chuan
     2150: ["ACHAEMENIDS.json"],           # War Chariot
+    2151: ["ACHAEMENIDS.json"],           # Elite War Chariot
+    329:  ["SARACENS.json",    "PERSIANS.json"],   # Camel Rider
+    330:  ["SARACENS.json",    "PERSIANS.json"],   # Heavy Camel Rider
+    751:  ["AZTECS.json",      "MAYANS.json"],     # Eagle Scout
+    753:  ["AZTECS.json",      "MAYANS.json"],     # Eagle Warrior
+    752:  ["AZTECS.json",      "MAYANS.json"],     # Elite Eagle Warrior
+    2700: ["FRANKS.json",      "BRITONS.json"],    # Mounted Crossbowman (Viking Sagas)
+    2701: ["FRANKS.json",      "BRITONS.json"],    # Heavy Mounted Crossbowman
+    2703: ["VIKINGS.json",     "DANES.json"],      # Varangian Guard (Viking Sagas)
+    2704: ["VIKINGS.json",     "DANES.json"],      # Elite Varangian Guard
     2550: ["INCAS.json",       "MAPUCHE.json"],    # Champi Scout
     2552: ["INCAS.json",       "MAPUCHE.json"],    # Champi Warrior
     2554: ["INCAS.json",       "MAPUCHE.json"],    # Elite Champi Warrior
@@ -1111,8 +1124,67 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                     node["Help String ID"] = _help_sid(sid)
                     changed += 1
 
+    # "Available from" (civ_overrides._apply_age_moves): the node moves age.
+    for key, age in ((civ_result or {}).get("age_moves") or {}).items():
+        kind, node_id = key.split(":")
+        for node in data.get("civ_techs_units", []):
+            if node.get("Use Type") == kind and node.get("Node ID") == int(node_id):
+                node["Age ID"] = age
+                changed += 1
+
+    # A replacement keeps the vanilla unit's node (its upgrade still triggers
+    # it), showing ours: Savar where the Paladin was.
+    for line in (civ_result or {}).get("added_lines") or []:
+        if line.get("replaces") is None or dat is None:
+            continue
+        for node in data.get("civ_techs_units", []):
+            if node.get("Node ID") == line["replaces"] and node.get("Use Type") == "Unit":
+                node.update({"Name": line["names"][0], "Name String ID": line["sids"][0],
+                             "Help String ID": line["sids"][0] + 100000,
+                             "Picture Index": dat.civs[slot].units[line["units"][0]].icon_id})
+                changed += 1
+    added = _added_line_nodes(dat, slot, (civ_result or {}).get("added_lines") or [])
+    if added:
+        data.setdefault("civ_techs_units", []).extend(added)
+        changed += len(added)
+
     print(f"  CivTechTrees/{civ_json_path.name}: {changed} nodes updated")
     return json.dumps(data, separators=(",", ":")).encode("utf-8")
+
+
+def _added_line_nodes(dat, slot, lines: list[dict]) -> list[dict]:
+    """F2 nodes for the "+ Add Unit" lines (added_lines): tier 1 hangs off its
+    building, each later tier off the one before, triggered by its upgrade —
+    the shape of the Vietnamese Imperial Skirmisher's node.  The game lays the
+    tree out from Age/Building/Link ID; there are no coordinates to find."""
+    out: list[dict] = []
+    if dat is None or slot is None:
+        return out
+    units = dat.civs[slot].units
+    for line in lines:
+        if line.get("replaces") is not None:
+            continue                          # shown on the vanilla unit's node
+        # An extension's first tier hangs off the vanilla unit it upgrades from.
+        frm = line.get("from")
+        for n, (uid, sid, age, tech) in enumerate(zip(line["units"], line["sids"], line["ages"], line["techs"])):
+            if frm is not None:
+                kind, link = "UnitUpgrade", ("UnitUpgrade" if n or line.get("from_is_upgrade") else "Unit")
+            else:
+                kind = "Unit" if n == 0 else "UnitUpgrade"
+                link = "BuildingTech" if n == 0 else ("Unit" if n == 1 else "UnitUpgrade")
+            node = {"Name": line["names"][n],
+                    "Node Type": kind,
+                    "Link Node Type": link,
+                    "Draw Node Type": "UnitTech", "Use Type": "Unit",
+                    "Node Status": "ResearchedCompleted", "Name String ID": sid,
+                    "Age ID": age, "Building ID": line["building"], "Help String ID": sid + 100000,
+                    "Node ID": uid, "Picture Index": units[uid].icon_id, "Trigger Tech ID": tech}
+            if n:
+                node["Link ID"] = line["units"][n - 1]
+            elif frm is not None:
+                node["Link ID"] = frm
+            out.append(node)
+    return out
 
 
 def _generate_civilizations_json(dat, replaced_index: int | None,

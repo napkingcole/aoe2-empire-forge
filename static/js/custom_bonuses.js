@@ -139,6 +139,7 @@ function _cbTargetLabel(t) {
   if (t.type === "job") return _cbJob(t.id)?.label || t.id;
   if (t.type === "tech") return t.name || `Tech ${t.id}`;
   if (t.type === "civ") return "Civilization";
+  if (t.type === "line") return t.name || `Added line ${t.id}`;
   return t.name || `Unit ${t.id}`;
 }
 
@@ -161,6 +162,7 @@ function cbTeamProblem(card) {
   if (fam === "tech") return "Tech bonuses can't be team bonuses — allies research their own copies of some techs.";
   if (fam === "civ") return "Civilization bonuses can't be team bonuses — they're built as one-off events for this civ.";
   if (ts.some(t => t.type === "group" && t.id === "unique_unit")) return "\"Unique unit\" means this civ's unique unit, which allies don't train.";
+  if (ts.some(t => t.type === "line")) return "An added line is this civ's own, which allies don't train.";
   if ((card.effects || []).some(e => e.attr === "pop_space")) return "Population space only works on this civ's own buildings.";
   if (_cbGated(card)) return "Bonuses that wait for an age or a building can't be team bonuses — the game's own never do.";
   return "";
@@ -179,6 +181,7 @@ function cbUtProblem(card) {
 // and up"), or just the unit when nothing comes after it ("Champion").
 function _cbSubject(t) {
   const label = _cbTargetLabel(t);
+  if (t?.type === "line") return `${label} line`;
   if (t?.type !== "unit" || t.kind === "building") return label;
   if (t.scope !== "up") return `${label} line`;
   return t.top ? label : `${label} and up`;
@@ -549,6 +552,7 @@ function _cbTabOf(targets) {
   if (t.type === "civ") return "civ";
   if (t.type === "group") return _cbGroup(t.id)?.tab || "group";
   if (t.type === "unit" && t.id === _CB_FISHING_SHIP) return "villager";
+  if (t.type === "line") return "unit";
   return t.kind === "building" ? "building" : "unit";
 }
 
@@ -612,6 +616,16 @@ function _cbTilesFor(tab) {
                  label: x.name, icon: x.icon }));
   // Unit lines, by building (#63): the whole line, alternates included.
   const lineTiles = [];
+  // The civ being built's "+ Add Unit" lines (tech tree page).  The library
+  // opens in its own tab, so it reads the wizard's saved draft.
+  const added = tab === "unit" && !_cbCategory ? _cbAddedLines() : [];
+  const addedTiles = added.map(l => {
+    const t0 = l.tiers[0] || {};
+    const base = (c.units || []).find(u => u.id === l.base);
+    const name = t0.name || base?.name || `Added line ${l.id}`;
+    return { target: { type: "line", id: l.id, name }, label: `${name} line`, icon: base?.icon };
+  }).filter(x => hit(x.label));
+  if (addedTiles.length) lineTiles.push({ heading: "Lines added in the civ you're building" }, ...addedTiles);
   if (tab === "unit") {
     let last = null;
     for (const ln of (c.lines || []).filter(l => (hit(l.name) || l.members.some(hit))
@@ -627,6 +641,15 @@ function _cbTilesFor(tab) {
   const head = tab === "tech" ? sectioned(groups)
              : groups.length ? [{ heading: tab === "unit" ? "Special" : "Groups" }, ...groups.map(groupTile)] : [];
   return [...head, ...lineTiles, ...(pool.length ? [{ heading: listHeading }, ...pool] : [])];
+}
+
+function _cbAddedLines() {
+  try {
+    const d = window.getDraft ? window.getDraft() : JSON.parse(localStorage.getItem("ef_builder_draft") || "null");
+    return Array.isArray(d?.added_lines) ? d.added_lines : [];
+  } catch (e) {
+    return [];
+  }
 }
 
 function _cbRenderPicker() {

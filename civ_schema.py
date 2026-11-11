@@ -226,6 +226,7 @@ def to_draft(schema: dict) -> dict:
         "second_uu":              s.get("second_uu"),
         "unit_edits":             norm_unit_edits(s.get("unit_edits")),
         "tech_edits":             norm_tech_edits(s.get("tech_edits")),
+        "added_lines":            norm_added_lines(s.get("added_lines")),
         "unit_overrides":         s.get("unit_overrides",         []),
         "button_moves":           s.get("button_moves",           []),
         "free_techs":             s.get("free_techs",             []),
@@ -341,6 +342,7 @@ def from_draft(draft: dict) -> dict:
 
         "unit_edits":              norm_unit_edits(draft.get("unit_edits")),
         "tech_edits":              norm_tech_edits(draft.get("tech_edits")),
+        "added_lines":             norm_added_lines(draft.get("added_lines")),
         "unit_overrides":          draft.get("unit_overrides",          []),
         "button_moves":            draft.get("button_moves",            []),
         "free_techs":              draft.get("free_techs",              []),
@@ -439,7 +441,8 @@ def norm_unit_name(raw) -> str:
 
 def norm_unit_edits(raw) -> dict:
     """{"<unit id>": {name, hp, attack, melee, pierce, range, reload, speed, los,
-    train, cost: {food, wood, stone, gold}, bonus: {"<class>": amount}}}."""
+    train, cost: {food, wood, stone, gold}, bonus: {"<class>": amount},
+    age: 1-4, skin: "<civ>"}}."""
     out: dict = {}
     if not isinstance(raw, dict):
         return out
@@ -457,6 +460,13 @@ def norm_unit_edits(raw) -> dict:
         cost = _norm_cost(e.get("cost"))
         if cost is not None:
             clean["cost"] = cost
+        # A look: another civ's version of the same unit (civ_overrides._apply_unit_skins).
+        skin = e.get("skin")
+        if isinstance(skin, str) and (skin := "".join(ch for ch in skin if ch.isprintable()).strip()[:40]):
+            clean["skin"] = skin
+        # "Available from": the age it becomes available in (civ_overrides._apply_age_moves).
+        if e.get("age") is not None and (a := _num(e["age"], int, 1, 4)) is not None:
+            clean["age"] = a
         if isinstance(e.get("bonus"), dict):
             bonus = {}
             for c, a in e["bonus"].items():
@@ -474,7 +484,7 @@ def norm_unit_edits(raw) -> dict:
 
 
 def norm_tech_edits(raw) -> dict:
-    """{"<tech id>": {"cost": {food, wood, stone, gold}, "time": seconds}}."""
+    """{"<tech id>": {"cost": {food, wood, stone, gold}, "time": seconds, "age": 1-4}}."""
     out: dict = {}
     if not isinstance(raw, dict):
         return out
@@ -488,8 +498,87 @@ def norm_tech_edits(raw) -> dict:
             clean["cost"] = cost
         if e.get("time") is not None and (t := _num(e["time"], int, 0, _SHORT)) is not None:
             clean["time"] = t
+        if e.get("age") is not None and (a := _num(e["age"], int, 1, 4)) is not None:
+            clean["age"] = a
         if clean:
             out[key] = clean
+    return out
+
+
+# ── Added lines (the tree page's "+ Add Unit") ──────────────────────────────
+#
+# added_lines — [{id, building, base, role, appearance, description, tiers: [{age, name,
+#   edits, upgrade}]}].  A line is 1-4 tiers, each a copy of the same base unit,
+#   each in a later age than the one before; tier 1 is made available at its age,
+#   every later tier has its own upgrade tech (cost/time in `upgrade`).  `edits`
+#   is one unit_edits entry, and a tier's edit carries to the later tiers unless
+#   they set that field themselves (stats never fall back with an upgrade).
+#   `role` is the AI's unit line it joins (a unitlines.json LineID, None = the
+#   one holding the base unit).  Built by added_lines.apply_added_lines.
+
+ADDED_LINE_BUILDINGS = (12, 87, 101, 49, 45, 104, 109)  # Barracks .. Town Center
+ADDED_LINE_MAX_TIERS = 4
+ADDED_LINE_DESC_MAX = 300
+
+
+def norm_added_lines(raw) -> list:
+    out: list = []
+    if not isinstance(raw, list):
+        return out
+    seen: set[int] = set()
+    for line in raw:
+        if not isinstance(line, dict):
+            continue
+        lid = _num(line.get("id"), int, 1, 1_000_000)
+        building = _num(line.get("building"), int, -1, _SHORT)
+        base = _id_key(line.get("base"))
+        if lid is None or lid in seen or building not in ADDED_LINE_BUILDINGS or base is None:
+            continue
+        # An extension: its tiers upgrade on from this unit (Halberdier ->
+        # Elite Halberdier), rather than starting a line of their own.
+        frm = _id_key(line.get("from")) if line.get("from") is not None else None
+        # A replacement: the unit a vanilla upgrade gives (Paladin) becomes this
+        # line's one tier (Savar).  One tier, its upgrade the vanilla one.
+        rep = _id_key(line.get("replaces")) if line.get("replaces") is not None else None
+        if rep is not None:
+            frm = None
+        tiers: list = []
+        for t in line.get("tiers") or []:
+            if not isinstance(t, dict) or len(tiers) == (1 if rep is not None else ADDED_LINE_MAX_TIERS):
+                continue
+            age = _num(t.get("age"), int, 1, 4)
+            # Ages never go back; two tiers may share one (Cavalier and Paladin
+            # are both Imperial) — an age has two rows on the tree, so no third.
+            if age is None or (tiers and age < tiers[-1]["age"]) \
+                    or (len(tiers) >= 2 and tiers[-2]["age"] == age):
+                continue
+            tier: dict = {"age": age, "name": norm_unit_name(t.get("name"))}
+            edits = norm_unit_edits({"0": dict(t.get("edits") or {}, name=None, age=None, skin=None)}).get("0")
+            if edits:
+                tier["edits"] = edits
+            if tiers or frm is not None:                 # a new line's tier 1 has no upgrade
+                up = norm_tech_edits({"0": t.get("upgrade") or {}}).get("0")
+                if up:
+                    tier["upgrade"] = up
+            tiers.append(tier)
+        if not tiers:
+            continue
+        # unitlines.json's LineIDs are -400..-199; anything else is no role, not
+        # the nearest real line (clamping 7 to -199 would join an unrelated one).
+        role = _num(line.get("role"), int, -_SHORT, _SHORT) if line.get("role") is not None else None
+        role = role if role is not None and -400 <= role <= -199 else None
+        look = _id_key(line.get("appearance")) if line.get("appearance") is not None else None
+        seen.add(lid)
+        desc = line.get("description")
+        desc = " ".join("".join(c if c.isprintable() else " " for c in desc).split())[:ADDED_LINE_DESC_MAX] \
+            if isinstance(desc, str) else ""
+        out.append({"id": lid, "building": building, "base": int(base), "role": role,
+                    "appearance": int(look) if look is not None else None,
+                    "description": desc, "tiers": tiers})
+        if frm is not None:
+            out[-1]["from"] = int(frm)
+        if rep is not None:
+            out[-1]["replaces"] = int(rep)
     return out
 
 

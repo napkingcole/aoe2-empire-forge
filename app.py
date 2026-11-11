@@ -939,6 +939,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
                 # The civ's own UTs, for civilizations.json (patch_civilizations_list).
                 "castle_ut_tech_id": result.get("castle_ut_tech_id"),
                 "imp_ut_tech_id":    result.get("imp_ut_tech_id"),
+                # "+ Add Unit" lines: their AI role (added_lines.patch_unitline_roles).
+                "added_lines":       result.get("added_lines") or [],
                 "uu_name_sid":   uu_info["dll_name"] if uu_info else None,
                 "uu_desc_sid":   uu_info["dll_help"] if uu_info else None,
             }
@@ -2688,7 +2690,11 @@ def api_unit_icon(unit_id: int):
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path:
         return ("", 404)
-    units = _get_dat(dat_path).civs[0].units
+    dat = _get_dat(dat_path)
+    # ?civ=N: that civ's own version of the unit (a Look: the Athenians' Palintonon).
+    civ = request.args.get("civ", type=int)
+    from civ_appender import _original_civ
+    units = (_original_civ(dat, civ) if civ is not None and 0 <= civ < len(dat.civs) else dat.civs[0]).units
     if not 0 <= unit_id < len(units) or units[unit_id] is None:
         return ("", 404)
     icon_id = units[unit_id].icon_id
@@ -3074,6 +3080,150 @@ _PANEL_CLASS_NAMES: dict[int, str] = {
 }
 
 
+_ADD_OPTIONS_CACHE: dict[str, dict] = {}
+
+
+@app.route("/api/builder/add-unit-options")
+def api_builder_add_unit_options():
+    """What the tree page's "+ Add Unit" offers: every unit some building
+    trains (a line's base, read from the Britons template like node-info), with
+    the ones this building trains first, and the AI's unit lines (roles) from
+    the player's unitlines.json.  ?building=N."""
+    import added_lines
+    from civ_appender import _display_name
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    try:
+        building = int(request.args.get("building", ""))
+    except ValueError:
+        return jsonify({"status": "error", "error": "bad building"}), 400
+    if dat_path not in _ADD_OPTIONS_CACHE:
+        dat = _get_dat(dat_path)
+        bases, seen = [], set()
+        for uid, u in enumerate(dat.civs[1].units):
+            # Units only: Villagers "train" buildings (type 80) too.
+            if u is None or u.creatable is None or u.type >= 80:
+                continue
+            at = sorted({tl.unit_id for tl in u.creatable.train_locations if tl.unit_id >= 0})
+            name = _display_name(u.language_dll_name, None) if at else None
+            if not name or (name, u.icon_id) in seen:
+                continue
+            seen.add((name, u.icon_id))
+            bases.append({"id": uid, "name": name, "icon": u.icon_id, "at": at, "cls": u.class_})
+        bases.sort(key=lambda b: b["name"].lower())
+        roles = sorted(({"id": int(l["LineID"]), "name": l.get("Name") or str(l["LineID"]),
+                         "units": list(l.get("IDChain") or [])}
+                        for l in added_lines.game_unit_lines(dat_path) if "LineID" in l),
+                       key=lambda r: r["name"].lower())
+        _ADD_OPTIONS_CACHE[dat_path] = {"bases": bases, "roles": roles}
+    opts = _ADD_OPTIONS_CACHE[dat_path]
+    here = [b for b in opts["bases"] if building in b["at"]]
+    rest = [b for b in opts["bases"] if building not in b["at"]]
+    return jsonify({"status": "ok", "here": here, "other": rest, "roles": opts["roles"]})
+
+
+_UNIT_CATALOG_CACHE: dict[str, list] = {}
+
+
+@app.route("/api/builder/unit-catalog")
+def api_builder_unit_catalog():
+    """The tree page's unit picker: every military unit in the player's game
+    (added_lines.unit_catalog), grouped, with the stats its cards show.
+    ?look_for=<unit id> keeps only the looks that unit may wear
+    (civ_appender.appearance_ok), for the Appearance picker;
+    ?suggest_for=<unit id> instead returns the upgrades suggested after that
+    unit (added_lines.suggested_upgrades)."""
+    import added_lines
+    from civ_appender import _string_table, appearance_ok
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat", "units": []})
+    dat = _get_dat(dat_path)
+    if dat_path not in _UNIT_CATALOG_CACHE:
+        names, chron = _string_table(), added_lines.chronicles_strings()
+        res = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+        art = Path(app.static_folder) / "aoe2techtree" / "img" / "Unit"
+        rows = added_lines.unit_catalog(
+            dat, dat_path, lambda u: names.get(u.language_dll_name) or chron.get(u.language_dll_name))
+        for r in rows:
+            u = dat.civs[0].units[r["id"]]
+            s = _unit_stats_block(u)
+            r.update({
+                "art": (art / f"{r['icon']}.png").exists(),
+                "hp": int(s["hp"]), "attack": int(s["attack"] or 0),
+                "ma": int(s["melee_armor"] or 0), "pa": int(s["pierce_armor"] or 0),
+                "range": s["range"] or 0,
+                "cost": {res[rc.type]: int(rc.amount) for rc in u.creatable.resource_costs
+                         if rc.type in res and rc.amount > 0},
+            })
+        _UNIT_CATALOG_CACHE[dat_path] = rows
+    rows = _UNIT_CATALOG_CACHE[dat_path]
+    suggest_for = request.args.get("suggest_for")
+    if suggest_for not in (None, ""):
+        # The "+" under a vanilla unit: the upgrades past it worth offering first.
+        try:
+            frm = int(suggest_for)
+        except ValueError:
+            return jsonify({"status": "error", "units": []}), 400
+        return jsonify({"status": "ok", "suggested": added_lines.suggested_upgrades(dat, frm, rows)})
+    look_for = request.args.get("look_for")
+    if look_for not in (None, ""):
+        try:
+            target = dat.civs[0].units[int(look_for)]
+        except (ValueError, IndexError):
+            return jsonify({"status": "error", "units": []}), 400
+        units = dat.civs[0].units
+        rows = [r for r in rows if appearance_ok(units[r["id"]], target)]
+    return jsonify({"status": "ok", "units": rows})
+
+
+@app.route("/api/builder/added-line-info")
+def api_builder_added_line_info():
+    """A line's defaults for the side panel: the AI role its base implies and,
+    per age, the upgrade cost and time the build will use unless edited (copied
+    from the role's vanilla upgrade at that age, else the Militia line's).
+    ?base=N[&role=LineID]."""
+    import added_lines
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    try:
+        base = int(request.args.get("base", ""))
+        role = int(request.args["role"]) if request.args.get("role") not in (None, "") else None
+        frm = int(request.args["from"]) if request.args.get("from") not in (None, "") else None
+    except ValueError:
+        return jsonify({"status": "error", "error": "bad id"}), 400
+    dat = _get_dat(dat_path)
+    lines = added_lines.game_unit_lines(dat_path)
+    # An extension plays the role of the unit it upgrades from.
+    default = added_lines.default_role(lines, frm if frm is not None else base)
+    from civ_appender import _display_name
+    rides = added_lines.role_upgrades_by_age(
+        dat, added_lines.role_chain(lines, role if role is not None else default), after=frm)
+    names = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+
+    def one(tid):
+        t = dat.techs[tid]
+        cost = {names[rc.type]: int(rc.amount) for rc in t.resource_costs if rc.type in names and rc.amount > 0}
+        time = next((rl.research_time for rl in t.research_locations if rl.location_id >= 0), 40)
+        return {"cost": cost, "time": time, "from": tid,
+                "from_name": _display_name(t.language_dll_name, t.name) or t.name}
+
+    upgrades, seq = {}, {}
+    for age in (1, 2, 3, 4):
+        if rides.get(age):
+            seq[age] = [one(t) for t in rides[age]]
+            upgrades[age] = seq[age][0]
+        elif age in added_lines._DEFAULT_UPGRADE:
+            c, time = added_lines._DEFAULT_UPGRADE[age]
+            upgrades[age] = {"cost": {names[r]: a for r, a in c.items()}, "time": time, "from": None}
+            seq[age] = [upgrades[age]]
+    # upgrades_seq[age][i]: the default for the i-th tier of a line in that age
+    # (added_lines.apply_added_lines picks the same).
+    return jsonify({"status": "ok", "default_role": default, "upgrades": upgrades, "upgrades_seq": seq})
+
+
 @app.route("/api/builder/node-info")
 def api_builder_node_info():
     """The base values the tech tree's side panel shows and edits for one node.
@@ -3081,7 +3231,7 @@ def api_builder_node_info():
     Read from the Britons, the template every custom civ clones, so they are
     exactly what an edit replaces.  ?kind=unit|building|tech&id=N."""
     import civ_overrides as co
-    from civ_appender import _display_name
+    from civ_appender import _display_name, unit_skins
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path or not Path(dat_path).exists():
         return jsonify({"status": "no_dat"})
@@ -3107,7 +3257,8 @@ def api_builder_node_info():
         return jsonify({"status": "ok", "kind": "tech", "id": nid,
                         "name": _display_name(t.language_dll_name, t.name) or t.name,
                         "icon": _tech_icon(nid, None, dat),
-                        "cost": cost_of(t.resource_costs), "time": co._tech_time(t)})
+                        "cost": cost_of(t.resource_costs), "time": co._tech_time(t),
+                        "age_move": _age_move_info(dat, nid)})
 
     units = dat.civs[1].units
     if not (0 <= nid < len(units)) or units[nid] is None:
@@ -3152,7 +3303,37 @@ def api_builder_node_info():
         "line_before": lines["before"].get(nid, []),
         "forms": len(forms),
         "upgrade": upgrade,
+        "desc": _unit_desc(dat, nid),
+        "age_move": _age_move_info(dat, co.enabling_tech(dat, 1, nid)) if kind == "unit" else None,
+        # Other civs' versions of it, for the Look row (Palintonon for the Trebuchet).
+        "skins": unit_skins(dat, nid) if kind == "unit" else [],
     })
+
+
+def _age_move_info(dat, tid) -> dict | None:
+    """Whether the panel's "Available from" can move this node earlier
+    (civ_overrides.age_move_plan): {ok, age, why}."""
+    import civ_overrides as co
+    if tid is None:
+        return None
+    plan = co.age_move_plan(dat, tid)
+    return {"ok": plan["ok"], "age": plan["age"], "why": plan["why"]}
+
+
+def _unit_desc(dat, uid: int) -> str:
+    """The second line of the unit's Castle tooltip (+21000), its description,
+    as plain text: "Strong vs. cavalry." for the Spearman.  Read through
+    Gaia's copy, which a build never renames."""
+    import re as _re
+    from civ_appender import _string_table
+    try:
+        sid = dat.civs[0].units[uid].language_dll_name
+    except (IndexError, TypeError, AttributeError):
+        return ""
+    lines = (_string_table().get(sid + 21000) or "").split("\\n")
+    if len(lines) < 2 or lines[1].startswith("<GREY>"):
+        return ""
+    return _re.sub(r"<[^>]*>", "", lines[1]).strip()
 
 
 # Parsed in the background on first use: the preview must never block on the
@@ -3341,7 +3522,7 @@ def _tree_steps_split(draft: dict) -> tuple[dict, dict]:
     unit available rather than change a stat, and keeping them would rebuild on
     every such click."""
     from civ_appender import _UNLOCK_UNIT_BONUSES
-    basis = {k: v for k, v in draft.items() if k not in ("unit_edits", "tech_edits", "tree")}
+    basis = {k: v for k, v in draft.items() if k not in ("unit_edits", "tech_edits", "tree", "added_lines")}
     basis["bonuses"] = [b for b in draft.get("bonuses") or []
                         if not (isinstance(b, dict) and b.get("id") in _UNLOCK_UNIT_BONUSES)]
     return basis, draft.get("tree") or {}

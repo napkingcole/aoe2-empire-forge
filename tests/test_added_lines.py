@@ -1,0 +1,428 @@
+#!/usr/bin/env python3
+"""The tech tree page's "+ Add Unit" lines (added_lines.py).
+
+Normalizer first (bad buildings, junk bases, ages that don't climb, too many
+tiers), then real builds into a fresh DAT: a Spearman-based 3-tier line in the
+column the disabled Spearman line left, a 2-tier Knight line, and what each
+mechanism has to get right — every civ gets the units (ids line up) but only
+ours can train them, the tiers share one button (quirk 3), upgrades sit one row
+below, stats never fall back with an upgrade, the vanilla role upgrade also
+upgrades the line (the AI's way up), cards naming the role's units reach the
+line once each, the F2 nodes and the AI's unit line.  DAT-gated.
+
+    venv/bin/python tests/test_added_lines.py
+"""
+import contextlib
+import io
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+failures = 0
+
+
+def check(label, cond, extra=""):
+    global failures
+    if cond:
+        print(f"  ok   {label}")
+    else:
+        failures += 1
+        print(f"  FAIL {label}" + (f" — {extra}" if extra else ""))
+
+
+from civ_schema import from_draft, norm_added_lines, to_draft  # noqa: E402
+
+print("=== normalizer ===")
+raw = [
+    {"id": 1, "building": 12, "base": 93, "role": -295,
+     "tiers": [{"age": 2, "name": " Guard\n", "edits": {"hp": 70, "name": "ignored"}},
+               {"age": 3, "upgrade": {"cost": {"food": -5, "gold": "50"}, "time": 30}},
+               {"age": 3},                                # a second Castle tier: kept
+               {"age": 3},                                # a third: dropped (an age has two rows)
+               {"age": 2},                                # back an age: dropped
+               {"age": 4}, {"age": 4}]},
+    {"id": 1, "building": 12, "base": 93, "tiers": [{"age": 2}]},       # duplicate id
+    {"id": 2, "building": 82, "base": 4, "tiers": [{"age": 2}]},        # the Castle: UU step
+    {"id": 3, "building": 87, "base": "lizard", "tiers": [{"age": 2}]},
+    {"id": 4, "building": 87, "base": 4, "tiers": []},
+    {"id": 5, "building": 87, "base": 4, "role": 7, "tiers": [{"age": 9}, {"age": 1}]},
+    "junk", None,
+]
+n = norm_added_lines(raw)
+check("only valid lines survive", [l["id"] for l in n] == [1, 5], [l["id"] for l in n])
+t = n[0]["tiers"]
+check("ages never go back, at most two tiers an age, at most 4 tiers", [x["age"] for x in t] == [2, 3, 3, 4], t)
+check("names cleaned; edits keep stats, not names",
+      t[0]["name"] == "Guard" and t[0]["edits"] == {"hp": 70}, t[0])
+check("tier 1 has no upgrade; costs clamp", "upgrade" not in t[0]
+      and t[1]["upgrade"] == {"cost": {"food": 0, "wood": 0, "stone": 0, "gold": 50}, "time": 30}, t[1])
+check("a role outside unitlines' range is dropped; age 9 clamps to Imperial",
+      n[1]["role"] is None and [x["age"] for x in n[1]["tiers"]] == [4], n[1])
+check("saves and loads", to_draft(from_draft({"added_lines": raw}))["added_lines"] == n)
+x = norm_added_lines([{"id": 1, "building": 87, "base": 6, "from": "6",
+                       "tiers": [{"age": 4, "upgrade": {"time": 50}}]}])
+check("an extension keeps its unit, and its first tier's upgrade", x and x[0].get("from") == 6
+      and x[0]["tiers"][0].get("upgrade") == {"time": 50}, x)
+
+try:
+    from dat_reader import find_game_dat, load_dat
+    dat_path = find_game_dat()
+except Exception:                                            # noqa: BLE001
+    dat_path = None
+civ_file = ROOT / "my_civs" / "19_Cannoneers.json"
+if dat_path is None or not civ_file.exists():
+    print("  skip  no game DAT (or my_civs/19_Cannoneers.json) found")
+    print("\nPASS" if not failures else "\nFAIL", f"({failures} failure(s))")
+    sys.exit(1 if failures else 0)
+
+import added_lines  # noqa: E402
+from build_civ import _added_line_nodes  # noqa: E402
+from civ_overrides import apply_civ_with_overrides  # noqa: E402
+from wizard_build import _draft_to_civ_def  # noqa: E402
+
+SLOT, OTHER = 1, 5
+SPEAR, PIKE, HALB, KNIGHT = 93, 358, 359, 38
+PIKEMAN_TECH, HALBERDIER_TECH, CAVALIER_TECH, SAVAR_TECH = 197, 429, 209, 526
+SAVAR = 1813
+SKIRM, ESKIRM, HC, ESKIRM_TECH = 7, 6, 5, 98
+CAVALIER, PALADIN, PALADIN_TECH = 283, 569, 265
+BOMBARD, HOUFNICE = 36, 1709
+HERO = 160                     # Richard the Lionheart (creatable.hero_mode 1)
+units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
+draft = {
+    "alias": "Added", "architecture": 2, "language": 0,
+    "bonuses": [{"id": 233, "multiplier": 1}, {"id": 101, "multiplier": 1}],   # Spearmen +25% HP, +10% speed
+    # A card on one added line only: +7 HP to the Knight line we add (id 2).
+    "custom_bonuses": [{"targets": [{"type": "line", "id": 2, "name": "Knight"}],
+                        "effects": [{"attr": "hp", "op": "add", "value": 7}]}],
+    "team_bonuses": [], "unique_unit": {"km_idx": 11},
+    "castle_ut": {"mode": "vanilla", "effects": [{"id": 3, "multiplier": 1}]},
+    "imperial_ut": {"mode": "vanilla", "effects": [{"id": 12, "multiplier": 1}]},
+    "tree": {"units": [u for u in units if u not in (SPEAR, PIKE, HALB)], "buildings": buildings,
+             "techs": techs},
+    # "Available from": Knight in Feudal, Hand Cannoneer in Castle, Bloodlines in Dark;
+    # the Militia has no tech to move.
+    "unit_edits": {"38": {"age": 2}, "5": {"age": 3}, "74": {"age": 1}},
+    "tech_edits": {"435": {"age": 1}},
+    "added_lines": [
+        {"id": 1, "building": 12, "base": SPEAR,
+         "tiers": [{"age": 2, "name": "Guard", "edits": {"hp": 70}},
+                   {"age": 3, "upgrade": {"cost": {"food": 100, "gold": 50}, "time": 30}},
+                   {"age": 4, "edits": {"attack": 9}}]},
+        {"id": 2, "building": 101, "base": KNIGHT, "appearance": SAVAR,
+         "description": 'Holy "warriors".', "tiers": [{"age": 3}, {"age": 4}]},
+        # A hero as a base: trains like any unit, without hero status.
+        {"id": 3, "building": 12, "base": HERO, "tiers": [{"age": 3}]},
+        # Extensions: tiers upgrading on from a vanilla unit.
+        {"id": 4, "building": 87, "base": ESKIRM, "from": ESKIRM, "tiers": [{"age": 4}]},
+        {"id": 5, "building": 87, "base": SKIRM, "from": SKIRM, "tiers": [{"age": 4}]},   # not the end
+        {"id": 6, "building": 87, "base": HC, "from": HC, "tiers": [{"age": 4, "edits": {"hp": 60}}]},
+        # Replacements: the Cavalier and the Paladin upgrades give ours.
+        {"id": 7, "building": 101, "base": SAVAR, "replaces": CAVALIER, "tiers": [{"age": 3, "name": "Lancer"}]},
+        {"id": 8, "building": 101, "base": SAVAR, "replaces": PALADIN, "tiers": [{"age": 4}]},
+        {"id": 9, "building": 101, "base": SAVAR, "replaces": KNIGHT, "tiers": [{"age": 3}]},  # not an upgrade
+        # Two Imperial tiers, like Cavalier and Paladin.
+        {"id": 10, "building": 101, "base": KNIGHT, "tiers": [{"age": 3, "name": "Rider"}, {"age": 4}, {"age": 4}]},
+        # An extension into another unit: the Bombard Cannon upgrades into a Houfnice.
+        {"id": 11, "building": 49, "base": HOUFNICE, "from": BOMBARD, "tiers": [{"age": 4}, {"age": 4}]},
+    ],
+}
+dat = load_dat(str(dat_path))
+units_before = len(dat.civs[0].units)
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    r, _ = apply_civ_with_overrides(dat, _draft_to_civ_def(draft), SLOT, draft)
+lines = r.get("added_lines") or []
+check("every line built but an extension of a unit that still upgrades, and a replaced first unit",
+      [l["id"] for l in lines] == [1, 2, 3, 4, 6, 7, 8, 10, 11], ([l["id"] for l in lines], r["warnings"]))
+guard, knights, hero, ext, hcx, rcav, rpal, two, houf = lines
+ids = guard["units"]
+U = dat.civs[SLOT].units
+
+print("\n=== units ===")
+check("one new unit per tier, in every civ (ids line up)",
+      ids == [units_before, units_before + 1, units_before + 2]
+      and all(len(c.units) == len(dat.civs[0].units) for c in dat.civs), ids)
+check("other civs have the units but nothing enables them",
+      dat.civs[OTHER].units[ids[0]].enabled == 0
+      and not any(t.civ == OTHER for tid in guard["techs"] for t in [dat.techs[tid]]))
+check("copies of the base, under their own id",
+      all(U[i].class_ == U[SPEAR].class_ and U[i].base_id == i == U[i].id for i in ids))
+check("names default from tier 1's", guard["names"] == ["Guard", "Veteran Guard", "Elite Guard"]
+      and knights["names"] == ["Knight", "Elite Knight"], (guard["names"], knights["names"]))
+btn = guard["button"]
+check("the column the disabled Spearman line left (button 2), all tiers on it",
+      btn == 2 and all([(t.unit_id, t.button_id) for t in U[i].creatable.train_locations] == [(12, 2)] for i in ids),
+      [[(t.unit_id, t.button_id) for t in U[i].creatable.train_locations] for i in ids])
+check("a stat edit carries to later tiers; a later tier's own stands",
+      [U[i].hit_points for i in ids] == [70, 70, 70]
+      and U[ids[2]].type_50.displayed_attack == 9 and U[ids[0]].type_50.displayed_attack != 9,
+      ([U[i].hit_points for i in ids], [U[i].type_50.displayed_attack for i in ids]))
+
+print("\n=== techs ===")
+avail, up2, up3 = (dat.techs[t] for t in guard["techs"])
+check("tier 1 made available at Feudal, for this civ only",
+      avail.civ == SLOT and list(avail.required_techs)[:1] == [101]
+      and [(c.type, int(c.a), c.b) for c in dat.effects[avail.effect_id].effect_commands] == [(2, ids[0], 1)])
+check("upgrades: own button one row below, after the age and the tier before",
+      [(rl.location_id, rl.button_id) for rl in up2.research_locations] == [(12, btn + 5)]
+      and list(up2.required_techs)[:2] == [102, guard["techs"][0]] and up2.required_tech_count == 2
+      and list(up3.required_techs)[:2] == [103, guard["techs"][1]],
+      ([(rl.location_id, rl.button_id) for rl in up2.research_locations], list(up2.required_techs)))
+check("an edited upgrade cost and time are used",
+      {(c.type, c.amount) for c in up2.resource_costs if c.amount} == {(0, 100), (3, 50)}
+      and up2.research_locations[0].research_time == 30)
+halb = dat.techs[HALBERDIER_TECH]
+check("an unedited upgrade defaults to the role's vanilla upgrade (Halberdier)",
+      {(c.type, c.amount) for c in up3.resource_costs if c.amount}
+      == {(c.type, c.amount) for c in halb.resource_costs if c.amount}
+      and up3.icon_id == halb.icon_id)
+check("upgrades are EC_UPGRADE from every tier before, as the game's own (Champion 264: 74, 75, 77, 473)",
+      [(c.type, int(c.a), int(c.b)) for c in dat.effects[up3.effect_id].effect_commands]
+      == [(3, ids[1], ids[2]), (3, ids[0], ids[2])])
+
+print("\n=== buttons ===")
+check("never the fifth column (the building's commands: rally point)",
+      all(l["button"] not in (5, 10, 25, 30) and l.get("upgrade_button") not in (5, 10, 25, 30) for l in lines),
+      [(l["button"], l.get("upgrade_button")) for l in lines])
+check("the Stable's line takes column 3 when the civ has no camels (opt-in techs don't hold a column)",
+      (1755 in units or 329 in units) or knights["button"] == 3, knights["button"])
+check("an upgrade sits below its unit, never in a page's top row (the units' row)",
+      all(l.get("upgrade_button") is None or (l["upgrade_button"] - 1) % 20 >= 5 for l in lines)
+      and ((1755 in units or 329 in units) or knights["upgrade_button"] == knights["button"] + 5),
+      [(l["button"], l.get("upgrade_button")) for l in lines])
+check("an upgrade into a unit the civ lacks (Heavy Camel) holds no slot",
+      added_lines._upgrades_into_absent(dat, dat.techs[236], {KNIGHT})
+      and not added_lines._upgrades_into_absent(dat, dat.techs[CAVALIER_TECH], {KNIGHT}))
+sav = dat.techs[knights["techs"][1]]
+check("an upgrade wears the icon of the upgrade into its look (Savar)",
+      sav.icon_id == dat.techs[SAVAR_TECH].icon_id, (sav.icon_id, dat.techs[SAVAR_TECH].icon_id))
+
+print("\n=== heroes ===")
+h = U[hero["units"][0]]
+check("a hero's copy loses hero status; the hero keeps it",
+      dat.civs[SLOT].units[HERO].creatable.hero_mode and h.creatable.hero_mode == 0,
+      (dat.civs[SLOT].units[HERO].creatable.hero_mode, h.creatable.hero_mode))
+check("and trains at the building like any unit",
+      [(t.unit_id, t.button_id) for t in h.creatable.train_locations] == [(12, hero["button"])])
+
+print("\n=== extending a vanilla line ===")
+x = U[ext["units"][0]]
+etl = next(t for t in U[ESKIRM].creatable.train_locations if t.unit_id == 87)
+check("named after the game's own next title (Imperial Skirmisher)", ext["names"] == ["Imperial Skirmisher"], ext["names"])
+check("trains on the unit's own button and hotkey (quirk 3)",
+      [(t.unit_id, t.button_id, t.hot_key_id) for t in x.creatable.train_locations] == [(87, etl.button_id, etl.hot_key_id)])
+xt = dat.techs[ext["techs"][0]]
+prod_btn = next(rl.button_id for rl in dat.techs[ESKIRM_TECH].research_locations if rl.location_id == 87)
+check("its upgrade follows the vanilla one: same button, after it and the age",
+      [(rl.location_id, rl.button_id) for rl in xt.research_locations] == [(87, prod_btn)]
+      and list(xt.required_techs)[:2] == [103, ESKIRM_TECH] and xt.required_tech_count == 2,
+      ([(rl.location_id, rl.button_id) for rl in xt.research_locations], list(xt.required_techs)))
+check("which upgrades the vanilla unit and the one under it, like the game's Imperial Skirmisher (655: 7 and 6)",
+      [(c.type, int(c.a), int(c.b)) for c in dat.effects[xt.effect_id].effect_commands]
+      == [(3, ESKIRM, ext["units"][0]), (3, 7, ext["units"][0])]
+      and len(ext["techs"]) == 1)
+check("a unit that still upgrades further isn't extended, and says why",
+      any("Added line 5" in w and "isn't the end of its line" in w for w in r["warnings"]), r["warnings"])
+ht = dat.techs[hcx["techs"][0]]
+check("a line's first unit (Hand Cannoneer): after the age and the tech that unlocks it (85), never in the top row",
+      hcx["names"] == ["Elite Hand Cannoneer"] and ht.required_tech_count == 2 and list(ht.required_techs)[:2] == [103, 85]
+      and (hcx["upgrade_button"] - 1) % 20 >= 5 and U[hcx["units"][0]].hit_points == 60,
+      (hcx["names"], list(ht.required_techs), hcx["upgrade_button"]))
+xn = [nd for nd in _added_line_nodes(dat, SLOT, [ext, hcx])]
+check("F2: the new tier hangs off the vanilla unit",
+      [(nd["Node Type"], nd.get("Link ID"), nd["Link Node Type"]) for nd in xn]
+      == [("UnitUpgrade", ESKIRM, "UnitUpgrade"), ("UnitUpgrade", HC, "Unit")],
+      [(nd["Node Type"], nd.get("Link ID"), nd["Link Node Type"]) for nd in xn])
+check("the AI's line is the vanilla unit's", ext["role"] == added_lines.default_role(added_lines.game_unit_lines(), ESKIRM)
+      and ext["role"] is not None, ext["role"])
+
+check("extended into another unit, a tier is named for that unit (Houfnice, not Elite Bombard Cannon)",
+      houf["names"] == ["Houfnice", "Elite Houfnice"], houf["names"])
+hft = dat.techs[houf["techs"][0]]
+check("...and its upgrade waits for the Bombard Cannon (188), as the game's own Houfnice does",
+      list(hft.required_techs)[:2] == [103, 188] and hft.required_tech_count == 2, list(hft.required_techs))
+
+print("\n=== two tiers in one age ===")
+_, t2, t3 = (dat.techs[x] for x in two["techs"])
+cost = lambda t: {(c.type, c.amount) for c in t.resource_costs if c.amount}      # noqa: E731
+check("both Imperial upgrades: after Imperial and the tier before",
+      list(t2.required_techs)[:2] == [103, two["techs"][0]] and list(t3.required_techs)[:2] == [103, two["techs"][1]])
+check("their default prices are the age's first and second upgrades (Cavalier's, then Paladin's)",
+      cost(t2) == cost(dat.techs[CAVALIER_TECH]) and cost(t3) == cost(dat.techs[PALADIN_TECH]), (cost(t2), cost(t3)))
+check("named like any line", two["names"] == ["Rider", "Veteran Rider", "Elite Rider"], two["names"])
+
+print("\n=== replacing a vanilla upgrade ===")
+y1, y2 = rcav["units"][0], rpal["units"][0]
+h1 = dat.techs[rpal["techs"][0]]
+check("the Paladin upgrade stays; a hidden tech after it upgrades Paladins (and the line under them) into ours",
+      h1.civ == SLOT and [rl.location_id for rl in h1.research_locations] == [-1]
+      and list(h1.required_techs)[:1] == [PALADIN_TECH] and h1.required_tech_count == 1
+      and [(c.type, int(c.a), int(c.b)) for c in dat.effects[h1.effect_id].effect_commands]
+      == [(3, PALADIN, y2), (3, KNIGHT, y2), (3, CAVALIER, y2)],
+      (h1.civ, list(h1.required_techs), [(c.type, int(c.a), int(c.b)) for c in dat.effects[h1.effect_id].effect_commands]))
+ptl = next(t for t in U[PALADIN].creatable.train_locations if t.unit_id == 101)
+check("ours trains on the Paladin's button (quirk 3)",
+      [(t.unit_id, t.button_id) for t in U[y2].creatable.train_locations] == [(101, ptl.button_id)])
+ren = [c for tid in rpal["techs"] for c in dat.effects[dat.techs[tid].effect_id].effect_commands if c.type == 8]
+check("the Paladin upgrade's button takes our name, for this civ (type 8, b=7 and b=8)",
+      sorted((int(c.a), c.b) for c in ren) == [(PALADIN_TECH, 7), (PALADIN_TECH, 8)])
+check("names default to the base's; a given one stands", rpal["names"] == ["Savar"] and rcav["names"] == ["Lancer"],
+      (rpal["names"], rcav["names"]))
+onward = [dat.techs[t] for t in rcav["techs"] if list(dat.techs[t].required_techs)[:1] == [PALADIN_TECH]]
+check("a replaced Cavalier follows the Paladin upgrade straight to the Paladin's replacement",
+      len(onward) == 1 and [(int(c.a), int(c.b)) for c in dat.effects[onward[0].effect_id].effect_commands] == [(y1, y2)],
+      [(list(t.required_techs), [(int(c.a), int(c.b)) for c in dat.effects[t.effect_id].effect_commands]) for t in onward])
+check("only an upgrade can be replaced (the Knight is skipped, with a warning)",
+      any("Added line 9" in w and "isn't an upgrade" in w for w in r["warnings"]), r["warnings"])
+check("the AI's knight line gains it", rpal["role"] == knights["role"] and rpal["role"] is not None)
+check("F2: no node of its own (it shows on the Paladin's)", not _added_line_nodes(dat, SLOT, [rpal]))
+
+print("\n=== available from an earlier age ===")
+moved = r.get("age_moves") or {}
+check("Knight, Hand Cannoneer and Bloodlines moved; the Militia can't be",
+      moved == {"Unit:38": 2, "Unit:5": 3, "Tech:435": 1}
+      and any("can't change" in w for w in r["warnings"]), (moved, r["warnings"]))
+def trigger(tid):
+    t = dat.techs[tid]
+    trig = [dat.techs[q] for q in t.required_techs if q >= 0 and dat.techs[q].civ == SLOT]
+    return [(list(x.required_techs), x.required_tech_count, [rl.location_id for rl in x.research_locations],
+             len(dat.effects[x.effect_id].effect_commands)) for x in trig]
+check("Knight: a trigger of ours in a spare slot, firing at Feudal (vanilla 950/955's shape)",
+      trigger(166) == [([101, -1, -1, -1, -1, -1], 1, [-1], 0)], trigger(166))
+check("Hand Cannoneer: the trigger also waits for Chemistry (the tech's other requirement)",
+      trigger(85) == [([102, 47, -1, -1, -1, -1], 2, [-1], 0)], trigger(85))
+check("Bloodlines: from the Dark Age", trigger(435) == [([104, -1, -1, -1, -1, -1], 1, [-1], 0)], trigger(435))
+check("the tech keeps its id and its requirement count (the AI researches it by name)",
+      dat.techs[166].required_tech_count == 1 and dat.techs[85].required_tech_count == 2)
+check("other civs: no trigger of theirs fires", all(dat.techs[q].civ in (-1, SLOT, 39)
+      for q in dat.techs[85].required_techs if q >= 0))
+
+print("\n=== the AI ===")
+check("role defaults to the base's line (spearman-line)", guard["role"] == -295 and knights["role"] == -287,
+      (guard["role"], knights["role"]))
+ours = set(ids) | set(knights["units"])
+touched = [(t, c.type, int(c.a)) for t in (PIKEMAN_TECH, HALBERDIER_TECH, CAVALIER_TECH)
+           for c in dat.effects[dat.techs[t].effect_id].effect_commands
+           if int(c.a) in ours or (c.type == 102 and int(c.d) in guard["techs"] + knights["techs"])]
+check("vanilla upgrades leave the added lines alone (in game: Pikeman upgrading Guards confused)",
+      not touched, touched)
+lines_doc = [{"LineID": -295, "IDChain": [SPEAR, PIKE, HALB]}, {"LineID": -287, "IDChain": [KNIGHT, 283, 569]}]
+n_joined = added_lines.patch_unitline_roles(lines_doc, {SLOT: {"added_lines": lines}})
+check("the units join their AI lines in unitlines.json",
+      n_joined == 10 and lines_doc[0]["IDChain"] == [SPEAR, PIKE, HALB] + ids
+      and lines_doc[1]["IDChain"] == [KNIGHT, 283, 569] + knights["units"] + rcav["units"] + rpal["units"] + two["units"], lines_doc)
+
+print("\n=== cards naming the role's units ===")
+hp = [(int(c.a), c.d) for e in dat.effects for c in e.effect_commands
+      if c.type == 5 and c.c == 0 and abs(c.d - 1.25) < 1e-6 and int(c.a) in ids + [SPEAR]]
+check("Spearmen +25% HP reaches every tier, exactly once each",
+      sorted(a for a, _ in hp) == sorted([SPEAR] + ids), hp)
+names = [c for e in dat.effects for c in e.effect_commands if int(c.a) in ids and c.c == 50]
+check("never a name command", not names)
+
+import custom_bonus  # noqa: E402
+card = custom_bonus.normalize(draft["custom_bonuses"])[0]
+plus7 = {int(c.a) for e in dat.effects for c in e.effect_commands if c.type == 4 and c.c == 0 and c.d == 7}
+check("a card can target one added line, and only it", plus7 == set(knights["units"]), plus7)
+check("its text names the line", "Knight line" in custom_bonus.card_text(card), custom_bonus.card_text(card))
+check("and it can't be a team bonus", custom_bonus.team_problem(card) is not None)
+
+print("\n=== F2 tree and strings ===")
+nodes = _added_line_nodes(dat, SLOT, lines)
+g = [nd for nd in nodes if nd["Node ID"] in ids]
+check("a node per tier: building, then each off the one before",
+      [(nd["Node Type"], nd["Link Node Type"], nd.get("Link ID"), nd["Age ID"], nd["Building ID"]) for nd in g]
+      == [("Unit", "BuildingTech", None, 2, 12), ("UnitUpgrade", "Unit", ids[0], 3, 12),
+          ("UnitUpgrade", "UnitUpgrade", ids[1], 4, 12)], g)
+check("nodes named from the tiers' string ids and triggered by their techs",
+      [nd["Name String ID"] for nd in g] == guard["sids"] and [nd["Trigger Tech ID"] for nd in g] == guard["techs"])
+us = {e["sid"]: e for e in r["bonus_results"]["extra_unit_strings"]}
+ts = {e["sid"]: e for e in r["bonus_results"]["extra_tech_strings"]}
+k = us.get(guard["sids"][0], {})
+check("unit tooltip is the base's own, renamed, minus its Upgrades line",
+      k.get("ext_text", "").startswith("Create <b>Guard<b> (<cost>)") and "<hp>" in k.get("ext_text", "")
+      and "<GREY>" not in k.get("ext_text", ""), k.get("ext_text"))
+kk = us.get(knights["sids"][0], {})
+check("the line's own description replaces the base's, quotes escaped",
+      'Holy \\"warriors\\".' in kk.get("ext_text", "") and "Heavy Cavalry" not in kk.get("ext_text", ""),
+      kk.get("ext_text"))
+hov = added_lines._tooltip(dat, 2110, "Hoplite") or ""
+check("a Chronicles base's tooltip comes from the paphos strings: description and stats (Hoplite)",
+      hov.startswith("Create <b>Hoplite<b> (<cost>)") and "Greek regional" in hov and "<hp>" in hov, hov)
+hk = us.get(hero["sids"][0], {}).get("ext_text", "")
+check("a hero's copy, with no tooltip to copy, still shows its stats in F2 and on the button",
+      hk.startswith("Create <b>") and "(<cost>)" in hk and "<hp> <attack>" in hk
+      and us.get(hero["sids"][0], {}).get("help_text") == hk, hk)
+check("upgrade button label and hover", ts.get(guard["tech_sids"][0], {}).get("label") == "Upgrade to Veteran Guard"
+      and "(<cost>)" in ts.get(guard["tech_sids"][0], {}).get("hover", ""), ts.get(guard["tech_sids"][0]))
+
+print("\n=== a line whose building is off ===")
+dat3 = load_dat(str(dat_path))
+no_stable = dict(draft, tree=dict(draft["tree"], buildings=[b for b in buildings if b != 101]))
+with contextlib.redirect_stdout(io.StringIO()):
+    r3, _ = apply_civ_with_overrides(dat3, _draft_to_civ_def(no_stable), SLOT, no_stable)
+check("is not built (the page hides it too)", [l["id"] for l in r3["added_lines"]] == [1, 3, 4, 6, 11],
+      [l["id"] for l in r3["added_lines"]])
+
+print("\n=== two civs in one build ===")
+dat2 = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    r1, _ = apply_civ_with_overrides(dat2, _draft_to_civ_def(draft), SLOT, draft)
+    r2, _ = apply_civ_with_overrides(dat2, _draft_to_civ_def(draft), OTHER, draft)
+a, b = r1["added_lines"][0]["units"], r2["added_lines"][0]["units"]
+check("each civ gets its own units, every civ's list the same length",
+      not set(a) & set(b) and len({len(c.units) for c in dat2.civs}) == 1, (a, b))
+check("each civ's string ids are its own", not set(r1["added_lines"][0]["sids"]) & set(r2["added_lines"][0]["sids"]))
+
+print("\n=== the picker's catalog ===")
+from civ_appender import _string_table  # noqa: E402
+names, chron = _string_table(), added_lines.chronicles_strings()
+cat = {r["id"]: r for r in added_lines.unit_catalog(
+    dat2, dat_path, lambda u: names.get(u.language_dll_name) or chron.get(u.language_dll_name))}
+group = lambda uid: (cat.get(uid) or {}).get("group")      # noqa: E731
+check("standard / regional / unique / chronicles / scenario / hero",
+      (group(KNIGHT), group(1132), group(SAVAR), group(2110), group(299), group(HERO))
+      == ("standard", "regional", "unique", "chronicles", "scenario", "hero"),
+      (group(KNIGHT), group(1132), group(SAVAR), group(2110), group(299), group(HERO)))
+check("a unit no civ's tree has is still offered (War Dog, Ninja: scenario)",
+      group(2612) == "scenario" and group(1145) == "scenario", (group(2612), group(1145)))
+check("Chronicles units are named from the game's own strings", (cat.get(2110) or {}).get("name") == "Hoplite")
+check("military only: no Villager, no Trade Cart, no animals",
+      not ({83, 128, 594} & set(cat)), sorted({83, 128, 594} & set(cat)))
+check("one per name", len({r["name"].casefold() for r in cat.values()}) == len(cat))
+
+print("\n=== suggested upgrades (the \"+\" under a vanilla unit) ===")
+from copy import deepcopy  # noqa: E402
+import civ_appender  # noqa: E402
+rows = list(cat.values())
+sug = lambda frm: {s["name"]: s for s in added_lines.suggested_upgrades(dat2, frm, rows)}   # noqa: E731
+rbe = sug(1134).get("Royal Battle Elephant") or {}
+check("a card's unit after its vanilla one, with its stats and price (Royal Battle Elephant)",
+      rbe.get("base") == 1134 and rbe.get("edits") == {"hp": 330, "attack": 15, "pierce": 4}
+      and rbe.get("upgrade") == {"cost": {"food": 1200, "gold": 1000}, "time": 200}, rbe)
+check("the Royal Lancer wears the Cuman Chief, a look it may wear",
+      (sug(1372).get("Royal Lancer") or {}).get("appearance") == 1268
+      and civ_appender.appearance_ok(dat2.civs[0].units[1268], dat2.civs[0].units[1372]))
+# The suggestion's edits on the unit it copies give the card's own unit.
+civ_appender._setup_royal_battle_elephant_unit(dat2)
+mine = deepcopy(dat2.civs[SLOT].units[1134])
+added_lines._write_edits(mine, rbe.get("edits") or {})
+card = dat2.civs[SLOT].units[1180]
+stat = lambda u: (u.hit_points, u.type_50.displayed_attack, sorted((a.class_, a.amount) for a in u.type_50.attacks),   # noqa: E731
+                  sorted((a.class_, a.amount) for a in u.type_50.armours), u.creatable.displayed_pierce_armour)
+check("which is the card's unit, stat for stat", stat(mine) == stat(card), (stat(mine), stat(card)))
+houf = sug(BOMBARD).get("Houfnice") or {}
+t787 = dat2.techs[787]
+check("the game's own upgrade into a unit few civs have, at its price (Houfnice)",
+      houf.get("base") == HOUFNICE and houf.get("upgrade", {}).get("cost")
+      == {{0: "food", 1: "wood", 2: "stone", 3: "gold"}[c.type]: c.amount for c in t787.resource_costs if c.amount > 0}, houf)
+check("an upgrade the tree has a node for is left to the node (Paladin), others offered (Savar)",
+      "Paladin" not in sug(CAVALIER) and "Savar" in sug(CAVALIER), list(sug(CAVALIER)))
+
+print()
+print("FAIL" if failures else "PASS", f"({failures} failure(s))")
+sys.exit(1 if failures else 0)

@@ -2365,6 +2365,9 @@ def _civ_present_units(civ_def: dict, dat: DatFile | None = None,
     in, and only the techs its cards and KM UU will copy count as its own.
     """
     present = set(_tree_unit_ids(civ_def))
+    # "+ Add Unit" lines built for this civ (added_lines.apply_added_lines).
+    if dat is not None and civ_index is not None:
+        present |= getattr(dat, "_ef_added_units", {}).get(civ_index, set())
     card_techs: set[int] = set()
     for entry in get_civ_bonuses(civ_def):
         if isinstance(entry, (list, tuple)) and entry:
@@ -3412,10 +3415,57 @@ def _editor_sid(dat: DatFile) -> int:
 
 _TRAIN_BUILDING_NAMES = {82: "Castle", 12: "Barracks", 101: "Stable", 87: "Archery Range"}
 
+def copy_unit_skin(ref, dst) -> None:
+    """Dress `dst` in `ref`'s art: _UNIT_SKIN_FIELDS, nothing else."""
+    for field in _UNIT_SKIN_FIELDS:
+        if isinstance(field, tuple):
+            a, b = getattr(dst, field[0], None), getattr(ref, field[0], None)
+            if a is not None and b is not None:
+                setattr(a, field[1], deepcopy(getattr(b, field[1])))
+        else:
+            setattr(dst, field, deepcopy(getattr(ref, field)))
+
+
+def skin_source_civ(dat: DatFile, civ_name: str):
+    """The civ named `civ_name`, as the game shipped it, or None."""
+    return next((c for c in [*_original_civs(dat).values(), *dat.civs] if c.name == civ_name), None)
+
+
+def unit_skins(dat: DatFile, uid: int) -> list[dict]:
+    """Other civs' own versions of one unit slot: same unit, their art and
+    their name — the Athenians' Trebuchet is the Palintonon, the Chronicles
+    civs' Knight the Lancer.  Only versions that differ from the Britons' in
+    both look and name, one per look.  The Monk is left out: its look is the
+    identity step's own choice (CLAUDE.md quirk 12).
+    [{civ (the one the build copies), civ_index, name, icon_id, civs (all with it)}]"""
+    from added_lines import chronicles_strings
+    if uid in _MONK_SKIN_UNITS:
+        return []
+    names, chron = _string_table(), chronicles_strings()
+    shown = lambda u: names.get(u.language_dll_name) or chron.get(u.language_dll_name)   # noqa: E731
+    base = _original_civ(dat, 1).units[uid] if uid < len(_original_civ(dat, 1).units) else None
+    if base is None:
+        return []
+    out: dict = {}                                   # look -> its entry, first civ first
+    for i in range(1, len(dat.civs)):
+        c = _original_civ(dat, i)
+        u = c.units[uid] if uid < len(c.units) else None
+        if u is None or u.standing_graphic == base.standing_graphic:
+            continue
+        nm = shown(u)
+        if not nm or nm == shown(base):
+            continue
+        key = tuple(u.standing_graphic) if isinstance(u.standing_graphic, (list, tuple)) else u.standing_graphic
+        entry = out.setdefault(key, {"civ": c.name, "civ_index": i, "name": nm,
+                                     "icon_id": u.icon_id, "civs": []})
+        entry["civs"].append(c.name)
+    return list(out.values())
+
+
 def _apply_unit_skin(dat: DatFile, civ_index: int, spec: dict,
                      extra_unit_strings: list | None) -> bool:
     # By vanilla name, and as shipped: a replaced slot keeps its vanilla name.
-    src = next((c for c in [*_original_civs(dat).values(), *dat.civs] if c.name == spec["source_civ"]), None)
+    src = skin_source_civ(dat, spec["source_civ"])
     if src is None:
         print(f"       WARNING: {spec['name']}: no {spec['source_civ']} civ in this DAT — skipped")
         return True
@@ -3424,13 +3474,7 @@ def _apply_unit_skin(dat: DatFile, civ_index: int, spec: dict,
         dst, ref = units[uid], src.units[uid]
         if dst is None or ref is None:
             continue
-        for field in _UNIT_SKIN_FIELDS:
-            if isinstance(field, tuple):
-                a, b = getattr(dst, field[0], None), getattr(ref, field[0], None)
-                if a is not None and b is not None:
-                    setattr(a, field[1], deepcopy(getattr(b, field[1])))
-            else:
-                setattr(dst, field, deepcopy(getattr(ref, field)))
+        copy_unit_skin(ref, dst)
     _name_chronicles_units(dat, civ_index, spec, {}, None, extra_unit_strings)
     cmds = []
     for uid, pct in spec.get("attack_bonus", {}).items():
@@ -3540,6 +3584,23 @@ _ROYAL_ELEPHANT        = 1180   # spare slot HLELAI
 _STEPPE_LANCER       = 1370
 _ELITE_STEPPE_LANCER = 1372
 _ROYAL_LANCER        = 1181   # spare slot HLETRIEN
+
+# What each card's unit is, in the tree editor's terms: the stats its setup
+# writes over the unit it copies, its upgrade's price, and its look.  The cards
+# and the tree's suggested upgrades (added_lines.suggested_upgrades) read this
+# one table.  The Imperial Scorpion's stronger pass-through bolts (projectile
+# 1113) are the card's alone: a tree tier can't edit a projectile.
+CARD_UPGRADE_UNITS: dict[int, dict] = {
+    308: {"from": _HEAVY_SCORPION, "name": "Imperial Scorpion",
+          "edits": {"hp": 60, "attack": 18},
+          "upgrade": {"cost": {"food": 1200, "wood": 1000}, "time": 150}},
+    309: {"from": _ELITE_BATTLE_ELEPHANT, "name": "Royal Battle Elephant",
+          "edits": {"hp": 330, "attack": 15, "pierce": 4},
+          "upgrade": {"cost": {"food": 1200, "gold": 1000}, "time": 200}},
+    310: {"from": _ELITE_STEPPE_LANCER, "name": "Royal Lancer",
+          "edits": {"hp": 100, "attack": 13}, "appearance": 1268,      # the Cuman Chief
+          "upgrade": {"cost": {"food": 1200, "gold": 900}, "time": 100}},
+}
 
 # Vanilla hotkey IDs for the predecessor tech at the same building/button slot.
 # AoE2 DE's hotkey binding is keyed per-tech (not per button position), so the
@@ -3691,12 +3752,13 @@ def _setup_imperial_scorpion_unit(dat: DatFile) -> None:
         u.language_dll_name     = IMP_SCORPION_NAME_SID
         u.language_dll_help     = _help_sid(IMP_SCORPION_NAME_SID)
         u.language_dll_creation = _creation_sid(IMP_SCORPION_NAME_SID)
-        u.hit_points = 60
+        e = CARD_UPGRADE_UNITS[308]["edits"]
+        u.hit_points = e["hp"]
         if u.type_50:
-            u.type_50.displayed_attack = 18
+            u.type_50.displayed_attack = e["attack"]
             for atk in u.type_50.attacks:
                 if atk.class_ == 3:   # ranged/pierce damage class
-                    atk.amount = 18
+                    atk.amount = e["attack"]
             u.type_50.projectile_unit_id = _IMP_SCORPION_PROJECTILE
         if u.creatable:
             u.creatable.secondary_projectile_unit = _IMP_SCORPION_PROJECTILE
@@ -3738,17 +3800,18 @@ def _setup_royal_battle_elephant_unit(dat: DatFile) -> None:
         u.language_dll_name     = ROYAL_ELEPHANT_NAME_SID
         u.language_dll_help     = _help_sid(ROYAL_ELEPHANT_NAME_SID)
         u.language_dll_creation = _creation_sid(ROYAL_ELEPHANT_NAME_SID)
-        u.hit_points = 330
+        e = CARD_UPGRADE_UNITS[309]["edits"]
+        u.hit_points = e["hp"]
         if u.type_50:
-            u.type_50.displayed_attack = 15
+            u.type_50.displayed_attack = e["attack"]
             for atk in u.type_50.attacks:
                 if atk.class_ == 4:   # melee damage class
-                    atk.amount = 15
+                    atk.amount = e["attack"]
             for arm in u.type_50.armours:
                 if arm.class_ == 3:   # pierce armour class
-                    arm.amount = 4
+                    arm.amount = e["pierce"]
         if u.creatable:
-            u.creatable.displayed_pierce_armour = 4
+            u.creatable.displayed_pierce_armour = e["pierce"]
         u.enabled = 0
         civ.units[_ROYAL_ELEPHANT] = u
 
@@ -3776,19 +3839,25 @@ def _setup_royal_lancer_unit(dat: DatFile) -> None:
         u.language_dll_name     = ROYAL_LANCER_NAME_SID
         u.language_dll_help     = _help_sid(ROYAL_LANCER_NAME_SID)
         u.language_dll_creation = _creation_sid(ROYAL_LANCER_NAME_SID)
-        u.hit_points = 100
+        e = CARD_UPGRADE_UNITS[310]["edits"]
+        u.hit_points = e["hp"]
         u.standing_graphic = (10510, 10511)
         u.dying_graphic = 10509
         if u.type_50:
-            u.type_50.displayed_attack = 13
+            u.type_50.displayed_attack = e["attack"]
             u.type_50.attack_graphic = 10508
             for atk in u.type_50.attacks:
                 if atk.class_ == 4:   # melee damage class
-                    atk.amount = 13
+                    atk.amount = e["attack"]
         if u.dead_fish:
             u.dead_fish.walking_graphic = 10513
         u.enabled = 0
         civ.units[_ROYAL_LANCER] = u
+
+
+def _card_upgrade_costs(bonus_id: int) -> list[tuple[int, int]]:
+    res = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
+    return [(res[r], a) for r, a in CARD_UPGRADE_UNITS[bonus_id]["upgrade"]["cost"].items()]
 
 
 def _add_upgrade_tier_tech(dat: DatFile, civ_index: int, *, name: str,
@@ -4215,6 +4284,8 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
                     if u < n_units and units[u] is not None}
         if kind == "uu":
             return set() if team else custom_bonus.with_forms({u for u in uu_ids if u >= 0})
+        if kind == "added_line":
+            return set() if team else set(getattr(dat, "_ef_added_lines", {}).get((civ_index, arg), ()))
         if kind == "techs":
             return tech_copies(arg)
         if kind == "researched_at":
@@ -5568,8 +5639,8 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _add_upgrade_tier_tech(
             dat, civ_index, name="Imperial Scorpion",
             from_units=[_SCORPION, _HEAVY_SCORPION], to_unit=_IMP_SCORPION,
-            prereq_tech=239, location=49, button=8, research_time=150,
-            icon_id=38, costs=[(0, 1200), (1, 1000)],
+            prereq_tech=239, location=49, button=8, research_time=CARD_UPGRADE_UNITS[308]["upgrade"]["time"],
+            icon_id=38, costs=_card_upgrade_costs(308),
             hot_key_id=_HEAVY_SCORPION_HOTKEY,
             name_sid=IMP_SCORPION_NAME_SID,
         )
@@ -5601,8 +5672,8 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _add_upgrade_tier_tech(
             dat, civ_index, name="Royal Battle Elephant",
             from_units=[_BATTLE_ELEPHANT, _ELITE_BATTLE_ELEPHANT], to_unit=_ROYAL_ELEPHANT,
-            prereq_tech=631, location=101, button=9, research_time=200,
-            icon_id=121, costs=[(0, 1200), (3, 1000)],
+            prereq_tech=631, location=101, button=9, research_time=CARD_UPGRADE_UNITS[309]["upgrade"]["time"],
+            icon_id=121, costs=_card_upgrade_costs(309),
             hot_key_id=_ELITE_BATTLE_ELEPHANT_HOTKEY,
             name_sid=ROYAL_ELEPHANT_NAME_SID,
         )
@@ -5624,8 +5695,8 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         _add_upgrade_tier_tech(
             dat, civ_index, name="Royal Lancer",
             from_units=[_STEPPE_LANCER, _ELITE_STEPPE_LANCER], to_unit=_ROYAL_LANCER,
-            prereq_tech=715, location=101, button=9, research_time=100,
-            icon_id=123, costs=[(0, 1200), (3, 900)],
+            prereq_tech=715, location=101, button=9, research_time=CARD_UPGRADE_UNITS[310]["upgrade"]["time"],
+            icon_id=123, costs=_card_upgrade_costs(310),
             hot_key_id=_ELITE_STEPPE_LANCER_HOTKEY,
             name_sid=ROYAL_LANCER_NAME_SID,
         )
@@ -6025,6 +6096,16 @@ def _tree_building_ids(civ_def: dict) -> set[int]:
         return {int(b) for b in (tree.get("buildings") or [])}
     if len(tree) > 1 and isinstance(tree[1], (list, tuple)):
         return {int(b) for b in tree[1]}
+    return set()
+
+
+def _tree_tech_ids(civ_def: dict) -> set[int]:
+    """Tech IDs from the civ's tree, for either civ_def format."""
+    tree = civ_def.get("tree") or []
+    if isinstance(tree, dict):
+        return {int(t) for t in (tree.get("techs") or [])}
+    if len(tree) > 2 and isinstance(tree[2], (list, tuple)):
+        return {int(t) for t in tree[2]}
     return set()
 
 
@@ -7995,6 +8076,11 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     _apply_uu_appearance(dat, civ_index, civ_def,
                          tuple(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0), warnings)
 
+    # 6d. The tree page's "+ Add Unit" lines — before the cards, so class and
+    #     "Trained at" cards reach the new units.
+    import added_lines
+    _added = added_lines.apply_added_lines(dat, civ_index, civ_def, warnings)
+
     # 7. Apply bonuses from catalog.
     bonus_results: dict = {"applied": 0, "skipped": [], "team_applied": 0, "team_total": 0,
                            "extra_tech_strings": [], "extra_unit_strings": []}
@@ -8009,6 +8095,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                                      uu_id, elite_uu_id)
     bonus_results["extra_unit_strings"].extend(km_uu_custom_unit_strings)
     bonus_results.setdefault("extra_tech_strings", []).extend(km_uu_extra_tech_strings)
+    for _line in _added:
+        bonus_results["extra_unit_strings"].extend(_line["strings"][0])
+        bonus_results["extra_tech_strings"].extend(_line["strings"][1])
 
     # 6b. Tree units whose unlock techs are locked to another civ in THIS DAT.
     #     A tree node only opts in (type=8), which can't reach a civ-gated tech
@@ -8059,6 +8148,12 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # 7b. Lock every global opt-in tech this civ never claimed.  After bonuses,
     #     so bonus-added type=8 opt-ins are already visible and stay exempt.
     _n_locked = _lock_unclaimed_optin_techs(dat, civ_index, civ_def)
+    # 7b'. Added lines join their role's line for effects too: whatever names
+    #      the Spearman line by id (cards, UTs, Supplies...) reaches them.
+    if _added:
+        _n_member = added_lines.extend_line_membership(dat, civ_index, _added)
+        if _n_member:
+            print(f"       Added lines: {_n_member} command(s) copied from their AI lines' targets")
     if _n_locked:
         print(f"       Opt-in lockdown: {_n_locked} unclaimed regional techs disabled")
 
@@ -8170,6 +8265,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         "uu_id":                    uu_id,
         "elite_uu_id":              elite_uu_id,
         "button_layout":            button_layout,
+        # "+ Add Unit" lines: units, techs, names, AI role — read by the F2
+        # tree patch and the AI files (added_lines module docstring).
+        "added_lines":              [{k: v for k, v in ln.items() if k != "strings"} for ln in _added],
         # The two effects that can't be split, for the results page's red alert.
         "command_counts":           {"tech_tree": _tt_cmd_count, "team_bonus": _tb_cmd_count,
                                      "soft_limit": _EFFECT_COMMAND_SOFT_LIMIT},

@@ -44,6 +44,7 @@ from civ_appender import (
     get_km_uu_index, _KM_UU_NAMES,
 )
 from civ_overrides import apply_civ_with_overrides
+from civ_schema import norm_added_lines
 from dat_reader import load_dat
 import custom_bonus
 
@@ -107,6 +108,8 @@ def _draft_to_civ_def(draft: dict) -> dict:
         "custom_bonuses":        draft.get("custom_bonuses") or [],
         # Library cards picked as team bonuses (#54) — _apply_placed_cards.
         "custom_team_bonuses":   draft.get("custom_team_bonuses") or [],
+        # The tree page's "+ Add Unit" lines — added_lines.apply_added_lines.
+        "added_lines":           norm_added_lines(draft.get("added_lines")),
     }
     # A Custom UT's library cards (#75), read by civ_appender.get_ut_cards.  The
     # same shape the draft and saved files use; `effects` mirrors bonuses[2]/[3]
@@ -235,6 +238,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
             # The civ's own UTs, for civilizations.json (patch_civilizations_list).
             "castle_ut_tech_id": civ_result.get("castle_ut_tech_id"),
             "imp_ut_tech_id":    civ_result.get("imp_ut_tech_id"),
+            # "+ Add Unit" lines: their AI role (added_lines.patch_unitline_roles).
+            "added_lines":       civ_result.get("added_lines") or [],
             "uu_name_sid":        uu_info["dll_name"] if uu_info else None,
             "uu_desc_sid":        uu_info["dll_help"] if uu_info else None,
         }

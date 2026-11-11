@@ -420,6 +420,7 @@ def dat_json_files(dat_path, civs_overrides: dict,
     the civ keeps the replaced civ's unique unit line (the AI then can't find
     a custom UU — see patch_unitlines)."""
     from build_civ import _find_adjacent_json
+    from added_lines import patch_unitline_roles
     from civ_appender import patch_future_units, patch_unitlines
     out: dict[str, bytes] = {}
     if not civs_overrides:
@@ -442,9 +443,13 @@ def dat_json_files(dat_path, civs_overrides: dict,
         try:
             lines_doc = json.loads(lines_path.read_text(encoding="utf-8"))
             added = patch_unitlines(lines_doc.setdefault("UnitLines", []), civ_list, civs_overrides)
-            if added:
+            joined = patch_unitline_roles(lines_doc["UnitLines"], civs_overrides)
+            if added or joined:
                 out["unitlines.json"] = json.dumps(lines_doc, indent=2, ensure_ascii=False).encode("utf-8")
+            if added:
                 print(f"  unitlines.json: a unique-unit line for slot(s) {added}")
+            if joined:
+                print(f"  unitlines.json: {joined} added unit(s) joined their AI lines")
         except Exception as e:                               # noqa: BLE001
             print(f"  WARNING: Could not patch unitlines.json: {e}")
     else:
@@ -834,6 +839,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
             # The civ's own UTs, for civilizations.json (patch_civilizations_list).
             "castle_ut_tech_id": civ_result.get("castle_ut_tech_id"),
             "imp_ut_tech_id":    civ_result.get("imp_ut_tech_id"),
+            # "+ Add Unit" lines: their AI role (added_lines.patch_unitline_roles).
+            "added_lines":       civ_result.get("added_lines") or [],
             "uu_name_sid":   uu_info["dll_name"] if uu_info else None,
             "uu_desc_sid":   uu_info["dll_help"] if uu_info else None,
         }
