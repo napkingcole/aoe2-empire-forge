@@ -612,7 +612,7 @@ function _useTypeKey(useType) {
 }
 
 function _isSelected(item) {
-    if (item.added || item.add) return true;     // added lines are in by being there
+    if (item.added || item.add || item.uu) return true;     // added lines and unique units are in by being there
     if (item.use_type === 'Building' && HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) return true;
     const key = _useTypeKey(item.use_type);
     if (!key) return true;  // unknown types treated as always-selected
@@ -1041,8 +1041,9 @@ function _disableBuildingItems(building, element_height) {
 }
 
 function _toggleNode(item, element_height) {
-    // An added line is removed from its panel, and a "+" only adds.
-    if (item.added || item.add) return;
+    // An added line is removed from its panel, a "+" only adds, and a unique
+    // unit is changed or removed from its own.
+    if (item.added || item.add || item.uu) return;
     // A real unit a "+" added: off takes it out (its Elite with it), so its
     // node goes; the "+" brings it back.
     // A replacement (the Savar for the Paladin) gives the line back.
@@ -1244,6 +1245,18 @@ function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
     }
 
     const name = _nodeName(itemToDraw);
+    if (itemToDraw.uu) {
+        const { slot, n } = itemToDraw.uu;
+        const chosen = window.efUU?.has(slot);
+        const what = slot === 'second_uu' ? 'Your second unique unit' : 'Your unique unit';
+        content.innerHTML = `<div style="font-weight:700;font-size:13px;">${_esc(String(name).replace(/\n/g, ' '))}</div>
+            <div style="margin-top:4px;font-size:11px;opacity:.8;">${n ? `${what}'s Elite upgrade, at the Castle.`
+                : chosen ? `${what}. Click to change it, its stats and its look.` : 'Click to choose your unique unit.'}</div>`;
+        document.getElementById('helptext__advanced_stats').innerHTML = '';
+        panel.style.display = 'block';
+        _placeEditTooltip(panel, svgNodeLeft, svgX, svgY);
+        return;
+    }
     const idParts = itemToDraw.id.split('_');  // e.g. ["Unit","4","87"]
     const dataType = idParts[0];               // "Unit", "Tech", "Building"
     const dataId   = idParts[1];
@@ -1385,6 +1398,8 @@ function _drawAddSlot(slot, element_height, draw) {
     const g = draw.group().attr({ id: slot.id }).addClass('node tt-add-slot');
     const x = slot.x, y = slot.y, s = element_height;
     g.rect(s, s).attr({ id: `${slot.id}_bg`, fill: '#000', 'fill-opacity': 0.15 }).move(x, y).addClass('tt-add-bg');
+    // The Castle has its one extra unit: the "+" stays, greyed, to say why not.
+    if (slot.add.full) g.addClass('is-full');
     const arm = s * 0.36, w = Math.max(2, s * 0.042);   // ~6px at the usual node size
     g.rect(arm, w).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - arm) / 2, y + (s - w) / 2);
     g.rect(w, arm).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - w) / 2, y + (s - arm) / 2);
@@ -1396,7 +1411,9 @@ function _drawAddSlot(slot, element_height, draw) {
         .mouseover(() => column().forEach(el => { if (el.id !== slot.id) el.classList.add('is-dim'); }))
         .mouseout(() => column().forEach(el => el.classList.remove('is-dim')))
         .click(() => window.ttInspector?.select(slot, element_height));
-    g.element('title').words(`Add a unit to the ${slot.add.buildingName} in the ${['Dark', 'Feudal', 'Castle', 'Imperial'][slot.add.age - 1]} Age`);
+    g.element('title').words(slot.add.full
+        ? 'The Castle has its extra unit. What if I want more? Click to see.'
+        : `Add a unit to the ${slot.add.buildingName} in the ${['Dark', 'Feudal', 'Castle', 'Imperial'][slot.add.age - 1]} Age`);
 }
 
 function drawItem(itemToDraw, element_height, tree_height, draw) {
@@ -1532,6 +1549,9 @@ const COMMON_CASTLE_TECH_IDS = new Set([315, 379, 408, 321]); // Conscription, H
 function _stripCastleUuAndUt(treeData) {
     const utIndex = {};
     for (const ut of treeData.units_techs) utIndex[ut.id] = ut;
+    // A layout's unique-unit nodes are another civ's: gone.  In the editor the
+    // Castle gets tiles for the civ's own instead (the user, 2026-11-13).
+    const uu = _canEdit && window.efUU ? window.efUU : null;
     for (const b of treeData.buildings) {
         if (b.name !== 'Castle') continue;
         for (let r = 0; r < b.grid.length; r++) {
@@ -1546,15 +1566,46 @@ function _stripCastleUuAndUt(treeData) {
                 }
             }
         }
+        if (!uu) continue;
+        // Our own tiles, in new columns at the Castle's left: the unit in the
+        // Castle Age row, its Elite one row below, as on every Castle.  (The
+        // full-tree layouts have no unique-unit nodes to reuse.)
+        const rows = b.grid.length;
+        const rowOf = a => { const r = (a - 1) * 2; return r <= b.row ? b.row + 1 : r; };
+        const at = [rowOf(3), Math.max(rowOf(4), rowOf(3) + 1)];
+        const slots = uu.has('second_uu') ? ['unique_unit', 'second_uu'] : ['unique_unit'];
+        for (let r = 0; r < rows; r++) b.grid[r].splice(0, 0, ...slots.map(() => null));
+        slots.forEach((slot, c) => {
+            const key = slot === 'second_uu' ? 'uu2' : 'uu1';
+            [0, 1].forEach(n => {
+                if (at[n] >= rows) return;
+                const id = `Unit_${key}_${n}_${b.node_id}`;
+                treeData.units_techs.push({
+                    id, node_id: `${key}.${n}`, building_id: b.node_id, use_type: 'Unit', node_type: 'UniqueUnit',
+                    link_id: n ? `${key}.0` : null, link_node_type: n ? 'UniqueUnit' : 'BuildingTech',
+                    picture_index: 0, age_id: n ? 4 : 3, row: at[n],
+                    uu: { slot, n }, name: '', name_string_id: -1, help_string_id: -1,
+                    image_url: uu.image(slot),
+                });
+                b.grid[at[n]][c] = id;
+            });
+        });
     }
 }
 
+// The Castle's one extra unit (civ_appender._apply_second_uu, added_lines):
+// a second unique unit, or one line added there.
+function _castleFull() {
+    if (window.efUU?.has('second_uu')) return true;
+    const lines = window.ttInspector ? window.ttInspector.addedLines() : [];
+    return lines.some(l => l.building === 82 && l.from == null && l.replaces == null);
+}
+
 // ── "+ Add Unit" (added_lines.py) ────────────────────────────────────────────
-// Buildings that can take an added line; the Castle's second unit is the
-// unique-unit step's.
+// Buildings that can take an added line.
 const _ADD_LINE_BUILDINGS = new Set([12, 87, 101, 49, 45, 104, 109, 82]);
-// At the Castle the "+" adds siege only (the user, 2026-11-11): a unit there is
-// the unique unit step's business.  No upgrade after or replacement either.
+// The Castle's "+" adds its one extra unit (the user, 2026-11-13): a second
+// unique unit, or any unit as a line.  No upgrade after or replacement there.
 const _SIEGE_ONLY_BUILDINGS = new Set([82]);
 
 // The game's own units a "+" added (added_lines.real_units): in the tree as
@@ -1804,7 +1855,8 @@ function _applyAddedLines(treeData) {
                 treeData.units_techs.push({
                     id, node_id: id, building_id: b.node_id, use_type: 'Add', node_type: 'AddSlot',
                     link_id: null, age_id: age, row, name: '', name_string_id: -1,
-                    add: { building: b.node_id, age, buildingName: name },
+                    add: { building: b.node_id, age, buildingName: name,
+                           full: b.node_id === 82 && _castleFull() },
                 });
                 col[row] = id;
             }
@@ -2268,6 +2320,11 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         .tt-add-slot:hover .tt-add-bg { fill-opacity: .32; }
         .tt-add-slot.is-dim .tt-add-bg { fill-opacity: .06; }
         .tt-add-slot.is-dim { opacity: .55; }
+        .tt-add-slot.is-full { opacity: .35; }
+        /* The Unique Unit step's panels, moved into the side panel: one column. */
+        .tt-uu-host .col-md-6 { flex: 0 0 100%; max-width: 100%; }
+        .tt-uu-host .card { margin-top: 10px; }
+        .tt-add-slot.is-full:hover { opacity: .6; }
         .tt-insp-search { width: 100%; margin: 6px 0 2px; box-sizing: border-box; }
         .tt-insp-picks { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
         .tt-insp-pick { display: flex; align-items: center; gap: 8px; padding: 3px 6px; text-align: left;
@@ -2397,6 +2454,7 @@ function _saveTechTree() {
 }
 
 function _closeTreeOverlay() {
+    window.efUU?.unmount();          // the unique-unit panels go back to their step
     const container = document.getElementById('tt-container');
     if (container) container.remove();
     document.getElementById('tt-tree-styles')?.remove();

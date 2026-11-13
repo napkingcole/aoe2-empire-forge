@@ -2427,9 +2427,12 @@ def button_layout_preview(dat: DatFile, civ_def: dict, tree_techs: set[int]) -> 
     it is global and not an unticked tree node, or belongs to an unlock card.
     Reads the (shared, cached) DAT and never writes it.
 
-    One known gap: units the civ's own techs place in a building in-game
-    (Anarchy's UU in the Barracks) only exist once the civ is built, so they are
-    not in the preview; the build still resolves them, with the default order.
+    Known gaps: units the civ's own techs place in a building in-game
+    (Anarchy's UU in the Barracks) only exist once the civ is built, and the
+    hero and a second unique unit are moved to their Castle buttons by the
+    build (_place_hero, _apply_second_uu), so none are in the preview; the build
+    still resolves them, with the default order (the second unique unit keeps
+    button 4, the hero goes to page 2).
 
     Returns one entry per building with a clash: its conflicts (each slot's
     lines, current winner first) and both pages as 15 cells each.

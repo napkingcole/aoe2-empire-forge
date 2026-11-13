@@ -45,14 +45,14 @@ raw = [
                {"age": 2},                                # back an age: dropped
                {"age": 4}, {"age": 4}]},
     {"id": 1, "building": 12, "base": 93, "tiers": [{"age": 2}]},       # duplicate id
-    {"id": 2, "building": 82, "base": 4, "tiers": [{"age": 2}]},        # the Castle: UU step
+    {"id": 2, "building": 82, "base": 4, "tiers": [{"age": 3}]},        # the Castle: its one extra unit (2026-11-13)
     {"id": 3, "building": 87, "base": "lizard", "tiers": [{"age": 2}]},
     {"id": 4, "building": 87, "base": 4, "tiers": []},
     {"id": 5, "building": 87, "base": 4, "role": 7, "tiers": [{"age": 9}, {"age": 1}]},
     "junk", None,
 ]
 n = norm_added_lines(raw)
-check("only valid lines survive", [l["id"] for l in n] == [1, 5], [l["id"] for l in n])
+check("only valid lines survive", [l["id"] for l in n] == [1, 2, 5], [l["id"] for l in n])
 t = n[0]["tiers"]
 check("ages never go back, at most two tiers an age, at most 4 tiers", [x["age"] for x in t] == [2, 3, 3, 4], t)
 check("names cleaned; edits keep stats, not names",
@@ -60,7 +60,7 @@ check("names cleaned; edits keep stats, not names",
 check("tier 1 has no upgrade; costs clamp", "upgrade" not in t[0]
       and t[1]["upgrade"] == {"cost": {"food": 0, "wood": 0, "stone": 0, "gold": 50}, "time": 30}, t[1])
 check("a role outside unitlines' range is dropped; age 9 clamps to Imperial",
-      n[1]["role"] is None and [x["age"] for x in n[1]["tiers"]] == [4], n[1])
+      n[2]["role"] is None and [x["age"] for x in n[2]["tiers"]] == [4], n[2])
 check("saves and loads", to_draft(from_draft({"added_lines": raw}))["added_lines"] == n)
 x = norm_added_lines([{"id": 1, "building": 87, "base": 6, "from": "6",
                        "tiers": [{"age": 4, "upgrade": {"time": 50}}]}])

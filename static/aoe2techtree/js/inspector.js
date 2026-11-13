@@ -91,6 +91,7 @@
             && !(item.node_type === 'UniqueUnit' && /_82$/.test(item.id));
     }
     function nameOf(item) {
+        if (item.uu) return window.efUU ? window.efUU.name(item.uu.slot, item.uu.n) : '';
         if (item.added) return tierName(item.node_id);
         return canRename(item) ? (unitEdit(item.node_id).name || '') : '';
     }
@@ -613,7 +614,6 @@
         ['ships', 'Ships', [2, 20, 21, 22]],
     ];
     // What the Castle's "+" offers: siege weapons and scorpions (the Kind filter's "Siege").
-    const SIEGE_CLASSES = KINDS.find(k => k[0] === 'siege')[2];
     let pickerEl = null, pickerModal = null;
     const pickerState = { group: null, kind: 'all', q: '' };
 
@@ -855,18 +855,20 @@
             <div class="tt-insp-note">${line
                 ? 'Every tier is a copy of this unit; your edits stay.'
                 : siegeOnly
-                ? 'Pick a siege weapon: it becomes a new line, copied, starting in this age. Castle units are chosen on the unique unit step.'
+                ? 'The Castle trains one more unit of yours beside your unique unit: a second unique unit, or any unit as a new line, copied, starting in this age.'
                 : 'Pick a unit. A regional one joins as the game\'s own; any other becomes a new line, copied, starting in this age, that you can add tiers to, rename and change.'}</div>
-            <button type="button" class="tt-insp-reset" id="tt-pick-open">Choose a unit…</button>`;
+            ${siegeOnly && !line ? '<button type="button" class="tt-insp-reset" id="tt-pick-uu2">A second unique unit…</button>' : ''}
+            <button type="button" class="tt-insp-reset" id="tt-pick-open">${siegeOnly && !line ? 'Any other unit…' : 'Choose a unit…'}</button>`;
+        panel.querySelector('#tt-pick-uu2')?.addEventListener('click', () => window.efUU?.pick('second_uu'));
         const open = () => openUnitPicker({
             title: line ? 'Change the base unit' : `Add a unit to the ${ctx.buildingName || 'building'}`,
             sub: line ? 'Every tier is a copy of this unit; your edits stay.'
-                : siegeOnly ? `Siege weapons only, starting in the ${AGE_NAMES[ctx.age - 1]}: a copy you can change. Your unique unit is chosen on its own step.`
+                : siegeOnly ? `Starting in the ${AGE_NAMES[ctx.age - 1]}: a copy you can change, with tiers after it. Heroes train like any unit here, without hero rules.`
                 : `Starting in the ${AGE_NAMES[ctx.age - 1]}. The units above are added as the game's own, with their Elite upgrade; any other is a copy you can change. Heroes train like any unit here, without hero rules.`,
             building: ctx.building, current: line ? line.base : null,
             suggested: line || siegeOnly ? null : realFor(ctx.building).then(rs => rs.filter(r => !_localtree.units.includes(r.base))),
             suggestTitle: 'Regional units here',
-            classes: siegeOnly ? SIEGE_CLASSES : null,
+            classes: null,
             onCancel: line ? back : null,
             onPick: (base, preset) => {
                 if (!line && preset && preset.source === 'real') {
@@ -891,7 +893,8 @@
             },
         });
         panel.querySelector('#tt-pick-open').addEventListener('click', open);
-        open();
+        // The Castle asks first: a second unique unit, or any other unit.
+        if (!(siegeOnly && !line)) open();
     }
 
     // Do these tier ages fit the column?  Each age has two rows (one where the
@@ -1174,6 +1177,7 @@
 
     // ── rendering ───────────────────────────────────────────────────────────
     function mount(el) {
+        window.efUU?.unmount();          // before the panel's contents go
         panel = el;
         if (window.getDatPath) stepsRequest(null);       // start the build now
         loadLines();
@@ -1256,9 +1260,62 @@
 
     function later() { setTimeout(render, 0); window._ttCommit?.(); }
 
+    // The Castle's unique units (builder.js window.efUU): the Unique Unit step's
+    // own panels, moved in.  The first is always there; a second is optional.
+    function renderUU(item) {
+        const u = window.efUU;
+        if (!u) return mount(panel);
+        const { slot, n } = item.uu;
+        const chosen = u.has(slot), second = slot === 'second_uu';
+        panel.innerHTML = `<div class="tt-insp-head">
+                <img class="tt-insp-icon" src="${esc(u.image(slot))}" alt="">
+                <div>
+                    <div class="tt-insp-title">${esc(u.name(slot, 0))}</div>
+                    <div class="tt-insp-kind">${second ? 'Second unique unit' : 'Unique unit'} · Castle${n ? ' · its Elite upgrade' : ''}</div>
+                </div>
+            </div>
+            <div class="tt-insp-note">${second
+                ? 'Trained at the Castle beside your first unique unit, its Elite upgrade below it. Unique techs and cards for "the unique unit", like Anarchy, reach both.'
+                : 'Your civilization\'s own unit, trained at the Castle, its Elite upgrade below it in the Imperial Age.'}</div>
+            <button type="button" class="tt-insp-reset" id="tt-uu-pick">${chosen ? 'Change unit…' : 'Choose a unit…'}</button>
+            ${second ? '<button type="button" class="tt-insp-reset" id="tt-uu-remove">Remove the second unique unit</button>' : ''}
+            <div id="tt-uu-host" class="tt-uu-host"></div>`;
+        panel.querySelector('#tt-uu-pick').addEventListener('click', () => u.pick(slot));
+        const rm = panel.querySelector('#tt-uu-remove');
+        rm?.addEventListener('click', () => {
+            if (!rm.dataset.armed) {
+                rm.dataset.armed = '1';
+                rm.textContent = 'Click again to remove it';
+                return;
+            }
+            u.remove(slot);
+        });
+        if (chosen) u.mount(panel.querySelector('#tt-uu-host'), slot);
+    }
+
+    // The Castle's "+" once it has its extra unit.
+    function renderCastleFull() {
+        panel.innerHTML = `<div class="tt-insp-head"><div>
+                <div class="tt-insp-title">What if I want more?</div>
+                <div class="tt-insp-kind">Castle</div>
+            </div></div>
+            <div class="tt-insp-note">A civilization trains two units of its own at the Castle: its unique unit and one
+                more, a second unique unit or a unit you add here. Both fit on the Castle's first page without moving
+                anything players already know.</div>
+            <div class="tt-insp-note">Want a third? Add it to another building with its <b>+</b>. It gets its own
+                upgrades, and you can tell the computer player how to use it.</div>
+            <div class="tt-insp-note">Need more at the Castle itself? That means rearranging the Castle: shared
+                technologies like Conscription and Hoardings would move to its second page as copies, and the computer
+                player likely wouldn't research them. You can do it yourself with a script after the build:
+                <a href="https://empireforge.app/extend/" target="_blank" rel="noopener">Extend your mod</a>.</div>`;
+    }
+
     async function render() {
         if (!panel || !current) return;
+        window.efUU?.unmount();          // the unique-unit panels survive a redraw
         const { item } = current;
+        if (item.uu) return renderUU(item);
+        if (item.add && item.add.full) return renderCastleFull();
         if (item.add) return renderPicker(item);
         if (item.added) return renderAdded(item);
         const focused = focusKey(document.activeElement);
@@ -1677,6 +1734,8 @@
         select,
         decorate,
         refresh: () => { if (current) render(); },
+        // Open this node once the tree is redrawn (a second unique unit just picked).
+        focus(id) { if (current) current = { item: { id }, element_height: current.element_height }; },
         rebind(items, element_height) {
             if (!current) return;
             const again = items.find(i => i.id === current.item.id);

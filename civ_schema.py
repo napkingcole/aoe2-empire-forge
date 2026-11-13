@@ -133,14 +133,10 @@ def to_draft(schema: dict) -> dict:
     Convert a civbuilder_v1 JSON dict into the wizard draft format expected by
     _draft_to_civ_def, _apply_uu_overrides, and _override_ut_costs.
 
-    Unknown / Phase-Two keys (unit_overrides, button_moves, free_techs, second_uu)
-    are passed through unchanged so future handlers can
-    act on them without schema changes.
-
-    When second_uu is implemented, build it on km_custom_uu.append_km_custom_uu
-    — it already appends new units to every civ's array and wires the make-avail
-    and elite-upgrade techs with the string-id arithmetic CLAUDE.md quirk 8
-    depends on.
+    Unknown / Phase-Two keys (unit_overrides, button_moves, free_techs) are
+    passed through unchanged so future handlers can act on them without schema
+    changes.  second_uu is a second unique unit (norm_second_uu), built by
+    civ_appender._apply_second_uu.
     """
     s = _clean(schema)
 

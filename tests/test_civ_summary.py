@@ -74,6 +74,16 @@ check("unique techs in the game's form",
       [t["text"] for t in s["unique_techs"]] == ["Steel Wargear (Upgrades wargear)", "Hard Steel (Infantry +2 armor)"],
       f"{[t['text'] for t in s['unique_techs']]}")
 check("hero", s["hero"] == {"name": "Palintonon", "description": "A hero."})
+check("no second unique unit, none shown", s["second_unique_unit"] is None)
+two = cs.summarize(dict(copy.deepcopy(CIV), second_uu={"km_idx": 31, "name": "Druzhina",
+                                                     "overrides": {"hp_base": 123}}),
+                   UU_CATALOG + [{"km_idx": 31, "name": "Konnik", "stats": {"base": {"hp": 100}, "elite": {"hp": 120}}}],
+                   TECHTREE)
+u2 = two["second_unique_unit"] or {}
+check("a second unique unit: its name, base and overridden stats",
+      u2.get("name") == "Druzhina" and u2.get("base_name") == "Konnik"
+      and next(r for r in u2["stats"] if r["label"] == "HP")["base"] == 123, u2)
+check("...and in the text copy", "Druzhina" in cs.to_text(two) and "UNIQUE UNITS" in cs.to_text(two))
 
 print("\n=== tech tree ===")
 tt = {b["building"]: b for b in s["tech_tree"]["buildings"]}

@@ -202,6 +202,8 @@ def summarize(schema: dict, uu_catalog: list[dict], techtree: dict) -> dict:
 
     uu = schema.get("unique_unit") or {}
     entry = next((e for e in uu_catalog if e.get("km_idx") == uu.get("km_idx")), None)
+    uu2 = schema.get("second_uu") if isinstance(schema.get("second_uu"), dict) else {}
+    entry2 = next((e for e in uu_catalog if e.get("km_idx") == uu2.get("km_idx")), None) if uu2 else None
     hero = schema.get("hero_unit") if isinstance(schema.get("hero_unit"), dict) else None
     hero_block = None
     if hero and hero.get("base_unit_id") is not None:
@@ -218,6 +220,7 @@ def summarize(schema: dict, uu_catalog: list[dict], techtree: dict) -> dict:
         "emblem": schema.get("emblem") if str(schema.get("emblem") or "").startswith("data:image") else "",
         "civ_bonuses": civ_bonuses,
         "unique_unit": _unit_block(entry, uu),
+        "second_unique_unit": _unit_block(entry2, uu2) if entry2 else None,
         "unique_techs": _uts(schema, civ_def),
         "team_bonuses": team,
         "hero": hero_block,
@@ -262,7 +265,10 @@ def _render(s: dict, md: bool) -> str:
     if s["civ_bonuses"]:
         out += ["", h("Civilization bonuses")] + [bullet + x for x in s["civ_bonuses"]]
     if s["unique_unit"]:
-        out += ["", h("Unique unit")] + _unit_lines(s["unique_unit"], md, s.get("show_unit_stats", True))
+        out += ["", h("Unique units" if s.get("second_unique_unit") else "Unique unit")]
+        out += _unit_lines(s["unique_unit"], md, s.get("show_unit_stats", True))
+        if s.get("second_unique_unit"):
+            out += [""] + _unit_lines(s["second_unique_unit"], md, s.get("show_unit_stats", True))
     if s["unique_techs"]:
         out += ["", h("Unique technologies")] + [
             f"{bullet}{t['age']}: {t['text']}" if t.get("age") else f"{bullet}{t['text']}"

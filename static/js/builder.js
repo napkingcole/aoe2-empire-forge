@@ -88,6 +88,9 @@ let maxStep     = 1;  // highest step ever reached — gates nav dot clicks
 // ── Step navigation ───────────────────────────────────────────────────────────
 
 function showStep(n) {
+  // Step 5 (Unique Unit) moved onto the tech tree's Castle (2026-11-13): its
+  // panel stays as the panels' parking spot, and the steps go round it.
+  if (n === 5) n = currentStep > 5 ? 4 : 6;
   document.querySelectorAll(".wizard-panel").forEach(p => p.classList.add("d-none"));
   document.getElementById(`panel-${n}`).classList.remove("d-none");
 
@@ -121,7 +124,7 @@ function showStep(n) {
     }
   }
   if (n === 1) renderScene();      // a card picked since (460) can change it
-  if (n === 2) warmTreeSteps();
+  if (n === 2) { warmTreeSteps(); updateUUSummary(); }
   if (n === 6 || n === 7) initUTPanel(n);
 
   const btnPrev = document.getElementById("btn-prev");
@@ -139,7 +142,7 @@ function showStep(n) {
     btnNext.disabled  = false;
   }
 
-  document.getElementById("step-counter").textContent = `Step ${n} of ${TOTAL_STEPS}`;
+  document.getElementById("step-counter").textContent = `Step ${n > 5 ? n - 1 : n} of ${TOTAL_STEPS - 1}`;
   currentStep = n;
 
   if (n === 8) loadHeroCatalog().then(() => { renderHeroGrid(); _heroRefreshUI(); });
@@ -197,7 +200,7 @@ function validateStep(n) {
     }
     showArchError(false);
   }
-  if (n === 5) {
+  if (n === 2) {
     if (!draft.unique_unit || draft.unique_unit.km_idx == null) {
       showUUError(true);
       return false;
@@ -234,15 +237,27 @@ function validateStep(n) {
 }
 
 function showUUError(show) {
-  let err = document.getElementById("uu-error");
-  if (!err && show) {
-    err = document.createElement("div");
-    err.id = "uu-error";
-    err.className = "text-danger small mt-2";
-    err.textContent = "Please select a Unique Unit before continuing.";
-    document.getElementById("uu-grid").after(err);
-  }
-  if (err) err.style.display = show ? "" : "none";
+  updateUUSummary(show);
+}
+
+// The Tech Tree step's line about the unique units, chosen on the tree's Castle.
+function updateUUSummary(error = false) {
+  const el = document.getElementById("uu-summary");
+  if (!el) return;
+  const one = slot => {
+    const u = window.efUU?.unit(slot);
+    if (!u) return "";
+    return `<span class="d-inline-flex align-items-center gap-2 me-3">
+      <img src="${window.efUU.image(slot)}" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:4px;">
+      <span><span class="fw-semibold">${_esc(window.efUU.name(slot, 0))}</span>
+      <span class="text-muted small">${slot === "second_uu" ? "second unique unit" : "unique unit"}</span></span></span>`;
+  };
+  const have = one("unique_unit") + one("second_uu");
+  el.innerHTML = have
+    ? `<div class="small">${have}<span class="text-muted">Change them at the Castle in the tech tree.</span></div>`
+    : `<div class="small ${error ? "text-danger fw-semibold" : "text-muted"}">
+        <i class="fa-solid fa-hand-fist me-1"></i>Choose your unique unit: open the tech tree and click the
+        unique-unit tile at the Castle. You can add a second one there too.</div>`;
 }
 
 function showArchError(show) {
@@ -995,20 +1010,23 @@ function populateReview() {
 
   // ── UU ──────────────────────────────────────────────────────────────────
   let uuHtml = "<em class='text-danger'>Not set</em>";
-  if (draft.unique_unit?.km_idx != null) {
-    const base     = _uuCatalog.find(u => u.km_idx === draft.unique_unit.km_idx);
-    const baseName = base?.name || `Unit #${draft.unique_unit.km_idx}`;
+  for (const slot of ["unique_unit", "second_uu"]) {
+    const uu = draft[slot];
+    if (uu?.km_idx == null) continue;
+    if (slot === "unique_unit") uuHtml = "";
+    const base     = _uuCatalog.find(u => u.km_idx === uu.km_idx);
+    const baseName = base?.name || `Unit #${uu.km_idx}`;
     const iconSrc  = base?.icon || UU_PLACEHOLDER;
-    const override = draft.unique_unit.name;
+    const override = uu.name;
     const display  = override || baseName;
-    const lookId   = draft.unique_unit.appearance;
+    const lookId   = uu.appearance;
     const lookName = lookId == null ? null
       : (_HERO_NAMES[lookId] || _uuCatalog.find(u => u.preview_unit === lookId)?.name
          || _uuLooks.looks.find(l => l.id === lookId)?.name || `Unit #${lookId}`);
     const subtitle = (override ? `<div class="text-muted" style="font-size:.7rem;">base: ${baseName}</div>` : "")
       + (lookName ? `<div class="text-muted" style="font-size:.7rem;">looks like: ${_esc(lookName)}</div>` : "");
-    const _uuRevImg = `<img id="uu-review-icon" src="${iconSrc}" style="width:32px;height:32px;object-fit:contain;background:oklch(from var(--body-bg) calc(l+0.06) c h);border-radius:4px;">`;
-    uuHtml = `<div class="d-flex align-items-center gap-2">${_uuRevImg}<div><div>${display}</div>${subtitle}</div></div>`;
+    const _uuRevImg = `<img ${slot === "unique_unit" ? 'id="uu-review-icon" ' : ""}src="${iconSrc}" style="width:32px;height:32px;object-fit:contain;background:oklch(from var(--body-bg) calc(l+0.06) c h);border-radius:4px;">`;
+    uuHtml += `<div class="d-flex align-items-center gap-2${slot === "second_uu" ? " mt-2" : ""}">${_uuRevImg}<div><div>${display}</div>${subtitle}</div></div>`;
   }
 
   // ── UT helper ───────────────────────────────────────────────────────────
@@ -1074,7 +1092,7 @@ function populateReview() {
       </div>
       <div class="col-md-3">
         <div class="card h-100">
-          <div class="card-header small fw-semibold"><i class="fa-solid fa-hand-fist me-1" style="color:var(--accent-2)"></i>Unique Unit</div>
+          <div class="card-header small fw-semibold"><i class="fa-solid fa-hand-fist me-1" style="color:var(--accent-2)"></i>Unique Unit${draft.second_uu?.km_idx != null ? "s" : ""}</div>
           <div class="card-body p-2">${uuHtml}</div>
         </div>
       </div>
@@ -3865,9 +3883,11 @@ function renderUUGrid() {
     return;
   }
 
-  const selectedIdx = draft.unique_unit?.km_idx;
+  const selectedIdx = draft[_uuSlot]?.km_idx;
+  // The other unique unit can't be picked twice (civ_appender._apply_second_uu).
+  const otherIdx = draft[_uuSlot === "second_uu" ? "unique_unit" : "second_uu"]?.km_idx;
   // Retired units (KM's custom ones) show only for a civ that already has one.
-  let items = _uuCatalog.filter(u => !u.retired || u.km_idx === selectedIdx);
+  let items = _uuCatalog.filter(u => (!u.retired || u.km_idx === selectedIdx) && u.km_idx !== otherIdx);
   if (typeFilter === "vanilla")    items = items.filter(u => u.vanilla && !u.chronicles);
   if (typeFilter === "chronicles") items = items.filter(u => u.chronicles);
   if (typeFilter === "scenario")   items = items.filter(u => u.scenario);
@@ -3927,22 +3947,38 @@ function renderUUGrid() {
 }
 
 function selectUU(kmIdx) {
-  const prevIdx = draft.unique_unit?.km_idx;
+  const prevIdx = draft[_uuSlot]?.km_idx;
   const unit = _uuCatalog.find(u => u.km_idx === kmIdx);
   if (!unit) return;
 
-  if (!draft.unique_unit) draft.unique_unit = {};
+  if (!draft[_uuSlot]) draft[_uuSlot] = {};
   // Switching unit → clear any previous overrides and advanced flags
   if (prevIdx != null && prevIdx !== kmIdx) {
-    delete draft.unique_unit.overrides;
-    delete draft.unique_unit.advanced_flags;
-    delete draft.unique_unit.elite_upgrade;
-    delete draft.unique_unit.appearance;     // a look fits one unit's kind and size
+    delete draft[_uuSlot].overrides;
+    delete draft[_uuSlot].advanced_flags;
+    delete draft[_uuSlot].elite_upgrade;
+    delete draft[_uuSlot].appearance;     // a look fits one unit's kind and size
   }
-  draft.unique_unit.km_idx = kmIdx;
+  draft[_uuSlot].km_idx = kmIdx;
   saveDraft();
   showUUError(false);
+  _uuFillPanel();
+  _uuModal?.hide();
+  // The Castle's tiles show the new unit; a second one just picked opens.
+  if (_uuSlot === "second_uu") window.ttInspector?.focus?.("Unit_uu2_0_82");
+  window._ttRelayout?.();
+}
 
+// Fill the panels from draft[_uuSlot] (selectUU, or switching slots on the tree).
+function _uuFillPanel() {
+  const unit = _uuCatalog.find(u => u.km_idx === draft[_uuSlot]?.km_idx);
+  if (!unit) {
+    document.getElementById("uu-selected-panel").classList.add("d-none");
+    document.getElementById("uu-overrides-card")?.classList.add("d-none");
+    document.getElementById("uu-advanced-card")?.classList.add("d-none");
+    renderUUGrid();
+    return;
+  }
   document.getElementById("uu-no-selection").classList.add("d-none");
   document.getElementById("uu-selected-panel").classList.remove("d-none");
 
@@ -3955,8 +3991,8 @@ function selectUU(kmIdx) {
     : unit.chronicles ? "Chronicles unit" : unit.scenario ? "Scenario unit"
     : unit.vanilla ? "Vanilla base unit" : "Custom unit, from Krakenmeister's civ builder";
 
-  document.getElementById("uu-name-override").value = draft.unique_unit.name       || "";
-  document.getElementById("uu-description").value   = draft.unique_unit.description || "";
+  document.getElementById("uu-name-override").value = draft[_uuSlot].name       || "";
+  document.getElementById("uu-description").value   = draft[_uuSlot].description || "";
 
   _updateUUCostPreview(unit);
   populateUUOverrides(unit);
@@ -3970,7 +4006,7 @@ function selectUU(kmIdx) {
 let _uuLooks = { unit: null, looks: [] };
 
 function _selectedUUUnit() {
-  const sel = _uuCatalog.find(u => u.km_idx === draft.unique_unit?.km_idx);
+  const sel = _uuCatalog.find(u => u.km_idx === draft[_uuSlot]?.km_idx);
   return sel?.preview_unit ?? null;
 }
 
@@ -3988,7 +4024,7 @@ async function _loadUULooks() {
 }
 
 async function _renderUUAppearance() {
-  const id = draft.unique_unit?.appearance;
+  const id = draft[_uuSlot]?.appearance;
   const nameEl = document.getElementById("uu-appearance-name");
   const icon = document.getElementById("uu-appearance-icon");
   const reset = document.getElementById("uu-appearance-reset");
@@ -4007,11 +4043,12 @@ async function _renderUUAppearance() {
 }
 
 function _setUUAppearance(id) {
-  if (!draft.unique_unit) return;
-  if (id == null) delete draft.unique_unit.appearance;
-  else draft.unique_unit.appearance = id;
+  if (!draft[_uuSlot]) return;
+  if (id == null) delete draft[_uuSlot].appearance;
+  else draft[_uuSlot].appearance = id;
   saveDraft();
   _renderUUAppearance();
+  window._ttRelayout?.();
 }
 
 let _appearanceModal = null;
@@ -4025,7 +4062,7 @@ async function openUUAppearancePicker() {
   const looks = await _loadUULooks();
   const draw = () => {
     const q = search.value.trim().toLowerCase();
-    const cur = draft.unique_unit?.appearance;
+    const cur = draft[_uuSlot]?.appearance;
     const shown = looks.filter(l => !q || l.name.toLowerCase().includes(q));
     grid.innerHTML = shown.map(l => `
       <div class="uu-card${l.id === cur ? " selected" : ""}" data-look="${l.id}">
@@ -4051,7 +4088,7 @@ document.getElementById("uu-appearance-btn")?.addEventListener("click", openUUAp
 document.getElementById("uu-appearance-reset")?.addEventListener("click", () => _setUUAppearance(null));
 
 function clearUU() {
-  delete draft.unique_unit;
+  delete draft[_uuSlot];
   saveDraft();
   document.getElementById("uu-no-selection").classList.remove("d-none");
   document.getElementById("uu-selected-panel").classList.add("d-none");
@@ -4122,7 +4159,7 @@ function populateUUOverrides(unit) {
   }
 
   // Restore saved values (or clear if switching units)
-  const saved = draft.unique_unit?.overrides || {};
+  const saved = draft[_uuSlot]?.overrides || {};
   for (const row of _UO_ROWS) {
     const bi = document.getElementById(`uo-${row.id}-base`);
     const ei = document.getElementById(`uo-${row.id}-elite`);
@@ -4133,7 +4170,7 @@ function populateUUOverrides(unit) {
     const el = document.getElementById(`uo-cost-${r}`);
     if (el) el.value = saved[`cost_${r}`] ?? "";
   }
-  const savedEu = draft.unique_unit?.elite_upgrade || {};
+  const savedEu = draft[_uuSlot]?.elite_upgrade || {};
   for (const r of _UO_EU) {
     const el = document.getElementById(`uo-eu-${r}`);
     if (el) el.value = (r === "time" ? savedEu.time : savedEu.cost?.[r]) || "";
@@ -4172,7 +4209,7 @@ async function _uoRenderBonus(unit) {
   const kmIdx = unit?.km_idx;
   if (kmIdx == null) { box.classList.add("d-none"); return; }
   const r = await _uoCombatFor(kmIdx);
-  if (draft.unique_unit?.km_idx !== kmIdx) return;          // picked another meanwhile
+  if (draft[_uuSlot]?.km_idx !== kmIdx) return;          // picked another meanwhile
   if (!r || r.status !== "ok") { box.classList.add("d-none"); return; }
   _uoCombat = { km_idx: kmIdx, base: r.base, elite: r.elite,
                 names: Object.fromEntries(r.bonus_classes.map(c => [String(c.cls), c.name])),
@@ -4194,7 +4231,7 @@ async function _uoDrawArmour() {
   if (!_uoCombat || _uoCombat.km_idx !== kmIdx || !classes.length) { el.innerHTML = ""; return; }
   const hasElite = !!_uoCombat.elite;
   const tier = hasElite ? _uoArmourTier : "base";
-  const ov = draft.unique_unit?.overrides || {};
+  const ov = draft[_uuSlot]?.overrides || {};
   const game = (_uoCombat[tier] || _uoCombat.base)?.armours || {};
   const stat = (f, g) => ov[`${f}_${tier}`] ?? g;
   const tierBtn = (t, label) => `<button type="button" class="ac-btn${tier === t ? " fw-bold" : ""}" data-uo-tier="${t}"
@@ -4206,8 +4243,8 @@ async function _uoDrawArmour() {
     extra: hasElite ? `<div class="d-flex gap-2 align-items-center mb-1" style="font-size:12px;">Editing:
         ${tierBtn("base", "Standard")}${tierBtn("elite", "Elite")}</div>` : "",
     onChange: m => {
-      if (!draft.unique_unit) return;
-      const o = draft.unique_unit.overrides || (draft.unique_unit.overrides = {});
+      if (!draft[_uuSlot]) return;
+      const o = draft[_uuSlot].overrides || (draft[_uuSlot].overrides = {});
       if (m) o[`armour_${tier}`] = m; else delete o[`armour_${tier}`];
       saveDraft();
       _uoUpdateBadge();
@@ -4228,7 +4265,7 @@ async function _uoDrawArmour() {
 function _uoDrawBonusRows() {
   const rowsEl = document.getElementById("uo-bonus-rows");
   if (!rowsEl || !_uoCombat) return;
-  const ov = draft.unique_unit?.overrides || {};
+  const ov = draft[_uuSlot]?.overrides || {};
   const game = { base: _uoGameBonus("base"), elite: _uoGameBonus("elite") };
   const own  = { base: ov.bonus_base || {}, elite: ov.bonus_elite || {} };
   const shown = new Set([...Object.keys(game.base), ...Object.keys(game.elite),
@@ -4266,8 +4303,8 @@ function _uoDrawBonusRows() {
 
 // One tier's bonus vs one class: blank or the game's own value drops the edit.
 function _uoSaveBonus(tier, cls, raw, redraw = true) {
-  if (!draft.unique_unit) return;
-  const ov = draft.unique_unit.overrides || (draft.unique_unit.overrides = {});
+  if (!draft[_uuSlot]) return;
+  const ov = draft[_uuSlot].overrides || (draft[_uuSlot].overrides = {});
   const key = `bonus_${tier}`;
   const map = Object.assign({}, ov[key]);
   const n = String(raw).trim() === "" ? null : Math.max(0, Math.min(32767, Math.floor(Number(raw))));
@@ -4298,20 +4335,20 @@ function _uoAddBonus() {
 const _UO_EU = ["food", "wood", "stone", "gold", "time"];
 
 function _uoSaveEliteUpgrade(r, rawVal) {
-  if (!draft.unique_unit) return;
+  if (!draft[_uuSlot]) return;
   let val = rawVal === "" ? 0 : Math.max(0, Math.floor(Number(rawVal)));
   if (isNaN(val)) val = 0;
-  const eu = draft.unique_unit.elite_upgrade
-          || (draft.unique_unit.elite_upgrade = { cost: {}, time: 0 });
+  const eu = draft[_uuSlot].elite_upgrade
+          || (draft[_uuSlot].elite_upgrade = { cost: {}, time: 0 });
   if (r === "time") eu.time = val;
   else { eu.cost = eu.cost || {}; eu.cost[r] = val; }
-  if (!eu.time && !Object.values(eu.cost || {}).some(Boolean)) delete draft.unique_unit.elite_upgrade;
+  if (!eu.time && !Object.values(eu.cost || {}).some(Boolean)) delete draft[_uuSlot].elite_upgrade;
   saveDraft();
   _uoUpdateBadge();
 }
 
 function clearUUOverrides() {
-  if (draft.unique_unit) { delete draft.unique_unit.overrides; saveDraft(); }
+  if (draft[_uuSlot]) { delete draft[_uuSlot].overrides; saveDraft(); }
   for (const row of _UO_ROWS) {
     const bi = document.getElementById(`uo-${row.id}-base`);
     const ei = document.getElementById(`uo-${row.id}-elite`);
@@ -4322,7 +4359,7 @@ function clearUUOverrides() {
     const el = document.getElementById(`uo-cost-${r}`);
     if (el) el.value = "";
   }
-  if (draft.unique_unit) { delete draft.unique_unit.elite_upgrade; saveDraft(); }
+  if (draft[_uuSlot]) { delete draft[_uuSlot].elite_upgrade; saveDraft(); }
   for (const r of _UO_EU) {
     const el = document.getElementById(`uo-eu-${r}`);
     if (el) el.value = "";
@@ -4346,8 +4383,8 @@ const _UO_NON_NEG = new Set([
 ]);
 
 function _uoSave(key, rawVal) {
-  if (!draft.unique_unit) return;
-  if (!draft.unique_unit.overrides) draft.unique_unit.overrides = {};
+  if (!draft[_uuSlot]) return;
+  if (!draft[_uuSlot].overrides) draft[_uuSlot].overrides = {};
   let val = rawVal === "" ? null : Number(rawVal);
   if (val !== null && isNaN(val)) val = null;
   if (val !== null && _UO_NON_NEG.has(key) && val < 0) val = 0;
@@ -4358,8 +4395,8 @@ function _uoSave(key, rawVal) {
     const el = document.getElementById(`uo-${key.replace(/_/g, "-")}`);
     if (el) el.value = val;
   }
-  if (val === null) delete draft.unique_unit.overrides[key];
-  else              draft.unique_unit.overrides[key] = val;
+  if (val === null) delete draft[_uuSlot].overrides[key];
+  else              draft[_uuSlot].overrides[key] = val;
   saveDraft();
   _uoUpdateBadge();
 }
@@ -4367,8 +4404,8 @@ function _uoSave(key, rawVal) {
 function _uoUpdateBadge() {
   const badge = document.getElementById("uo-badge");
   if (!badge) return;
-  const n = Object.keys(draft.unique_unit?.overrides || {}).length
-          + (draft.unique_unit?.elite_upgrade ? 1 : 0);
+  const n = Object.keys(draft[_uuSlot]?.overrides || {}).length
+          + (draft[_uuSlot]?.elite_upgrade ? 1 : 0);
   if (n > 0) { badge.textContent = `${n} override${n > 1 ? "s" : ""}`; badge.classList.remove("d-none"); }
   else        { badge.classList.add("d-none"); }
 }
@@ -4409,11 +4446,11 @@ function _uaLoad() {
   // way to grant it, and the old implementation left the unit dealing 1 damage
   // to everything.  Drop it from any saved civ that still carries it, so the
   // flag count is honest and the build stops warning about it.
-  if (draft.unique_unit?.advanced_flags?.ignore_armor) {
-    delete draft.unique_unit.advanced_flags.ignore_armor;
+  if (draft[_uuSlot]?.advanced_flags?.ignore_armor) {
+    delete draft[_uuSlot].advanced_flags.ignore_armor;
     saveDraft();
   }
-  const flags = draft.unique_unit?.advanced_flags || {};
+  const flags = draft[_uuSlot]?.advanced_flags || {};
 
   _uaSetCheck("ua-no-convert",   flags.no_convert);
   _uaSetCheck("ua-trample",      flags.trample);
@@ -4441,18 +4478,18 @@ function _uaLoad() {
 }
 
 function _uaClear() {
-  if (!draft.unique_unit) return;
-  delete draft.unique_unit.advanced_flags;
+  if (!draft[_uuSlot]) return;
+  delete draft[_uuSlot].advanced_flags;
   _uaLoad();
 }
 
 function _uaSave(key, val) {
-  if (!draft.unique_unit) return;
-  if (!draft.unique_unit.advanced_flags) draft.unique_unit.advanced_flags = {};
+  if (!draft[_uuSlot]) return;
+  if (!draft[_uuSlot].advanced_flags) draft[_uuSlot].advanced_flags = {};
   if (val === null || val === false || val === "" || val === undefined)
-    delete draft.unique_unit.advanced_flags[key];
+    delete draft[_uuSlot].advanced_flags[key];
   else
-    draft.unique_unit.advanced_flags[key] = val;
+    draft[_uuSlot].advanced_flags[key] = val;
   saveDraft();
   _uaUpdateBadge();
 }
@@ -4463,7 +4500,7 @@ const _UA_TOP_FLAGS = new Set(["no_convert","trample","regen_hp","bonus_dmg_resi
 function _uaUpdateBadge() {
   const badge = document.getElementById("ua-badge");
   if (!badge) return;
-  const flags = draft.unique_unit?.advanced_flags || {};
+  const flags = draft[_uuSlot]?.advanced_flags || {};
   const n = [..._UA_TOP_FLAGS].filter(k => flags[k]).length;
   if (n > 0) { badge.textContent = `${n} flag${n > 1 ? "s" : ""}`; badge.classList.remove("d-none"); }
   else        { badge.classList.add("d-none"); }
@@ -4524,6 +4561,119 @@ function _wireUUAdvanced() {
 // Galleon and its Elite, no variant.  A civ's own template is taken as
 // shipped, its variant over the Cannon Galleon some list beside it.
 const _SIEGE_SHIPS = Object.freeze({ cg: 420, elite: 691, variants: [2633, 1795, 1948] });
+// ── Unique units on the tech tree (the user, 2026-11-13) ─────────────────────
+// The Unique Unit step's panels now live in the tree's side panel: the Castle's
+// unique-unit tile edits draft.unique_unit, a second one at the Castle
+// draft.second_uu (civ_appender._apply_second_uu).  The same panels serve both;
+// _uuSlot says which.  They are moved in while a tile is open and parked back in
+// their step when it closes, so nothing is built twice.
+let _uuSlot = "unique_unit";
+const _UU_PARTS = ["uu-selected-panel", "uu-overrides-card", "uu-advanced-card"];
+const _uuHomes = {};                 // part id -> [parent, next sibling]
+let _uuModal = null;
+
+// A modal from the hidden wizard page, raised above the full-screen tree
+// (inspector.js does the same for its unit picker).
+function _uuRaise(el) {
+  if (!el) return;
+  if (el.parentElement !== document.body) document.body.appendChild(el);
+  el.classList.add("tt-unit-picker");
+  if (!el.dataset.raised) {
+    el.dataset.raised = "1";
+    el.addEventListener("show.bs.modal", () => document.body.classList.add("tt-picker-open"));
+    el.addEventListener("hidden.bs.modal", () => document.body.classList.remove("tt-picker-open"));
+  }
+}
+
+function _uuPickerModal() {
+  if (_uuModal) return _uuModal;
+  const el = document.createElement("div");
+  el.className = "modal fade";
+  el.id = "modal-uu-pick";
+  el.tabIndex = -1;
+  el.innerHTML = `<div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable modal-fullscreen-lg-down">
+      <div class="modal-content">
+        <div class="modal-header"><div><h5 class="modal-title" id="uu-pick-title">Choose a unique unit</h5>
+          <div class="small text-muted">Every unit keeps its in-game stats; a scenario unit with no Elite of its own gets a standard one.</div></div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body" id="uu-pick-body"></div>
+      </div></div>`;
+  document.body.appendChild(el);
+  // The step's search, filter, grid and legend, as they were.
+  const body = el.querySelector("#uu-pick-body");
+  const grid = document.getElementById("uu-grid");
+  const search = document.getElementById("uu-search")?.closest(".row");
+  for (const part of [search, document.getElementById("uu-stats-loading"), grid, grid?.nextElementSibling]) {
+    if (part) body.appendChild(part);
+  }
+  _uuRaise(el);
+  _uuModal = new bootstrap.Modal(el);
+  return _uuModal;
+}
+
+window.efUU = {
+  slot: () => _uuSlot,
+  has: slot => draft[slot]?.km_idx != null,
+  unit: slot => _uuCatalog.find(u => u.km_idx === draft[slot]?.km_idx) || null,
+  name(slot, n) {
+    const u = this.unit(slot);
+    if (!u) return n ? "" : (slot === "second_uu" ? "Second unique unit" : "Choose a unique unit");
+    const own = (draft[slot].name || "").trim() || u.name;
+    return n ? `Elite ${own}` : own;
+  },
+  image(slot) {
+    const look = draft[slot]?.appearance;
+    if (look != null) return `/api/unit-icon/${look}${_datQuery()}`;
+    return this.unit(slot)?.icon || UU_PLACEHOLDER;
+  },
+  pick(slot) {
+    _uuSlot = slot;
+    if (!_uuCatalog.length) loadUUCatalogFast().then(renderUUGrid);
+    document.getElementById("uu-search") && (document.getElementById("uu-search").value = "");
+    const m = _uuPickerModal();
+    document.getElementById("uu-pick-title").textContent =
+      slot === "second_uu" ? "Choose a second unique unit" : "Choose your unique unit";
+    renderUUGrid();
+    m.show();
+  },
+  remove(slot) {
+    delete draft[slot];
+    saveDraft();
+    window._ttRelayout?.();
+  },
+  // Show the panels for `slot` inside `host` (the tree's side panel).
+  mount(host, slot) {
+    _uuSlot = slot;
+    _uuRaise(document.getElementById("modal-uu-appearance"));
+    const pop = _getUUPopup();
+    if (pop && pop.parentElement !== document.body) document.body.appendChild(pop);
+    if (pop) pop.style.zIndex = 10080;
+    for (const id of _UU_PARTS) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (!_uuHomes[id]) _uuHomes[id] = [el.parentElement, el.nextSibling];
+      host.appendChild(el);
+    }
+    // The step's own header row (icon, name, "Change unit") is the tree's head now.
+    document.querySelector("#uu-selected-panel > hr")?.classList.add("d-none");
+    document.querySelector("#uu-selected-panel > h6")?.classList.add("d-none");
+    document.querySelector("#uu-selected-panel > .d-flex.align-items-center.gap-3")?.classList.add("d-none");
+    _uuFillPanel();
+    // The step loaded the stats ("Default: ..." under each box); now the tree does.
+    if (!_uuCatalogHasStats) loadUUCatalog().then(() => {
+      if (host.contains(document.getElementById("uu-selected-panel"))) _uuFillPanel();
+    }).catch(console.error);
+  },
+  // Put them back before the side panel is redrawn or closed.
+  unmount() {
+    for (const id of [..._UU_PARTS].reverse()) {          // a part's home sibling may be the next part
+      const el = document.getElementById(id), home = _uuHomes[id];
+      if (el && home && el.parentElement !== home[0]) home[0].insertBefore(el, home[1]);
+    }
+    _uuSlot = "unique_unit";
+  },
+};
+
 function _withSiegeShip(units, seed) {
   const cg = id => id === _SIEGE_SHIPS.cg || id === _SIEGE_SHIPS.elite;
   if (seed) {
@@ -4701,6 +4851,7 @@ function updateTreeSummary() {
   document.getElementById("tt-count-buildings").textContent = t.buildings.length;
   document.getElementById("tt-count-techs").textContent     = t.techs.length;
   document.getElementById("btn-open-tree-label").textContent = "Edit Tech Tree";
+  updateUUSummary();
 }
 
 async function populateTtTemplates() {
@@ -5066,13 +5217,15 @@ async function init() {
   _wireUUAdvanced();
 
   document.getElementById("uu-name-override").addEventListener("input", e => {
-    if (!draft.unique_unit) return;
-    draft.unique_unit.name = e.target.value.trim();
+    if (!draft[_uuSlot]) return;
+    draft[_uuSlot].name = e.target.value.trim();
     saveDraft();
   });
+  // The tree's tiles carry the name.
+  document.getElementById("uu-name-override").addEventListener("change", () => window._ttRelayout?.());
   document.getElementById("uu-description").addEventListener("input", e => {
-    if (!draft.unique_unit) return;
-    draft.unique_unit.description = e.target.value;
+    if (!draft[_uuSlot]) return;
+    draft[_uuSlot].description = e.target.value;
     saveDraft();
   });
 
