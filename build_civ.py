@@ -1233,12 +1233,19 @@ def _added_line_nodes(dat, slot, lines: list[dict]) -> list[dict]:
         return out
     units = dat.civs[slot].units
     for line in lines:
-        if line.get("replaces") is not None:
-            continue                          # shown on the vanilla unit's node
+        rep = line.get("replaces")
         # An extension's first tier hangs off the vanilla unit it upgrades from.
         frm = line.get("from")
-        for n, (uid, sid, age, tech) in enumerate(zip(line["units"], line["sids"], line["ages"], line["techs"])):
-            if frm is not None:
+        # A replacement's first tier is shown on the vanilla unit's node, and
+        # its techs start with the hidden one and the renamed upgrade, so a
+        # later tier's upgrade is techs[n + 1].
+        techs = [None, *line["techs"][2:]] if rep is not None else line["techs"]
+        for n, (uid, sid, age, tech) in enumerate(zip(line["units"], line["sids"], line["ages"], techs)):
+            if rep is not None and n == 0:
+                continue
+            if rep is not None:
+                kind, link = "UnitUpgrade", "UnitUpgrade"
+            elif frm is not None:
                 kind, link = "UnitUpgrade", ("UnitUpgrade" if n or line.get("from_is_upgrade") else "Unit")
             else:
                 kind = "Unit" if n == 0 else "UnitUpgrade"
@@ -1250,7 +1257,9 @@ def _added_line_nodes(dat, slot, lines: list[dict]) -> list[dict]:
                     "Node Status": "ResearchedCompleted", "Name String ID": sid,
                     "Age ID": age, "Building ID": line["building"], "Help String ID": sid + 100000,
                     "Node ID": uid, "Picture Index": units[uid].icon_id, "Trigger Tech ID": tech}
-            if n:
+            if n == 1 and rep is not None:
+                node["Link ID"] = rep              # the vanilla node showing tier 1
+            elif n:
                 node["Link ID"] = line["units"][n - 1]
             elif frm is not None:
                 node["Link ID"] = frm

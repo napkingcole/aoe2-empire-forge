@@ -659,8 +659,22 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
                 print(f"       WARNING: {msg}")
                 warnings.append(msg)
                 continue
-            # Ours takes the unit's button, so the upgrade moves the button to it (quirk 3).
+            # Later tiers continue the line past the unit it replaced, so that
+            # unit must end its line (the Halberdier, not the Cavalier).
+            later = _later_upgrade(dat, civ_index, civ_def, rep) if len(tiers) > 1 else None
+            if later is not None:
+                msg = (f"Added line {line['id']}: {unit_label(dat, 0, rep)} still upgrades further "
+                       f"({dat.techs[later].name}), so its replacement can't take more tiers — kept the first")
+                print(f"       WARNING: {msg}")
+                warnings.append(msg)
+                tiers = tiers[:1]
+            # Ours takes the unit's button, so the upgrade moves the button to it
+            # (quirk 3); a later tier's upgrade goes one row below, as an added line's.
             train_btn, hk_train, up_btn = tl.button_id, tl.hot_key_id, None
+            if len(tiers) > 1:
+                below = train_btn + 5
+                up_btn = below if below not in used and below not in _RESERVED else next(
+                    (b for b in _ANY_BUTTONS if b not in used and (b - 1) % 20 >= 5), None)
         elif frm is not None:
             fu = target[frm] if 0 <= frm < len(target) else None
             tl = next((t for t in (fu.creatable.train_locations if fu is not None and fu.creatable else ())
@@ -692,7 +706,7 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         else:
             producer = None
             train_btn, up_btn = _pick_buttons(used, len(tiers))
-        if train_btn is None or ((len(tiers) > 1 or frm is not None) and up_btn is None and rep is None):
+        if train_btn is None or ((len(tiers) > 1 or frm is not None) and up_btn is None):
             msg = (f"Added line {line['id']}: {unit_label(dat, 0, building)} has no free "
                    f"button left — skipped")
             print(f"       WARNING: {msg}")
@@ -815,7 +829,9 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             if producer is not None:
                 hk_up = next((rl.hot_key_id for rl in dat.techs[producer].research_locations
                               if rl.location_id == building), hk_up)
-        chain = ([frm] if frm is not None else []) + (ids if rep is None else [])
+        # A replacement's tier 1 comes from the hidden tech (techs[0]), and its
+        # later tiers are upgraded from there like an added line's.
+        chain = ([frm] if frm is not None else []) + ids
         below = _earlier(dat, frm) if frm is not None else []     # the vanilla line under frm
         all_names = ([fname] if frm is not None else []) + names
         for n in range(1, len(chain)):
@@ -848,7 +864,7 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             # After the age and the step before: our previous upgrade, or for an
             # extension's first, the vanilla upgrade into the unit (if it has one).
             # A unit nothing upgrades into waits for the tech that unlocks it.
-            before = techs[-1] if techs else producer if producer is not None else (
+            before = (techs[0] if rep is not None and n == 1 else techs[-1]) if techs else producer if producer is not None else (
                 _unlocker(dat, civ_index, frm) if frm is not None else None)
             tech.required_techs = (AGE_TECHS[age], before if before is not None else -1, -1, -1, -1, -1)
             tech.required_tech_count = 2 if before is not None else 1

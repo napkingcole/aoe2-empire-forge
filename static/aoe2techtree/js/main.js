@@ -1729,6 +1729,13 @@ function _applyAddedLines(treeData) {
             const v = treeData.units_techs.find(i => i.id === vid);
             if (!v || (_canEdit && !_isSelected(v))) continue;
             const id = `Unit_a${line.id}_0_${b.node_id}`;
+            // Later tiers need the replaced unit to end its line (added_lines.py
+            // checks the same): nothing in the tree upgrades on from it.
+            const lineEnds = !treeData.units_techs.some(i => i.building_id === b.node_id && i.use_type === 'Unit'
+                && i.link_id === v.node_id && !i.added && (!_canEdit || _isSelected(i)));
+            const added = { line: line.id, buildingAge: v.age_id || 1, buildingName: name, buildingRow: b.row,
+                            replacesName: _nodeName(v).replace(/\n/g, ' '), fromAge: v.age_id || 1,
+                            repRow: v.row, repEnds: lineEnds };
             treeData.units_techs.push({
                 id, node_id: `a${line.id}.0`, building_id: b.node_id, use_type: 'Unit',
                 node_type: v.node_type, link_id: v.link_id, link_node_type: v.link_node_type,
@@ -1736,13 +1743,32 @@ function _applyAddedLines(treeData) {
                 picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
                 image_url: window.ttInspector.lineImage(line),
                 name: '', name_string_id: -1, help_string_id: -1, age_id: v.age_id, row: v.row,
-                added: { line: line.id, n: 0, buildingAge: v.age_id || 1, buildingName: name,
-                         replacesName: _nodeName(v).replace(/\n/g, ' '), fromAge: v.age_id || 1 },
+                added: Object.assign({ n: 0 }, added),
             });
+            let col = -1;
             for (let r = 0; r < rows; r++) {
                 const c = b.grid[r].indexOf(vid);
-                if (c >= 0) b.grid[r][c] = id;
+                if (c >= 0) { b.grid[r][c] = id; col = c; }
             }
+            // Its later tiers, our own upgrades, down the same column.
+            let prev = v.row;
+            line.tiers.forEach((t, n) => {
+                if (!n || col < 0 || !lineEnds) return;
+                const r = Math.max(rowOf(t.age), prev + 1);
+                if (r >= rows || r > (t.age - 1) * 2 + 1 || b.grid[r][col]) return;
+                prev = r;
+                const tid = `Unit_a${line.id}_${n}_${b.node_id}`;
+                treeData.units_techs.push({
+                    id: tid, node_id: `a${line.id}.${n}`, building_id: b.node_id, use_type: 'Unit',
+                    node_type: 'UnitUpgrade', link_id: `a${line.id}.${n - 1}`,
+                    link_node_type: n === 1 ? v.node_type : 'UnitUpgrade',
+                    picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
+                    image_url: window.ttInspector.lineImage(line),
+                    name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row: r,
+                    added: Object.assign({ n }, added),
+                });
+                b.grid[r][col] = tid;
+            });
         }
         const cols = [];
         for (const line of mine.filter(l => l.from == null && l.replaces == null)) {

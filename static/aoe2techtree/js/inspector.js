@@ -895,7 +895,9 @@
         const bRow = added.buildingRow ?? -1;
         const rowOf = a => { const r = (a - 1) * 2; return r <= bRow ? bRow + 1 : r; };
         const minAge = added.fromAge || added.buildingAge || 1;
-        let prev = line.from != null ? (added.fromRow ?? 0) - 1 : -1;
+        // A replacement's tier 1 sits on the unit it replaced.
+        let prev = line.from != null ? (added.fromRow ?? 0) - 1
+            : line.replaces != null ? (added.repRow ?? 0) - 1 : -1;
         for (let i = 0; i < ages.length; i++) {
             const a = ages[i];
             if (a < minAge || (i && a < ages[i - 1])) return false;
@@ -907,7 +909,7 @@
     }
     // The ages a new last tier could take, the next age first.
     function addableAges(line, added) {
-        if (line.replaces != null || line.tiers.length >= 4) return [];
+        if ((line.replaces != null && !added.repEnds) || line.tiers.length >= 4) return [];
         const last = line.tiers[line.tiers.length - 1].age;
         const ages = line.tiers.map(t => t.age);
         return [last, last + 1, last + 2, last + 3].filter(a => a <= 4 && agesFit(line, added, [...ages, a]));
@@ -937,11 +939,15 @@
                     ages.push(`<option value="${a}" ${a === t.age ? 'selected' : ''}>${AGE_NAMES[a - 1]}</option>`);
                 }
             }
+            // A replacement's tier 1 takes the replaced unit's age ("Available
+            // from") and goes with the Undo button, not on its own.
+            const fixed = i === 0 && line.replaces != null;
             return `<div class="tt-insp-tier${i === n ? ' is-current' : ''}">
                 <button type="button" class="tt-insp-link tt-insp-tier-name" data-goto="${i}">${esc(tierName(`a${line.id}.${i}`))}</button>
+                ${fixed ? `<span class="tt-insp-base">${AGE_NAMES[t.age - 1]}</span><span></span>` : `
                 <select data-age="${i}" title="Age">${ages.join('')}</select>
                 <button type="button" class="tt-insp-x" data-drop="${i}"
-                    title="${line.tiers.length === 1 ? 'Remove this line' : 'Remove this tier'}">×</button>
+                    title="${line.tiers.length === 1 ? 'Remove this line' : 'Remove this tier'}">×</button>`}
             </div>`;
         }).join('');
         const addAges = addableAges(line, item.added).sort((a, b) => a - b)
@@ -964,12 +970,14 @@
             ${swap ? `<div class="tt-insp-note">Researching the ${esc(was)} upgrade gives this unit instead, and the
                 button takes its name. The button keeps the ${esc(was)}'s picture: the game can't change a
                 technology's picture for one civilization. The computer player gets it too, since it still
-                researches the ${esc(was)} upgrade.</div>` : `
+                researches the ${esc(was)} upgrade.</div>` : ''}
+            ${swap && line.tiers.length === 1 && !addAges.length ? '' : `
             <div class="tt-insp-tiers">${tiers}</div>
             ${addAges.length ? `<div class="tt-insp-bonus-add"><select id="tt-line-add">
                 <option value="">Add a tier in…</option>${addAges.join('')}</select></div>` : ''}
             <div class="tt-insp-note">${line.from != null
                 ? `Each tier is researched at the ${esc(item.added.fromName || '')}'s upgrade button, after the one before, and takes over its train button.`
+                : swap ? `Each tier after it gets its own upgrade, one row below the unit's button, after the ${esc(was)} upgrade.`
                 : 'Each tier after the first gets its own upgrade, one row below the unit\'s button.'}
                 A stat you change carries on to later tiers unless they set their own.</div>`}
             <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-desc">Description</label>
@@ -1064,7 +1072,8 @@
                 <img class="tt-insp-icon" src="${lineImage(line)}" alt="">
                 <div>
                     <div class="tt-insp-title">${esc(tierName(key))}</div>
-                    <div class="tt-insp-kind">${line.replaces != null ? `Replaces the ${esc(item.added.replacesName || '')}`
+                    <div class="tt-insp-kind">${line.replaces != null && n === 0 ? `Replaces the ${esc(item.added.replacesName || '')}`
+                        : line.replaces != null ? `Upgrade after the ${esc(tierName(`a${line.id}.0`))} · tier ${n + 1} of ${line.tiers.length}`
                         : `${line.from != null ? `Added upgrade after the ${esc(item.added.fromName || '')}` : 'Added unit'}`
                           + ` · tier ${n + 1} of ${line.tiers.length}`} · ${AGE_NAMES[tier.age - 1]}</div>
                 </div>
@@ -1115,6 +1124,7 @@
             const v = +e.target.value;
             setUnitField(line.replaces, 'age', v === rep.age_move.age ? null : v);
             line.tiers[0].age = v;
+            for (const t of line.tiers) if (t.age < v) t.age = v;     // ages never go back
             relayout(item.id);
         });
         const status = body.querySelector('#tt-insp-fu-status');
