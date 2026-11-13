@@ -157,7 +157,9 @@
         if (item.add) return false;
         if (item.added) {
             const ref = addedRef(item.node_id);
-            return !!(ref && (ref.tier.edits || ref.tier.upgrade));
+            if (!ref) return false;
+            const repUp = ref.line.replaces != null && ref.n === 0 ? lines.upgrade[ref.line.replaces] : undefined;
+            return !!(ref.tier.edits || ref.tier.upgrade || (repUp !== undefined && edits.tech_edits[String(repUp)]));
         }
         const kind = kindOf(item);
         if (kind === 'tech') return !!edits.tech_edits[String(item.node_id)];
@@ -1051,7 +1053,12 @@
         const scrollTop = panel.scrollTop;
         const { line, n, tier } = ref;
         const key = item.node_id;
-        const [base, defs] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role, line.from)]);
+        // A replacement's first tier rides the replaced unit's own upgrade
+        // (the Paladin tech for a unit in the Paladin's place): its price and
+        // age are that vanilla tech's, edited as on the unit it replaced.
+        const replacing = line.replaces != null && n === 0;
+        const [base, defs, rep] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role, line.from),
+                                                     replacing ? info('unit', line.replaces) : null]);
         if (!current || current.item !== item) return;
         panel.innerHTML = `<div class="tt-insp-head">
                 <img class="tt-insp-icon" src="${lineImage(line)}" alt="">
@@ -1090,13 +1097,26 @@
         inf.line_after = [];
         inf.forms = 1;
         const up = tierUpgradeDefault(defs, line, n);
-        inf.upgrade = (n || line.from != null) && up ? {
-            id: `${key}u`, name: tierName(key), any: true,
-            cost: Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, up.cost),
-            time: up.time,
-        } : null;
+        const repOk = replacing && rep && rep.status === 'ok';
+        inf.upgrade = repOk ? (rep.upgrade ? Object.assign({}, rep.upgrade, { name: tierName(key) }) : null)
+            : (n || line.from != null) && up ? {
+                id: `${key}u`, name: tierName(key), any: true,
+                cost: Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, up.cost),
+                time: up.time,
+            } : null;
         unitNames[key] = tierName(key);
-        body.innerHTML = unitBody(inf, 'unit');
+        const vanilla = repOk && item.replaced_node ? item.replaced_node : null;
+        if (repOk && inf.upgrade) inf.upgrade.note = `The game's ${item.added?.replacesName || baseName(line.replaces)} upgrade, under this `
+            + 'unit\'s name. Its price can only be scaled: it can\'t gain a resource the game\'s doesn\'t cost.';
+        body.innerHTML = (vanilla ? ageRow(vanilla, rep, 'unit') : '') + unitBody(inf, 'unit');
+        body.querySelector('#tt-insp-age')?.addEventListener('change', e => {
+            // The vanilla unit's age edit moves its upgrade (civ_overrides._apply_age_moves)
+            // and its tree node, which the replacement is drawn on.
+            const v = +e.target.value;
+            setUnitField(line.replaces, 'age', v === rep.age_move.age ? null : v);
+            line.tiers[0].age = v;
+            relayout(item.id);
+        });
         const status = body.querySelector('#tt-insp-fu-status');
         if (status) status.textContent = '';
         wire(body, inf, 'unit');
@@ -1435,7 +1455,8 @@
 
     function upgradeSection(up) {
         return `<div class="tt-insp-section">Upgrade: ${esc(up.name)}</div>
-            ${techCostBlock('tt-insp-up', up)}`;
+            ${techCostBlock('tt-insp-up', up)}
+            ${up.note ? `<div class="tt-insp-note">${esc(up.note)}</div>` : ''}`;
     }
 
     function techBody(inf) {
@@ -1534,6 +1555,8 @@
             if (ref) {
                 delete ref.tier.edits;
                 delete ref.tier.upgrade;
+                // A replacement's upgrade is the game's own tech (renderAdded).
+                if (inf.upgrade && typeof inf.upgrade.id === 'number') delete edits.tech_edits[String(inf.upgrade.id)];
             } else if (kind === 'tech') delete edits.tech_edits[String(inf.id)];
             else {
                 delete edits.unit_edits[String(inf.id)];

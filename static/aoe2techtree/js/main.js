@@ -1344,10 +1344,39 @@ window._ttRelabel = function (item, element_height) {
     if (!el) return;
     const want = _nodeName(item).toString();
     if (el.textContent === want.replace(/\n/g, '')) return;
-    SVG(el).text(want)
-        .cx(item.x + element_height / 2)
-        .y(item.y + element_height * 0.67);
+    _fitLabel(SVG(el).text(want), item, element_height);
 };
+
+// A node's name under its picture: 10px at most, smaller on a small tile, and
+// shrunk further when a line is still wider than the tile (a long single word
+// like "Varangian Guard" fits no tile) or the lines run past its bottom.
+function _fitLabel(text, item, element_height) {
+    let size = Math.min(10, Math.max(8, element_height * 0.2));
+    text.font({ size, weight: '500', leading: 0.95 });
+    const measure = () => (text.node.getBBox ? text.node.getBBox() : null);
+    let box = measure();
+    // One line too wide: break it at the space nearest its middle first.
+    const one = text.text();
+    if (box && box.width > element_height - 4 && !one.includes('\n') && one.includes(' ')) {
+        const mid = one.length / 2;
+        let at = -1;
+        for (let i = 0; i < one.length; i++) if (one[i] === ' ' && (at < 0 || Math.abs(i - mid) < Math.abs(at - mid))) at = i;
+        text.text(one.slice(0, at) + '\n' + one.slice(at + 1)).font({ size, weight: '500', leading: 0.95 });
+        box = measure();
+    }
+    if (box && box.width && box.height) {
+        const top = element_height * 0.58 + 3;           // below the picture
+        const fit = Math.min((element_height - 4) / box.width, (element_height - top - 1) / box.height);
+        if (fit < 1) {
+            size = Math.max(6.5, size * fit);
+            text.font({ size });
+        }
+    }
+    const h = text.node.getBBox ? text.node.getBBox().height : size * 2;
+    text.cx(item.x + element_height / 2)
+        .y(item.y + Math.max(element_height * 0.58 + 2, element_height - 1 - h));
+    return text;
+}
 
 // A "+" box (tree page, "+ Add Unit"): a dim square with a plus, brighter on
 // hover; clicking it opens the unit picker for that building and age.
@@ -1378,13 +1407,11 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
     }).move(itemToDraw.x, itemToDraw.y);
 
     const name = _nodeName(itemToDraw);
-    // Text anchored near the card bottom. SVG.js splits on \n → two tspans stacking downward,
-    // so position the first line high enough that the second line still clears the card edge.
-    item.text(name.toString())
-        .font({ size: 11, weight: '500', leading: 0.85 })
-        .attr({ fill: '#fff', opacity: 1, 'text-anchor': 'middle', id: itemToDraw.id + '_text' })
-        .cx(itemToDraw.x + element_height / 2)
-        .y(itemToDraw.y + element_height * 0.67);
+    // SVG.js splits on \n into tspans stacking downward; _fitLabel sizes them
+    // and sets them on the card's bottom edge.
+    _fitLabel(item.text(name.toString())
+        .attr({ fill: '#fff', opacity: 1, 'text-anchor': 'middle', id: itemToDraw.id + '_text' }),
+        itemToDraw, element_height);
 
     // Image occupies the top 58% of the card, centered horizontally.
     const imgSize = element_height * 0.58;
@@ -1825,7 +1852,7 @@ function civ(civName) {
 
         const tree_height = Math.max(window.innerHeight - 80, 100);
         const row_height  = tree_height / 4;
-        const element_height = row_height * 0.38;
+        const element_height = row_height * 0.42;
 
         const connections = [];
         const index = {};
@@ -1951,7 +1978,9 @@ function civ(civName) {
         });
 
         const tree_width = startX + PADDING_BETWEEN_COLUMNS;
-        const draw = SVG().addTo('#techtree').id('root').size(tree_width, tree_height)
+        // Room for the last row's tiles, which reach past the window on a short one.
+        const draw = SVG().addTo('#techtree').id('root')
+            .size(tree_width, Math.max(tree_height, Math.ceil(3.5 * row_height + TOP_PADDING + element_height + 4)))
             .click((e) => { if (e.target.id === 'root') hideHelp(); });
         document.getElementById('techtree').onclick = (e) => { if (e.target.id === 'techtree') hideHelp(); };
 
@@ -1981,7 +2010,8 @@ function civ(civName) {
         for (let conn of connections) {
             const from = index[conn[0]], to = index[conn[1]];
             const off = element_height / 2;
-            const ih = (from.y + off) + (element_height * 2 / 3);
+            // Halfway down the gap under the parent, which shrinks as tiles grow.
+            const ih = from.y + element_height + (row_height / 2 - element_height) / 2;
             cg.polyline([from.x + off, from.y + off, from.x + off, ih, to.x + off, ih, to.x + off, to.y + off])
                 .attr({ id: `connection_${conn[0]}_${conn[1]}`, fill: 'none', stroke: 'rgba(60,30,10,0.6)', 'stroke-width': 1.5 })
                 .addClass('connection').click(hideHelp);
