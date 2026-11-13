@@ -98,6 +98,34 @@ def _cost_dict(d: dict | None) -> dict:
     }
 
 
+# ── The second unique unit ────────────────────────────────────────────────────
+
+def norm_second_uu(raw) -> dict | None:
+    """The civ's second unique unit (civ_appender._apply_second_uu): the same
+    fields as unique_unit, or None when there is none."""
+    raw = _clean(raw) if isinstance(raw, dict) else {}
+    try:
+        km = int(raw["km_idx"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    out: dict = {"km_idx": km,
+                 "name": norm_unit_name(raw.get("name")) or "",
+                 "description": " ".join(str(raw.get("description") or "").split())[:200]}
+    overrides = norm_uu_overrides(raw.get("overrides"))
+    if overrides:
+        out["overrides"] = overrides
+    flags = {k: v for k, v in _clean(raw.get("advanced_flags") or {}).items()
+             if v is not None and v is not False and k not in RETIRED_UU_FLAGS}
+    if flags:
+        out["advanced_flags"] = flags
+    elite_up = norm_elite_upgrade(raw.get("elite_upgrade"))
+    if elite_up:
+        out["elite_upgrade"] = elite_up
+    if isinstance(raw.get("appearance"), int):
+        out["appearance"] = raw["appearance"]
+    return out
+
+
 # ── civbuilder_v1 → wizard draft ──────────────────────────────────────────────
 
 def to_draft(schema: dict) -> dict:
@@ -222,8 +250,8 @@ def to_draft(schema: dict) -> dict:
         # DAT civ index whose Monastery is copied (civ_appender.MONASTERY_SKIN_OPTIONS).
         "monastery_skin_building": s.get("monastery_skin_building"),
 
+        "second_uu":              norm_second_uu(s.get("second_uu")),
         # Phase Two pass-throughs (not yet consumed by build pipeline)
-        "second_uu":              s.get("second_uu"),
         "unit_edits":             norm_unit_edits(s.get("unit_edits")),
         "tech_edits":             norm_tech_edits(s.get("tech_edits")),
         "added_lines":            norm_added_lines(s.get("added_lines")),
@@ -323,7 +351,7 @@ def from_draft(draft: dict) -> dict:
 
         "hero_unit":    hero_out,
         "unique_unit":  uu_out,
-        "second_uu":    draft.get("second_uu"),
+        "second_uu":    norm_second_uu(draft.get("second_uu")),
 
         "bonuses":      _bonus_out(draft.get("bonuses")),
         "custom_bonuses": custom_bonus.normalize(draft.get("custom_bonuses")),

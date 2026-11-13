@@ -2677,6 +2677,8 @@ def _resolve_button_collisions(dat: DatFile, civ_index: int, civ_def: dict,
     this civ and the original is disabled for it (the _allocate_tech pattern).
     """
     present = _civ_present_units(civ_def, dat, civ_index)
+    # The unique units, both of them, are never tree nodes either.
+    present |= set(favoured)
     # The hero is enabled later (civ_overrides) and is never in the tree, but
     # _place_hero has already put it on its Castle button — it must count.
     hero = _hero_unit_id(civ_def)
@@ -7000,7 +7002,7 @@ def _uu_attack_class(dat: DatFile, civ_index: int, unit_id: int) -> int:
 
 def _retarget_relic_attack_to_uu(dat: DatFile, civ_index: int,
                                  bonus_tech_map: dict[int, int],
-                                 uu_id: int, elite_uu_id: int) -> int:
+                                 uu_id: int, elite_uu_id: int, second: tuple = ()) -> int:
     """Point bonus 102's Leitis commands at this civ's own UU (issue #48).
 
     Only touches the civ's private copies of 699-702 (they are civ-gated, so
@@ -7017,12 +7019,20 @@ def _retarget_relic_attack_to_uu(dat: DatFile, civ_index: int,
         eff_id = dat.techs[new_tid].effect_id
         if not 0 <= eff_id < len(dat.effects):
             continue
-        for ec in dat.effects[eff_id].effect_commands:
+        cmds = dat.effects[eff_id].effect_commands
+        for ec in list(cmds):
             if ec.type == EC_ADD and int(ec.c) == 9 and int(ec.a) in targets:
-                ec.a = targets[int(ec.a)]
+                was = int(ec.a)
+                ec.a = targets[was]
                 cls = _uu_attack_class(dat, civ_index, int(ec.a))
                 ec.d = float(cls * 256 + (int(ec.d) & 255))
                 rewritten += 1
+                # The second unique unit too (the user, 2026-11-13).
+                if len(second) == 2:
+                    ec2 = deepcopy(ec)
+                    ec2.a = second[0] if was == _LEITIS else second[1]
+                    ec2.d = float(_uu_attack_class(dat, civ_index, int(ec2.a)) * 256 + (int(ec.d) & 255))
+                    cmds.append(ec2)
     return rewritten
 
 
@@ -7118,6 +7128,141 @@ def _apply_km_uu(dat: DatFile, civ_index: int, km_uu_index: int) -> tuple[int, i
     new_el = _allocate_tech(dat, elite_id,      civ_index, seen)
     print(f"       KM UU index {km_uu_index}: make-avail {make_avail_id}→{new_ma}, elite {elite_id}→{new_el}")
     return new_ma, new_el
+
+
+# ── The second unique unit ────────────────────────────────────────────────────
+# A civ may train a second unique unit at the Castle (the user, 2026-11-13): the
+# same pick as the first, from the same pool, built by the same two paths, on
+# the first free column of the Castle — button 4, its Elite upgrade on 9, one
+# row below as every UU's is.  The hero leaves button 4 for page 2 then.
+SECOND_UU_BUTTON, SECOND_UU_ELITE_BUTTON = 4, 9
+SECOND_UU_HOTKEY = 16730                       # Castle button 4's own (the hero's)
+
+
+def _uu_unit_pair(dat: DatFile, make_avail: int, elite_tech: int) -> tuple[int, int]:
+    """(unit, elite) for a unique unit's two techs: the unit its make-avail
+    tech enables, and what the Elite upgrade turns THAT unit into.  Not the
+    upgrade's first command: the Konnik's lists the dismounted Konnik first and
+    the Ratha's its melee form, so taking it aimed Anarchy and the like at a
+    form nobody trains.  (-1, -1) when the techs say nothing."""
+    def cmds(tid):
+        if 0 <= tid < len(dat.techs) and 0 <= dat.techs[tid].effect_id < len(dat.effects):
+            return dat.effects[dat.techs[tid].effect_id].effect_commands
+        return []
+    ups = [(int(c.a), int(c.b)) for c in cmds(elite_tech) if c.type == EC_UPGRADE]
+    uu = next((int(c.a) for c in cmds(make_avail) if c.type == EC_ENABLE and c.b != 0), -1)
+    if uu < 0:
+        return ups[0] if ups else (-1, -1)
+    return uu, next((b for a, b in ups if a == uu), uu)
+
+
+def get_second_uu_index(civ_def: dict) -> int | None:
+    uu = civ_def.get("second_uu")
+    if isinstance(uu, dict) and uu.get("km_idx") is not None:
+        try:
+            return int(uu["km_idx"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _apply_second_uu(dat: DatFile, civ_index: int, civ_def: dict, has_krepost: bool,
+                     warnings: list) -> dict | None:
+    """Build the civ's second unique unit.  Returns
+    {km_idx, unit_id, elite_id, make_avail, elite_tech, sids, names, strings}.
+
+    A game unit (Huskarl, Konnik, a Chronicles unit) gets this civ's copies of
+    its civ-gated techs, as the first does (_apply_km_uu); a preset or scenario
+    unit is appended new (km_custom_uu).  Either way the two units and the
+    Elite upgrade take string ids of their own (_editor_sid), so the routes
+    write the names and Castle hovers from extra_unit_strings alone and a game
+    unit's strings stay its owner's.  Its button moves to the Castle's (and
+    Krepost's) button 4 and the Elite upgrade to 9.
+    """
+    km = get_second_uu_index(civ_def)
+    if km is None:
+        return None
+    if km == get_km_uu_index(civ_def):
+        warnings.append("The second unique unit is the same as the first — left out.")
+        return None
+    spec = civ_def.get("second_uu") or {}
+    units = dat.civs[civ_index].units
+    s_uu, s_el = _editor_sid(dat), _editor_sid(dat)
+    if km in _KM_UU_TECHS:
+        ma, et = _apply_km_uu(dat, civ_index, km)
+        _restore_elite_upgrade_location(dat, et, civ_index)
+        uu_id, elite_id = _uu_unit_pair(dat, ma, et)
+        if uu_id < 0:
+            warnings.append(f"The second unique unit ({_KM_UU_NAMES.get(km, km)}) couldn't be found "
+                            "in this game version — left out.")
+            return None
+        if elite_id < 0:
+            elite_id = uu_id
+        if has_krepost:
+            for uid in {uu_id, elite_id}:
+                cre = units[uid].creatable if units[uid] is not None else None
+                tls = cre.train_locations if cre is not None else []
+                if tls and not any(tl.unit_id == km_custom_uu.BUILDING_KREPOST for tl in tls):
+                    k = deepcopy(tls[0])
+                    k.unit_id = km_custom_uu.BUILDING_KREPOST
+                    cre.train_locations.append(k)
+        default = _KM_UU_NAMES.get(km) or _display_name(units[uu_id].language_dll_name, units[uu_id].name)
+        elite_default = (_display_name(units[elite_id].language_dll_name, None) if elite_id != uu_id else None)
+    elif km in km_custom_uu.PRESETS:
+        uu_id, elite_id, ma, et = km_custom_uu.append_km_custom_uu(
+            dat, civ_index, km, s_uu, _help_sid(s_uu), s_el, _help_sid(s_el), has_krepost=has_krepost)
+        units = dat.civs[civ_index].units
+        default, elite_default = km_custom_uu.PRESETS[km]["name"], None
+    else:
+        warnings.append(f"The second unique unit (index {km}) isn't one Empire Forge knows — left out.")
+        return None
+
+    name = (spec.get("name") or "").strip() or default
+    elite_name = (f"Elite {name}" if (spec.get("name") or "").strip() or not elite_default
+                  else elite_default)
+    names = [name, elite_name]
+    for uid, sid, nm in ((uu_id, s_uu, name), (elite_id, s_el, elite_name)):
+        _OWN_STRING_NAMES[sid] = nm
+        u = units[uid]
+        u.language_dll_name, u.language_dll_creation, u.language_dll_help = sid, _creation_sid(sid), _help_sid(sid)
+        if uid == elite_id == uu_id:
+            names[1] = name
+            break
+    if 0 <= et < len(dat.techs) and dat.techs[et].civ == civ_index:
+        t = dat.techs[et]
+        t.language_dll_name, t.language_dll_description = s_el, _creation_sid(s_el)
+        t.language_dll_help, t.language_dll_tech_tree = _help_sid(s_el), -1
+
+    # Castle (and Krepost) button 4; the Elite upgrade one row below.
+    _, by_pos = _grid_hotkeys(dat)
+    elite_hk = by_pos.get(SECOND_UU_ELITE_BUTTON)
+    for uid in {uu_id, elite_id}:
+        for tl in units[uid].creatable.train_locations:
+            if tl.unit_id in (BUILDING_CASTLE, km_custom_uu.BUILDING_KREPOST):
+                tl.button_id, tl.hot_key_id = SECOND_UU_BUTTON, SECOND_UU_HOTKEY
+    if 0 <= et < len(dat.techs) and dat.techs[et].civ == civ_index:
+        for rl in dat.techs[et].research_locations:
+            if rl.location_id in (BUILDING_CASTLE, km_custom_uu.BUILDING_KREPOST):
+                rl.button_id = SECOND_UU_ELITE_BUTTON
+                if elite_hk:
+                    rl.hot_key_id = elite_hk
+
+    desc = (spec.get("description") or "").strip()
+    extra = "Trainable at Castle and Krepost." if has_krepost else "Trainable at Castle."
+    regen = {"extra": extra, "tag": f"{civ_def.get('alias', '')} unique unit".strip(), "desc": desc}
+    strings = []
+    for uid, sid, nm in ((uu_id, s_uu, names[0]), (elite_id, s_el, names[1])):
+        u = units[uid]
+        strings.append({"sid": sid, "name": nm, "desc_sid": _help_sid(sid), "unit_id": uid, "regen": regen,
+                        "help_text": format_unit_tooltip_help(u, nm, extra=extra),
+                        "ext_sid": _extended_tooltip_sid(sid),
+                        "ext_text": format_unit_extended_tooltip(u, nm, tag=regen["tag"], desc=desc)})
+        if uid == elite_id == uu_id:
+            break
+    print(f"       Second UU {km} ({name}): units {uu_id}/{elite_id}, make-avail {ma}, "
+          f"elite tech {et}, Castle button {SECOND_UU_BUTTON}")
+    return {"km_idx": km, "unit_id": uu_id, "elite_id": elite_id, "make_avail": ma, "elite_tech": et,
+            "sids": [s_uu, s_el], "names": names, "strings": strings}
 
 
 _VOICE_MAP_PATH = Path(__file__).parent / "voice_wwise_map.json"
@@ -7576,8 +7721,8 @@ def look_elite(dat: DatFile, src_id: int) -> int | None:
 
 
 def _apply_uu_appearance(dat: DatFile, civ_index: int, civ_def: dict,
-                         uu_ids: tuple[int, int], warnings: list) -> None:
-    uu = civ_def.get("unique_unit") if isinstance(civ_def.get("unique_unit"), dict) else {}
+                         uu_ids: tuple[int, int], warnings: list, key: str = "unique_unit") -> None:
+    uu = civ_def.get(key) if isinstance(civ_def.get(key), dict) else {}
     src_id = uu.get("appearance")
     if src_id is None:
         return
@@ -7936,14 +8081,9 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         # substitutions (see UU_SUBSTITUTION_TYPES) can use this civ's real
         # elite UU rather than the catalog source civ's hardcoded one.
         _restore_elite_upgrade_location(dat, km_uu_elite_tech_id, civ_index)
-        if 0 <= km_uu_elite_tech_id < len(dat.techs):
-            elite_eff_id = dat.techs[km_uu_elite_tech_id].effect_id
-            if 0 <= elite_eff_id < len(dat.effects):
-                for ec in dat.effects[elite_eff_id].effect_commands:
-                    if ec.type == EC_UPGRADE:
-                        uu_id = int(ec.a)        # base UU
-                        elite_uu_id = int(ec.b)  # elite UU
-                        break
+        _pair = _uu_unit_pair(dat, km_uu_make_avail_tech_id, km_uu_elite_tech_id)
+        if _pair[0] >= 0:
+            uu_id, elite_uu_id = _pair
         if has_krepost and uu_id >= 0:
             # Vanilla KM UU units only have Castle in their train_locations.
             # Add a Krepost slot to this civ's own unit copy so the UU trains
@@ -8035,6 +8175,11 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         print(f"       WARNING: {msg}")
         warnings.append(msg)
 
+    # 6b'. The second unique unit, before the UT substitutions below so a
+    #      tech naming "the unique unit" reaches both (the user, 2026-11-13).
+    second_uu = _apply_second_uu(dat, civ_index, civ_def, has_krepost, warnings)
+    uu2_ids = (second_uu["unit_id"], second_uu["elite_id"]) if second_uu else ()
+
     # 6c. Patch deferred UU-substitution effect commands (see
     #     UU_SUBSTITUTION_TYPES / _build_ut_effect_cmds) now that this civ's
     #     own elite UU id is fully resolved across all 3 possible paths above.
@@ -8094,6 +8239,18 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 _ensure_anarchy_train_slot(elite_uu_id, int(ec.d))
             if not _already_targets(dat.effects[eff_id], ec):
                 dat.effects[eff_id].effect_commands.append(ec)
+            if second_uu and ec.type == 12:
+                msg = ("The free Elite unique units at the Castle (Mercenaries) are the first "
+                       "unique unit's: the second has no free-unit slot of its own.")
+                if msg not in warnings:
+                    warnings.append(msg)
+            elif second_uu:
+                ec2 = deepcopy(ec)
+                ec2.a = second_uu["elite_id"]
+                if ec2.type == EC_SET and int(ec2.c) == 42:
+                    _ensure_anarchy_train_slot(second_uu["elite_id"], int(ec2.d))
+                if not _already_targets(dat.effects[eff_id], ec2):
+                    dat.effects[eff_id].effect_commands.append(ec2)
     if (castle_ut_pending_uu_subs or imp_ut_pending_uu_subs) and elite_uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own elite unique "
                "unit, but this civ has no UU defined — effect left as a no-op.")
@@ -8111,6 +8268,13 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 _ensure_anarchy_train_slot(uu_id, int(ec.d))
             if not _already_targets(dat.effects[eff_id], ec):
                 dat.effects[eff_id].effect_commands.append(ec)
+            if second_uu:
+                ec2 = deepcopy(ec)
+                ec2.a = second_uu["unit_id"]
+                if ec2.type == EC_SET and int(ec2.c) == 42:
+                    _ensure_anarchy_train_slot(second_uu["unit_id"], int(ec2.d))
+                if not _already_targets(dat.effects[eff_id], ec2):
+                    dat.effects[eff_id].effect_commands.append(ec2)
     if (castle_ut_pending_base_uu_subs or imp_ut_pending_base_uu_subs) and uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own base unique "
                "unit (e.g. Anarchy train-at-Barracks), but this civ has no "
@@ -8120,6 +8284,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
 
     _apply_uu_appearance(dat, civ_index, civ_def,
                          tuple(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0), warnings)
+    if second_uu:
+        _apply_uu_appearance(dat, civ_index, civ_def, uu2_ids, warnings, key="second_uu")
 
     # 6d. The tree page's "+ Add Unit" lines — before the cards, so class and
     #     "Trained at" cards reach the new units.
@@ -8137,8 +8303,10 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         for _clone_tid in bonus_results.get("bonus_tech_map", {}).values():
             _restore_elite_upgrade_location(dat, _clone_tid, civ_index)
         _retarget_relic_attack_to_uu(dat, civ_index, bonus_results.get("bonus_tech_map", {}),
-                                     uu_id, elite_uu_id)
+                                     uu_id, elite_uu_id, uu2_ids)
     bonus_results["extra_unit_strings"].extend(km_uu_custom_unit_strings)
+    if second_uu:
+        bonus_results["extra_unit_strings"].extend(second_uu["strings"])
     bonus_results.setdefault("extra_tech_strings", []).extend(km_uu_extra_tech_strings)
     for _line in _added:
         bonus_results["extra_unit_strings"].extend(_line["strings"][0])
@@ -8164,10 +8332,10 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # 7a. Player-composed bonus cards — one auto-fire tech each — and the
     #     library cards picked as team bonuses or into a Custom UT.
     bonus_results["custom_applied"] = _apply_custom_bonuses(
-        dat, civ_index, civ_def, warnings, (uu_id, elite_uu_id),
+        dat, civ_index, civ_def, warnings, (uu_id, elite_uu_id, *uu2_ids),
         (castle_ut_tech_id, imp_ut_tech_id), bonus_results.setdefault("custom_labels", {}))
     bonus_results["placed_cards"] = _apply_placed_cards(
-        dat, civ_index, civ_def, warnings, (uu_id, elite_uu_id),
+        dat, civ_index, civ_def, warnings, (uu_id, elite_uu_id, *uu2_ids),
         (castle_ut_tech_id, imp_ut_tech_id), tb_eff_id, _EFFECT_COMMAND_SOFT_LIMIT)
 
     # 7a'. The Imperial Scorpion is our unit, so no tech names it: give it
@@ -8207,7 +8375,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     _place_hero(dat, civ_index, civ_def)
     button_layout = _resolve_button_collisions(
         dat, civ_index, civ_def,
-        frozenset(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0)
+        frozenset(u for u in (uu_id, elite_uu_id, *uu2_ids) if u is not None and u >= 0)
         | _replacement_units(civ_def))
     for _entry in button_layout:
         if _entry["to"] is None:
@@ -8306,6 +8474,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         "orig_imp_ut_tech_id":    orig_imp_ut_tech_id,
         "km_uu_make_avail_tech_id": km_uu_make_avail_tech_id,
         "km_uu_elite_tech_id":      km_uu_elite_tech_id,
+        "second_uu":                second_uu,
         "bonus_tech_map":           bonus_results.get("bonus_tech_map", {}),
         "uu_id":                    uu_id,
         "elite_uu_id":              elite_uu_id,

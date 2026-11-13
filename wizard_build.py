@@ -44,7 +44,7 @@ from civ_appender import (
     get_km_uu_index, _KM_UU_NAMES,
 )
 from civ_overrides import apply_civ_with_overrides
-from civ_schema import norm_added_lines
+from civ_schema import norm_added_lines, norm_second_uu
 from dat_reader import load_dat
 import custom_bonus
 
@@ -110,6 +110,8 @@ def _draft_to_civ_def(draft: dict) -> dict:
         "custom_team_bonuses":   draft.get("custom_team_bonuses") or [],
         # The tree page's "+ Add Unit" lines — added_lines.apply_added_lines.
         "added_lines":           norm_added_lines(draft.get("added_lines")),
+        # A second unique unit at the Castle — civ_appender._apply_second_uu.
+        "second_uu":             norm_second_uu(draft.get("second_uu")),
         # Past retired_cards' one-time tree cleanup (its TREE_VERSION).
         "tree_version":          draft.get("tree_version"),
     }

@@ -92,6 +92,7 @@ def _set_tech_cost_time(tech, cost: dict | None, time_val) -> None:
 _CASTLE_BUILDING     = 82
 _KREPOST_BUILDING    = 1251
 _CASTLE_BTN1_HOTKEY  = 16101   # Q key, Castle/Krepost button 1
+_SECOND_UU_BUTTON, _SECOND_UU_HOTKEY = 4, 16730   # civ_appender.SECOND_UU_BUTTON / _HOTKEY
 
 
 def _refresh_uu_tooltips(dat, slot: int, civ_result: dict | None) -> None:
@@ -240,7 +241,8 @@ def write_unit_cost(u, cost: dict, label: str = "unit") -> None:
         rc[i].flag   = 0
 
 
-def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> None:
+def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict,
+                        key: str = "unique_unit", button: int = 1) -> None:
     """
     Apply wizard stat overrides and advanced flags to UU unit objects in the DAT.
     Called after apply_civ so the base unit data is already in place.
@@ -252,7 +254,7 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
     """
     if uu_info is None:
         return
-    uu = draft.get("unique_unit") or {}
+    uu = draft.get(key) or {}
     # Every read below is a membership test ("cost_food" in overrides), which an
     # explicit null passes before reaching int(None).  to_draft strips nulls, so
     # the wizard door could never hit that; the upload door hands us the raw
@@ -284,8 +286,8 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
         tl = u.creatable.train_locations[0]
         if tl.unit_id not in (_CASTLE_BUILDING, _KREPOST_BUILDING):
             tl.unit_id    = _CASTLE_BUILDING
-            tl.button_id  = 1
-            tl.hot_key_id = _CASTLE_BTN1_HOTKEY
+            tl.button_id  = button
+            tl.hot_key_id = _CASTLE_BTN1_HOTKEY if button == 1 else _SECOND_UU_HOTKEY
 
     if not overrides and not flags:
         return
@@ -1220,6 +1222,14 @@ def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
     uu_info = _resolve_uu_info(civ_def, dat, slot, civ_result)
     _override_ut_costs(dat, civ_result, overrides)
     _apply_uu_overrides(dat, slot, uu_info, overrides)
+    second = civ_result.get("second_uu")
+    if second:
+        _apply_uu_overrides(dat, slot, {"unit_id": second["unit_id"], "elite_id": second["elite_id"]},
+                            overrides, key="second_uu", button=_SECOND_UU_BUTTON)
+        elite_up = norm_elite_upgrade((overrides.get("second_uu") or {}).get("elite_upgrade"))
+        et = second.get("elite_tech")
+        if elite_up and isinstance(et, int) and 0 <= et < len(dat.techs):
+            _set_tech_cost_time(dat.techs[et], elite_up["cost"], elite_up["time"])
     _refresh_uu_tooltips(dat, slot, civ_result)
     _apply_hero_unit(dat, slot, overrides)
     _apply_unit_edits(dat, slot, overrides)

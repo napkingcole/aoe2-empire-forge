@@ -1215,6 +1215,14 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                              "Picture Index": dat.civs[slot].units[line["units"][0]].icon_id})
                 changed += 1
     added = _added_line_nodes(dat, slot, (civ_result or {}).get("added_lines") or [])
+    # The second unique unit: a Castle line of its own (civ_appender._apply_second_uu).
+    second = (civ_result or {}).get("second_uu")
+    if second:
+        n = 1 if second["elite_id"] == second["unit_id"] else 2
+        added += _added_line_nodes(dat, slot, [{
+            "units": [second["unit_id"], second["elite_id"]][:n], "sids": second["sids"][:n],
+            "names": second["names"][:n], "ages": [3, 4][:n],
+            "techs": [second["make_avail"], second["elite_tech"]][:n], "building": 82}])
     if added:
         data.setdefault("civ_techs_units", []).extend(added)
         changed += len(added)
