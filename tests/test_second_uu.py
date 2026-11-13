@@ -66,7 +66,7 @@ SLOT = 1
 units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
 
 
-def build(second, hero=None, first=HUSKARL):
+def build(second, hero=None, first=HUSKARL, lines=None):
     draft = {
         "alias": "Two Units", "architecture": 2, "language": 0, "bonuses": [], "team_bonuses": [],
         "unique_unit": {"km_idx": first},
@@ -78,6 +78,8 @@ def build(second, hero=None, first=HUSKARL):
         "custom_bonuses": [{"id": "uu1", "target": {"type": "group", "id": "unique_unit"},
                             "effects": [{"attr": "hp", "op": "add", "value": 7}]}],
     }
+    if lines:
+        draft["added_lines"] = lines
     if hero is not None:
         draft["hero_unit"] = {"base_unit_id": hero, "name": "", "description": ""}
     dat = load_dat(str(dat_path))
@@ -131,8 +133,9 @@ if s:
     check("a card for unique units reaches both, Elites too", {first, r["elite_uu_id"], uu, el} <= hp7,
           sorted(hp7))
 
-print("=== a preset as the second (Crusader Knight) ===")
-dat, r = build({"km_idx": CRUSADER})
+print("=== a preset as the second (Crusader Knight), and a line added at the Castle ===")
+CASTLE_LINE = [{"id": 1, "building": CASTLE, "base": 36, "tiers": [{"age": 3}]}]   # a Bombard Cannon copy
+dat, r = build({"km_idx": CRUSADER}, lines=CASTLE_LINE)
 s = r.get("second_uu")
 check("built", bool(s), r.get("warnings"))
 if s:
@@ -140,6 +143,14 @@ if s:
           s["unit_id"] >= 2000 and castle_buttons(dat, s["unit_id"])[:1] == [(CASTLE, 4)],
           (s["unit_id"], castle_buttons(dat, s["unit_id"])))
     check("named after the preset", s["names"][0] == "Crusader Knight", s["names"])
+check("the Castle takes one extra: the added line is left out, with a warning",
+      not r.get("added_lines") and any("already has its extra unit" in w for w in r["warnings"]),
+      (r.get("added_lines"), r["warnings"]))
+dat, r = build(None, lines=CASTLE_LINE + [dict(CASTLE_LINE[0], id=2)])
+check("...and only one line is added there without a second unique unit",
+      len(r.get("added_lines") or []) == 1, r.get("added_lines"))
+check("...on the second unique unit's button, 4",
+      (r.get("added_lines") or [{}])[0].get("button") == 4, (r.get("added_lines") or [{}])[0].get("button"))
 
 print("=== a Konnik as the FIRST unique unit ===")
 dat, r = build(None, first=KONNIK)

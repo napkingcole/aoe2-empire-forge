@@ -629,8 +629,20 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
     from civ_appender import _tree_building_ids
     have = _tree_building_ids(civ_def)
     replaced: dict[int, tuple[int, list]] = {}      # vanilla unit -> (ours, its techs)
+    # The Castle takes one extra unit beside its unique unit (the user,
+    # 2026-11-13): a second unique unit, or one line added here.
+    from civ_appender import get_second_uu_index
+    castle_taken = get_second_uu_index(civ_def) is not None
     for line in lines:
         base, building, tiers = line["base"], line["building"], line["tiers"]
+        if building == 82 and line.get("from") is None and line.get("replaces") is None:
+            if castle_taken:
+                msg = (f"Added line {line['id']}: the Castle already has its extra unit "
+                       f"({'a second unique unit' if get_second_uu_index(civ_def) is not None else 'another added line'}) — skipped")
+                print(f"       WARNING: {msg}")
+                warnings.append(msg)
+                continue
+            castle_taken = True
         # The tree page hides a line whose building is off; the build agrees.
         # (The Town Center is always on; a tree with no buildings listed is a
         # KM file that never chose, so it keeps them.)

@@ -594,7 +594,7 @@ def norm_tech_edits(raw) -> dict:
 #   `role` is the AI's unit line it joins (a unitlines.json LineID, None = the
 #   one holding the base unit).  Built by added_lines.apply_added_lines.
 
-ADDED_LINE_BUILDINGS = (12, 87, 101, 49, 45, 104, 109)  # Barracks .. Town Center
+ADDED_LINE_BUILDINGS = (12, 87, 101, 49, 45, 104, 109, 82)  # Barracks .. Town Center, Castle
 ADDED_LINE_MAX_TIERS = 4
 ADDED_LINE_DESC_MAX = 300
 
