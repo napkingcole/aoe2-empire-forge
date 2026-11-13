@@ -118,11 +118,10 @@ def to_draft(schema: dict) -> dict:
 
     # ── UU ───────────────────────────────────────────────────────────────────
     raw_uu   = _clean(s.get("unique_unit") or {})
-    overrides = _clean(raw_uu.get("overrides") or {})
     adv_flags = _clean(raw_uu.get("advanced_flags") or {})
 
     # Strip null values so the build functions treat absence == "no override"
-    overrides = {k: v for k, v in overrides.items() if v is not None}
+    overrides = norm_uu_overrides(raw_uu.get("overrides"))
     adv_flags = {k: v for k, v in adv_flags.items()
                  if v is not None and v is not False and k not in RETIRED_UU_FLAGS}
 
@@ -293,7 +292,7 @@ def from_draft(draft: dict) -> dict:
         "vanilla_id":  uu_raw.get("vanilla_id"),
         "name":        uu_raw.get("name",        ""),
         "description": uu_raw.get("description", ""),
-        "overrides":   {k: v for k, v in overrides.items()  if v is not None},
+        "overrides":   norm_uu_overrides(overrides),
         "advanced_flags": {k: v for k, v in adv_flags.items() if v is not None},
     }
     elite_up = norm_elite_upgrade(uu_raw.get("elite_upgrade"))
@@ -441,6 +440,38 @@ def norm_unit_name(raw) -> str:
     return text[:UNIT_NAME_MAX].strip()
 
 
+def norm_class_map(raw) -> dict:
+    """{"<armour class>": amount} for bonus damage (civ_overrides.
+    write_bonus_attacks): 0 removes the class.  Classes 3 and 4 are the unit's
+    own pierce and melee ("attack", "melee", "pierce"), so they are left out."""
+    out: dict = {}
+    if not isinstance(raw, dict):
+        return out
+    for c, a in raw.items():
+        ck = _id_key(c)
+        if ck is None or int(ck) in (3, 4):
+            continue
+        if (v := _num(a, int, 0, _SHORT)) is not None:
+            out[ck] = v
+    return out
+
+
+# The unique unit's bonus damage, per tier, in its overrides beside the stats.
+UU_CLASS_OVERRIDES = ("bonus_base", "bonus_elite")
+
+
+def norm_uu_overrides(raw) -> dict:
+    """The unique unit's overrides with nulls dropped and its class maps cleaned."""
+    out = {k: v for k, v in (raw or {}).items() if v is not None and not k.startswith("_")}
+    for k in UU_CLASS_OVERRIDES:
+        if k in out:
+            if m := norm_class_map(out[k]):
+                out[k] = m
+            else:
+                del out[k]
+    return out
+
+
 def norm_unit_edits(raw) -> dict:
     """{"<unit id>": {name, hp, attack, melee, pierce, range, reload, speed, los,
     train, cost: {food, wood, stone, gold}, bonus: {"<class>": amount},
@@ -472,17 +503,8 @@ def norm_unit_edits(raw) -> dict:
         # "Available from": the age it becomes available in (civ_overrides._apply_age_moves).
         if e.get("age") is not None and (a := _num(e["age"], int, 1, 4)) is not None:
             clean["age"] = a
-        if isinstance(e.get("bonus"), dict):
-            bonus = {}
-            for c, a in e["bonus"].items():
-                ck = _id_key(c)
-                # 3 and 4 are the unit's own pierce/melee attack ("attack").
-                if ck is None or int(ck) in (3, 4):
-                    continue
-                if (v := _num(a, int, 0, _SHORT)) is not None:
-                    bonus[ck] = v
-            if bonus:
-                clean["bonus"] = bonus
+        if bonus := norm_class_map(e.get("bonus")):
+            clean["bonus"] = bonus
         if clean:
             out[key] = clean
     return out

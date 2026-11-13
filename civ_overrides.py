@@ -297,7 +297,10 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
     for u, sfx in tiers:
         if u is not None:
             write_unit_stats(u, {k[:-len(sfx)]: v for k, v in overrides.items()
-                                 if k.endswith(sfx)})
+                                 if k.endswith(sfx) and not isinstance(v, dict)})
+            # Bonus damage, {class: amount} per tier, as on the tech tree.
+            if isinstance(overrides.get(f"bonus{sfx}"), dict):
+                write_bonus_attacks(u, overrides[f"bonus{sfx}"])
 
     # Training cost overrides (shared — applies to both tiers).  The four boxes
     # are the complete spendable cost, matching the wizard's one combined

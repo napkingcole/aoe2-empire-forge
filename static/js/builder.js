@@ -4140,6 +4140,112 @@ function populateUUOverrides(unit) {
   }
 
   _uoUpdateBadge();
+  _uoRenderBonus(unit);
+}
+
+// ── UU bonus damage (overrides.bonus_base / bonus_elite = {class: amount}) ────
+// The unit's classes come from /api/builder/uu/combat, read the way the mod
+// builds it.  An override is only what differs from the game's; 0 removes a
+// class (civ_overrides.write_bonus_attacks).
+const _uoCombatCache = {};
+let _uoCombat = null;          // { km_idx, base, elite, names }
+
+function _uoCombatFor(kmIdx) {
+  if (!_uoCombatCache[kmIdx]) {
+    _uoCombatCache[kmIdx] = fetch(`/api/builder/uu/combat?km_idx=${kmIdx}&dat_path=${encodeURIComponent(draft.dat_path || "")}`)
+      .then(r => r.json()).catch(() => ({ status: "error" }));
+  }
+  return _uoCombatCache[kmIdx];
+}
+
+// The game's bonus for one tier: {class: amount}, melee and pierce left out.
+function _uoGameBonus(tier) {
+  const t = _uoCombat?.[tier] || (tier === "elite" ? _uoCombat?.base : null);
+  const out = {};
+  for (const [c, a] of Object.entries(t?.attacks || {})) if (a > 0 && c !== "3" && c !== "4") out[c] = a;
+  return out;
+}
+
+async function _uoRenderBonus(unit) {
+  const box = document.getElementById("uo-bonus");
+  if (!box) return;
+  const kmIdx = unit?.km_idx;
+  if (kmIdx == null) { box.classList.add("d-none"); return; }
+  const r = await _uoCombatFor(kmIdx);
+  if (draft.unique_unit?.km_idx !== kmIdx) return;          // picked another meanwhile
+  if (!r || r.status !== "ok") { box.classList.add("d-none"); return; }
+  _uoCombat = { km_idx: kmIdx, base: r.base, elite: r.elite,
+                names: Object.fromEntries(r.bonus_classes.map(c => [String(c.cls), c.name])),
+                order: r.bonus_classes.map(c => String(c.cls)) };
+  box.classList.remove("d-none");
+  _uoDrawBonusRows();
+}
+
+function _uoDrawBonusRows() {
+  const rowsEl = document.getElementById("uo-bonus-rows");
+  if (!rowsEl || !_uoCombat) return;
+  const ov = draft.unique_unit?.overrides || {};
+  const game = { base: _uoGameBonus("base"), elite: _uoGameBonus("elite") };
+  const own  = { base: ov.bonus_base || {}, elite: ov.bonus_elite || {} };
+  const shown = new Set([...Object.keys(game.base), ...Object.keys(game.elite),
+                         ...Object.keys(own.base), ...Object.keys(own.elite)]);
+  const name = c => _uoCombat.names[c] || `class ${c}`;
+  const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  const cell = (tier, c) => {
+    const g = game[tier][c] || 0, v = own[tier][c];
+    return `<div class="col-4">
+        <input type="text" class="form-control form-control-sm uo-input uo-bonus-in" data-tier="${tier}" data-cls="${c}"
+               pattern="[0-9]*" inputmode="numeric" placeholder="${g || "—"}" autocomplete="off" value="${v ?? ""}"
+               aria-label="${tier === "base" ? "Standard" : "Elite"} bonus vs ${esc(name(c))}">
+        <div class="uo-def">${g ? `Default: +${g}` : "Not in the game"}</div></div>`;
+  };
+  rowsEl.innerHTML = [...shown].sort((a, b) => _uoCombat.order.indexOf(a) - _uoCombat.order.indexOf(b)).map(c => `
+    <div class="row g-2 mb-2 align-items-start">
+      <div class="col-4 small fw-semibold d-flex align-items-start gap-1" style="padding-top:.3rem;">
+        <span class="flex-grow-1">vs ${esc(name(c))}</span>
+        <button type="button" class="btn btn-link btn-sm p-0 text-muted uo-bonus-x" data-cls="${c}"
+                title="Remove this bonus" aria-label="Remove bonus vs ${esc(name(c))}">&times;</button>
+      </div>${cell("base", c)}${cell("elite", c)}
+    </div>`).join("") || `<div class="uo-def mb-2">None in the game.</div>`;
+
+  const sel = document.getElementById("uo-bonus-cls");
+  if (sel) sel.innerHTML = `<option value="">Add bonus vs…</option>` + _uoCombat.order.filter(c => !shown.has(c))
+    .map(c => `<option value="${c}">${esc(name(c))}</option>`).join("");
+
+  rowsEl.querySelectorAll(".uo-bonus-in").forEach(el => el.addEventListener("change", () =>
+    _uoSaveBonus(el.dataset.tier, el.dataset.cls, el.value)));
+  rowsEl.querySelectorAll(".uo-bonus-x").forEach(b => b.addEventListener("click", () => {
+    _uoSaveBonus("base", b.dataset.cls, "0", false);
+    _uoSaveBonus("elite", b.dataset.cls, "0");
+  }));
+}
+
+// One tier's bonus vs one class: blank or the game's own value drops the edit.
+function _uoSaveBonus(tier, cls, raw, redraw = true) {
+  if (!draft.unique_unit) return;
+  const ov = draft.unique_unit.overrides || (draft.unique_unit.overrides = {});
+  const key = `bonus_${tier}`;
+  const map = Object.assign({}, ov[key]);
+  const n = String(raw).trim() === "" ? null : Math.max(0, Math.min(32767, Math.floor(Number(raw))));
+  const g = _uoGameBonus(tier)[cls] || 0;
+  if (n === null || isNaN(n) || n === g) delete map[cls];
+  else map[cls] = n;
+  if (Object.keys(map).length) ov[key] = map;
+  else delete ov[key];
+  saveDraft();
+  _uoUpdateBadge();
+  if (redraw) _uoDrawBonusRows();
+}
+
+function _uoAddBonus() {
+  const cls = document.getElementById("uo-bonus-cls")?.value;
+  const b = document.getElementById("uo-bonus-new-base");
+  const e = document.getElementById("uo-bonus-new-elite");
+  if (!cls || !b || String(b.value).trim() === "" || !(Number(b.value) > 0)) return;
+  _uoSaveBonus("base", cls, b.value, false);
+  _uoSaveBonus("elite", cls, String(e?.value).trim() !== "" ? e.value : b.value);
+  b.value = "";
+  if (e) e.value = "";
 }
 
 // Elite upgrade cost and research time (#68): unique_unit.elite_upgrade =
@@ -4178,6 +4284,7 @@ function clearUUOverrides() {
     if (el) el.value = "";
   }
   _uoUpdateBadge();
+  _uoDrawBonusRows();
 }
 
 // Minimums enforced in JS (pattern attr only validates visually, not saves).
@@ -4236,6 +4343,7 @@ function _wireUUOverrides() {
     document.getElementById(`uo-eu-${r}`)
       ?.addEventListener("input", e => _uoSaveEliteUpgrade(r, e.target.value));
   }
+  document.getElementById("uo-bonus-add")?.addEventListener("click", _uoAddBonus);
   document.getElementById("btn-clear-overrides")
     ?.addEventListener("click", clearUUOverrides);
   document.getElementById("uu-overrides-body")

@@ -2076,6 +2076,68 @@ def _unit_stats_block(u) -> dict:
     }
 
 
+_UU_COMBAT_CACHE: dict[tuple, dict] = {}
+
+
+def _uu_combat(dat_path: str, km_idx: int) -> dict | None:
+    """The UU's attack and armour classes, base and elite, built the way the
+    mod builds it: a vanilla UU's units from its make-avail and elite techs,
+    a custom or scenario one copied and given its preset (km_custom_uu.
+    _apply_preset_stats).  {base: {attacks, armours}, elite: {...} | None},
+    each {"<class>": amount}; None for a UU the DAT can't resolve."""
+    import civ_appender as ca
+    import km_custom_uu as kcu
+    from copy import deepcopy
+    key = (dat_path, km_idx)
+    if key in _UU_COMBAT_CACHE:
+        return _UU_COMBAT_CACHE[key]
+    dat = _get_dat(dat_path)
+    units = dat.civs[1].units
+    bu = eu = None
+    if km_idx in ca._KM_UU_TECHS:
+        t1, t2 = ca._KM_UU_TECHS[km_idx]
+        base = next((int(c.a) for c in dat.effects[dat.techs[t1].effect_id].effect_commands if c.type == 2), None)
+        if base is not None:
+            elite = next((int(c.b) for c in dat.effects[dat.techs[t2].effect_id].effect_commands
+                          if c.type == 3 and int(c.a) == base), None)
+            bu = units[base]
+            eu = units[elite] if elite is not None and elite != base else None
+    elif (p := getattr(kcu, "PRESETS", {}).get(km_idx)) is not None:
+        bu = deepcopy(units[p["base_unit_id"]])
+        eu = deepcopy(units[p.get("elite_unit_id") or p["base_unit_id"]])
+        kcu._apply_preset_stats(bu, eu, p)               # the build's own step
+    if bu is None or bu.type_50 is None:
+        return None
+
+    def tier(u):
+        if u is None or u.type_50 is None:
+            return None
+        return {"attacks": {str(a.class_): int(a.amount) for a in u.type_50.attacks},
+                "armours": {str(a.class_): int(a.amount) for a in u.type_50.armours}}
+    out = {"base": tier(bu), "elite": tier(eu)}
+    _UU_COMBAT_CACHE[key] = out
+    return out
+
+
+@app.route("/api/builder/uu/combat")
+def api_builder_uu_combat():
+    """The UU tab's bonus damage and armour rows: the unit's classes (_uu_combat)
+    and the names to show them by.  ?km_idx=N."""
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    try:
+        km_idx = int(request.args.get("km_idx", ""))
+    except ValueError:
+        return jsonify({"status": "error", "error": "bad km_idx"}), 400
+    combat = _uu_combat(dat_path, km_idx)
+    if combat is None:
+        return jsonify({"status": "error", "error": "unknown unit"}), 404
+    return jsonify({"status": "ok", **combat,
+                    "bonus_classes": [{"cls": c, "name": n} for c, n in sorted(_PANEL_CLASS_NAMES.items(),
+                                                                               key=lambda kv: kv[1])]})
+
+
 def _build_all_uu_stats(dat_path: str) -> dict[int, dict]:
     """
     Compute full stats for every UU from the DAT file.
