@@ -262,10 +262,9 @@ check("no tree (the slot's own): nothing written, the fields still go",
       "tree" not in bare and "long_range_ship" not in bare)
 check("a variant in the tree beside the Cannon Galleon wins (as the picker had it)",
       _tree_unit_ids({"tree": {"units": [CG, ECG, DROMON]}}) & SIEGE == {DROMON})
-check("a tree Caravel or Turtle Ship drops the demolition line (Dock button 8), card or no card",
-      not _tree_unit_ids({"tree": {"units": [1004, 1104, 527, 528, 13]}}) & {1104, 527, 528}
-      and not _tree_unit_ids({"tree": {"units": [831, 1104]}}) & {1104}
-      and {1104, 527, 528} <= _tree_unit_ids({"tree": {"units": [1104, 527, 528]}}))
+check("a tree Caravel or Turtle Ship keeps the demolition line (the button planner shares Dock button 8)",
+      {1004, 1104, 527, 528} <= _tree_unit_ids({"tree": {"units": [1004, 1104, 527, 528, 13]}})
+      and {831, 1104} <= _tree_unit_ids({"tree": {"units": [831, 1104]}}))
 check("a new civ's seed never holds a variant (a deliberate pick)",
       {CATG, DROMON, LOU} <= __import__("retired_cards").SEED_EXCLUDED_UNITS)
 

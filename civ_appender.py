@@ -1479,7 +1479,9 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
     # 2026-11-11 had it from the wizard's picker, moved into its tree once by
     # retired_cards (TREE_VERSION 3).
 
-    # A Turtle Ship or Caravel drops the demolition line: _apply_unit_replacements.
+    # A Turtle Ship or Caravel keeps the demolition line beside it: both want
+    # Dock button 8, and the button planner puts one on page 2 (2026-11-12;
+    # KM's cards 50/69 dropped the line instead).
     _civ_bonus_ids_early = {e[0] for e in get_civ_bonuses(civ_def)}
 
     # ── Step 0: Build EC type=8 'unlock' map from all civ TT effects.
@@ -2357,6 +2359,14 @@ def _civ_present_units(civ_def: dict, dat: DatFile | None = None,
             own = card_techs.__contains__
         tree = set(_tree_unit_ids(civ_def))
         present -= tree - _trainable_tree_units(dat, units, tree, own)
+        if civ_index is None:
+            # A KM catalog unit's card makes its own tech at build time, so the
+            # template has nothing for `own` to find: the Caravel left out of
+            # the preview never met the demolition line on Dock button 8.
+            present |= tree & {u for bid, ids in KM_UNIT_CARDS.items()
+                               if any(e and int(e[0]) == bid for e in get_civ_bonuses(civ_def)
+                                      if isinstance(e, (list, tuple)))
+                               for u in ids}
         present |= _team_bonus_units(dat, civ_def)
         # Only on top of a real tree: an empty set means "bare tree, no
         # constraint" to every caller, and own-tech units alone would turn
@@ -3247,7 +3257,6 @@ LINE_REPLACEMENTS: dict[int, dict] = {
 # KM's duplicates of the same cards (same techs).
 REPLACEMENT_CARD_ALIASES = {307: 416, 314: 417, 402: 362}
 
-_DEMO_SHIP_UNITS = frozenset((1104, 527, 528))      # Demolition Raft, Ship, Heavy
 _BUTTON_EIGHT_SHIPS = frozenset((831, 832, 1004, 1006))   # Turtle Ship, Caravel and Elites
 
 # The Dock's siege ship variants take the Cannon Galleon line's place, as their
@@ -3300,13 +3309,6 @@ def _apply_unit_replacements(units: set, civ_def: dict | None = None) -> set:
     for spec in SIEGE_SHIP_REPLACEMENTS.values():
         if out & set(spec["units"]):
             out -= set(spec["replaces"])
-    # The Turtle Ship and the Caravel take the Demolition Raft line's Dock
-    # button (8): a civ with either has no demolition ships, from the tree or
-    # from the card (KM).  Here rather than in the build alone, or the button
-    # planner put a tree Caravel on page 2 beside a demolition line the build
-    # then removed, and F2 showed that line (2026-11-11).
-    if out & _BUTTON_EIGHT_SHIPS or raw & {50, 69}:
-        out -= _DEMO_SHIP_UNITS
     return out
 
 
@@ -3314,11 +3316,14 @@ def _replacement_units(civ_def: dict) -> frozenset:
     """Units the civ has that replace another line (the Scythian Horse Archer
     for the Cavalry Archer).  They take that line's button by default, as in
     the game: over the Gurjaras the Elephant Archer kept Archery Range button 3
-    and the Scythian Horse Archer went to page 2, where nobody looked (#108)."""
+    and the Scythian Horse Archer went to page 2, where nobody looked (#108).
+    The Turtle Ship and Caravel count too: they share Dock button 8 with the
+    demolition line, and the ship the player added keeps page 1 (2026-11-12)."""
     tree = _tree_unit_ids(civ_def)          # drops the replaced line, keeps the replacement
     raw = _raw_civ_bonus_ids(civ_def)
     return frozenset(u for bid, spec in _UNLOCK_UNIT_BONUSES.items() if spec.get("replaces")
-                     and (tree & set(spec["units"]) or bid in raw) for u in spec["units"])
+                     and (tree & set(spec["units"]) or bid in raw) for u in spec["units"]) \
+        | (tree & _BUTTON_EIGHT_SHIPS)
 
 
 def _rebuild_unlock_techs(dat: DatFile, civ_index: int, spec: dict) -> dict:

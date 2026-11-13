@@ -69,6 +69,9 @@ draft = {
              "buildings": buildings, "techs": techs},
 }
 dat = load_dat(str(dat_path))
+from civ_appender import button_layout_preview  # noqa: E402
+with contextlib.redirect_stdout(io.StringIO()):    # before the build: it reads the template slot
+    pv = button_layout_preview(dat, _draft_to_civ_def(draft), set(techs))
 out = io.StringIO()
 with contextlib.redirect_stdout(out):
     r, _ = apply_civ_with_overrides(dat, _draft_to_civ_def(draft), SLOT, draft)
@@ -92,6 +95,17 @@ enables = {int(c.a) for t in owned.values() if 0 <= t.effect_id < len(dat.effect
 for uid, name in ((MISSIONARY, "Missionary"), (TURTLE, "Turtle Ship"), (CARAVEL, "Caravel"),
                   (FLAMING_CAMEL, "Flaming Camel")):
     check(f"{name}: a tech of this civ's own enables it (the card's, copied)", uid in enables)
+
+print("\n=== the Dock's button 8 (Turtle Ship, Caravel, demolition line) ===")
+DEMO = {1104, 527, 528}
+moved = {u for e in r.get("button_layout", []) if e["building"] == 45 and e["button"] == 8 for u in e["units"]}
+dock8 = {uid for uid in (TURTLE, CARAVEL, *DEMO)
+         if any(t.unit_id == 45 and t.button_id == 8 for t in civ.units[uid].creatable.train_locations)}
+check("the demolition line stays, on page 2 (KM's cards dropped it)",
+      DEMO <= moved and not DEMO & dock8, (sorted(moved), sorted(dock8)))
+check("the Turtle Ship keeps button 8; the Caravel goes to page 2", dock8 == {TURTLE}, sorted(dock8))
+dock = [[l["base"] for l in c["lines"]] for x in pv if x["building"] == 45 for c in x["conflicts"] if c["button"] == 8]
+check("the Button Layout picker shows the same clash, ships first", dock == [[TURTLE, CARAVEL, 527]], dock)
 
 print("\n=== the picker's list ===")
 import added_lines  # noqa: E402

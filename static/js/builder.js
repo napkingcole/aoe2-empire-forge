@@ -121,7 +121,7 @@ function showStep(n) {
     }
   }
   if (n === 1) renderScene();      // a card picked since (460) can change it
-  if (n === 2) { renderDemoShipNotice(); warmTreeSteps(); }
+  if (n === 2) warmTreeSteps();
   if (n === 6 || n === 7) initUTPanel(n);
 
   const btnPrev = document.getElementById("btn-prev");
@@ -4379,15 +4379,6 @@ function _withSiegeShip(units, seed) {
   return _SIEGE_SHIPS.variants.some(id => units.includes(id)) ? units.filter(id => !cg(id)) : units;
 }
 
-// Unique ship bonuses that lock the Demo Ship line.
-// Thirisadai (298) is excluded — it sits in dock position 15 (row 3, col 5),
-// well clear of the demo line (positions 8 and 13), so it can coexist.
-// The Longship (card 51) is no longer one of them: it's a tree node now (see
-// the migration at the top of this file).
-const _UNIQUE_SHIP_BONUS_IDS   = new Set([50, 69]);
-const _DEMO_SHIP_UNITS         = new Set([1104, 527, 528]);
-const _UNIQUE_SHIP_BONUS_NAMES = { 50: "Turtle Ship", 69: "Caravel" };
-
 // Mutual-exclusivity group: only one of {50,69} may be selected at a time.
 // Thirisadai (298) may coexist with one member of this group.
 const _EXCLUSIVE_SHIP_GROUP = new Set([50, 69]);
@@ -4398,42 +4389,6 @@ function showToast(message) {
   if (!body || !el) return;
   body.textContent = message;
   bootstrap.Toast.getOrCreateInstance(el, { delay: 6000 }).show();
-}
-
-// The Turtle Ship and Caravel are tree units now (their cards retired); either
-// takes the demolition line's Dock button (civ_appender._apply_unit_replacements).
-const _BUTTON_EIGHT_SHIP_NAMES = { 831: "Turtle Ship", 1004: "Caravel" };
-function _hasUniqueShipBonus() {
-  return !!_uniqueShipName();
-}
-
-function _uniqueShipName() {
-  const units = (draft.tree && draft.tree.units) || [];
-  const fromTree = Object.keys(_BUTTON_EIGHT_SHIP_NAMES).find(id => units.includes(Number(id)));
-  if (fromTree) return _BUTTON_EIGHT_SHIP_NAMES[fromTree];
-  for (const b of draft.bonuses || []) {
-    const id = Number(b.id ?? b[0]);
-    if (_UNIQUE_SHIP_BONUS_NAMES[id]) return _UNIQUE_SHIP_BONUS_NAMES[id];
-  }
-  return null;
-}
-
-function _uniqueShipBonusName() {
-  return _uniqueShipName() || "unique ship";
-}
-
-function renderDemoShipNotice() {
-  const notice  = document.getElementById("demo-ship-notice");
-  const textEl  = document.getElementById("demo-ship-notice-text");
-  if (!notice) return;
-  if (_hasUniqueShipBonus()) {
-    textEl.textContent =
-      `Civs with ${_uniqueShipBonusName()}s can't use Demolition Ships (shared UI buttons) — ` +
-      `the Demo Raft, Demo Ship, and Heavy Demo Ship have been removed from your tech tree.`;
-    notice.classList.remove("d-none");
-  } else {
-    notice.classList.add("d-none");
-  }
 }
 
 // ── Effect-command meter ──────────────────────────────────────────────────────
@@ -4573,12 +4528,8 @@ window.setTechTree = function (localtree, edits) {
     draft.tech_edits = edits.tech_edits || {};
     draft.added_lines = edits.added_lines || [];
   }
-  let units = localtree[0];
-  if (_hasUniqueShipBonus()) {
-    units = units.filter(id => !_DEMO_SHIP_UNITS.has(id));
-  }
   draft.tree = {
-    units,
+    units:     localtree[0],
     buildings: localtree[1],
     techs:     localtree[2],
   };
