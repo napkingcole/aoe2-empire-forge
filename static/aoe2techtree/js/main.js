@@ -2290,10 +2290,10 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
 
     // A plain mouse wheel moves the tree sideways: down = right, up = left.
     // Trackpads and Magic Mice send deltaX of their own and keep their native
-    // scrolling; a tree taller than the window keeps the wheel for up/down.
+    // scrolling.  Always sideways, even when the tree is taller than the
+    // window: the scrollbar and arrow keys reach the bottom (user, 2026-11-12).
     treeWrap.addEventListener('wheel', function (e) {
         if (e.deltaX !== 0 || e.shiftKey || e.ctrlKey || e.deltaY === 0) return;
-        if (treeWrap.scrollHeight > treeWrap.clientHeight) return;
         if (treeWrap.scrollWidth <= treeWrap.clientWidth) return;
         const step = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? treeWrap.clientWidth : 1;
         treeWrap.scrollLeft += e.deltaY * step;
