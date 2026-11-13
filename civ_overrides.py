@@ -298,9 +298,11 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
         if u is not None:
             write_unit_stats(u, {k[:-len(sfx)]: v for k, v in overrides.items()
                                  if k.endswith(sfx) and not isinstance(v, dict)})
-            # Bonus damage, {class: amount} per tier, as on the tech tree.
+            # Bonus damage and armour classes, {class: amount} per tier, as on the tech tree.
             if isinstance(overrides.get(f"bonus{sfx}"), dict):
                 write_bonus_attacks(u, overrides[f"bonus{sfx}"])
+            if isinstance(overrides.get(f"armour{sfx}"), dict):
+                write_armours(u, overrides[f"armour{sfx}"])
 
     # Training cost overrides (shared — applies to both tiers).  The four boxes
     # are the complete spendable cost, matching the wizard's one combined
@@ -726,6 +728,29 @@ def write_bonus_attacks(u, bonus: dict) -> None:
             u.type_50.attacks.append(AttackOrArmor(class_=cls, amount=amount))
 
 
+def write_armours(u, armour: dict) -> None:
+    """{armour class: amount | "immune"}: set the unit's armour in each class,
+    adding the class when the unit lacks it.  "immune" removes the class, so
+    no attacker's bonus against it reaches the unit (a missing class counts as
+    the base armour, ~1000).  0 is a real value: the full bonus.  Classes 3
+    and 4 are the melee and pierce armour stats, written by write_unit_stats."""
+    if u.type_50 is None:
+        return
+    from genieutils.unit import AttackOrArmor
+    for cls, amount in armour.items():
+        cls = int(cls)
+        if cls in (3, 4):
+            continue
+        have = next((a for a in u.type_50.armours if a.class_ == cls), None)
+        if amount == "immune":
+            if have is not None:
+                u.type_50.armours.remove(have)
+        elif have is not None:
+            have.amount = int(amount)
+        else:
+            u.type_50.armours.append(AttackOrArmor(class_=cls, amount=int(amount)))
+
+
 def _fights(u) -> bool:
     return u.type_50 is not None and any(a.amount > 0 for a in u.type_50.attacks)
 
@@ -760,7 +785,8 @@ def _apply_unit_edits(dat, slot: int, overrides: dict) -> int:
     # difference, so they keep their own (a Barracks gains 300 HP and 1 armour
     # an age: edited to 2000 in the Dark Age, it is 2900 in Imperial).
     for uid, e in sorted(edits.items()):
-        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus", "name", "age", "skin", "appearance")}
+        stats = {k: v for k, v in e.items()
+                 if k not in ("cost", "train", "bonus", "armour", "name", "age", "skin", "appearance")}
         if not (0 <= uid < len(units) and units[uid] is not None):
             continue
         node_now = read_unit_stats(units[uid])
@@ -781,6 +807,9 @@ def _apply_unit_edits(dat, slot: int, overrides: dict) -> int:
                 write_unit_stats(u, own)
             if e.get("bonus") and (is_node or _fights(u)):
                 write_bonus_attacks(u, e["bonus"])
+            # Armour on every form: a packed Trebuchet takes the same bonuses.
+            if e.get("armour"):
+                write_armours(u, e["armour"])
     return len(touched)
 
 
@@ -804,9 +833,9 @@ def edited_fields(dat, units, raw_edits) -> dict[int, set[str]]:
             mark(uid, field)
     for uid, e in edits.items():
         for k, v in e.items():
-            if k == "bonus":
+            if k in ("bonus", "armour"):
                 for cls in v:
-                    mark(uid, f"bonus:{cls}")
+                    mark(uid, f"{k}:{cls}")
             elif k not in ("cost", "train"):
                 mark(uid, k)
     return out

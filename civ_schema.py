@@ -456,16 +456,37 @@ def norm_class_map(raw) -> dict:
     return out
 
 
-# The unique unit's bonus damage, per tier, in its overrides beside the stats.
-UU_CLASS_OVERRIDES = ("bonus_base", "bonus_elite")
+def norm_armour_map(raw) -> dict:
+    """{"<armour class>": amount | "immune"} (civ_overrides.write_armours).
+    Unlike bonus damage, 0 is a value (the full bonus) and a negative one is
+    allowed; "immune" removes the class.  3 and 4 are the melee and pierce
+    armour stats, so they are left out."""
+    out: dict = {}
+    if not isinstance(raw, dict):
+        return out
+    for c, a in raw.items():
+        ck = _id_key(c)
+        if ck is None or int(ck) in (3, 4):
+            continue
+        if a == "immune":
+            out[ck] = "immune"
+        elif (v := _num(a, int, -_SHORT, _SHORT)) is not None:
+            out[ck] = v
+    return out
+
+
+# The unique unit's bonus damage and armour classes, per tier, in its
+# overrides beside the stats.
+UU_CLASS_OVERRIDES = {"bonus_base": norm_class_map, "bonus_elite": norm_class_map,
+                      "armour_base": norm_armour_map, "armour_elite": norm_armour_map}
 
 
 def norm_uu_overrides(raw) -> dict:
     """The unique unit's overrides with nulls dropped and its class maps cleaned."""
     out = {k: v for k, v in (raw or {}).items() if v is not None and not k.startswith("_")}
-    for k in UU_CLASS_OVERRIDES:
+    for k, norm in UU_CLASS_OVERRIDES.items():
         if k in out:
-            if m := norm_class_map(out[k]):
+            if m := norm(out[k]):
                 out[k] = m
             else:
                 del out[k]
@@ -475,7 +496,7 @@ def norm_uu_overrides(raw) -> dict:
 def norm_unit_edits(raw) -> dict:
     """{"<unit id>": {name, hp, attack, melee, pierce, range, reload, speed, los,
     train, cost: {food, wood, stone, gold}, bonus: {"<class>": amount},
-    age: 1-4, skin: "<civ>", appearance: <unit id>}}."""
+    armour: {"<class>": amount | "immune"}, age: 1-4, skin: "<civ>", appearance: <unit id>}}."""
     out: dict = {}
     if not isinstance(raw, dict):
         return out
@@ -505,6 +526,8 @@ def norm_unit_edits(raw) -> dict:
             clean["age"] = a
         if bonus := norm_class_map(e.get("bonus")):
             clean["bonus"] = bonus
+        if armour := norm_armour_map(e.get("armour")):
+            clean["armour"] = armour
         if clean:
             out[key] = clean
     return out

@@ -4179,6 +4179,50 @@ async function _uoRenderBonus(unit) {
                 order: r.bonus_classes.map(c => String(c.cls)) };
   box.classList.remove("d-none");
   _uoDrawBonusRows();
+  _uoDrawArmour();
+}
+
+// ── UU armour classes (overrides.armour_base / armour_elite) ──────────────────
+// The shared editor (static/js/armour_classes.js), one tier at a time.
+let _uoArmourTier = "base";
+
+async function _uoDrawArmour() {
+  const el = document.getElementById("uo-armour");
+  if (!el || !_uoCombat || !window.ArmourClasses) return;
+  const kmIdx = _uoCombat.km_idx;
+  const classes = await window.ArmourClasses.load(draft.dat_path || "");
+  if (!_uoCombat || _uoCombat.km_idx !== kmIdx || !classes.length) { el.innerHTML = ""; return; }
+  const hasElite = !!_uoCombat.elite;
+  const tier = hasElite ? _uoArmourTier : "base";
+  const ov = draft.unique_unit?.overrides || {};
+  const game = (_uoCombat[tier] || _uoCombat.base)?.armours || {};
+  const stat = (f, g) => ov[`${f}_${tier}`] ?? g;
+  const tierBtn = (t, label) => `<button type="button" class="ac-btn${tier === t ? " fw-bold" : ""}" data-uo-tier="${t}"
+      aria-pressed="${tier === t}">${label}</button>`;
+  window.ArmourClasses.render(el, {
+    classes, prefix: "uo-ac", game, edits: ov[`armour_${tier}`],
+    melee: stat("melee", game["4"]), pierce: stat("pierce", game["3"]),
+    statsWhere: "in the M. Armor and P. Armor rows above",
+    extra: hasElite ? `<div class="d-flex gap-2 align-items-center mb-1" style="font-size:12px;">Editing:
+        ${tierBtn("base", "Standard")}${tierBtn("elite", "Elite")}</div>` : "",
+    onChange: m => {
+      if (!draft.unique_unit) return;
+      const o = draft.unique_unit.overrides || (draft.unique_unit.overrides = {});
+      if (m) o[`armour_${tier}`] = m; else delete o[`armour_${tier}`];
+      saveDraft();
+      _uoUpdateBadge();
+      _uoDrawArmour();
+    },
+    onStat: f => {
+      const box = document.getElementById(`uo-${f}-${tier}`);
+      box?.scrollIntoView({ block: "center", behavior: "smooth" });
+      box?.focus();
+    },
+  });
+  el.querySelectorAll("[data-uo-tier]").forEach(b => b.addEventListener("click", () => {
+    _uoArmourTier = b.dataset.uoTier;
+    _uoDrawArmour();
+  }));
 }
 
 function _uoDrawBonusRows() {
@@ -4285,6 +4329,7 @@ function clearUUOverrides() {
   }
   _uoUpdateBadge();
   _uoDrawBonusRows();
+  _uoDrawArmour();
 }
 
 // Minimums enforced in JS (pattern attr only validates visually, not saves).

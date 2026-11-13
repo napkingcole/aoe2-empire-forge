@@ -5,7 +5,8 @@
  * Edits live in two maps that mirror the draft keys the build reads
  * (civ_overrides._apply_unit_edits / _apply_tech_edits):
  *   unit_edits {unit id: {hp, attack, melee, pierce, range, reload, speed, los,
- *                         train, cost: {food, wood, stone, gold}, bonus: {cls: n}}}
+ *                         train, cost: {food, wood, stone, gold}, bonus: {cls: n},
+ *                         armour: {cls: n | "immune"}}}
  *   tech_edits {tech id: {cost: {...}, time}}
  * Base values come from /api/builder/node-info (the DAT, Britons template).
  * Like the on/off state, edits are saved to the draft as they are made.
@@ -1097,6 +1098,11 @@
         for (const [f] of STAT_FIELDS) if (carried[f] !== undefined) inf[f] = carried[f];
         if (carried.train !== undefined) inf.train = carried.train;
         if (carried.cost) inf.cost = Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, carried.cost);
+        if (carried.armour) {
+            const a = Object.assign({}, inf.armours || {});
+            for (const [c, v] of Object.entries(carried.armour)) { if (v === 'immune') delete a[c]; else a[c] = v; }
+            inf.armours = a;
+        }
         if (carried.bonus) {
             const b = Object.fromEntries((inf.bonus || []).map(x => [String(x.cls), x.amount]));
             Object.assign(b, carried.bonus);
@@ -1358,6 +1364,7 @@
                     <div class="tt-insp-fu" data-fu="train"></div></div>
             </div>${trainNote}
             ${inf.fights ? bonusSection(inf) : ''}
+            ${kind === 'unit' && window.ArmourClasses ? '<div id="tt-insp-armour"></div>' : ''}
             <div class="tt-insp-section">Cost ${e.cost ? '<button type="button" class="tt-insp-link" id="tt-insp-cost-reset">use the game\'s</button>' : ''}</div>
             ${costBlock('tt-insp-cost', ec.cost, inf.cost)}
             <div class="tt-insp-fu" data-fu="cost"></div>
@@ -1558,6 +1565,23 @@
             });
 
             if (inf.upgrade) wireTechCost(body, 'tt-insp-up', inf.upgrade);
+
+            // Advanced: armour classes (static/js/armour_classes.js).
+            const arm = body.querySelector('#tt-insp-armour');
+            if (arm) {
+                const dat = window.getDatPath ? window.getDatPath() : '';
+                window.ArmourClasses.load(dat).then(classes => {
+                    if (!arm.isConnected || !classes.length) return;
+                    const e = unitEdit(inf.id);
+                    window.ArmourClasses.render(arm, {
+                        classes, prefix: 'tt-insp-ac', game: inf.armours || {}, edits: e.armour,
+                        melee: e.melee ?? inf.melee, pierce: e.pierce ?? inf.pierce,
+                        onChange: m => { setUnitField(inf.id, 'armour', m); rerender(); },
+                        onStat: f => { const box = body.querySelector(`#tt-insp-${f}`);
+                                       box?.scrollIntoView({ block: 'center', behavior: 'smooth' }); box?.focus(); },
+                    });
+                });
+            }
         }
 
         body.querySelector('#tt-insp-reset')?.addEventListener('click', () => {

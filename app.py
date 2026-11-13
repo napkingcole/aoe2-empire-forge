@@ -3229,6 +3229,61 @@ _PANEL_CLASS_NAMES: dict[int, str] = {
 }
 
 
+# Armour class names, from the UGC guide's damage table (docs/general/
+# damage_calculation.md); 41 and 60 are named from the units that carry them
+# (fire ships; galleys, caravels and the other warships).  The panel offers a
+# class only when some trainable unit deals bonus damage to it.
+ARMOUR_CLASS_NAMES: dict[int, str] = {
+    1: "Infantry", 2: "Turtle Ships", 5: "War Elephants", 8: "Cavalry", 15: "Archers",
+    16: "Ships", 17: "Rams, Trebuchets, Siege Towers", 19: "Unique Units", 20: "Siege Weapons",
+    23: "Gunpowder Units", 25: "Monks", 27: "Spearmen", 28: "Cavalry Archers",
+    29: "Eagle Warriors", 30: "Camels", 32: "Condottieri", 34: "Fishing Ships", 35: "Mamelukes",
+    36: "Heroes and Kings", 37: "Hussite Wagons", 38: "Skirmishers", 41: "Fire Ships", 60: "Warships",
+}
+# Never offered: the melee and pierce stats (4, 3), class 31 (on nearly every
+# unit, attacked by nothing), and the buildings', walls', trees' and animals'
+# own classes, which no unit should carry.
+_ARMOUR_NOT_OFFERED = frozenset({3, 4, 31, 0, 11, 13, 14, 18, 21, 22, 24, 26})
+_DAMAGE_CLASSES_CACHE: dict[str, list] = {}
+
+
+def _damage_classes(dat_path: str) -> list[dict]:
+    """[{cls, name, attackers: [{name, amount}]}]: each armour class the
+    panels offer, with every trainable, non-hero unit that deals bonus damage
+    to it (best first, one row per name)."""
+    if dat_path in _DAMAGE_CLASSES_CACHE:
+        return _DAMAGE_CLASSES_CACHE[dat_path]
+    from civ_appender import _display_name
+    dat = _get_dat(dat_path)
+    best: dict[int, dict[str, int]] = {}
+    for u in dat.civs[1].units:
+        if (u is None or u.type_50 is None or u.creatable is None or u.type >= 80
+                or u.creatable.hero_mode or not any(tl.unit_id >= 0 for tl in u.creatable.train_locations)):
+            continue
+        name = _display_name(u.language_dll_name, None)
+        if not name:
+            continue
+        for a in u.type_50.attacks:
+            if a.amount > 0 and a.class_ not in _ARMOUR_NOT_OFFERED:
+                row = best.setdefault(a.class_, {})
+                row[name] = max(row.get(name, 0), int(a.amount))
+    out = [{"cls": c, "name": ARMOUR_CLASS_NAMES.get(c, f"Class {c}"),
+            "attackers": [{"name": n, "amount": a} for n, a in sorted(row.items(), key=lambda kv: (-kv[1], kv[0]))]}
+           for c, row in sorted(best.items()) if c in ARMOUR_CLASS_NAMES]
+    _DAMAGE_CLASSES_CACHE[dat_path] = out
+    return out
+
+
+@app.route("/api/builder/damage-classes")
+def api_builder_damage_classes():
+    """The armour classes a unit's "Advanced: armour classes" section offers,
+    with who deals bonus damage to each (_damage_classes)."""
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    return jsonify({"status": "ok", "classes": _damage_classes(dat_path)})
+
+
 _ADD_OPTIONS_CACHE: dict[str, dict] = {}
 
 
@@ -3469,6 +3524,8 @@ def api_builder_node_info():
         "train": int(trains[0]) if trains else 0,
         "cost": cost_of(slots), "cost_slots": spendable,
         "bonus": bonus,
+        "armours": ({str(a.class_): int(a.amount) for a in u.type_50.armours}
+                    if u.type_50 is not None else {}),
         "bonus_classes": [{"cls": c, "name": n} for c, n in sorted(_PANEL_CLASS_NAMES.items(),
                                                                    key=lambda kv: kv[1])],
         # Ancestors latest first (Paladin: Cavalier, then Knight), the order the

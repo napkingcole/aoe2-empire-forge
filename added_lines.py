@@ -587,14 +587,16 @@ def _upgrade_icon(dat, unit_icon: int, role_tech: int | None) -> int:
 
 
 def _write_edits(u, e: dict) -> None:
-    from civ_overrides import write_bonus_attacks, write_unit_cost, write_unit_stats
-    stats = {k: v for k, v in e.items() if k not in ("cost", "bonus", "name")}
+    from civ_overrides import write_armours, write_bonus_attacks, write_unit_cost, write_unit_stats
+    stats = {k: v for k, v in e.items() if k not in ("cost", "bonus", "armour", "name")}
     if stats:
         write_unit_stats(u, stats)
     if "cost" in e:
         write_unit_cost(u, e["cost"], f"added unit {u.id}")
     if e.get("bonus"):
         write_bonus_attacks(u, e["bonus"])
+    if e.get("armour"):
+        write_armours(u, e["armour"])
 
 
 def _costs(cost: dict) -> tuple:
