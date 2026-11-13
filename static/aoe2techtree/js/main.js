@@ -2288,13 +2288,17 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         window.ttInspector.mount(inspector);
     }
 
-    // Scroll-to-horizontal with mouse wheel
-    // treeWrap.addEventListener('wheel', function (e) {
-    //     if (e.deltaX !== 0) return;
-    //     if (!e.shiftKey && treeEl.scrollHeight <= treeEl.clientHeight) {
-    //         treeWrap.scrollLeft += e.deltaY > 0 ? 150 : -150;
-    //     }
-    // });
+    // A plain mouse wheel moves the tree sideways: down = right, up = left.
+    // Trackpads and Magic Mice send deltaX of their own and keep their native
+    // scrolling; a tree taller than the window keeps the wheel for up/down.
+    treeWrap.addEventListener('wheel', function (e) {
+        if (e.deltaX !== 0 || e.shiftKey || e.ctrlKey || e.deltaY === 0) return;
+        if (treeWrap.scrollHeight > treeWrap.clientHeight) return;
+        if (treeWrap.scrollWidth <= treeWrap.clientWidth) return;
+        const step = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? treeWrap.clientWidth : 1;
+        treeWrap.scrollLeft += e.deltaY * step;
+        e.preventDefault();
+    }, { passive: false });
 
     // Load data then render
     const dataUrl = relativepath + '/aoe2techtree/data/data.json';
