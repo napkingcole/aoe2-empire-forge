@@ -484,7 +484,11 @@
         return `/api/unit-icon/${id}?${datQuery().slice(1)}`;
     }
     // What a line's nodes show: its look's picture when it wears one.
-    function lineImage(line) { return unitImage(line.appearance ?? line.base); }
+    // A tier may wear its own look (the Halberdier after a Heavy Pikeman).
+    function lineImage(line, n) {
+        const own = n != null && line.tiers[n] ? line.tiers[n].appearance : null;
+        return unitImage(own ?? line.appearance ?? line.base);
+    }
 
     // added_lines.default_names: tier 1 the base's (or tier 1's own) name,
     // the last "Elite …", any between "Veteran …" / "Heavy …".
@@ -543,7 +547,8 @@
         }
         return {
             name: tierName(key),
-            replaces: line.replaces != null ? baseName(line.replaces) : null,
+            replaces: line.replaces != null && n === 0 ? baseName(line.replaces) : null,
+            after: line.replaces != null && n > 0 ? tierName(`a${line.id}.0`) : null,
             age: tier.age, n, of: line.tiers.length,
             cost: Object.assign({ food: 0, wood: 0, stone: 0, gold: 0 }, base.cost, carried.cost || {}),
             hp: stat('hp'), attack: base.fights ? stat('attack') : null,
@@ -717,7 +722,7 @@
             const own = (opts.ownLook ? `<div class="uu-card${(opts.ownSelected ?? opts.current == null) ? ' selected' : ''}" data-pick="">
                     ${typeof _previewBtnHtml === 'function' ? _previewBtnHtml(opts.ownLook, 'Its own look') : ''}
                     <img class="uu-card-icon" src="${unitImage(opts.ownLook)}" alt="">
-                    <div class="uu-card-name">Its own look</div></div>` : '')
+                    <div class="uu-card-name">${esc(opts.ownLabel || 'Its own look')}</div></div>` : '')
                 // Other civs' own versions of the unit (the Palintonon), first.
                 + (opts.skins || []).filter(k => !q || k.name.toLowerCase().includes(q)).map(k => `
                     <div class="uu-card${k.civ === opts.currentSkin ? ' selected' : ''}" data-skin-pick="${esc(k.civ)}" title="${esc(k.title)}">
@@ -929,7 +934,7 @@
         relayout(tierItemId(ref.line, ref.line.tiers.length - 1));
     }
 
-    function lineSection(ref, item, defs) {
+    function lineSection(ref, item, defs, repAges) {
         const { line, n } = ref;
         const last = line.tiers.length - 1;
         const tiers = line.tiers.map((t, i) => {
@@ -940,12 +945,17 @@
                     ages.push(`<option value="${a}" ${a === t.age ? 'selected' : ''}>${AGE_NAMES[a - 1]}</option>`);
                 }
             }
-            // A replacement's tier 1 takes the replaced unit's age ("Available
-            // from") and goes with the Undo button, not on its own.
+            // A replacement's tier 1 takes the replaced unit's age: moving it
+            // moves the game's upgrade ("Available from"), and it goes with the
+            // Undo button, not on its own.
             const fixed = i === 0 && line.replaces != null;
+            const repSel = fixed && repAges && repAges.opts.length > 1
+                ? `<select data-rep-age title="Available from: moves the game's ${esc(item.added.replacesName || '')} upgrade"
+                    class="${repAges.own != null ? 'is-edited' : ''}">${repAges.opts.join('')}</select><span></span>`
+                : `<span class="tt-insp-base">${AGE_NAMES[t.age - 1]}</span><span></span>`;
             return `<div class="tt-insp-tier${i === n ? ' is-current' : ''}">
                 <button type="button" class="tt-insp-link tt-insp-tier-name" data-goto="${i}">${esc(tierName(`a${line.id}.${i}`))}</button>
-                ${fixed ? `<span class="tt-insp-base">${AGE_NAMES[t.age - 1]}</span><span></span>` : `
+                ${fixed ? repSel : `
                 <select data-age="${i}" title="Age">${ages.join('')}</select>
                 <button type="button" class="tt-insp-x" data-drop="${i}"
                     title="${line.tiers.length === 1 ? 'Remove this line' : 'Remove this tier'}">×</button>`}
@@ -972,25 +982,33 @@
                 button takes its name. The button keeps the ${esc(was)}'s picture: the game can't change a
                 technology's picture for one civilization. The computer player gets it too, since it still
                 researches the ${esc(was)} upgrade.</div>` : ''}
-            ${swap && line.tiers.length === 1 && !addAges.length ? '' : `
+            ${swap && line.tiers.length === 1 && !addAges.length && !(repAges && repAges.opts.length > 1) ? '' : `
             <div class="tt-insp-tiers">${tiers}</div>
             ${addAges.length ? `<div class="tt-insp-bonus-add"><select id="tt-line-add">
                 <option value="">Add a tier in…</option>${addAges.join('')}</select></div>` : ''}
-            <div class="tt-insp-note">${line.from != null
+            ${swap && line.tiers.length === 1 && !addAges.length ? '' : `<div class="tt-insp-note">${line.from != null
                 ? `Each tier is researched at the ${esc(item.added.fromName || '')}'s upgrade button, after the one before, and takes over its train button.`
                 : swap ? `Each tier after it gets its own upgrade, one row below the unit's button, after the ${esc(was)} upgrade.`
                 : 'Each tier after the first gets its own upgrade, one row below the unit\'s button.'}
-                A stat you change carries on to later tiers unless they set their own.</div>`}
+                A stat you change carries on to later tiers unless they set their own.</div>`}`}
             <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-desc">Description</label>
                 <textarea class="tt-insp-num tt-insp-text tt-insp-desc" id="tt-line-desc" rows="3" maxlength="300"
                     placeholder="The ${esc(baseName(line.base))}'s own description">${esc(line.description || '')}</textarea></div>
             <div class="tt-insp-row"><label class="tt-insp-label" for="tt-line-role">Computer player trains it as</label>
                 <select id="tt-line-role"><option value="">${auto ? `Automatic: ${esc(auto)}` : 'Automatic (no line found; the computer player won\'t train it)'}</option>${roles}</select></div>
             ${line.tiers.length > 1 ? `<div class="tt-insp-note">The computer player trains the first tier only: it researches just the upgrades it knows by name.</div>` : ''}
-            <div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">Appearance</span>
+            <div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">${line.tiers.length > 1 ? 'Appearance (every tier)' : 'Appearance'}</span>
                 <span class="tt-insp-basename">${line.appearance == null ? 'Its own'
                     : esc(look ? look.name : `unit ${line.appearance}`)}</span>
                 <button type="button" class="tt-insp-link" id="tt-line-look">change</button></div>
+            ${line.tiers.length > 1 ? (() => {
+                const own = line.tiers[n].appearance;
+                const ol = own != null ? catalog.byId[own] : null;
+                return `<div class="tt-insp-row tt-insp-baserow"><span class="tt-insp-label">This tier's look</span>
+                <span class="tt-insp-basename">${own == null ? 'The same as every tier'
+                    : esc(ol ? ol.name : `unit ${own}`)}</span>
+                <button type="button" class="tt-insp-link" id="tt-tier-look">change</button></div>`;
+            })() : ''}
             <button type="button" class="tt-insp-reset" id="tt-line-remove">${swap ? `Undo: back to the ${esc(was)}` : 'Remove this line'}</button>
         </div>`;
     }
@@ -1035,6 +1053,17 @@
                 relayout(tierItemId(line, n));
             },
         }));
+        panel.querySelector('#tt-tier-look')?.addEventListener('click', () => openUnitPicker({
+            title: `Choose a look for the ${tierName(`a${line.id}.${n}`)}`,
+            sub: `Units of the same kind and size as the ${baseName(line.base)}, so the art fits. Only this tier wears it.`,
+            pool: looksFor(line.base), current: line.tiers[n].appearance ?? null,
+            ownLook: line.appearance ?? line.base, ownLabel: 'Same as every tier',
+            onPick: id => {
+                if (id == null) delete line.tiers[n].appearance;
+                else line.tiers[n].appearance = id;
+                relayout(tierItemId(line, n));
+            },
+        }));
         panel.querySelector('#tt-line-base')?.addEventListener('click', () => {
             select({ id: '__rebase', add: { building: line.building, age: line.tiers[0].age,
                      buildingName: item.added.buildingName, line: line.id, n } }, current.element_height);
@@ -1067,10 +1096,12 @@
         // age are that vanilla tech's, edited as on the unit it replaced.
         const replacing = line.replaces != null && n === 0;
         const [base, defs, rep] = await Promise.all([info('unit', line.base), lineInfo(line.base, line.role, line.from),
-                                                     replacing ? info('unit', line.replaces) : null]);
+                                                     line.replaces != null ? info('unit', line.replaces) : null]);
         if (!current || current.item !== item) return;
+        const t0 = line.replaces != null ? (n === 0 ? item : (known[tierItemId(line, 0)] || [])[0]) : null;
+        const repAges = t0 && t0.replaced_node && rep && rep.status === 'ok' ? ageOptions(t0.replaced_node, rep, 'unit') : null;
         panel.innerHTML = `<div class="tt-insp-head">
-                <img class="tt-insp-icon" src="${lineImage(line)}" alt="">
+                <img class="tt-insp-icon" src="${lineImage(line, n)}" alt="">
                 <div>
                     <div class="tt-insp-title">${esc(tierName(key))}</div>
                     <div class="tt-insp-kind">${line.replaces != null && n === 0 ? `Replaces the ${esc(item.added.replacesName || '')}`
@@ -1079,9 +1110,19 @@
                           + ` · tier ${n + 1} of ${line.tiers.length}`} · ${AGE_NAMES[tier.age - 1]}</div>
                 </div>
             </div>
-            ${lineSection(ref, item, defs && defs.status === 'ok' ? defs : null)}
+            ${lineSection(ref, item, defs && defs.status === 'ok' ? defs : null, repAges)}
             <div id="tt-insp-body"></div>`;
         wireLine(ref, item);
+        // The replacement's age is the replaced unit's: moving it moves the
+        // game's upgrade and its tree node (civ_overrides._apply_age_moves),
+        // which the replacement is drawn on.
+        panel.querySelector('select[data-rep-age]')?.addEventListener('change', e => {
+            const v = +e.target.value;
+            setUnitField(line.replaces, 'age', v === rep.age_move.age ? null : v);
+            line.tiers[0].age = v;
+            for (const t of line.tiers) if (t.age < v) t.age = v;     // ages never go back
+            relayout(item.id);
+        });
         const body = panel.querySelector('#tt-insp-body');
         if (!base || base.status !== 'ok') {
             body.innerHTML = `<div class="tt-insp-note">${base && base.status === 'no_dat'
@@ -1120,19 +1161,9 @@
                 time: up.time,
             } : null;
         unitNames[key] = tierName(key);
-        const vanilla = repOk && item.replaced_node ? item.replaced_node : null;
         if (repOk && inf.upgrade) inf.upgrade.note = `The game's ${item.added?.replacesName || baseName(line.replaces)} upgrade, under this `
             + 'unit\'s name. Its price can only be scaled: it can\'t gain a resource the game\'s doesn\'t cost.';
-        body.innerHTML = (vanilla ? ageRow(vanilla, rep, 'unit') : '') + unitBody(inf, 'unit');
-        body.querySelector('#tt-insp-age')?.addEventListener('change', e => {
-            // The vanilla unit's age edit moves its upgrade (civ_overrides._apply_age_moves)
-            // and its tree node, which the replacement is drawn on.
-            const v = +e.target.value;
-            setUnitField(line.replaces, 'age', v === rep.age_move.age ? null : v);
-            line.tiers[0].age = v;
-            for (const t of line.tiers) if (t.age < v) t.age = v;     // ages never go back
-            relayout(item.id);
-        });
+        body.innerHTML = unitBody(inf, 'unit');
         const status = body.querySelector('#tt-insp-fu-status');
         if (status) status.textContent = '';
         wire(body, inf, 'unit');
@@ -1299,15 +1330,21 @@
 
     // "Available from": an age earlier than the game's, down to its building's
     // and the unit or tech before it (civ_overrides._apply_age_moves).
-    function ageRow(item, inf, kind) {
+    function ageOptions(item, inf, kind) {
         const mv = inf.age_move;
-        if (!mv || !mv.ok) return '';
+        if (!mv || !mv.ok) return null;
         const own = (kind === 'tech' ? techEdit(item.node_id) : unitEdit(item.node_id)).age;
         const lo = Math.min(mv.age, window._ttMinAge ? window._ttMinAge(item) : 1);
         const opts = [];
         for (let a = lo; a <= mv.age; a++) {
             opts.push(`<option value="${a}" ${a === (own ?? mv.age) ? 'selected' : ''}>${AGE_NAMES[a - 1]}${a === mv.age ? ' (the game\'s)' : ''}</option>`);
         }
+        return { opts, own };
+    }
+    function ageRow(item, inf, kind) {
+        const ao = ageOptions(item, inf, kind);
+        if (!ao) return '';
+        const { opts, own } = ao;
         return `<div class="tt-insp-row"><label class="tt-insp-label" for="tt-insp-age">Available from</label>
             <select id="tt-insp-age" class="${own != null ? 'is-edited' : ''}" ${opts.length < 2 ? 'disabled' : ''}
                 title="${opts.length < 2 ? 'Its building, or what comes before it, isn\'t available any earlier' : ''}">${opts.join('')}</select></div>`;

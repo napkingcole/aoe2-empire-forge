@@ -605,6 +605,8 @@ def norm_added_lines(raw) -> list:
                     or (len(tiers) >= 2 and tiers[-2]["age"] == age):
                 continue
             tier: dict = {"age": age, "name": norm_unit_name(t.get("name"))}
+            if t.get("appearance") is not None and (wear := _id_key(t["appearance"])) is not None:
+                tier["appearance"] = int(wear)           # this tier's own look (else the line's)
             edits = norm_unit_edits({"0": dict(t.get("edits") or {}, name=None, age=None, skin=None)}).get("0")
             if edits:
                 tier["edits"] = edits

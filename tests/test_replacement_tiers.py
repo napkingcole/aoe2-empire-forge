@@ -39,7 +39,7 @@ HALBERDIER_TECH, CASTLE_AGE, IMPERIAL_AGE = 429, 102, 103
 LINES = [
     {"id": 1, "building": 12, "base": PIKE, "replaces": HALB,
      "tiers": [{"age": 3, "name": "Heavy Pikeman", "edits": {"hp": 70}},
-               {"age": 4, "name": "Halberdier", "edits": {"attack": 8},
+               {"age": 4, "name": "Halberdier", "edits": {"attack": 8}, "appearance": HALB,
                 "upgrade": {"cost": {"food": 300, "gold": 600}, "time": 50}}]},
     # The Cavalier still upgrades into the Paladin: no tier after it.
     {"id": 2, "building": 101, "base": 38, "replaces": CAVALIER,
@@ -50,6 +50,8 @@ print("=== schema ===")
 n = norm_added_lines(LINES)
 check("a replacement keeps its later tiers", [len(l["tiers"]) for l in n] == [2, 2], n)
 check("a later tier keeps its own upgrade", n[0]["tiers"][1].get("upgrade", {}).get("time") == 50, n[0]["tiers"][1])
+check("a tier keeps its own look", n[0]["tiers"][1].get("appearance") == HALB and "appearance" not in n[0]["tiers"][0],
+      n[0]["tiers"])
 check("saves and loads", to_draft(from_draft({"added_lines": LINES}))["added_lines"] == n)
 
 try:
@@ -113,6 +115,11 @@ if pk:
     check("stats carry: the Halberdier keeps the Heavy Pikeman's HP and adds its attack",
           us[heavy].hit_points == 70 and us[halb].hit_points == 70 and us[halb].type_50.displayed_attack == 8,
           (us[heavy].hit_points, us[halb].hit_points, us[halb].type_50.displayed_attack))
+    look = lambda uid: (us[uid].icon_id, us[uid].standing_graphic)                  # noqa: E731
+    vanilla = dat.civs[SLOT].units
+    check("only the later tier wears the Halberdier's look; the Heavy Pikeman keeps the Pikeman's",
+          look(halb) == look(HALB) and look(heavy) == look(PIKE) and look(heavy) != look(HALB),
+          (look(heavy), look(halb), look(PIKE), look(HALB)))
     moved = r.get("age_moves") or {}
     check("Available from moves the Halberdier upgrade to the Castle Age",
           any(v == 3 for v in moved.values()), moved)

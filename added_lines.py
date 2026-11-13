@@ -766,7 +766,9 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             # regeneration, convertible (hero status is creatable.hero_mode).
             u.creatable.hero_mode = 0
             _write_edits(u, edits)
-            wear = look_last if (n == len(ids) - 1 and look_last is not None) else look
+            wear = tier.get("appearance")                 # this tier's own look, else the line's
+            if wear is None:
+                wear = look_last if (n == len(ids) - 1 and look_last is not None) else look
             if wear is not None:
                 if appearance_ok(template[wear], u):
                     copy_unit_look(template[wear], u)

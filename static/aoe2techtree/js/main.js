@@ -1219,6 +1219,7 @@ function _addedTipHtml(t) {
     }
     if (t.replaces) html += div('margin-top:4px;font-size:11px;opacity:.7;',
         `Replaces the ${_esc(t.replaces)}: its upgrade gives this unit (the button keeps the ${_esc(t.replaces)}'s picture)`);
+    else if (t.after) html += div('margin-top:4px;font-size:11px;opacity:.7;', `Upgrade after the ${_esc(t.after)} · tier ${t.n + 1} of ${t.of}`);
     else if (t.of) html += div('margin-top:4px;font-size:11px;opacity:.7;', `Added unit · tier ${t.n + 1} of ${t.of}`);
     return html;
 }
@@ -1714,7 +1715,7 @@ function _applyAddedLines(treeData) {
                     link_id: n ? `a${line.id}.${n - 1}` : line.from,
                     link_node_type: n ? 'UnitUpgrade' : from.node_type,
                     picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
-                    image_url: window.ttInspector.lineImage(line),
+                    image_url: window.ttInspector.lineImage(line, n),
                     name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row: at[n],
                     beside_of: n === 0 ? beside : null,
                     added: { line: line.id, n, buildingAge: from.age_id || 1, buildingName: name,
@@ -1741,7 +1742,7 @@ function _applyAddedLines(treeData) {
                 node_type: v.node_type, link_id: v.link_id, link_node_type: v.link_node_type,
                 replaces: v.node_id, replaced_node: v,
                 picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
-                image_url: window.ttInspector.lineImage(line),
+                image_url: window.ttInspector.lineImage(line, 0),
                 name: '', name_string_id: -1, help_string_id: -1, age_id: v.age_id, row: v.row,
                 added: Object.assign({ n: 0 }, added),
             });
@@ -1763,7 +1764,7 @@ function _applyAddedLines(treeData) {
                     node_type: 'UnitUpgrade', link_id: `a${line.id}.${n - 1}`,
                     link_node_type: n === 1 ? v.node_type : 'UnitUpgrade',
                     picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
-                    image_url: window.ttInspector.lineImage(line),
+                    image_url: window.ttInspector.lineImage(line, n),
                     name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row: r,
                     added: Object.assign({ n }, added),
                 });
@@ -1786,7 +1787,7 @@ function _applyAddedLines(treeData) {
                     link_id: n ? `a${line.id}.${n - 1}` : null,
                     link_node_type: n === 0 ? 'BuildingTech' : n === 1 ? 'Unit' : 'UnitUpgrade',
                     picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
-                    image_url: window.ttInspector.lineImage(line),
+                    image_url: window.ttInspector.lineImage(line, n),
                     name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row,
                     added: { line: line.id, n, buildingAge: b.age_id || 1, buildingName: name, buildingRow: b.row },
                 });
