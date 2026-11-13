@@ -1057,8 +1057,26 @@ details[open] > summary::before {
   background-color: #6f8a4c;
   /* Seamless, so it can scroll under a walking unit (builder.js
      _startGround); shown at its own size, never scaled (the user's call). */
-  background-image: url('/static/seamless-grass.png');
+  background-image: url('/static/seamless-grass.webp');
   background-size: auto;
   background-repeat: repeat;
 }
 .unit-preview-stage img { max-width: 100%; max-height: 360px; }
+
+/* A ship sails on water (static/seamless-water.webp, from the game, 2026-11-11):
+   seamless like the grass, and scrolls the same way.  Its wake draws on a
+   canvas under the ship (builder.js _startGround). */
+.unit-preview-stage { position: relative; }
+.unit-preview-stage.water {
+  background-color: #1f4c86;
+  background-image: url('/static/seamless-water.webp');
+}
+.unit-preview-stage.ground-pending { background-image: none; }
+/* A ship at rest rises and falls on the water (builder.js adds it on Idle). */
+@keyframes ship-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+.unit-preview-stage > img.ship-bob { animation: ship-bob 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .unit-preview-stage > img.ship-bob { animation: none; } }
+.unit-preview-stage > canvas.unit-preview-wake {
+  position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
+}
+.unit-preview-stage > img, .unit-preview-stage > #unit-preview-status { position: relative; z-index: 1; }

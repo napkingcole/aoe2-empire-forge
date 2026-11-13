@@ -79,20 +79,9 @@ if ((draft._draftVer || 0) < 4) {
   draft._draftVer = 4;
   saveDraft();
 }
-// Card 51 (Longboats) retired into the tree: since Viking Sagas the Longship is
-// a regional Dock line, not a unique ship.  A draft that picked the card gets
-// the Longship line ticked instead, and no Demolition line, which is what the
-// card built.  Idempotent rather than version-gated, so it is safe for saved
-// files that come in through Edit Civ.  civ_appender derives the same thing at
-// build time for files that never pass through here.
-if ((draft.bonuses || []).some(b => Number(b.id ?? b[0]) === 51)) {
-  draft.bonuses = draft.bonuses.filter(b => Number(b.id ?? b[0]) !== 51);
-  draft.tree = draft.tree || { units: [], buildings: [], techs: [] };
-  const units = new Set((draft.tree.units || []).filter(id => ![1104, 527, 528].includes(id)));
-  units.add(250); units.add(533);
-  draft.tree.units = [...units];
-  saveDraft();
-}
+// Cards retired into the tree, the hero panel or a Look (card 51 Longboats,
+// the unit unlocks, the hero cards, ...) are converted by _retireCards in
+// init(), by the server's retired_cards — the same code every build runs.
 let currentStep = 1;
 let maxStep     = 1;  // highest step ever reached — gates nav dot clicks
 
@@ -132,7 +121,7 @@ function showStep(n) {
     }
   }
   if (n === 1) renderScene();      // a card picked since (460) can change it
-  if (n === 2) { renderLRSPicker(); renderDemoShipNotice(); warmTreeSteps(); }
+  if (n === 2) warmTreeSteps();
   if (n === 6 || n === 7) initUTPanel(n);
 
   const btnPrev = document.getElementById("btn-prev");
@@ -1241,10 +1230,11 @@ function _artQuery() {
 
 // ── Unit previews ─────────────────────────────────────────────────────────────
 // How a unit looks in the game, rendered by the server from the player's own
-// sprites (game_sprites.py): a still on hover, and Idle / Walk / Attack in a
+// sprites (game_sprites.py): a still on hover, and Idle / Move / Attack in a
 // window from each card's play button.
-function _previewSrc(unitId, kind = "still") {
-  return `/api/unit-preview/${unitId}/${kind}${_artQuery()}`;
+// civ: that civ's own version of the unit (a Look: the Athenians' Palintonon).
+function _previewSrc(unitId, kind = "still", civ = null) {
+  return `/api/unit-preview/${unitId}/${kind}${_artQuery()}${civ != null ? `&civ=${civ}` : ""}`;
 }
 
 function _previewImgHtml(unitId) {
@@ -1252,9 +1242,10 @@ function _previewImgHtml(unitId) {
   return `<div class="pop-preview"><img src="${_previewSrc(unitId)}" alt="" onerror="this.parentNode.remove()"></div>`;
 }
 
-function _previewBtnHtml(unitId, name) {
+function _previewBtnHtml(unitId, name, civ = null) {
   if (unitId == null) return "";
   return `<button type="button" class="unit-preview-btn" data-preview-unit="${unitId}" data-preview-name="${_esc(name)}"
+            ${civ != null ? `data-preview-civ="${civ}"` : ""}
             title="See it in the game" aria-label="Preview ${_esc(name)}"><i class="fa-solid fa-play"></i></button>`;
 }
 
@@ -1262,7 +1253,8 @@ function _wirePreviewButtons(container) {
   container.querySelectorAll(".unit-preview-btn").forEach(btn => {
     btn.addEventListener("click", e => {
       e.stopPropagation();                 // the card's own click selects it
-      openUnitPreview(parseInt(btn.dataset.previewUnit, 10), btn.dataset.previewName);
+      openUnitPreview(parseInt(btn.dataset.previewUnit, 10), btn.dataset.previewName,
+                      btn.dataset.previewCiv != null ? parseInt(btn.dataset.previewCiv, 10) : null);
     });
   });
 }
@@ -1282,14 +1274,49 @@ let _groundRaf = null;
 // screen at standard sprite scale (54 was the first guess; the user tuned it
 // 15% slower by eye, 2026-10-22); the window shows sprites at 1.5x their own.
 const _TILE_PX = 46, _NORMAL_SPEED = 1.7;
+// A ship's wake (game_sprites' "A ship's wake"): the game's own particle puffs,
+// back and front together as its "Combined Wake", dropped at the hull every
+// _WAKE_EVERY ms and left on the water as it scrolls away, each playing its
+// frames once while it fades.  The rate is by eye: the game doesn't say.
+const _WAKE_EVERY = 110;
+const _wakeStrips = {};
+function _wakeStrip(part) {
+  if (!_wakeStrips[part]) {
+    const im = new Image();
+    im.src = `/api/wake/${part}${_artQuery()}`;
+    _wakeStrips[part] = im;
+  }
+  return _wakeStrips[part];
+}
+function _wakeCanvas(stage) {
+  let c = stage.querySelector("canvas.unit-preview-wake");
+  if (!c) {
+    c = document.createElement("canvas");
+    c.className = "unit-preview-wake";
+    c.setAttribute("aria-hidden", "true");
+    stage.prepend(c);
+  }
+  const dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(stage.clientWidth * dpr);
+  c.height = Math.round(stage.clientHeight * dpr);
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ctx;
+}
+function _clearWake(stage) {
+  const c = stage && stage.querySelector("canvas.unit-preview-wake");
+  if (c) c.getContext("2d").clearRect(0, 0, c.width, c.height);
+}
 function _stopGround() {
   if (_groundRaf) cancelAnimationFrame(_groundRaf);
   _groundRaf = null;
 }
-function _startGround(stage, img, meta) {
+function _startGround(stage, img, meta, wake = null) {
   _stopGround();
   if (!meta || !(meta.speed > 0)) return;
-  let x = 0, y = 0, last = null;
+  let x = 0, y = 0, last = null, sinceDrop = _WAKE_EVERY;
+  const ctx = wake ? _wakeCanvas(stage) : null;
+  const puffs = [];
   const step = t => {
     if (last != null && img.naturalWidth) {
       const shown = img.clientWidth / img.naturalWidth;        // the window's own scale
@@ -1297,6 +1324,35 @@ function _startGround(stage, img, meta) {
       const d = pxPerSec * (t - last) / 1000 / Math.SQRT2;
       x += d; y -= d;
       stage.style.backgroundPosition = `${x.toFixed(1)}px ${y.toFixed(1)}px`;
+      if (ctx) {
+        sinceDrop += t - last;
+        if (sinceDrop >= _WAKE_EVERY) {
+          sinceDrop = 0;
+          const sr = stage.getBoundingClientRect(), ir = img.getBoundingClientRect();
+          const at = [ir.left - sr.left + wake.anchor[0] * shown, ir.top - sr.top + wake.anchor[1] * shown];
+          for (const part of ["back", "front"]) {
+            const p = wake[part], life = p.life[0] + Math.random() * (p.life[1] - p.life[0]);
+            puffs.push({ part, p, at, gx: x, gy: y, born: t, life: life * 1000 / _NORMAL_SPEED });
+          }
+        }
+        ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
+        for (let i = puffs.length - 1; i >= 0; i--) {
+          const f = puffs[i], age = t - f.born, strip = _wakeStrip(f.part);
+          if (age >= f.life) { puffs.splice(i, 1); continue; }
+          if (!strip.naturalHeight) continue;
+          const n = Math.max(1, Math.round(strip.naturalWidth / strip.naturalHeight));
+          const src = strip.naturalHeight, frame = Math.min(n - 1, Math.floor(age / f.life * n));
+          const sec = age * _NORMAL_SPEED / 1000, left = (f.life - age) * _NORMAL_SPEED / 1000;
+          let alpha = f.p.alpha[0] + (f.p.alpha[1] - f.p.alpha[0]) * (age / f.life);
+          if (f.p.fade_in > 0) alpha *= Math.min(1, sec / f.p.fade_in);
+          if (f.p.fade_out > 0) alpha *= Math.min(1, left / f.p.fade_out);
+          const size = src * f.p.scale * meta.scale * shown;
+          ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+          ctx.drawImage(strip, frame * src, 0, src, src,
+            f.at[0] + (x - f.gx) - size / 2, f.at[1] + (y - f.gy) - size / 2, size, size);
+        }
+        ctx.globalAlpha = 1;
+      }
     }
     last = t;
     _groundRaf = requestAnimationFrame(step);
@@ -1304,7 +1360,7 @@ function _startGround(stage, img, meta) {
   _groundRaf = requestAnimationFrame(step);
 }
 
-function openUnitPreview(unitId, name) {
+function openUnitPreview(unitId, name, civ = null) {
   const el = document.getElementById("modal-unit-preview");
   if (!el) return;
   _previewModal = _previewModal || new bootstrap.Modal(el);
@@ -1312,26 +1368,46 @@ function openUnitPreview(unitId, name) {
   const img = el.querySelector("#unit-preview-img");
   const status = el.querySelector("#unit-preview-status");
   const stage = el.querySelector(".unit-preview-stage");
+  const civQ = civ != null ? `&civ=${civ}` : "";
   const meta = fetch(`/api/unit-preview/${unitId}/meta${_datQuery()}`).then(r => r.json()).catch(() => null);
-  el.addEventListener("hidden.bs.modal", _stopGround, { once: true });
+  // A ship sails on water; the ground waits for the answer rather than
+  // flashing grass first.
+  stage.classList.remove("water");
+  stage.classList.add("ground-pending");
+  meta.then(m => {
+    stage.classList.toggle("water", !!(m && m.water));
+    stage.classList.remove("ground-pending");
+  });
+  const wake = meta.then(m => m && m.water
+    ? fetch(`/api/unit-preview/${unitId}/wake${_artQuery()}${civQ}`).then(r => r.json()).catch(() => null)
+    : null).then(w => w && w.anchor && w.anchor.length ? w : null);
+  el.addEventListener("hidden.bs.modal", () => { _stopGround(); _clearWake(stage); }, { once: true });
   const show = kind => {
     _stopGround();
+    _clearWake(stage);
     stage.style.backgroundPosition = "0 0";
     el.querySelectorAll("[data-preview-kind]").forEach(b =>
       b.classList.toggle("active", b.dataset.previewKind === kind));
     status.innerHTML = _loaderHtml("Rendering from your game…", true);
     status.classList.remove("d-none");
     img.classList.add("d-none");
+    // A ship's idle is one still frame: it rides the swell instead
+    // (.ship-bob, the user's idea 2026-11-11).
+    img.classList.remove("ship-bob");
+    meta.then(m => img.classList.toggle("ship-bob", kind === "idle" && !!(m && m.water)));
     img.onload = () => {
       // 1.5x, the same for every unit so sizes compare as in the game (the
       // sprites are sharp enough), capped to the window.
       img.style.width = `${Math.min(img.naturalWidth * 1.5, 440)}px`;
       status.classList.add("d-none");
       img.classList.remove("d-none");
-      if (kind === "walk") meta.then(m => _startGround(stage, img, m));
+      if (kind === "walk") Promise.all([meta, wake]).then(([m, w]) => {
+        if (w) ["back", "front"].forEach(_wakeStrip);
+        _startGround(stage, img, m, w);
+      });
     };
     img.onerror = () => { status.textContent = "This animation isn't in your game files."; };
-    img.src = _previewSrc(unitId, kind);
+    img.src = _previewSrc(unitId, kind, civ);
   };
   el.querySelectorAll("[data-preview-kind]").forEach(b => { b.onclick = () => show(b.dataset.previewKind); });
   show("idle");
@@ -2731,6 +2807,32 @@ function wireCustomBonusPicker() {
 // there is no independent state to reconcile.  The map is served by
 // /api/builder/meta so it can't drift from civ_appender._UNLOCK_UNIT_BONUSES.
 let _unlockBonusUnits = {};   // {bonusId: [unitId, ...]}
+let _retiredCardIds   = new Set();  // retired_cards.RETIRED
+let _cardOnlyUnits    = new Set();  // every unlock card's units, retired or not
+
+// A draft carrying a retired unit card (saved before, Edit Civ, a KM import)
+// gets it moved to its home: the unit into the tree, a hero card into the hero
+// panel, the Palintonon to a Look.  One server call, so the wizard and the
+// build convert the same way.
+async function _retireCards() {
+  // ...and a draft from before the tree held replacements gets its one-time
+  // tree cleanup (retired_cards.TREE_VERSION), once.
+  if ((draft.tree_version || 1) >= (window._treeVersion || 3)
+      && !(draft.bonuses || []).some(b => _retiredCardIds.has(Number(b.id ?? b[0])))) return;
+  try {
+    const res = await fetch('/api/builder/retire-cards', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ draft, dat_path: draft.dat_path || null }),
+    });
+    const out = await res.json();
+    if (!res.ok || !out.draft) return;
+    Object.assign(draft, out.draft);
+    (out.notes || []).forEach(n => console.info('[EF] ' + n));
+    saveDraft();
+  } catch (e) {
+    console.warn('Could not convert retired cards:', e);
+  }
+}
 let _unlockReplaces   = {};   // {bonusId: [unitId, ...]} units the card's unit replaces
 
 function _isUnlockBonus(id) {
@@ -4260,68 +4362,22 @@ function _wireUUAdvanced() {
     ?.addEventListener("hide.bs.collapse",  () => document.getElementById("ua-chevron")?.classList.remove("fa-rotate-180"));
 }
 
-// ── Long-range ship picker ────────────────────────────────────────────────────
-
-const _LRS_OPTIONS = [
-  { id: "none",             label: "None",             img: null },
-  { id: "cannon_galleon",   label: "Cannon Galleon",   img: "/static/aoe2techtree/img/Unit/55.png" },
-  { id: "catapult_galleon", label: "Catapult Galleon",  img: "/static/aoe2techtree/img/Unit/591.png" },
-  { id: "dromon",           label: "Dromon",            img: "/static/aoe2techtree/img/Unit/406.png" },
-  { id: "lou_chuan",        label: "Lou Chuan",         img: "/static/aoe2techtree/img/Unit/431.png" },
-];
-
-const _LRS_NOTES = {
-  none:             "Your civ will have no siege ship.",
-  cannon_galleon:   "Standard Cannon Galleon. Use the elite checkbox to include the Elite upgrade.",
-  catapult_galleon: "Catapult Galleon replaces Cannon Galleon. No elite upgrade.",
-  dromon:           "Byzantine-style Dromon. No elite upgrade.",
-  lou_chuan:        "Chinese-style Lou Chuan. No elite upgrade.",
-};
-
-// Only Cannon Galleon has an elite upgrade (unit 691 — Elite Cannon Galleon)
-const _LRS_HAS_ELITE = new Set(["cannon_galleon"]);
-
-// Siege ship unit IDs ↔ picker option ids.  The picker is the sole control (the
-// backend discards all of these from tree[0] and re-adds from the draft), so
-// these two maps keep the tech tree and the picker showing the same thing.
-// Variants are checked before the Cannon Galleon: a civ that has both listed
-// (several do) is really a variant civ.
-const _LRS_UNIT_OF = { cannon_galleon: 420, catapult_galleon: 2633, dromon: 1795, lou_chuan: 1948 };
-const _LRS_ELITE_UNIT = 691;
-const _LRS_UNIT_IDS = new Set([...Object.values(_LRS_UNIT_OF), _LRS_ELITE_UNIT]);
-
-// Read a civ's unit list and work out which picker option it corresponds to.
-function _lrsFromUnits(units) {
-  const has = new Set(units);
-  for (const id of ["catapult_galleon", "dromon", "lou_chuan", "cannon_galleon"]) {
-    if (has.has(_LRS_UNIT_OF[id])) return { ship: id, elite: has.has(_LRS_ELITE_UNIT) };
+// ── The Dock's siege ship ─────────────────────────────────────────────────────
+// It lives in the tree (2026-11-11; a Siege Ship picker before): the Cannon
+// Galleon and its Elite are nodes like any other, and the Catapult Galleon,
+// Dromon and Lou Chuan take their line's place (civ_appender.
+// SIEGE_SHIP_REPLACEMENTS).  A seed from FULL.json (which has no Cannon
+// Galleon) gets the standard Dock, as the picker's default gave: the Cannon
+// Galleon and its Elite, no variant.  A civ's own template is taken as
+// shipped, its variant over the Cannon Galleon some list beside it.
+const _SIEGE_SHIPS = Object.freeze({ cg: 420, elite: 691, variants: [2633, 1795, 1948] });
+function _withSiegeShip(units, seed) {
+  const cg = id => id === _SIEGE_SHIPS.cg || id === _SIEGE_SHIPS.elite;
+  if (seed) {
+    return [...units.filter(id => !cg(id) && !_SIEGE_SHIPS.variants.includes(id)), _SIEGE_SHIPS.cg, _SIEGE_SHIPS.elite];
   }
-  return { ship: "none", elite: false };
+  return _SIEGE_SHIPS.variants.some(id => units.includes(id)) ? units.filter(id => !cg(id)) : units;
 }
-
-// Rewrite a unit list so the siege ship matches the picker exactly — used on
-// every tree open so the Dock can't show a ship the build won't produce.
-function _applyLrsToUnits(units) {
-  const out = units.filter(id => !_LRS_UNIT_IDS.has(id));
-  const ship = draft.long_range_ship || "cannon_galleon";
-  const base = _LRS_UNIT_OF[ship];
-  if (base !== undefined) {
-    out.push(base);
-    if (_LRS_HAS_ELITE.has(ship) && draft.long_range_ship_elite !== false) {
-      out.push(_LRS_ELITE_UNIT);
-    }
-  }
-  return out;
-}
-
-// Unique ship bonuses that lock the Demo Ship line.
-// Thirisadai (298) is excluded — it sits in dock position 15 (row 3, col 5),
-// well clear of the demo line (positions 8 and 13), so it can coexist.
-// The Longship (card 51) is no longer one of them: it's a tree node now (see
-// the migration at the top of this file).
-const _UNIQUE_SHIP_BONUS_IDS   = new Set([50, 69]);
-const _DEMO_SHIP_UNITS         = new Set([1104, 527, 528]);
-const _UNIQUE_SHIP_BONUS_NAMES = { 50: "Turtle Ship", 69: "Caravel" };
 
 // Mutual-exclusivity group: only one of {50,69} may be selected at a time.
 // Thirisadai (298) may coexist with one member of this group.
@@ -4333,85 +4389,6 @@ function showToast(message) {
   if (!body || !el) return;
   body.textContent = message;
   bootstrap.Toast.getOrCreateInstance(el, { delay: 6000 }).show();
-}
-
-function _hasUniqueShipBonus() {
-  const bonuses = draft.bonuses || [];
-  return bonuses.some(b => _UNIQUE_SHIP_BONUS_IDS.has(Number(b.id ?? b[0])));
-}
-
-function _uniqueShipBonusName() {
-  const bonuses = draft.bonuses || [];
-  for (const b of bonuses) {
-    const id = Number(b.id ?? b[0]);
-    if (_UNIQUE_SHIP_BONUS_NAMES[id]) return _UNIQUE_SHIP_BONUS_NAMES[id];
-  }
-  return "unique ship";
-}
-
-function renderDemoShipNotice() {
-  const notice  = document.getElementById("demo-ship-notice");
-  const textEl  = document.getElementById("demo-ship-notice-text");
-  if (!notice) return;
-  if (_hasUniqueShipBonus()) {
-    textEl.textContent =
-      `Civs with ${_uniqueShipBonusName()}s can't use Demolition Ships (shared UI buttons) — ` +
-      `the Demo Raft, Demo Ship, and Heavy Demo Ship have been removed from your tech tree.`;
-    notice.classList.remove("d-none");
-  } else {
-    notice.classList.add("d-none");
-  }
-}
-
-function renderLRSPicker() {
-  const container  = document.getElementById("lrs-chips");
-  const eliteRow   = document.getElementById("lrs-elite-row");
-  const eliteCheck = document.getElementById("lrs-elite-check");
-  const noteEl     = document.getElementById("lrs-note");
-  if (!container) return;
-
-  const current  = draft.long_range_ship || null;
-  const hasElite = _LRS_HAS_ELITE.has(current || "cannon_galleon");
-
-  container.innerHTML = _LRS_OPTIONS.map(opt => {
-    const sel = opt.id === current || (opt.id === "cannon_galleon" && current === null);
-    const imgHtml = opt.img
-      ? `<img src="${opt.img}" class="lrs-chip-img" alt="${opt.label}">`
-      : `<span class="lrs-chip-none-icon"><i class="fa-solid fa-ban"></i></span>`;
-    return `<button type="button" class="lrs-chip${sel ? " lrs-chip--selected" : ""}"
-               data-lrs="${opt.id}">${imgHtml}<span>${opt.label}</span></button>`;
-  }).join("");
-
-  container.querySelectorAll(".lrs-chip").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const val = btn.dataset.lrs;
-      draft.long_range_ship = (val === "cannon_galleon") ? null : val;
-      // Default elite to true when switching to a type that has one
-      if (_LRS_HAS_ELITE.has(val || "cannon_galleon") && draft.long_range_ship_elite == null) {
-        draft.long_range_ship_elite = true;
-      }
-      saveDraft();
-      renderLRSPicker();
-    });
-  });
-
-  // Elite checkbox: show only for Cannon Galleon, hide otherwise
-  if (eliteRow) eliteRow.classList.toggle("d-none", !hasElite);
-  if (eliteCheck && hasElite) {
-    eliteCheck.checked = draft.long_range_ship_elite !== false; // default true
-    eliteCheck.onchange = () => {
-      draft.long_range_ship_elite = eliteCheck.checked;
-      saveDraft();
-    };
-  }
-
-  const noteKey = current || "cannon_galleon";
-  if (noteEl) {
-    noteEl.textContent = _LRS_NOTES[noteKey] || "";
-    noteEl.classList.toggle("d-none", !_LRS_NOTES[noteKey]);
-  }
-
-  renderDemoShipNotice();
 }
 
 // ── Effect-command meter ──────────────────────────────────────────────────────
@@ -4551,12 +4528,8 @@ window.setTechTree = function (localtree, edits) {
     draft.tech_edits = edits.tech_edits || {};
     draft.added_lines = edits.added_lines || [];
   }
-  let units = localtree[0];
-  if (_hasUniqueShipBonus()) {
-    units = units.filter(id => !_DEMO_SHIP_UNITS.has(id));
-  }
   draft.tree = {
-    units,
+    units:     localtree[0],
     buildings: localtree[1],
     techs:     localtree[2],
   };
@@ -4649,12 +4622,10 @@ function _filterFullTree(data, everything = false) {
   // handful of Unlock cards on a brand-new civ.  Sourced from
   // /api/builder/meta, which mirrors civ_appender._UNLOCK_UNIT_BONUSES, so this
   // list cannot drift from the backend's.
-  const unlockUnits = new Set(
-    Object.values(_unlockBonusUnits || {}).flat().map(Number)
-  );
+  const unlockUnits = _cardOnlyUnits;
 
   return {
-    units:     (data.units     || []).filter(id => (everything || !regUnits.has(id)) && !unlockUnits.has(id)),
+    units:     _withSiegeShip((data.units || []).filter(id => (everything || !regUnits.has(id)) && !unlockUnits.has(id)), true),
     buildings: (data.buildings || []).filter(id => !regBldgs.has(id)
                                                 && !_CIV_UNIQUE_BUILDING_IDS.has(id)),
     techs:     (data.techs     || []).filter(id => everything || !regTechs.has(id)),
@@ -4712,25 +4683,13 @@ document.getElementById("btn-open-tree").addEventListener("click", async () => {
         const full = _filterFullTree(data, templateVal === "everything");
         treeToLoad = [full.units, full.buildings, full.techs];
       } else {
-        treeToLoad = [data.units, data.buildings, data.techs];
-        // Adopt the template civ's siege ship.  The picker is the only control
-        // the backend honours, so loading the Aztecs without this gave you the
-        // Aztec tree with a Frankish Cannon Galleon.
-        const lrs = _lrsFromUnits(data.units);
-        draft.long_range_ship = (lrs.ship === "cannon_galleon") ? null : lrs.ship;
-        if (_LRS_HAS_ELITE.has(lrs.ship)) draft.long_range_ship_elite = lrs.elite;
-        saveDraft();
-        renderLRSPicker();
+        treeToLoad = [_withSiegeShip(data.units || [], false), data.buildings, data.techs];
       }
     } catch (e) {
       alert("Failed to load tech tree data. Please try again.");
       return;
     }
   }
-
-  // Whatever we're about to show, the Dock's siege ship comes from the picker —
-  // never from the tree — so make the tree agree before it renders.
-  if (treeToLoad) treeToLoad[0] = _applyLrsToUnits(treeToLoad[0]);
 
   window.showTechtree(civName, treeToLoad, "/static");
 });
@@ -4784,11 +4743,19 @@ async function init() {
     window._metaMonks         = meta.monk_skins      || [];
     window._metaMonasteries   = meta.monastery_skins || [];
     window._artVersion        = meta.art_version     || "";
-    _unlockBonusUnits         = meta.unlock_bonuses  || {};
+    window._treeVersion       = meta.tree_version    || 3;   // retired_cards.TREE_VERSION
+    // Retired unit cards are not mirrored from the tree any more: the tree is
+    // their home.  _cardOnlyUnits still keeps their units out of a new civ's seed.
+    _retiredCardIds           = new Set((meta.retired_cards || []).map(Number));
+    _cardOnlyUnits            = new Set([...Object.values(meta.unlock_bonuses || {}).flat(),
+                                          ...(meta.seed_excluded_units || [])].map(Number));
+    _unlockBonusUnits         = Object.fromEntries(Object.entries(meta.unlock_bonuses || {})
+                                  .filter(([k]) => !_retiredCardIds.has(Number(k))));
     _unlockReplaces           = meta.unlock_replaces || {};
     // A draft with no tree yet (new civ, or one saved before this defaulted to
     // full) gets the wide-open tree before anything reads draft.tree.
     await _seedFullTreeIfEmpty();
+    await _retireCards();
 
     // Reconcile drafts saved before the unlock bonuses existed (or edited in
     // another tab) so the bonus list matches the tree from the first render.

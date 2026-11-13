@@ -1527,6 +1527,13 @@ def api_builder_meta():
         "art_version": _PREVIEW_VERSION,
         "unlock_bonuses": unlock_bonuses,
         "unlock_replaces": unlock_replaces,
+        # Cards retired into the tree, the hero panel or a Look (retired_cards):
+        # the wizard no longer mirrors these into the bonus list.
+        "retired_cards": sorted(__import__("retired_cards").RETIRED),
+        # Units only a deliberate pick puts in a tree: never in a new civ's seed.
+        "seed_excluded_units": sorted(__import__("retired_cards").SEED_EXCLUDED_UNITS),
+        # A draft below it gets retired_cards' one-time tree upgrades on load.
+        "tree_version": __import__("retired_cards").TREE_VERSION,
         # Display names for the identity scene ("Hagia Sophia" rather than
         # "Byzantines").  Written by scripts/import_km_art.py; absent until that
         # has been run, so the wizard falls back to civ names.
@@ -1929,6 +1936,10 @@ def api_builder_bonuses_catalog():
     # Deprecated bonuses still build for civs that reference them; they are just
     # not offered for new picks. See bonus_names.DEPRECATED_BONUSES.
     hidden_ids = unsupported_ids | set(DEPRECATED_BONUSES)
+    # Unit cards retired into the tech tree, the hero panel or a Look: a civ
+    # that carries one is converted on load (/api/builder/retire-cards).
+    from retired_cards import HERO_CARDS, RETIRED as RETIRED_UNIT_CARDS
+    hidden_ids |= RETIRED_UNIT_CARDS
 
     # ...and, as for unique techs and unique units, a bonus the PLAYER's OWN DAT
     # cannot implement.  A card is built by cloning its techs' effect commands,
@@ -1999,6 +2010,8 @@ def api_builder_bonuses_catalog():
         cards = json.load(f)
 
     def _successor(k: str) -> str | None:
+        if int(k) in RETIRED_UNIT_CARDS:
+            return "the hero panel" if int(k) in HERO_CARDS else "the tech tree"
         if (sup := DEPRECATED_BONUSES.get(int(k))) is not None:
             return names.get(str(sup))
         note = (cards.get(k) or {}).get("_note", "")
@@ -2713,27 +2726,31 @@ def api_unit_icon(unit_id: int):
     return send_file(cached, mimetype="image/webp", max_age=0)
 
 
-_PREVIEW_VERSION = "v4"        # bump when game_sprites' output changes;
+_PREVIEW_VERSION = "v5"        # bump when game_sprites' output changes;
                                # prune_caches() deletes the older folders
                                # (v2: kept blocks across a moved box — square holes;
-                               #  v3: frames under 20 ms dropped — browsers slowed them)
+                               #  v3: frames under 20 ms dropped — browsers slowed them;
+                               #  v5: ships' kept blocks from the key — oar specks)
 _PREVIEWS_WARMED: set[str] = set()
 
 
-def _preview_path(dat_path: str, unit_id: int, kind: str) -> Path:
+def _preview_path(dat_path: str, unit_id: int, kind: str, civ: int | None = None) -> Path:
     game = hashlib.md5(str(Path(dat_path).resolve()).encode()).hexdigest()[:10]
-    return _cache_dir() / f"previews-{_PREVIEW_VERSION}" / game / f"{kind}_{unit_id}.webp"
+    mine = f"_civ{civ}" if civ is not None else ""
+    return _cache_dir() / f"previews-{_PREVIEW_VERSION}" / game / f"{kind}_{unit_id}{mine}.webp"
 
 
-def _render_preview(dat_path: str, unit_id: int, kind: str) -> Path | None:
+def _render_preview(dat_path: str, unit_id: int, kind: str, civ: int | None = None) -> Path | None:
     """The cached preview, rendered from the player's sprites on first ask:
-    kind "still" (first idle frame) or one of game_sprites.ANIMATIONS."""
+    kind "still" (first idle frame) or one of game_sprites.ANIMATIONS.
+    `civ`: that civ's own version of the unit (a Look: the Palintonon)."""
     import game_sprites
-    cached = _preview_path(dat_path, unit_id, kind)
+    from civ_appender import _original_civ
+    cached = _preview_path(dat_path, unit_id, kind, civ)
     if cached.exists():
         return cached
     dat = _get_dat(dat_path)
-    units = dat.civs[0].units
+    units = (_original_civ(dat, civ) if civ is not None and 0 <= civ < len(dat.civs) else dat.civs[0]).units
     if not 0 <= unit_id < len(units) or units[unit_id] is None:
         return None
     unit = units[unit_id]
@@ -2892,10 +2909,63 @@ def api_unit_preview_meta(unit_id: int):
     if not 0 <= unit_id < len(units) or units[unit_id] is None:
         return jsonify({"speed": 0, "scale": 1})
     unit = units[unit_id]
-    g = dat.graphics[game_sprites.unit_graphic(unit, "walk")] if game_sprites.unit_graphic(unit, "walk") >= 0 else None
-    sprite = game_sprites.find_sprite(dat_path, g.file_name) if g is not None else None
+    walk = game_sprites.unit_graphic(unit, "walk")
+    # Ships sail on water (a galley's own walk graphic has no file: the scale
+    # comes from its hull, or the water scrolled at half speed).
     return jsonify({"speed": round(float(unit.speed), 3),
-                    "scale": 2 if sprite is not None and sprite.stem.endswith("_x2") else 1})
+                    "scale": game_sprites.sprite_scale(dat, dat_path, walk) if walk >= 0 else 1,
+                    "water": unit.class_ in game_sprites.SHIP_CLASSES})
+
+
+_WAKE_ANCHORS: dict = {}               # (dat_path, unit, civ) -> wake answer
+
+
+@app.route("/api/unit-preview/<int:unit_id>/wake")
+def api_unit_preview_wake(unit_id: int):
+    """A ship's wake for the preview window's walk (game_sprites' "A ship's
+    wake"): its size, each part's puff, and where the hull sits in the walk
+    preview's frames, to drop the puffs there.  {} for any other unit."""
+    import game_sprites
+    from civ_appender import _original_civ
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return jsonify({})
+    civ = request.args.get("civ", type=int)
+    key = (dat_path, unit_id, civ)
+    if key not in _WAKE_ANCHORS:
+        dat = _get_dat(dat_path)
+        units = (_original_civ(dat, civ) if civ is not None and 0 <= civ < len(dat.civs) else dat.civs[0]).units
+        unit = units[unit_id] if 0 <= unit_id < len(units) else None
+        size = game_sprites.wake_size(dat, dat_path, unit) if unit is not None else None
+        effect = game_sprites.wake_effect(dat_path, size) if size else None
+        anchor: list = []
+        if effect and game_sprites.graphic_frames(dat, dat_path, game_sprites.unit_graphic(unit, "walk"),
+                                                  anchor=anchor, from_key=True) is None:
+            effect = None
+        _WAKE_ANCHORS[key] = {"size": size, "anchor": anchor, **effect} if effect else {}
+    return jsonify(_WAKE_ANCHORS[key])
+
+
+@app.route("/api/wake/<part>")
+def api_wake_strip(part: str):
+    """One part of a ship's wake, facing south-west: its frames side by side
+    (game_sprites.wake_strip), from the player's game.  404 without it."""
+    import game_sprites
+    if part not in game_sprites.WAKE_PARTS:
+        return ("", 404)
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path:
+        return ("", 404)
+    cached = _preview_path(dat_path, 0, f"wake-{part}")
+    if not cached.exists():
+        data = game_sprites.wake_strip(dat_path, part)
+        if data is None:
+            return ("", 404)
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cached.with_suffix(f".{threading.get_ident()}.tmp")
+        tmp.write_bytes(data)
+        tmp.replace(cached)
+    return send_file(cached, mimetype="image/webp", max_age=0)
 
 
 @app.route("/api/unit-preview/<int:unit_id>/<kind>")
@@ -2911,7 +2981,7 @@ def api_unit_preview(unit_id: int, kind: str):
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path:
         return ("", 404)
-    path = _render_preview(dat_path, unit_id, kind)
+    path = _render_preview(dat_path, unit_id, kind, request.args.get("civ", type=int))
     if path is None:
         return ("", 404)
     return send_file(path, mimetype="image/webp", max_age=0)
@@ -3126,6 +3196,22 @@ def api_builder_add_unit_options():
 _UNIT_CATALOG_CACHE: dict[str, list] = {}
 
 
+@app.route("/api/builder/retire-cards", methods=["POST"])
+def api_builder_retire_cards():
+    """Move a draft's retired unit cards to their homes (retired_cards): the
+    wizard calls this when it loads a draft that carries one.  Returns the
+    draft, converted, and one note per card moved."""
+    from retired_cards import retire_cards
+    body = request.get_json(silent=True) or {}
+    draft = body.get("draft")
+    if not isinstance(draft, dict):
+        return jsonify({"error": "no draft"}), 400
+    dat_path = _resolve_dat_path(body.get("dat_path"))
+    dat = _get_dat(dat_path) if dat_path and Path(dat_path).exists() else None
+    notes = retire_cards(draft, dat)
+    return jsonify({"draft": draft, "notes": notes})
+
+
 @app.route("/api/builder/unit-catalog")
 def api_builder_unit_catalog():
     """The tree page's unit picker: every military unit in the player's game
@@ -3167,6 +3253,15 @@ def api_builder_unit_catalog():
         except ValueError:
             return jsonify({"status": "error", "units": []}), 400
         return jsonify({"status": "ok", "suggested": added_lines.suggested_upgrades(dat, frm, rows)})
+    real_for = request.args.get("real_for")
+    if real_for not in (None, ""):
+        # The "+" at a building: the game's own units it can add as themselves.
+        try:
+            bld = None if real_for == "all" else int(real_for)
+        except ValueError:
+            return jsonify({"status": "error", "units": []}), 400
+        return jsonify({"status": "ok", "real": added_lines.real_units(dat, bld, rows),
+                        "replacements": added_lines.real_replacements(dat, rows)})
     look_for = request.args.get("look_for")
     if look_for not in (None, ""):
         try:
@@ -3231,7 +3326,7 @@ def api_builder_node_info():
     Read from the Britons, the template every custom civ clones, so they are
     exactly what an edit replaces.  ?kind=unit|building|tech&id=N."""
     import civ_overrides as co
-    from civ_appender import _display_name, unit_skins
+    from civ_appender import APPEARANCE_KINDS, _display_name, unit_skins
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path or not Path(dat_path).exists():
         return jsonify({"status": "no_dat"})
@@ -3307,6 +3402,8 @@ def api_builder_node_info():
         "age_move": _age_move_info(dat, co.enabling_tech(dat, 1, nid)) if kind == "unit" else None,
         # Other civs' versions of it, for the Look row (Palintonon for the Trebuchet).
         "skins": unit_skins(dat, nid) if kind == "unit" else [],
+        # Whether it may wear another unit's look (civ_appender.appearance_ok's kinds).
+        "looks": kind == "unit" and u.class_ in APPEARANCE_KINDS,
     })
 
 

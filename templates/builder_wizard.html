@@ -268,32 +268,6 @@
         </div>
       </div>
 
-      {# Long-range ship picker #}
-      <div class="mt-4">
-        <hr style="border-color: oklch(from var(--body-bg) calc(l + 0.15) c h);">
-        <div class="mb-2 d-flex align-items-baseline gap-2">
-          <span class="fw-semibold small">Siege Ship</span>
-          <span class="text-muted small">Select the siege ship type your civ uses at the Dock.</span>
-        </div>
-        <div class="d-flex flex-wrap gap-2" id="lrs-chips"></div>
-        <div id="lrs-elite-row" class="mt-2 d-none">
-          <div class="form-check form-check-inline">
-            <input class="form-check-input" type="checkbox" id="lrs-elite-check">
-            <label class="form-check-label small fw-semibold" for="lrs-elite-check">Include Elite upgrade</label>
-          </div>
-        </div>
-        <div id="lrs-note" class="text-muted small mt-1 d-none"></div>
-      </div>
-
-      {# Demo ship lock notice — shown when civ has a unique ship bonus #}
-      <div id="demo-ship-notice" class="d-none mt-3">
-        <hr style="border-color: oklch(from var(--body-bg) calc(l + 0.15) c h);">
-        <div class="d-flex align-items-start gap-2 text-muted small">
-          <i class="fa-solid fa-triangle-exclamation text-warning mt-1" style="flex-shrink:0"></i>
-          <span id="demo-ship-notice-text"></span>
-        </div>
-      </div>
-
     </div>
   </div>
 </div>
@@ -1098,7 +1072,7 @@
   </div>
 </div>
 
-{# Unit preview: Idle / Walk / Attack, rendered from the player's sprites #}
+{# Unit preview: Idle / Move / Attack, rendered from the player's sprites #}
 <div class="modal fade" id="modal-unit-preview" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -1109,7 +1083,7 @@
       <div class="modal-body text-center">
         <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Animation">
           <button type="button" class="btn btn-outline-secondary" data-preview-kind="idle">Idle</button>
-          <button type="button" class="btn btn-outline-secondary" data-preview-kind="walk">Walk</button>
+          <button type="button" class="btn btn-outline-secondary" data-preview-kind="walk">Move</button>
           <button type="button" class="btn btn-outline-secondary" data-preview-kind="attack">Attack</button>
         </div>
         <div class="unit-preview-stage">

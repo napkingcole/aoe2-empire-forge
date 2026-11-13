@@ -110,6 +110,8 @@ def _draft_to_civ_def(draft: dict) -> dict:
         "custom_team_bonuses":   draft.get("custom_team_bonuses") or [],
         # The tree page's "+ Add Unit" lines — added_lines.apply_added_lines.
         "added_lines":           norm_added_lines(draft.get("added_lines")),
+        # Past retired_cards' one-time tree cleanup (its TREE_VERSION).
+        "tree_version":          draft.get("tree_version"),
     }
     # A Custom UT's library cards (#75), read by civ_appender.get_ut_cards.  The
     # same shape the draft and saved files use; `effects` mirrors bonuses[2]/[3]

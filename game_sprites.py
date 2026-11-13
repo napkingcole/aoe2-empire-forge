@@ -18,7 +18,14 @@ openage (doc/media/sld-files.md):
            u16 command count; (u8 skip, u8 draw) pairs over 4x4 blocks in
            row order; then the drawn blocks — DXT1 (main, damage) or BC4
            (shadow, player) at 8 bytes each.  flags & 0x80: skipped blocks keep
-           the previous frame's pixels.
+           the previous frame's pixels — which frame is not written down.
+           Read as the frame just before, land units are right (a Keshik's
+           idle); ships are not: their oars left specks where they had been,
+           though the game draws them clean.  Ships' kept blocks come from the
+           facing's first whole frame (`from_key`; the user picked it by eye
+           2026-11-11, and it is as good or better on all 28 ship sprites
+           that keep blocks).  The Keshik's idle read that way keeps a ghost
+           spear, so it isn't the rule for everything.
   The outline layer (0x04) has a different layout; previews don't need it.
 
 Frames run angle by angle, frame_count per angle; angle 0 faces east and they
@@ -194,16 +201,19 @@ def _copy_overlap(previous: tuple, box: tuple, img: np.ndarray) -> None:
         img[oy1 - y1:oy2 - y1, ox1 - x1:ox2 - x1] = pimg[oy1 - py1:oy2 - py1, ox1 - px1:ox2 - px1]
 
 
-def render_frame(data: bytes, index: int, frames: list[dict] | None = None) -> tuple[np.ndarray, tuple]:
+def render_frame(data: bytes, index: int, frames: list[dict] | None = None,
+                 from_key: bool = False) -> tuple[np.ndarray, tuple]:
     """(RGBA canvas uint8, hotspot) for frame `index`: half-strength shadow,
     then the colour layer with its player-colour mask painted Player 1 Blue.
-    Decodes from the nearest earlier frame that doesn't reuse its predecessor."""
+    Decodes from the nearest earlier frame that doesn't reuse its predecessor
+    (the key) — every frame since, or with `from_key` the key alone (ships,
+    see the header)."""
     frames = frames or frame_index(data)
     start = index
     while start > 0 and frames[start]["reuses"]:
         start -= 1
     prev: dict = {}
-    for i in range(start, index + 1):
+    for i in ((start, index) if from_key and index != start else range(start, index + 1)):
         layers = _decode(data, frames[i], prev)
     fr = frames[index]
     canvas = np.zeros((fr["h"], fr["w"], 4), dtype=np.float32)
@@ -249,6 +259,17 @@ def find_sprite(dat_path, file_name: str) -> Path | None:
     return None
 
 
+def sprite_scale(dat, dat_path, graphic_id: int) -> int:
+    """2 when a graphic's sprites are Enhanced Graphics' _x2, else 1 — read
+    from its first layer with a file: a galley's own graphic has none, only
+    its hull and sails do."""
+    for gid, _, _ in _layers(dat, graphic_id):
+        sprite = find_sprite(dat_path, dat.graphics[gid].file_name)
+        if sprite is not None:
+            return 2 if sprite.stem.endswith("_x2") else 1
+    return 1
+
+
 def unit_graphic(unit, kind: str) -> int:
     """The DAT graphic id for one of a unit's ANIMATIONS, or -1."""
     if kind == "idle":
@@ -287,16 +308,19 @@ def unit_frames(dat, dat_path, unit, kind: str, angle: int = SOUTH_WEST,
     """Every frame of one of a unit's animations at one facing, as RGBA images
     cropped to what any frame draws, and the frame time in ms at Normal speed.
     `still` stops after the first frame.  None when the game has no sprite."""
-    return graphic_frames(dat, dat_path, unit_graphic(unit, kind), angle, still)
+    return graphic_frames(dat, dat_path, unit_graphic(unit, kind), angle, still, from_key=is_ship(unit))
 
 
 def graphic_frames(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST,
                    still: bool = False, under: tuple = (),
-                   min_ms: int = MIN_FRAME_MS) -> tuple[list[Image.Image], int] | None:
+                   min_ms: int = MIN_FRAME_MS, anchor: list | None = None,
+                   from_key: bool = False) -> tuple[list[Image.Image], int] | None:
     """unit_frames for any DAT graphic — one a unit's task plays (a Villager
     building), not only its idle, walk and attack.  `under` adds (graphic id,
     x, y) layers drawn first: a Town Center preview's shadow lives on another
-    piece of the building (scene_art)."""
+    piece of the building (scene_art).  `anchor`, when given, receives the
+    hotspot's (x, y) in the cropped frames: where the unit stands.
+    `from_key`: render_frame's, for a ship."""
     parts = []
     for gid, ox, oy in (*under, *_layers(dat, graphic_id)):
         g = dat.graphics[gid]
@@ -330,7 +354,7 @@ def graphic_frames(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST,
     for i in picks:
         canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         for sprite, first, per, ox, oy in parts:
-            img, (hx, hy) = render_frame(sprite.data, first + (i % per), sprite.frames)
+            img, (hx, hy) = render_frame(sprite.data, first + (i % per), sprite.frames, from_key)
             canvas.alpha_composite(Image.fromarray(img, "RGBA"), (size // 2 - hx + ox, size // 2 - hy + oy))
         drawn = canvas.getbbox()
         kept.append((canvas.crop(drawn), drawn) if drawn else (None, None))
@@ -351,6 +375,8 @@ def graphic_frames(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST,
         if im is not None:
             frame.paste(im, (drawn[0] - box[0], drawn[1] - box[1]))   # paste clips what falls outside
         out.append(frame)
+    if anchor is not None:
+        anchor[:] = [size // 2 - box[0], size // 2 - box[1]]
     return out, ms
 
 
@@ -367,19 +393,121 @@ def still_webp(dat, dat_path, unit) -> bytes | None:
 
 def animation_webp(dat, dat_path, unit, kind: str) -> bytes | None:
     """A looping animated WebP of one of the unit's ANIMATIONS."""
-    return graphic_webp(dat, dat_path, unit_graphic(unit, kind))
+    return graphic_webp(dat, dat_path, unit_graphic(unit, kind), from_key=is_ship(unit))
 
 
-def graphic_webp(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST) -> bytes | None:
+def graphic_webp(dat, dat_path, graphic_id: int, angle: int = SOUTH_WEST, from_key: bool = False) -> bytes | None:
     """A looping animated WebP of any DAT graphic."""
     import io
-    got = graphic_frames(dat, dat_path, graphic_id, angle)
+    got = graphic_frames(dat, dat_path, graphic_id, angle, from_key=from_key)
     if got is None:
         return None
     frames, ms = got
     buf = io.BytesIO()
     frames[0].save(buf, "WEBP", save_all=True, append_images=frames[1:], duration=ms,
                    loop=0, quality=80, method=4)
+    return buf.getvalue()
+
+
+# ── A ship's wake ─────────────────────────────────────────────────────────────
+# The game draws a moving ship's wake as a particle effect, not a sprite:
+# particles/wake_{back,front}_{small,medium,large}.json each name an atlas
+# (particles/textures/atlases/wake_*.dds, with a TexturePacker .json) of 480
+# images, 16 facings x 30 frames, that a puff plays once while it fades out.
+# The engine drops puffs as the ship moves and picks the size itself: the DAT's
+# "Combined Wake" graphics (4035 Small, 4839 Medium, 3586 Large; back + front
+# deltas at 0, 0) are named by no unit.  Previews pick by the hull's width
+# (WAKE_SIZES), an approximation agreed by eye.
+
+SHIP_CLASSES = frozenset((2, 20, 21, 22))   # trade boat, transport, fishing boat, warship
+WAKE_PARTS = ("back", "front")
+# (largest hull width in standard pixels, size): the Fishing Ship
+# small; Galley and Longship medium; War Galley, Galleon, Fire Ship and
+# Cannon Galleon large.
+WAKE_SIZES = ((75, "small"), (139, "medium"), (10 ** 6, "large"))
+
+
+def is_ship(unit) -> bool:
+    return unit.class_ in SHIP_CLASSES
+
+
+def particles_folder(dat_path) -> Path | None:
+    graphics = graphics_folder(dat_path) if dat_path else None
+    folder = graphics.parents[1] / "particles" if graphics is not None else None
+    return folder if folder is not None and folder.is_dir() else None
+
+
+def _particle(dat_path, name: str) -> dict | None:
+    import json
+    folder = particles_folder(dat_path)
+    path = folder / f"{name}.json" if folder is not None else None
+    if path is None or not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def wake_size(dat, dat_path, unit) -> str | None:
+    """small / medium / large for a ship (WAKE_SIZES), None for any other unit."""
+    if not is_ship(unit):
+        return None
+    g = unit_graphic(unit, "walk")
+    got = graphic_frames(dat, dat_path, g, still=True) if g >= 0 else None
+    if got is None:
+        return None
+    width = got[0][0].width / sprite_scale(dat, dat_path, g)
+    return next(size for most, size in WAKE_SIZES if width <= most)
+
+
+def wake_effect(dat_path, size: str) -> dict | None:
+    """Each part's puff, from the game's particle file: its scale against the
+    atlas's own pixels, its life in seconds (a random pick between the two),
+    the fade in and out, and the alpha it fades between."""
+    out = {}
+    for part in WAKE_PARTS:
+        p = _particle(dat_path, f"wake_{part}_{size}")
+        if p is None:
+            return None
+        out[part] = {"scale": float(p.get("Scale", 1)),
+                     "life": [float(p.get("Duration1", 1.5)), float(p.get("Duration2", p.get("Duration1", 1.5)))],
+                     "fade_in": float(p.get("StartDuration", 0)) if p.get("StartMode") == "Fade" else 0.0,
+                     "fade_out": float(p.get("StopDuration", 0)) if p.get("StopMode") == "Fade" else 0.0,
+                     "alpha": [float(p.get("AlphaStart", 1)), float(p.get("AlphaEnd", 0))]}
+    return out
+
+
+def wake_strip(dat_path, part: str, angle: int = SOUTH_WEST) -> bytes | None:
+    """One facing of a wake part's atlas as a WebP strip of its frames, side
+    by side at the atlas's own size (each frame a sourceSize square)."""
+    import io
+    import json
+    p = _particle(dat_path, f"wake_{part}_small") if part in WAKE_PARTS else None
+    folder = particles_folder(dat_path)
+    if p is None or folder is None:
+        return None
+    dds = folder / p["AtlasFile"].replace("\\", "/")
+    try:
+        frames = json.loads(dds.with_suffix(".json").read_text(encoding="utf-8"))["frames"]
+        atlas = Image.open(dds).convert("RGBA")
+    except (OSError, ValueError, KeyError):
+        return None
+    angles = max(1, int(p.get("ImageAngles", 1)))
+    per = max(1, int(p.get("ImageCount", len(frames))) // angles)
+    first = int(p.get("ImageFirst", 0)) + (angle * angles // 16) * per
+    w, h = frames[first]["sourceSize"]["w"], frames[first]["sourceSize"]["h"]
+    strip = Image.new("RGBA", (w * per, h), (0, 0, 0, 0))
+    for i in range(per):
+        fr = frames[first + i]
+        x, y, fw, fh = fr["frame"]["x"], fr["frame"]["y"], fr["frame"]["w"], fr["frame"]["h"]
+        # TexturePacker stores a rotated frame turned 90 degrees clockwise.
+        img = (atlas.crop((x, y, x + fh, y + fw)).rotate(90, expand=True) if fr.get("rotated")
+               else atlas.crop((x, y, x + fw, y + fh)))
+        at = fr["spriteSourceSize"]
+        strip.alpha_composite(img, (i * w + at["x"], at["y"]))
+    buf = io.BytesIO()
+    strip.save(buf, "WEBP", quality=85, alpha_quality=90, method=4)
     return buf.getvalue()
 
 

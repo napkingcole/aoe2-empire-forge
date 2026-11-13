@@ -349,6 +349,28 @@ check("stats untouched", u4[TREB].hit_points == ath[TREB].hit_points == before[T
 check("a civ the game hasn't got: kept its own look, and says so",
       art(u4[KNIGHT]) == art(dat4.civs[1].units[KNIGHT]) and any("Nobody" in w for w in r4["warnings"]), r4["warnings"])
 
+print("\n=== a look: another unit's (the Crusader Knight on the Knight) ===")
+CRUSADER, ELEPHANT = 1723, 239
+check("the normalizer keeps a look's unit id",
+      norm_unit_edits({"38": {"appearance": "1723"}}) == {"38": {"appearance": CRUSADER}})
+dat5 = load_dat(str(dat_path))
+worn = dict(draft, unit_edits={str(KNIGHT): {"appearance": CRUSADER}, str(MILITIA): {"appearance": ELEPHANT}})
+with contextlib.redirect_stdout(io.StringIO()):
+    r5, _ = apply_civ_with_overrides(dat5, _draft_to_civ_def(worn), SLOT, worn)
+u5 = dat5.civs[SLOT].units
+check("the Knight wears the Crusader Knight's art", art(u5[KNIGHT]) == art(dat5.civs[0].units[CRUSADER]))
+# The same civ built just above, without the look (u4's Knight kept its own).
+check("...and stays a Knight (stats, name)", u5[KNIGHT].hit_points == u4[KNIGHT].hit_points
+      and u5[KNIGHT].language_dll_name == u4[KNIGHT].language_dll_name)
+check("a look that doesn't fit (an elephant on the Militia): kept its own, and says so",
+      art(u5[MILITIA]) == art(u4[MILITIA]) and any("doesn't fit" in w for w in r5["warnings"]), r5["warnings"])
+
+print("\n=== the picker leaves out the Repairer (a villager) ===")
+import added_lines  # noqa: E402
+from civ_appender import _string_table  # noqa: E402
+cat = added_lines.unit_catalog(dat5, str(dat_path), lambda u: _string_table().get(u.language_dll_name))
+check("no Repairer", not any(r["id"] == 2714 or r["name"] == "Repairer" for r in cat))
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

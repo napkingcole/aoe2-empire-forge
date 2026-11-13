@@ -1474,46 +1474,15 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         print(f"       Dropped {len(_unsupported)} unique building(s) this builder "
               f"cannot grant: {sorted(_unsupported)}")
 
-    # ── Long-range ship override ──────────────────────────────────────────────
-    # The picker controls which long-range ship the civ gets at the Dock.
-    # CG (420) and Elite CG (691) are no longer in FULL.json, so they are
-    # added here based on long_range_ship + long_range_ship_elite.
-    _LRS_UNIT_MAP = {
-        None:               420,    # default: Cannon Galleon
-        "cannon_galleon":   420,    # upgrades to Elite CG (691)
-        "catapult_galleon": 2633,   # no vanilla elite upgrade
-        "dromon":           1795,
-        "lou_chuan":        1948,
-        "none":             None,   # explicitly no long-range ship
-    }
-    _LRS_HAS_ELITE = {None, "cannon_galleon"}   # only CG has an elite upgrade
-    _ELITE_CG = 691
-    _lrs      = civ_def.get("long_range_ship")           # None → CG default
-    _lrs_elite = civ_def.get("long_range_ship_elite", True)
+    # The Dock's siege ship is the tree's (a variant is a replacement of the
+    # Cannon Galleon line: SIEGE_SHIP_REPLACEMENTS).  A civ from before
+    # 2026-11-11 had it from the wizard's picker, moved into its tree once by
+    # retired_cards (TREE_VERSION 3).
 
-    # Remove all LRS variants the user may have toggled in the SVG tree;
-    # the picker controls which one is added back below.
-    for _lrs_uid in (420, 691, 2633, 1795, 1948):
-        tree_units.discard(_lrs_uid)
-
-    # Demo ships are excluded when the civ has a unique ship bonus (50/69).
-    # Longboats (51) left this group for the tree; see RETIRED_INTO_TREE.
-    _UNIQUE_SHIP_BONUS_IDS = {50, 69}
-    _DEMO_SHIP_UNITS = {1104, 527, 528}
+    # A Turtle Ship or Caravel keeps the demolition line beside it: both want
+    # Dock button 8, and the button planner puts one on page 2 (2026-11-12;
+    # KM's cards 50/69 dropped the line instead).
     _civ_bonus_ids_early = {e[0] for e in get_civ_bonuses(civ_def)}
-    if _UNIQUE_SHIP_BONUS_IDS & _civ_bonus_ids_early:
-        for _u in _DEMO_SHIP_UNITS:
-            tree_units.discard(_u)
-
-    base_unit = _LRS_UNIT_MAP.get(_lrs, 420)
-    if base_unit is not None:
-        tree_units.add(base_unit)
-        if _lrs in _LRS_HAS_ELITE and _lrs_elite:
-            tree_units.add(_ELITE_CG)
-        print(f"       Long-range ship: {_lrs or 'cannon_galleon'} (unit {base_unit})"
-              + (f" + elite ({_ELITE_CG})" if _lrs in _LRS_HAS_ELITE and _lrs_elite else ""))
-    else:
-        print(f"       Long-range ship: none")
 
     # ── Step 0: Build EC type=8 'unlock' map from all civ TT effects.
     # ec8_info[tech_id] = (a, b, c, d) template for the type=8 command.
@@ -1528,6 +1497,11 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
                     tid = int(c.a)
                     if tid not in ec8_info:
                         ec8_info[tid] = (int(c.a), int(c.b), int(c.c), c.d)
+    # Opt-in techs no civ's tree unlocks, only a team bonus (quirk 5: "a tech
+    # no civ unlocks has no template and needs an explicit entry").
+    for tid in _TEAM_ONLY_OPTIN_TECHS:
+        if tid < len(dat.techs):
+            ec8_info.setdefault(tid, (tid, 12, -1, 1.0))
     ec8_unit_techs: dict[int, list[int]] = {}
     for tech_id, _ in ec8_info.items():
         if tech_id >= len(dat.techs):
@@ -2385,6 +2359,14 @@ def _civ_present_units(civ_def: dict, dat: DatFile | None = None,
             own = card_techs.__contains__
         tree = set(_tree_unit_ids(civ_def))
         present -= tree - _trainable_tree_units(dat, units, tree, own)
+        if civ_index is None:
+            # A KM catalog unit's card makes its own tech at build time, so the
+            # template has nothing for `own` to find: the Caravel left out of
+            # the preview never met the demolition line on Dock button 8.
+            present |= tree & {u for bid, ids in KM_UNIT_CARDS.items()
+                               if any(e and int(e[0]) == bid for e in get_civ_bonuses(civ_def)
+                                      if isinstance(e, (list, tuple)))
+                               for u in ids}
         present |= _team_bonus_units(dat, civ_def)
         # Only on top of a real tree: an empty set means "bare tree, no
         # constraint" to every caller, and own-tech units alone would turn
@@ -3241,6 +3223,54 @@ _UNLOCK_UNIT_BONUSES: dict[int, dict] = {
 }
 
 
+# Units the game gives only through a team bonus, which a civ can also have
+# in its own tree: the Genitour (Berbers' team bonus 1) and the Condottiero
+# (Italians' team bonus 16).  Both are switched off for everyone by tech 79
+# Disable Regionals, and no civ's tech tree unlocks them, so the tree's type=8
+# has no template to copy — these are it, in vanilla's make-avail shape
+# (b=12, c=-1, d=1, as the team bonuses themselves write).
+_TEAM_ONLY_OPTIN_TECHS = (601, 599, 522)   # Genitour, Elite Genitour, Condottiero
+
+# The KM catalog's own unit cards, whose units the tree now holds instead: a
+# civ whose tree has the unit gets the card (get_civ_bonuses), so a tree node
+# builds exactly what the card did.  Their techs are the catalog's.
+KM_UNIT_CARDS: dict[int, tuple[int, ...]] = {
+    43: (775,),          # Missionary
+    50: (831, 832),      # Turtle Ship, Elite
+    69: (1004, 1006),    # Caravel, Elite
+    322: (1263,),        # Flaming Camel
+}
+
+# The game's own units that take a line's place, each with what it replaces,
+# paired in order: the first replaced unit's node becomes the first unit, and
+# so on; a replaced unit with no pair (the Champion, after the Legionary) goes.
+# "line" replaces a line from its first unit; the others take its last
+# upgrade, as their civs have them.  The tree holds the unit (card derived in
+# get_civ_bonuses); the card is retired into it (retired_cards).
+LINE_REPLACEMENTS: dict[int, dict] = {
+    456: {"units": (2485, 2486), "replaces": (39, 474), "line": True},   # Scythian Horse Archer
+    416: {"units": (1793,), "replaces": (473, 567)},   # Legionary: Two-Handed Swordsman, Champion
+    417: {"units": (1813,), "replaces": (569,)},       # Savar: Paladin
+    282: {"units": (1707,), "replaces": (441,)},       # Winged Hussar: Hussar
+    362: {"units": (1302,), "replaces": (532,)},       # Dragon Ship: Fast Fire Ship
+}
+# KM's duplicates of the same cards (same techs).
+REPLACEMENT_CARD_ALIASES = {307: 416, 314: 417, 402: 362}
+
+_BUTTON_EIGHT_SHIPS = frozenset((831, 832, 1004, 1006))   # Turtle Ship, Caravel and Elites
+
+# The Dock's siege ship variants take the Cannon Galleon line's place, as their
+# civs have them (2026-11-11; the wizard's Siege Ship picker before).  No card
+# stands behind them — a tree unit is all they need — and the F2 viewer draws
+# them from their own shipped node (build_civ._inject_regional_unit_nodes), so
+# only the tree's offer and _apply_unit_replacements read this.  All of them
+# train at Dock button 9, the Cannon Galleon's.
+SIEGE_SHIP_REPLACEMENTS: dict[str, dict] = {
+    "catapult_galleon": {"units": (2633,), "replaces": (420, 691), "line": True},
+    "dromon":           {"units": (1795,), "replaces": (420, 691), "line": True},
+    "lou_chuan":        {"units": (1948,), "replaces": (420, 691), "line": True},
+}
+
 # Tree units that may need their unlock techs copied (step 6b of apply_civ):
 # unit -> its make-avail tech and elite upgrade, in that order.
 _CIV_LOCKED_TREE_UNITS: dict[int, tuple[int, ...]] = {
@@ -3269,11 +3299,15 @@ def _apply_unit_replacements(units: set, civ_def: dict | None = None) -> set:
     raw = _raw_civ_bonus_ids(civ_def)
     for bid in raw & RETIRED_INTO_TREE.keys():
         out = (out - RETIRED_INTO_TREE[bid]["remove"]) | RETIRED_INTO_TREE[bid]["add"]
-    for bid, spec in _UNLOCK_UNIT_BONUSES.items():
+    cards = raw | {REPLACEMENT_CARD_ALIASES[b] for b in raw & REPLACEMENT_CARD_ALIASES.keys()}
+    for bid, spec in LINE_REPLACEMENTS.items():
         # From the tree or from the card itself: a card-only Scythian Horse
         # Archer left the Cavalry Archer in the tree, where it held button 3
         # though the card hides it (#108).
-        if spec.get("replaces") and (out & set(spec["units"]) or bid in raw):
+        if out & set(spec["units"]) or bid in cards:
+            out -= set(spec["replaces"])
+    for spec in SIEGE_SHIP_REPLACEMENTS.values():
+        if out & set(spec["units"]):
             out -= set(spec["replaces"])
     return out
 
@@ -3282,11 +3316,14 @@ def _replacement_units(civ_def: dict) -> frozenset:
     """Units the civ has that replace another line (the Scythian Horse Archer
     for the Cavalry Archer).  They take that line's button by default, as in
     the game: over the Gurjaras the Elephant Archer kept Archery Range button 3
-    and the Scythian Horse Archer went to page 2, where nobody looked (#108)."""
+    and the Scythian Horse Archer went to page 2, where nobody looked (#108).
+    The Turtle Ship and Caravel count too: they share Dock button 8 with the
+    demolition line, and the ship the player added keeps page 1 (2026-11-12)."""
     tree = _tree_unit_ids(civ_def)          # drops the replaced line, keeps the replacement
     raw = _raw_civ_bonus_ids(civ_def)
     return frozenset(u for bid, spec in _UNLOCK_UNIT_BONUSES.items() if spec.get("replaces")
-                     and (tree & set(spec["units"]) or bid in raw) for u in spec["units"])
+                     and (tree & set(spec["units"]) or bid in raw) for u in spec["units"]) \
+        | (tree & _BUTTON_EIGHT_SHIPS)
 
 
 def _rebuild_unlock_techs(dat: DatFile, civ_index: int, spec: dict) -> dict:
@@ -6142,6 +6179,14 @@ def get_civ_bonuses(civ_def: dict) -> list:
         have = {e[0] for e in entries if isinstance(e, (list, tuple)) and e}
         for bid, spec in _UNLOCK_UNIT_BONUSES.items():
             if bid not in have and units.intersection(spec["units"]):
+                entries.append([bid, 1])
+        for bid, ids in KM_UNIT_CARDS.items():
+            if bid not in have and units.intersection(ids):
+                entries.append([bid, 1])
+        for bid, spec in LINE_REPLACEMENTS.items():
+            dupes = {a for a, b in REPLACEMENT_CARD_ALIASES.items() if b == bid}
+            if bid not in have and not dupes & have and units.intersection(spec["units"]) \
+                    and bid not in _UNLOCK_UNIT_BONUSES:
                 entries.append([bid, 1])
     return entries
 

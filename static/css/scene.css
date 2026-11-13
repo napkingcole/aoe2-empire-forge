@@ -35,7 +35,7 @@
   justify-content: flex-end;
   background-color: var(--scene-grass);
   /* Seamless, at its own size (the user's call, as in the unit previews). */
-  background-image: url('/static/seamless-grass.png');
+  background-image: url('/static/seamless-grass.webp');
   background-size: auto;
   background-repeat: repeat;
 }

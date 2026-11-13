@@ -86,6 +86,10 @@ def game_unit_lines(dat_path=None) -> list[dict]:
 
 NAVAL_CLASSES = (2, 20, 21, 22)      # trade cog, transport, fishing ship, warship
 _CIVILIAN, _ANIMAL = 4, 10
+# Class 61: horses, camels and alpacas, and the scenario Repairers, villagers
+# that can fight in the DAT, which the picker offered as scenario units (the
+# user, 2026-11-11).
+_LIVESTOCK = 61
 CATALOG_GROUPS = ("standard", "regional", "unique", "chronicles", "scenario", "hero")
 
 
@@ -152,7 +156,7 @@ def is_military(unit) -> bool:
     """A unit that fights (or converts and heals): what "+ Add Unit" offers."""
     from heroes import can_fight
     return bool(unit is not None and unit.type == 70 and unit.creatable is not None
-                and unit.hit_points > 0 and unit.class_ not in (_CIVILIAN, _ANIMAL)
+                and unit.hit_points > 0 and unit.class_ not in (_CIVILIAN, _ANIMAL, _LIVESTOCK)
                 and can_fight(unit))
 
 
@@ -218,6 +222,7 @@ def suggested_upgrades(dat, frm: int, catalog: list[dict]) -> list[dict]:
            for c in CARD_UPGRADE_UNITS.values() if c["from"] == frm]
     rows = {r["id"]: r for r in catalog}
     res = {0: "food", 1: "wood", 2: "stone", 3: "gold"}
+    replacements = real_replacements(dat, catalog)
     seen = {frm}
     for t in dat.techs:
         loc = next((rl for rl in t.research_locations if rl.location_id >= 0), None)
@@ -226,6 +231,11 @@ def suggested_upgrades(dat, frm: int, catalog: list[dict]) -> list[dict]:
         for c in dat.effects[t.effect_id].effect_commands:
             to = int(c.b)
             if c.type != EC_UPGRADE or int(c.a) != frm or to in seen:
+                continue
+            rep = next((r for r in replacements if r["base"] == to), None)
+            if rep is not None:
+                seen.add(to)
+                out.append(dict(rep))       # the game's own unit in the line's place
                 continue
             row = rows.get(to)
             if row is None or to in nodes:
@@ -236,6 +246,88 @@ def suggested_upgrades(dat, frm: int, catalog: list[dict]) -> list[dict]:
                         "upgrade": {"cost": {res[rc.type]: int(rc.amount) for rc in t.resource_costs
                                              if rc.type in res and rc.amount > 0},
                                     "time": loc.research_time}})
+    return out
+
+
+# The game's own units a civ can add from the tree, beyond the layout's nodes:
+# the ones a card used to unlock (regional units locked to their owner civ, the
+# KM catalog's), and the two only a team bonus gave.  Each is [base, elite?].
+# Replacements (Legionary, Savar, Scythian Horse Archer) are not here: they
+# take a line's place rather than adding one.
+_TEAM_BONUS_UNITS = ((1010, 1012), (882,))       # Genitour, Condottiero
+
+
+def real_unit_lines() -> list[tuple[int, ...]]:
+    from civ_appender import KM_UNIT_CARDS, _UNLOCK_UNIT_BONUSES
+    out = [tuple(spec["units"]) for spec in _UNLOCK_UNIT_BONUSES.values() if not spec.get("replaces")
+           and not {1793, 1813} & set(spec["units"])]
+    out += [tuple(ids) for ids in KM_UNIT_CARDS.values()]
+    return out + list(_TEAM_BONUS_UNITS)
+
+
+def _make_avail_age(dat, unit: int) -> int:
+    """The age a unit becomes available in: its make-avail tech's age
+    requirement (101-103 → 2-4), else Dark."""
+    ages = {101: 2, 102: 3, 103: 4}
+    for t in dat.techs:
+        if 0 <= t.effect_id < len(dat.effects) and any(
+                c.type == EC_ENABLE and int(c.a) == unit and int(c.b) != 0
+                for c in dat.effects[t.effect_id].effect_commands):
+            got = [ages[r] for r in t.required_techs if r in ages]
+            if got:
+                return max(got)
+    return 1
+
+
+def real_units(dat, building: int | None, catalog: list[dict]) -> list[dict]:
+    """The "+" at a building offers first the game's own units it can train
+    there that only a card or a team bonus used to give (Missionary at the
+    Monastery, Genitour at the Archery Range): added as themselves, with their
+    own Elite upgrade, not as a copy.  `building` None: every building's, one
+    entry per building a unit trains at (the Temple Guard has two).
+    [{base, elite, units, name, age, building, ...row}]"""
+    from civ_appender import unit_label
+    rows = {r["id"]: r for r in catalog}
+    out = []
+    for ids in real_unit_lines():
+        u = dat.civs[0].units[ids[0]]
+        if u is None or u.creatable is None:
+            continue
+        at = list(dict.fromkeys(tl.unit_id for tl in u.creatable.train_locations if tl.unit_id >= 0))
+        for b in at if building is None else [building] if building in at else []:
+            row = dict(rows.get(ids[0]) or {"id": ids[0], "icon": u.icon_id,
+                                            "name": unit_label(dat, 0, ids[0]).split(" (", 1)[-1][:-1]})
+            row.update(base=ids[0], elite=ids[1] if len(ids) > 1 else None, units=list(ids),
+                       age=_make_avail_age(dat, ids[0]), building=b, source="real",
+                       elite_icon=(dat.civs[0].units[ids[1]].icon_id if len(ids) > 1 else None),
+                       elite_name=((rows.get(ids[1]) or {}).get("name")
+                                   or unit_label(dat, 0, ids[1]).split(" (", 1)[-1][:-1]) if len(ids) > 1 else None)
+            out.append(row)
+    return sorted(out, key=lambda r: (r["building"], r["age"], r["name"]))
+
+
+def real_replacements(dat, catalog: list[dict]) -> list[dict]:
+    """The game's own units that take a line's place (civ_appender.
+    LINE_REPLACEMENTS): the Savar for the Paladin, the Scythian Horse Archer
+    for the Cavalry Archer line, and the Dock's siege ship variants for the
+    Cannon Galleon (SIEGE_SHIP_REPLACEMENTS, no card behind them).  The tree
+    draws the unit on the replaced node, and offers it from that node's
+    "Replace" and from the "+" under the unit before it.  [{card, base, units,
+    replaces, line, building, name, names, icons, source: "real"}]"""
+    from civ_appender import LINE_REPLACEMENTS, SIEGE_SHIP_REPLACEMENTS, unit_label
+    rows = {r["id"]: r for r in catalog}
+    name = lambda u: (rows.get(u) or {}).get("name") or unit_label(dat, 0, u).split(" (", 1)[-1][:-1]  # noqa: E731
+    out = []
+    for bid, spec in {**LINE_REPLACEMENTS, **SIEGE_SHIP_REPLACEMENTS}.items():
+        units = list(spec["units"])
+        u = dat.civs[0].units[units[0]]
+        if u is None or u.creatable is None or not u.creatable.train_locations:
+            continue
+        out.append({"card": bid, "base": units[0], "units": units, "replaces": list(spec["replaces"]),
+                    "line": bool(spec.get("line")), "building": u.creatable.train_locations[0].unit_id,
+                    "name": name(units[0]), "icon": u.icon_id, "source": "real",
+                    "names": {str(x): name(x) for x in units},
+                    "icons": {str(x): dat.civs[0].units[x].icon_id for x in units}})
     return out
 
 

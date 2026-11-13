@@ -1829,50 +1829,6 @@ img.card-main-image {
   border-color: oklch(from var(--body-bg) calc(l + 0.18) c h);
   color: var(--body-text);
 }
-/* ── Long-range ship picker ─────────────────────────────────────── */
-.lrs-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 12px;
-  min-width: 90px;
-  background: oklch(from var(--body-bg) calc(l + 0.04) c h);
-  border: 1.5px solid oklch(from var(--body-bg) calc(l + 0.18) c h);
-  border-radius: 8px;
-  color: var(--body-text);
-  font-size: 0.72rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
-  line-height: 1.2;
-}
-.lrs-chip:hover {
-  border-color: var(--accent-2);
-  background: oklch(from var(--body-bg) calc(l + 0.08) c h);
-}
-.lrs-chip--selected {
-  border-color: var(--crimson);
-  background: rgba(140, 32, 32, 0.10);
-  box-shadow: 0 0 0 2px rgba(140, 32, 32, 0.20);
-  color: var(--crimson);
-}
-.lrs-chip-img {
-  width: 40px;
-  height: 40px;
-  object-fit: contain;
-  image-rendering: pixelated;
-}
-.lrs-chip-none-icon {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.3rem;
-  opacity: 0.4;
-}
-.lrs-chip--selected .lrs-chip-none-icon { opacity: 0.7; }
 
 /* ── Button layout (wizard step 9) ────────────────────────────────────────── */
 /* A mini command panel per building: two 5x3 pages, the fifth column fixed   */
@@ -2291,11 +2247,29 @@ details.card.cb-fold:not([open]) > summary.card-header { border-bottom: 0; }
   background-color: #6f8a4c;
   /* Seamless, so it can scroll under a walking unit (builder.js
      _startGround); shown at its own size, never scaled (the user's call). */
-  background-image: url('/static/seamless-grass.png');
+  background-image: url('/static/seamless-grass.webp');
   background-size: auto;
   background-repeat: repeat;
 }
-.unit-preview-stage img { max-width: 100%; max-height: 360px; }
+.unit-preview-stage img { max-width: 100%; }
+
+/* A ship sails on water (static/seamless-water.webp, from the game, 2026-11-11):
+   seamless like the grass, and scrolls the same way.  Its wake draws on a
+   canvas under the ship (builder.js _startGround). */
+.unit-preview-stage { position: relative; }
+.unit-preview-stage.water {
+  background-color: #1f4c86;
+  background-image: url('/static/seamless-water.webp');
+}
+.unit-preview-stage.ground-pending { background-image: none; }
+/* A ship at rest rises and falls on the water (builder.js adds it on Idle). */
+@keyframes ship-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+.unit-preview-stage > img.ship-bob { animation: ship-bob 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .unit-preview-stage > img.ship-bob { animation: none; } }
+.unit-preview-stage > canvas.unit-preview-wake {
+  position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
+}
+.unit-preview-stage > img, .unit-preview-stage > #unit-preview-status { position: relative; z-index: 1; }
 
 /* Loading: a Villager hammering at a foundation (static/img/villager-building.webp,
    from scripts/extract_loading_villager.py) beside what is loading.  One

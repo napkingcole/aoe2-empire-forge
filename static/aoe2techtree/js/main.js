@@ -143,16 +143,6 @@ const _REGIONAL_UNIT_IDS = new Set(
 const _REGIONAL_LINE_TECH_IDS = new Set(
     _REGIONAL_GROUPS.flatMap(g => g.lines).flatMap(l => l.techs || []));
 
-// ── Picker-controlled units ──────────────────────────────────────────────────
-// The siege ship is one Dock button with five candidates plus an elite toggle —
-// more than the tree's on/off vocabulary can express — so it is chosen in the
-// wizard's Siege Ship picker instead, and the backend rebuilds tree[0] from that
-// choice.  The nodes stay visible in the Dock (that's where you'd look for
-// them) but can't be toggled here, or the tree would show a ship the build
-// won't produce.  builder.js keeps the displayed selection in sync.
-const _PICKER_CONTROLLED_UNITS = new Set([420, 691, 2633, 1795, 1948]);
-const _PICKER_HINT = 'Chosen with the Siege Ship picker, next to the tech tree button.';
-
 // ── Bonus-mirrored units ─────────────────────────────────────────────────────
 // Regional / second unique units whose make-avail tech is locked to its owner
 // civ (tech.civ, not the tech-tree effect), so the backend has to reassign the
@@ -178,26 +168,21 @@ const _BONUS_CONTROLLED_UNITS = new Set([
     1793,         // Legionary
     1813,         // Savar
 ]);
-const _BONUS_HINT = 'Also adds the matching "Unlock ..." civ bonus on the Bonuses step.';
 
-// True for a unit this editor shows but does not own the on/off decision for.
-// Only the picker's siege ships qualify — the bonus-mirrored units are owned
-// here, and merely publish their state to the Bonuses step.
-function _isExternallyControlled(item) {
-    return item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id);
-}
-
-// Every shipped layout reserves the same Dock cells for these: the Cannon
-// Galleon and its elite in the last column, and whichever variant the civ has
-// in column 1 row 7.  FULL.json has them stripped, so a from-scratch tree used
-// to show no siege ship at all — the nodes are put back at render time instead
-// of editing 54 layout files.  Only the picked variant occupies the variant
-// cell, exactly as each real civ's layout does.
+// The Dock's siege ship is the tree's (2026-11-11; the wizard's Siege Ship
+// picker before): the Cannon Galleon and its Elite toggle like any node, and the
+// Catapult Galleon, Dromon and Lou Chuan take the Cannon Galleon's node as a
+// replacement (civ_appender.SIEGE_SHIP_REPLACEMENTS, offered from its panel).
+// Every shipped layout reserves the same Dock cells: the Cannon Galleon and its
+// elite in the last column, the civ's variant in column 1 row 7.  FULL.json has
+// them stripped, so the two are put back at render time instead of editing 54
+// layout files; a layout's own variant node goes, as the replacement draws it.
 const _DOCK_BUILDING_ID = 45;
 // role → the cell the shipped layouts normally use.  420 and 691 are their
 // own roles; the three variants share the single 'variant' cell.
 const _SIEGE_SHIP_CELLS = { 420: [6, 6], 691: [6, 7], variant: [1, 7] };
 const _SIEGE_VARIANT_IDS = [2633, 1795, 1948];
+const _SIEGE_SHIP_IDS = new Set([420, 691, ..._SIEGE_VARIANT_IDS]);
 const _SIEGE_SHIP_NODES = {
     420: {
         age_id: 4, building_id: 45, building_in_new_column: null,
@@ -887,21 +872,17 @@ function _unfoldRegionalColumn(treeData, swap) {
     _setColumns(_findBuilding(treeData, swap.id), cols);
 }
 
-// Put the Dock's siege ship where every shipped layout keeps it, showing the
-// one the picker chose (crossed if the draft doesn't include it) and dropping
-// any variant belonging to a different civ's layout.
+// Put the Cannon Galleon and its Elite where every shipped layout keeps them
+// (crossed when the tree doesn't hold them), and take out any variant node: a
+// variant in the tree is drawn on the Cannon Galleon's node by
+// _applyRealReplacements, which runs after this.
 function _applySiegeShipLayout(treeData) {
     const dock = _findBuilding(treeData, _DOCK_BUILDING_ID);
     if (!dock || !dock.grid.length) return;
 
-    const chosenVariant = _SIEGE_VARIANT_IDS.find(id => _localtree.units.includes(id)) || null;
     const wanted = [420, 691];
-    if (chosenVariant) wanted.push(chosenVariant);
 
-    // Clear every siege node out of the Dock, then place the ones we want.
-    // This also evicts, say, the Aztec Catapult Galleon when the picker says
-    // Lou Chuan — otherwise the layout's variant would sit there crossed out
-    // while the actual choice had nowhere to show.  Remember where each one was
+    // Clear every siege node out of the Dock, then place the two.  Remember where each one was
     // first: a few layouts don't use the usual cells (the Burgundian Dock has no
     // Fast Fire Ship, so their Cannon Galleon sits a column over), and putting a
     // node back where its own layout had it beats any rule we could invent.
@@ -909,7 +890,7 @@ function _applySiegeShipLayout(treeData) {
     const drop = new Set();
     for (const item of treeData.units_techs) {
         if (item.building_id !== _DOCK_BUILDING_ID) continue;
-        if (!_PICKER_CONTROLLED_UNITS.has(item.node_id)) continue;
+        if (!_SIEGE_SHIP_IDS.has(item.node_id)) continue;
         drop.add(item.id);
         const role = _SIEGE_VARIANT_IDS.includes(item.node_id) ? 'variant' : item.node_id;
         for (let r = 0; r < dock.grid.length; r++) {
@@ -1046,10 +1027,6 @@ function _addNodeCross(item, element_height) {
 }
 
 function _disableSingle(item, element_height) {
-    // Cascades (e.g. switching the Dock off) must not strip the picker's ship
-    // either — the backend puts it back, so removing it here would only make
-    // the tree disagree with the build.
-    if (_isExternallyControlled(item)) return;
     const key = _useTypeKey(item.use_type);
     if (!key) return;
     const arr = _localtree[key];
@@ -1066,10 +1043,13 @@ function _disableBuildingItems(building, element_height) {
 function _toggleNode(item, element_height) {
     // An added line is removed from its panel, and a "+" only adds.
     if (item.added || item.add) return;
-    // The siege ship is owned by the wizard's picker and the regional second
-    // unique units by their bonus cards — neither decision lives in this tree.
-    if (_isExternallyControlled(item)) return;
-
+    // A real unit a "+" added: off takes it out (its Elite with it), so its
+    // node goes; the "+" brings it back.
+    // A replacement (the Savar for the Paladin) gives the line back.
+    if (item.real) {
+        if (_isSelected(item)) window._ttSetTreeUnits(item.real.restore || [], item.real.units);
+        return;
+    }
     if (item.use_type === 'Building') {
         // Town Center and House can never be toggled.
         if (HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) return;
@@ -1194,11 +1174,8 @@ function _costHtml(costObj) {
 // Explain what clicking a camp / regional building does — the swap is the one
 // interaction in the editor that isn't a plain on/off toggle.
 function _variantHint(item) {
-    if (item.use_type === 'Unit' && _PICKER_CONTROLLED_UNITS.has(item.node_id)) {
-        return _PICKER_HINT;
-    }
-    if (item.use_type === 'Unit' && _BONUS_CONTROLLED_UNITS.has(item.node_id)) {
-        return _BONUS_HINT;
+    if (item.real && item.real.restore) {
+        return `The game's own ${item.name}, in this line's place. "Undo" in the panel gives the line back.`;
     }
     if (item.use_type !== 'Building') return '';
     if (_REGIONAL_BUILDING_IDS.has(item.node_id)) {
@@ -1358,7 +1335,7 @@ function drawGrid(building, element_height, tree_height, draw, index) {
 // A node's label: the side panel's rename if it has one, else the game's.
 function _nodeName(item) {
     const own = window.ttInspector?.nameOf(item);
-    return formatName(own || data.strings[item.name_string_id] || '?');
+    return formatName(own || data.strings[item.name_string_id] || item.name || '?');
 }
 
 // Redraw a node's label after a rename (or its undo); a no-op when unchanged.
@@ -1463,7 +1440,8 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
             }
         });
     if (_canEdit) window.ttInspector?.decorate(itemToDraw, element_height);
-    if (_canEdit && itemToDraw.use_type === 'Unit' && _ADD_LINE_BUILDINGS.has(itemToDraw.building_id)) {
+    if (_canEdit && itemToDraw.use_type === 'Unit' && _ADD_LINE_BUILDINGS.has(itemToDraw.building_id)
+            && !_SIEGE_ONLY_BUILDINGS.has(itemToDraw.building_id)) {
         _drawExtendButton(item, itemToDraw, element_height);
     }
 }
@@ -1482,9 +1460,13 @@ window._ttCanExtend = _canExtend;
 
 // Can this unit be replaced?  Only one an upgrade gives (Paladin, not Knight):
 // the replacement rides that upgrade.
+// A line's first unit, only when the game has a unit for its place (the
+// Scythian Horse Archer for the Cavalry Archer).
 function _canReplace(item) {
-    return _canEdit && item.use_type === 'Unit' && !item.added && item.node_type === 'UnitUpgrade'
-        && _isSelected(item) && _ADD_LINE_BUILDINGS.has(item.building_id);
+    if (!_canEdit || item.use_type !== 'Unit' || item.added || item.real || !_isSelected(item)
+            || !_ADD_LINE_BUILDINGS.has(item.building_id) || _SIEGE_ONLY_BUILDINGS.has(item.building_id)) return false;
+    return item.node_type === 'UnitUpgrade'
+        || (window.ttInspector?.realReplacements() || []).some(r => r.replaces.includes(item.node_id));
 }
 window._ttCanReplace = _canReplace;
 
@@ -1542,7 +1524,120 @@ function _stripCastleUuAndUt(treeData) {
 // ── "+ Add Unit" (added_lines.py) ────────────────────────────────────────────
 // Buildings that can take an added line; the Castle's second unit is the
 // unique-unit step's.
-const _ADD_LINE_BUILDINGS = new Set([12, 87, 101, 49, 45, 104, 109]);
+const _ADD_LINE_BUILDINGS = new Set([12, 87, 101, 49, 45, 104, 109, 82]);
+// At the Castle the "+" adds siege only (the user, 2026-11-11): a unit there is
+// the unique unit step's business.  No upgrade after or replacement either.
+const _SIEGE_ONLY_BUILDINGS = new Set([82]);
+
+// The game's own units a "+" added (added_lines.real_units): in the tree as
+// their real ids, so they build as themselves, with their own Elite upgrade.
+// No civ layout but their owner's has a node for them, so draw a column: the
+// unit in its age, its Elite under it in the Imperial Age.
+// The tree's own art when it has the unit's picture, else the game's icon read
+// from the player's install (the Chronicles units: the Scythian Horse Archer).
+function _realImage(id) {
+    return window.ttInspector && window.ttInspector.unitImage ? window.ttInspector.unitImage(id) : undefined;
+}
+
+function _applyRealUnits(treeData) {
+    const real = window.ttInspector ? window.ttInspector.realUnits() : [];
+    if (!real.length) return;
+    // Per building: a unit that trains at two (the Temple Guard, at the Barracks
+    // and the Monastery) is drawn at both, as the Muisca's own tree draws it.
+    const key = (u, b) => `${u}@${b}`;
+    const have = new Set(treeData.units_techs.filter(i => i.use_type === 'Unit').map(i => key(i.node_id, i.building_id)));
+    for (const b of treeData.buildings) {
+        if (!b.grid || !b.grid.length || (_canEdit && !_isSelected(b))) continue;
+        const mine = real.filter(r => r.building === b.node_id && _localtree.units.includes(r.base)
+                                      && !have.has(key(r.base, b.node_id)));
+        if (!mine.length) continue;
+        const rows = b.grid.length;
+        const rowOf = age => { const r = (age - 1) * 2; return r <= b.row ? b.row + 1 : r; };
+        const cols = [];
+        for (const r of mine) {
+            have.add(key(r.base, b.node_id));
+            const col = new Array(rows).fill(null);
+            const row = rowOf(r.age);
+            if (row >= rows) continue;
+            const id = `Unit_${r.base}_${b.node_id}`;
+            treeData.units_techs.push({
+                id, node_id: r.base, building_id: b.node_id, use_type: 'Unit', node_type: 'Unit',
+                link_id: null, link_node_type: 'BuildingTech', picture_index: r.icon,
+                image_url: _realImage(r.base), name: r.name, name_string_id: -1, help_string_id: -1, age_id: r.age, row,
+                real: { units: r.units, base: r.base },
+            });
+            col[row] = id;
+            if (r.elite != null && _localtree.units.includes(r.elite)) {
+                const er = Math.max(rowOf(4), row + 1);
+                if (er < rows) {
+                    const eid = `Unit_${r.elite}_${b.node_id}`;
+                    treeData.units_techs.push({
+                        id: eid, node_id: r.elite, building_id: b.node_id, use_type: 'Unit',
+                        node_type: 'UnitUpgrade', link_id: r.base, link_node_type: 'Unit',
+                        picture_index: r.elite_icon ?? r.icon, image_url: _realImage(r.elite),
+                        name: r.elite_name || `Elite ${r.name}`,
+                        name_string_id: -1, help_string_id: -1, age_id: 4, row: er,
+                        real: { units: [r.elite], base: r.base },
+                    });
+                    col[er] = eid;
+                }
+            }
+            cols.push(col);
+        }
+        if (!cols.length) continue;
+        let at = 0;
+        for (let c = 0; c < b.grid[0].length; c++) {
+            if (b.grid.some(rw => rw[c] && String(rw[c]).startsWith('Unit_'))) at = c + 1;
+        }
+        for (let r = 0; r < rows; r++) b.grid[r].splice(at, 0, ...cols.map(c => c[r]));
+    }
+}
+
+// The game's own units that took a line's place (added_lines.real_replacements):
+// the replaced nodes become them, where they stand (the Paladin's node is the
+// Savar), and a replaced unit with no pair (the Champion, after the Legionary)
+// goes.  The build's F2 tree does the same (build_civ._retarget_replaced_nodes).
+function _applyRealReplacements(treeData) {
+    const reps = window.ttInspector ? window.ttInspector.realReplacements() : [];
+    for (const r of reps) {
+        if (!_localtree.units.includes(r.base)) continue;
+        r.replaces.forEach((rid, i) => {
+            const items = treeData.units_techs.filter(it => it.use_type === 'Unit' && it.node_id === rid
+                                                            && it.building_id === r.building);
+            for (const it of items) {
+                const to = r.units[i];
+                if (to === undefined) {
+                    treeData.units_techs.splice(treeData.units_techs.indexOf(it), 1);
+                    for (const b of treeData.buildings) {
+                        for (const row of b.grid || []) {
+                            const c = row.indexOf(it.id);
+                            if (c >= 0) row[c] = null;
+                        }
+                    }
+                    continue;
+                }
+                Object.assign(it, {
+                    node_id: to, name: r.names[String(to)] || r.name, picture_index: r.icons[String(to)],
+                    image_url: _realImage(to),
+                    name_string_id: -1, help_string_id: -1,
+                    real: { units: r.units, base: r.base, restore: r.replaces },
+                });
+                for (const o of treeData.units_techs) if (o.link_id === rid && o.building_id === r.building) o.link_id = to;
+            }
+        });
+    }
+}
+
+// Add or take out the game's own units a "+" offered.
+window._ttSetTreeUnits = function (add, remove) {
+    for (const id of remove || []) {
+        const i = _localtree.units.indexOf(id);
+        if (i >= 0) _localtree.units.splice(i, 1);
+    }
+    for (const id of add || []) if (!_localtree.units.includes(id)) _localtree.units.push(id);
+    _treeChanged();
+    window._ttRelayout?.();
+};
 
 // Draw the draft's added lines as columns after a building's units, and, while
 // editing, one more column of "+" boxes, one per age the building has.
@@ -1722,6 +1817,8 @@ function civ(civName) {
         _applyBuildingVariantLayout(treeData);
         _applySiegeShipLayout(treeData);
         _applyAgeMoves(treeData);
+        _applyRealReplacements(treeData);
+        _applyRealUnits(treeData);
         _applyAddedLines(treeData);
         const root = document.getElementById('root');
         if (root) document.getElementById('techtree').removeChild(root);
@@ -2021,7 +2118,19 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
             border: 2px solid #6b4a1c; box-shadow: 0 0 0 1px #d9b86a, 0 3px 6px rgba(0,0,0,.35); }
         .tt-insp-include { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer;
             padding: 7px 10px; background: rgba(110,75,30,.12); border: 1px solid rgba(110,75,30,.25); border-radius: 5px; }
-        .tt-insp-include input { accent-color: #8a5a12; width: 15px; height: 15px; }
+        /* A checkbox dressed as a switch: crimson off, green on. */
+        .tt-insp-include input { appearance: none; -webkit-appearance: none; flex: none; margin: 0; cursor: inherit;
+            position: relative; width: 36px; height: 20px; border-radius: 10px;
+            background: #8C2020; border: 1px solid #6D1818; box-shadow: inset 0 1px 3px rgba(0,0,0,.35);
+            transition: background .15s, border-color .15s; }
+        .tt-insp-include input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+            border-radius: 50%; background: linear-gradient(#fbf3dc, #e2cf9e); box-shadow: 0 1px 2px rgba(0,0,0,.45);
+            transition: transform .15s; }
+        .tt-insp-include input:checked { background: #3f6b1e; border-color: #2c4d14; }
+        .tt-insp-include input:checked::after { transform: translateX(16px); }
+        .tt-insp-include input:focus-visible { outline: 2px solid #b8860b; outline-offset: 2px; }
+        .tt-insp-include input:disabled { opacity: .6; }
+        @media (prefers-reduced-motion: reduce) { .tt-insp-include input, .tt-insp-include input::after { transition: none; } }
         .tt-insp-include.is-locked { cursor: default; opacity: .75; }
         .tt-insp-section { margin: 18px 0 8px; font: 700 13px 'Cinzel', 'Times New Roman', serif;
             letter-spacing: .06em; color: #5a3306; padding-bottom: 4px;
@@ -2088,15 +2197,9 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         .tt-unit-picker .tt-pick-suggest { padding: 8px 10px 10px; border-radius: 6px;
             background: rgba(184,134,11,.10); border: 1px solid rgba(184,134,11,.35); }
         .tt-unit-picker .tt-pick-suggest-head { font-weight: 600; font-size: .8rem; margin-bottom: 6px; }
-        .tt-insp-looks { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
-        .tt-insp-look { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 3px; cursor: pointer;
-            border: 1px solid rgba(110,75,30,.45); border-radius: 5px; background: rgba(255,250,235,.55);
-            color: #2e1d08; font-size: 12px; font-weight: 600; text-align: left; }
-        .tt-insp-look img { width: 30px; height: 30px; border-radius: 3px; }
-        .tt-insp-look small { display: block; font-weight: 400; opacity: .7; font-size: 10.5px; }
-        .tt-insp-look:hover { background: rgba(255,250,235,.85); }
-        .tt-insp-look.selected { border-color: #7a5424; box-shadow: 0 0 0 2px rgba(184,134,11,.55);
-            background: linear-gradient(#f6e2a8, #e2c27a); }
+        .tt-insp-lookrow { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 10px 0 2px; }
+        .tt-insp-lookrow .tt-insp-label { flex: none; }
+        .tt-insp-lookimg { width: 26px; height: 26px; border-radius: 3px; flex: none; }
         .tt-unit-picker .uu-badge-hero { background: #b8860b; color: #fff; }
         .tt-unit-picker .modal-footer .uu-badge { position: static; }
         .tt-unit-picker .modal-body { min-height: 60vh; }
@@ -2185,13 +2288,17 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         window.ttInspector.mount(inspector);
     }
 
-    // Scroll-to-horizontal with mouse wheel
-    // treeWrap.addEventListener('wheel', function (e) {
-    //     if (e.deltaX !== 0) return;
-    //     if (!e.shiftKey && treeEl.scrollHeight <= treeEl.clientHeight) {
-    //         treeWrap.scrollLeft += e.deltaY > 0 ? 150 : -150;
-    //     }
-    // });
+    // A plain mouse wheel moves the tree sideways: down = right, up = left.
+    // Trackpads and Magic Mice send deltaX of their own and keep their native
+    // scrolling.  Always sideways, even when the tree is taller than the
+    // window: the scrollbar and arrow keys reach the bottom (user, 2026-11-12).
+    treeWrap.addEventListener('wheel', function (e) {
+        if (e.deltaX !== 0 || e.shiftKey || e.ctrlKey || e.deltaY === 0) return;
+        if (treeWrap.scrollWidth <= treeWrap.clientWidth) return;
+        const step = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? treeWrap.clientWidth : 1;
+        treeWrap.scrollLeft += e.deltaY * step;
+        e.preventDefault();
+    }, { passive: false });
 
     // Load data then render
     const dataUrl = relativepath + '/aoe2techtree/data/data.json';
@@ -2246,11 +2353,9 @@ function _fillAll() {
     // Regional replacement units (Champi, Hei Guang, Rocket Cart, Armored/Siege Elephant)
     // are excluded — standard lines (Militia, Knight, Mangonel, Ram) are kept.
     if (!_currentCivName) return;
-    // The picker owns the siege ship — carry the current choice across.
-    const keepShips = _localtree.units.filter(id => _PICKER_CONTROLLED_UNITS.has(id));
     loadJson(_treeroot + '/' + _currentCivName.toUpperCase() + '.json', function (treeData) {
-        _localtree = { units: keepShips.slice(), buildings: [], techs: [] };
-        const seen = { units: new Set(keepShips), buildings: new Set(), techs: new Set() };
+        _localtree = { units: [], buildings: [], techs: [] };
+        const seen = { units: new Set(), buildings: new Set(), techs: new Set() };
         const push = (key, id) => {
             if (seen[key].has(id)) return;   // layouts can list a node twice
             seen[key].add(id);
@@ -2269,14 +2374,18 @@ function _fillAll() {
             // A line-owned tech is only meaningful with its line, which "Enable
             // All" has just skipped.
             if (key === 'techs' && _REGIONAL_LINE_TECH_IDS.has(item.node_id)) continue;
-            // Never enable a siege ship the picker didn't ask for.
-            if (_isExternallyControlled(item)) continue;
+            // A siege ship variant replaces the Cannon Galleon: a deliberate
+            // pick, like the other replacements, never "all".
+            if (key === 'units' && _SIEGE_VARIANT_IDS.includes(item.node_id)) continue;
             // Second unique units are opt-in extras, and Bolas Rider / Xianbei
             // Raider would land on the Cavalry Archer's button — "Enable All"
             // should not quietly hand out a colliding tree.
             if (key === 'units' && _BONUS_CONTROLLED_UNITS.has(item.node_id)) continue;
             if (key) push(key, item.node_id);
         }
+        // Drawn in every Dock (_applySiegeShipLayout), though FULL.json has neither.
+        push('units', 420);
+        push('units', 691);
         civ(_currentCivName);
         _treeChanged();
     });
@@ -2284,9 +2393,7 @@ function _fillAll() {
 
 function _disableAll() {
     // Resets to the standard camps — the regional building is a deliberate pick.
-    // The siege ship survives: it belongs to the picker, not to this tree.
-    const keepShips = _localtree.units.filter(id => _PICKER_CONTROLLED_UNITS.has(id));
-    _localtree = { units: keepShips, buildings: [], techs: [] };
+    _localtree = { units: [], buildings: [], techs: [] };
     _localtree.buildings = [...HARD_ALWAYS_ON_BUILDINGS, ..._CAMP_BUILDING_IDS];
     if (_currentCivName) civ(_currentCivName);
     _treeChanged();
