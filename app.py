@@ -233,6 +233,23 @@ def _run_update_check():
 # Maps version string → list of change descriptions for the changelog page and
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
+    "2.8.0": [
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Edit stats on the tech tree.</strong> Click any unit, building or tech to open a side panel with its stats and the game's stat icons, and change them there. It shows the numbers with your cards and fully upgraded, and the tree saves every change as you make it",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Rename units</strong> on the tech tree page. The game's tooltips and the upgrade buttons use the new name, with their cost",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>+ Add Unit.</strong> Give a building a new unit line: any military unit, even ones no civ trains (War Dog, Ninja, mercenaries), up to two tiers an age, with its own description, AI role and F2 nodes. Custom bonus cards can target it",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Extend and replace lines.</strong> Add upgrades after a line's last unit, swap an upgrade for another unit (the Savar for the Paladin), or make a unit or tech available an age earlier",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>The game's own regional units in the tree.</strong> Each building's “+” offers its regional units as the real thing: Genitour, Condottiero, Temple Guard, Missionary, Caravel, Turtle Ship, Flaming Camel and more. Replacements (Savar, Winged Hussar, Legionary, Scythian Horse Archer, Dragon Ship) take their line's place, with Undo to get the line back",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>The siege ship is in the tree.</strong> Keep the Cannon Galleon, or replace it with the Catapult Galleon, Dromon or Lou Chuan. The Siege Ship picker is gone",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Unit unlock cards retired into the tree</strong>, the hero panel and Looks. Civs saved with them are converted automatically, and nothing is lost",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Looks.</strong> Give a unit another civ's version of it, or the look of a unit of the same kind and size: the Crusader Knight on your Knight, the Palintonon for your Trebuchet. Previews show each one",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Effect-command meter.</strong> The game crashes at startup when a civ's tech tree or team bonus holds more than about 189 commands; a bar in the wizard and on the tree page now shows how close you are",
+        "<strong class=\"color-accent-2\">IMPROVED:</strong> <strong>Turtle Ships and Caravels keep the demolition ships.</strong> They share a Dock button, so one goes to the Dock's second page, and the Button Layout picker lets you choose which",
+        "<strong class=\"color-accent-2\">IMPROVED:</strong> <strong>Ship previews</strong> sail on water with the game's own wake and bob at idle, and oars no longer smear. <em>Walk</em> is now <em>Move</em>",
+        "<strong class=\"color-accent-2\">IMPROVED:</strong> <strong>The mouse wheel scrolls the tech tree sideways</strong>: down moves right, up moves left",
+        "<strong class=\"color-accent-2\">IMPROVED:</strong> <strong>Builds are about 16 seconds faster</strong>",
+        "<strong class=\"color-accent-2\">IMPROVED:</strong> <strong>Clearing a cost box</strong> now restores the original cost instead of setting it to 0",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> <strong>Infantry and warships vs villagers</strong> cards did nothing in game. They now add their attack",
+    ],
     "2.7.0": [
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Scenario units as unique units.</strong> 22 units the scenario editor can place but no civ trains, among them the Qizilbash Warrior, War Dog, Ninja, Photonman and Amazon Archer. Each gets an Elite: the game's own where one exists, otherwise +15% HP and a little more attack, armour or range",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Krakenmeister's custom unique units stay</strong>, beside the new scenario units: the Headhunter, Jaridah, Gendarme and the rest, marked C. Where the game has the same unit (the Ninja, Photonman, Amazon Archer and four more), the picker offers the game's own; civs that already use KM's version still build it",
