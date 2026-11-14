@@ -1381,6 +1381,9 @@ function _startGround(stage, img, meta, wake = null) {
 function openUnitPreview(unitId, name, civ = null) {
   const el = document.getElementById("modal-unit-preview");
   if (!el) return;
+  // Out of <main>, which is hidden while the tree is full screen (the unique
+  // unit's picker and looks open from there): it opened as a backdrop only.
+  if (el.parentElement !== document.body) document.body.appendChild(el);
   _previewModal = _previewModal || new bootstrap.Modal(el);
   el.querySelector(".modal-title").textContent = name || "";
   const img = el.querySelector("#unit-preview-img");
