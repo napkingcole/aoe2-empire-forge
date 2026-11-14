@@ -1412,7 +1412,9 @@ function _drawAddSlot(slot, element_height, draw) {
         .mouseout(() => column().forEach(el => el.classList.remove('is-dim')))
         .click(() => window.ttInspector?.select(slot, element_height));
     g.element('title').words(slot.add.full
-        ? 'The Castle has its extra unit. What if I want more? Click to see.'
+        ? 'The Castle has its second unique unit. What if I want more? Click to see.'
+        : slot.add.building === 82
+        ? `Add a second unique unit in the ${['Dark', 'Feudal', 'Castle', 'Imperial'][slot.add.age - 1]} Age`
         : `Add a unit to the ${slot.add.buildingName} in the ${['Dark', 'Feudal', 'Castle', 'Imperial'][slot.add.age - 1]} Age`);
 }
 

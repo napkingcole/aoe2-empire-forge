@@ -144,13 +144,28 @@ if s:
           (s["unit_id"], castle_buttons(dat, s["unit_id"])))
     check("named after the preset", s["names"][0] == "Crusader Knight", s["names"])
 check("the Castle takes one extra: the added line is left out, with a warning",
-      not r.get("added_lines") and any("already has its extra unit" in w for w in r["warnings"]),
+      not r.get("added_lines") and any("already has its second unique unit" in w for w in r["warnings"]),
       (r.get("added_lines"), r["warnings"]))
 dat, r = build(None, lines=CASTLE_LINE + [dict(CASTLE_LINE[0], id=2)])
 check("...and only one line is added there without a second unique unit",
       len(r.get("added_lines") or []) == 1, r.get("added_lines"))
 check("...on the second unique unit's button, 4",
       (r.get("added_lines") or [{}])[0].get("button") == 4, (r.get("added_lines") or [{}])[0].get("button"))
+
+print("=== a built second unique unit (a Castle line, three tiers) ===")
+BUILT = [{"id": 1, "building": CASTLE, "base": 280, "name": "Super Mangonel",       # a Mangonel copy
+          "tiers": [{"age": 3}, {"age": 3, "name": "Veteran Mangonel"}, {"age": 4, "name": "Elite Mangonel"}]}]
+dat, r = build(None, lines=BUILT)
+ln = (r.get("added_lines") or [{}])[0]
+tiers = ln.get("units") or []
+check("built, three tiers", len(tiers) == 3, (tiers, r["warnings"]))
+if len(tiers) == 3:
+    moved = {int(c.a) for e in dat.effects for c in e.effect_commands if c.type == 0 and int(c.c) == 42}
+    check("Anarchy reaches every tier", set(tiers) <= moved, (tiers, sorted(moved)))
+    hp7 = {int(c.a) for e in dat.effects for c in e.effect_commands
+           if c.type == 4 and int(c.c) == 0 and c.d == 7}
+    check("a card for unique units reaches every tier", set(tiers) <= hp7, (tiers, sorted(hp7)))
+    check("...and the first unique unit still", {r["uu_id"], r["elite_uu_id"]} <= hp7)
 
 print("=== a Konnik as the FIRST unique unit ===")
 dat, r = build(None, first=KONNIK)

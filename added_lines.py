@@ -637,8 +637,8 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         base, building, tiers = line["base"], line["building"], line["tiers"]
         if building == 82 and line.get("from") is None and line.get("replaces") is None:
             if castle_taken:
-                msg = (f"Added line {line['id']}: the Castle already has its extra unit "
-                       f"({'a second unique unit' if get_second_uu_index(civ_def) is not None else 'another added line'}) — skipped")
+                msg = (f"Added line {line['id']}: the Castle already has its second unique unit "
+                       f"({'a standard one' if get_second_uu_index(civ_def) is not None else 'another built one'}) — skipped")
                 print(f"       WARNING: {msg}")
                 warnings.append(msg)
                 continue

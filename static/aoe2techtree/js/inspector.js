@@ -849,19 +849,19 @@
             else { current = null; markSelected(null); mount(panel); }
         };
         panel.innerHTML = `<div class="tt-insp-head"><div>
-                <div class="tt-insp-title">${line ? 'Change the base unit' : 'Add a unit'}</div>
+                <div class="tt-insp-title">${line ? 'Change the base unit' : siegeOnly ? 'A second unique unit' : 'Add a unit'}</div>
                 <div class="tt-insp-kind">${esc(ctx.buildingName || '')} · ${AGE_NAMES[ctx.age - 1]}</div>
             </div></div>
             <div class="tt-insp-note">${line
                 ? 'Every tier is a copy of this unit; your edits stay.'
                 : siegeOnly
-                ? 'The Castle trains one more unit of yours beside your unique unit: a second unique unit, or any unit as a new line, copied, starting in this age.'
+                ? 'The Castle trains a second unique unit beside your first. Pick a standard one, ready-made with its Elite upgrade, or build your own from any unit, with as many upgrades as you like. Either way, bonuses for unique units reach it.'
                 : 'Pick a unit. A regional one joins as the game\'s own; any other becomes a new line, copied, starting in this age, that you can add tiers to, rename and change.'}</div>
-            ${siegeOnly && !line ? '<button type="button" class="tt-insp-reset" id="tt-pick-uu2">A second unique unit…</button>' : ''}
-            <button type="button" class="tt-insp-reset" id="tt-pick-open">${siegeOnly && !line ? 'Any other unit…' : 'Choose a unit…'}</button>`;
+            ${siegeOnly && !line ? '<button type="button" class="tt-insp-reset" id="tt-pick-uu2">Pick a Standard Unique Unit…</button>' : ''}
+            <button type="button" class="tt-insp-reset" id="tt-pick-open">${siegeOnly && !line ? 'Build a Unique Unit…' : 'Choose a unit…'}</button>`;
         panel.querySelector('#tt-pick-uu2')?.addEventListener('click', () => window.efUU?.pick('second_uu'));
         const open = () => openUnitPicker({
-            title: line ? 'Change the base unit' : `Add a unit to the ${ctx.buildingName || 'building'}`,
+            title: line ? 'Change the base unit' : siegeOnly ? 'Build a unique unit: start from any unit' : `Add a unit to the ${ctx.buildingName || 'building'}`,
             sub: line ? 'Every tier is a copy of this unit; your edits stay.'
                 : siegeOnly ? `Starting in the ${AGE_NAMES[ctx.age - 1]}: a copy you can change, with tiers after it. Heroes train like any unit here, without hero rules.`
                 : `Starting in the ${AGE_NAMES[ctx.age - 1]}. The units above are added as the game's own, with their Elite upgrade; any other is a copy you can change. Heroes train like any unit here, without hero rules.`,
@@ -1300,7 +1300,7 @@
                 <div class="tt-insp-kind">Castle</div>
             </div></div>
             <div class="tt-insp-note">A civilization trains two units of its own at the Castle: its unique unit and one
-                more, a second unique unit or a unit you add here. Both fit on the Castle's first page without moving
+                more, its second unique unit, standard or built from any unit. Both fit on the Castle's first page without moving
                 anything players already know.</div>
             <div class="tt-insp-note">Want a third? Add it to another building with its <b>+</b>. It gets its own
                 upgrades, and you can tell the computer player how to use it.</div>

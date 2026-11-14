@@ -7031,10 +7031,11 @@ def _retarget_relic_attack_to_uu(dat: DatFile, civ_index: int,
                 ec.d = float(cls * 256 + (int(ec.d) & 255))
                 rewritten += 1
                 # The second unique unit too (the user, 2026-11-13).
-                if len(second) == 2:
+                # A built one (an added Castle line): its base tiers, and the top one.
+                for uid2 in ((second[:-1] or second) if was == _LEITIS else second[-1:]):
                     ec2 = deepcopy(ec)
-                    ec2.a = second[0] if was == _LEITIS else second[1]
-                    ec2.d = float(_uu_attack_class(dat, civ_index, int(ec2.a)) * 256 + (int(ec.d) & 255))
+                    ec2.a = uid2
+                    ec2.d = float(_uu_attack_class(dat, civ_index, uid2) * 256 + (int(ec.d) & 255))
                     cmds.append(ec2)
     return rewritten
 
@@ -8183,6 +8184,21 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     second_uu = _apply_second_uu(dat, civ_index, civ_def, has_krepost, warnings)
     uu2_ids = (second_uu["unit_id"], second_uu["elite_id"]) if second_uu else ()
 
+    # 6b''. The tree page's "+ Add Unit" lines — before the cards, so class and
+    #      "Trained at" cards reach the new units, and before the substitutions,
+    #      because a line built at the Castle IS the second unique unit (the
+    #      user, 2026-11-14): Anarchy and unique-unit cards reach every tier.
+    import added_lines
+    _added = added_lines.apply_added_lines(dat, civ_index, civ_def, warnings)
+    uu2_line = next((ln["units"] for ln in _added if ln["building"] == 82
+                     and ln.get("from") is None and ln.get("replaces") is None), ())
+    if uu2_line and not second_uu:
+        uu2_ids = tuple(uu2_line)
+    # Which second-UU unit takes what "the unique unit" names: the base tiers,
+    # and the top one as "the Elite".
+    uu2_base = uu2_ids[:-1] or uu2_ids
+    uu2_elite = uu2_ids[-1:]
+
     # 6c. Patch deferred UU-substitution effect commands (see
     #     UU_SUBSTITUTION_TYPES / _build_ut_effect_cmds) now that this civ's
     #     own elite UU id is fully resolved across all 3 possible paths above.
@@ -8242,18 +8258,19 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 _ensure_anarchy_train_slot(elite_uu_id, int(ec.d))
             if not _already_targets(dat.effects[eff_id], ec):
                 dat.effects[eff_id].effect_commands.append(ec)
-            if second_uu and ec.type == 12:
+            if uu2_ids and ec.type == 12:
                 msg = ("The free Elite unique units at the Castle (Mercenaries) are the first "
                        "unique unit's: the second has no free-unit slot of its own.")
                 if msg not in warnings:
                     warnings.append(msg)
-            elif second_uu:
-                ec2 = deepcopy(ec)
-                ec2.a = second_uu["elite_id"]
-                if ec2.type == EC_SET and int(ec2.c) == 42:
-                    _ensure_anarchy_train_slot(second_uu["elite_id"], int(ec2.d))
-                if not _already_targets(dat.effects[eff_id], ec2):
-                    dat.effects[eff_id].effect_commands.append(ec2)
+            elif uu2_ids:
+                for uid2 in uu2_elite:
+                    ec2 = deepcopy(ec)
+                    ec2.a = uid2
+                    if ec2.type == EC_SET and int(ec2.c) == 42:
+                        _ensure_anarchy_train_slot(uid2, int(ec2.d))
+                    if not _already_targets(dat.effects[eff_id], ec2):
+                        dat.effects[eff_id].effect_commands.append(ec2)
     if (castle_ut_pending_uu_subs or imp_ut_pending_uu_subs) and elite_uu_id < 0:
         msg = ("Castle/Imperial UT references this civ's own elite unique "
                "unit, but this civ has no UU defined — effect left as a no-op.")
@@ -8271,11 +8288,11 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                 _ensure_anarchy_train_slot(uu_id, int(ec.d))
             if not _already_targets(dat.effects[eff_id], ec):
                 dat.effects[eff_id].effect_commands.append(ec)
-            if second_uu:
+            for uid2 in uu2_base:
                 ec2 = deepcopy(ec)
-                ec2.a = second_uu["unit_id"]
+                ec2.a = uid2
                 if ec2.type == EC_SET and int(ec2.c) == 42:
-                    _ensure_anarchy_train_slot(second_uu["unit_id"], int(ec2.d))
+                    _ensure_anarchy_train_slot(uid2, int(ec2.d))
                 if not _already_targets(dat.effects[eff_id], ec2):
                     dat.effects[eff_id].effect_commands.append(ec2)
     if (castle_ut_pending_base_uu_subs or imp_ut_pending_base_uu_subs) and uu_id < 0:
@@ -8289,11 +8306,6 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
                          tuple(u for u in (uu_id, elite_uu_id) if u is not None and u >= 0), warnings)
     if second_uu:
         _apply_uu_appearance(dat, civ_index, civ_def, uu2_ids, warnings, key="second_uu")
-
-    # 6d. The tree page's "+ Add Unit" lines — before the cards, so class and
-    #     "Trained at" cards reach the new units.
-    import added_lines
-    _added = added_lines.apply_added_lines(dat, civ_index, civ_def, warnings)
 
     # 7. Apply bonuses from catalog.
     bonus_results: dict = {"applied": 0, "skipped": [], "team_applied": 0, "team_total": 0,
