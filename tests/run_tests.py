@@ -58,6 +58,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("bonus 54 fishermen",              "test_bonus_54_fishermen.py",   "data"),
     ("audit fixes (python)",            "test_audit_fixes.py",          "build"),
     ("team bonus catalog",              "test_team_bonus_catalog.py",   "build"),
+    ("cards a pre-DLC game lacks",      "test_old_game_cards.py",       "build"),
     ("spawn scaling + UU flags",        "test_spawn_and_flags.py",      "build"),
     ("UT multiplier flags",             "test_ut_multiplier_flags.py",  "data"),
     ("hero catalog from the DAT",       "test_hero_catalog.py",         "data"),

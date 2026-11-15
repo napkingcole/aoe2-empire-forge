@@ -35,9 +35,11 @@ from civ_appender import (apply_civ, _KM_UU_TECHS, _KM_UU_NAMES, get_km_uu_index
                           _civ_present_units)
 import km_custom_uu
 
-# Languages KM ships string files for.
+# Every language folder the game ships under resources/.  KM's list had 15 and
+# no "pl" or "ru", so a Polish or Russian player saw the vanilla civ names and
+# none of the mod's text (found 2026-11-15).
 LANGUAGES = ["br", "de", "en", "es", "fr", "hi", "it", "jp",
-             "ko", "ms", "mx", "tr", "tw", "vi", "zh"]
+             "ko", "ms", "mx", "pl", "ru", "tr", "tw", "vi", "zh"]
 
 AI_PER_STUB = b"; Civbuilder generated AI File\n; Feel free to edit as you please\n"
 
@@ -317,7 +319,7 @@ def _build_ui_zip(civ_def: dict, ui_civ_name: str, name_string_id: int) -> bytes
             # causes it to stretch into a giant emblem in the UI.
             # Phase 2: supply proper 450×280 artwork.
 
-        # Language string files — all 15 langs get the same English strings.
+        # Language string files — every language gets the same English strings.
         # Phase 2: proper per-language translations.
         for lang in LANGUAGES:
             zf.writestr(

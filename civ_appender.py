@@ -6295,6 +6295,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     )
 
     skipped = []
+    unavailable: list[int] = []   # cards whose vanilla techs this game lacks
     applied = 0
     extra_strings: list[dict] = []
     extra_unit_strings: list[dict] = []
@@ -6324,6 +6325,11 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         _card_open = (bonus_id, len(dat.techs))
 
         tech_ids = civ_bonus_techs(bonus_id)
+        if tech_ids and all(_tech_missing_from_game(dat, t) for t in tech_ids):
+            # A card for content this game version lacks would copy empty
+            # placeholders and do nothing; say so and leave it out instead.
+            unavailable.append(bonus_id)
+            continue
         if tech_ids:
             # Share _seen across the list so an elite tech's required_tech pointer
             # reuses the already-allocated make-avail copy instead of creating a
@@ -6461,7 +6467,8 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
           f"{len(skipped)} bonus IDs skipped (not in catalog): {skipped[:8]}"
           + ("…" if len(skipped) > 8 else ""))
 
-    bonus_result = {"applied": applied, "skipped": skipped, "extra_tech_strings": extra_strings,
+    bonus_result = {"applied": applied, "skipped": skipped, "unavailable": unavailable,
+                    "extra_tech_strings": extra_strings,
                     "extra_unit_strings": extra_unit_strings, "bonus_tech_map": bonus_tech_map,
                     "tech_cards": tech_cards}
 
@@ -6473,6 +6480,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     team_applied = 0
     team_cmd_counts: list[tuple[int, int]] = []   # (team_bonus_id, commands added)
     team_skipped: list[int] = []                  # ids with no implementation at all
+    team_unavailable: list[int] = []              # ids for content this game lacks
     for entry in team_entries:
         if not isinstance(entry, (list, tuple)) or len(entry) < 1:
             continue
@@ -6483,7 +6491,9 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         #   tbEffect.EffectCommands += df->Effects[teamBonuses[teamBonusIndex]]
         eff_idx = team_bonus_tech(tb_id)
         safe_cmds = []
-        if eff_idx is not None and 0 <= eff_idx < len(dat.effects):
+        # The SHIPPED count, not len(dat.effects): an index past an older
+        # game's end is filled by whatever an earlier civ appended.
+        if eff_idx is not None and 0 <= eff_idx < _shipped_counts(dat)[1]:
             safe_cmds = list(dat.effects[eff_idx].effect_commands)
 
         if safe_cmds:
@@ -6503,7 +6513,10 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
         # through rather than skipping is what keeps a bonus alive across a DLC.
         ec_dicts = team_bonus_ec_list(tb_id)
         if not ec_dicts:
-            team_skipped.append(tb_id)
+            if eff_idx is not None and eff_idx >= _shipped_counts(dat)[1]:
+                team_unavailable.append(tb_id)    # newer than this game
+            else:
+                team_skipped.append(tb_id)
             continue
         for ec_dict in ec_dicts:
             cmd = EffectCommand(type=ec_dict["type"], a=ec_dict["A"],
@@ -6519,6 +6532,7 @@ def _apply_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
     bonus_result["team_total"]       = len(team_entries)
     bonus_result["team_cmd_counts"]  = team_cmd_counts
     bonus_result["team_skipped"]     = team_skipped
+    bonus_result["team_unavailable"] = team_unavailable
     return bonus_result
 
 
@@ -7452,6 +7466,49 @@ def _original_civs(dat: DatFile) -> dict:
     return kept
 
 
+def _shipped_counts(dat: DatFile) -> tuple[int, int]:
+    """(techs, effects) as the game shipped them, cached on the DatFile.
+
+    apply_civ calls this before it appends anything, so on a multi-civ build
+    the later civs still see the first civ's starting counts.  Without it, a
+    catalog id past the end of an OLDER game's tables only looks missing for
+    the first civ: an earlier civ's appended effects fill the gap, and a team
+    bonus reading effect 1455 by index on a pre-Viking-Sagas DAT copied some
+    other civ's bonus instead."""
+    kept = getattr(dat, "_ef_shipped_counts", None)
+    if kept is None:
+        kept = dat._ef_shipped_counts = (len(dat.techs), len(dat.effects))
+    return kept
+
+
+def _tech_missing_from_game(dat: DatFile, tid: int) -> bool:
+    """Is vanilla tech `tid` absent from this game version?
+
+    DE reserves tech ids before it fills them: on a pre-Viking-Sagas DAT the
+    Varangian Guard bonus techs (1478, 1488) are unnamed placeholders with no
+    effect, so a card copying them builds and does nothing (reported
+    2026-11-15).  A real tech with no effect of its own (295, a trigger) has a
+    name, which is what tells the two apart."""
+    if not 0 <= tid < _shipped_counts(dat)[0]:
+        return True
+    t = dat.techs[tid]
+    return t.effect_id < 0 and not t.name
+
+
+def catalog_cards_missing(dat: DatFile) -> list[int]:
+    """Civ bonus cards whose vanilla techs this game version does not have —
+    nonempty means the player's game is older than the catalog.  All of a
+    card's techs, the same rule the wizard's picker hides cards by
+    (api_builder_bonuses_catalog), so a card it offers always builds."""
+    from bonus_catalog import _load
+    out = []
+    for bid, tids in _load()["civ"].items():
+        if (isinstance(tids, list) and tids
+                and all(_tech_missing_from_game(dat, int(t)) for t in tids)):
+            out.append(int(bid))
+    return sorted(out)
+
+
 def _original_civ(dat: DatFile, idx: int):
     """Slot `idx` as the game shipped it: the kept original if an earlier civ
     in this build replaced it, else the slot itself."""
@@ -7777,6 +7834,22 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
 
     alias    = civ_def.get("alias", f"Custom Civ {civ_index}")
     warnings = []
+    # Before anything is appended — the first civ of a build fixes the counts.
+    _shipped_counts(dat)
+    # Once per build: a game older than the catalog means a mod built now will
+    # break when the game updates (the 2026-11-15 report: stale DAT, AI script
+    # failure, a civ name showing "ERROR ... LocString").
+    if not getattr(dat, "_ef_age_checked", False):
+        dat._ef_age_checked = True
+        _missing_cards = catalog_cards_missing(dat)
+        if _missing_cards:
+            _msg = (f"Your game files are older than Empire Forge's bonus list — "
+                    f"{len(_missing_cards)} bonus cards need content your game doesn't have "
+                    f"yet. Update Age of Empires II, then build again: a mod built from "
+                    f"older game files breaks once the game updates (AI script failures, "
+                    f"garbled civ names).")
+            print(f"  WARNING: {_msg}")
+            warnings.append(_msg)
     mode     = "Overwriting" if overwrite else "Appending"
     print(f"  [{civ_index}] {mode} civ: {alias!r}")
 
@@ -8462,6 +8535,20 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
             print(f"  WARNING: {_msg}")
             warnings.append(_msg)
 
+    # Cards for content the player's game doesn't have yet — left out of the
+    # build and (in all three routes, build_all.drop_unavailable) the civ text.
+    if bonus_results.get("unavailable") or bonus_results.get("team_unavailable"):
+        from bonus_names import bonus_name
+        _names = ([f'"{bonus_name(i)}"' for i in bonus_results.get("unavailable", [])]
+                  + [f"team bonus {team_bonus_label(i)}"
+                     for i in bonus_results.get("team_unavailable", [])])
+        _msg = (f"Left out — your game version doesn't have what "
+                f"{'this card needs' if len(_names) == 1 else 'these cards need'}: "
+                f"{'; '.join(_names)}. Update Age of Empires II and build again "
+                f"to include {'it' if len(_names) == 1 else 'them'}.")
+        print(f"  WARNING: {_msg}")
+        warnings.append(_msg)
+
     if bonus_results.get("team_skipped"):
         _ids = ", ".join(team_bonus_label(i) for i in bonus_results["team_skipped"])
         _msg = (f"Team bonus {_ids} has no implementation in the catalog and was "
@@ -8708,7 +8795,8 @@ def _donjon_like_keep(cmds: list) -> list:
 
 
 def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
-                          default_tier: str, civ_index: int | None = None) -> tuple[list, list, list]:
+                          default_tier: str, civ_index: int | None = None,
+                          missing: list | None = None) -> tuple[list, list, list]:
     """Collect effect commands for a UT's bonus entries.
 
     `entries` is get_ut_entries' [id, mult, tier]; each preset is looked up in
@@ -8732,6 +8820,10 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
     Both lists are deferred because the UU may not be allocated until after
     the UT stubs are created (e.g. KM-custom UU presets).  Until patched the
     UT silently omits these commands (better than referencing the wrong unit).
+
+    `missing`, when given, collects the source tech of each preset this game
+    version doesn't have yet (a Viking Sagas UT on an older DAT) — the UT
+    builds without it, and the caller tells the player.
     """
     cmds: list = []
     pending_elite_uu_subs: list = []
@@ -8750,7 +8842,9 @@ def _build_ut_effect_cmds(dat: DatFile, entries: list, label: str,
         if tech_id is None:
             print(f"       {label} bonus {bonus_id} ({tier} pool): not in UT catalog — skipped")
             continue
-        if tech_id < 0 or tech_id >= len(dat.techs):
+        if _tech_missing_from_game(dat, tech_id):
+            if missing is not None:
+                missing.append(tech_id)
             continue
         source_tech = dat.techs[tech_id]
         eid = source_tech.effect_id
@@ -8960,8 +9054,19 @@ def _append_unique_tech_stubs(dat: DatFile, civ_index: int, alias: str,
             pending_subs_per_slot.append([])
             pending_base_subs_per_slot.append([])
             continue
+        _missing_src: list[int] = []
         cmds, pending_uu_subs, pending_base_uu_subs = _build_ut_effect_cmds(
-            dat, entries, label, "castle" if btn == 7 else "imperial", civ_index)
+            dat, entries, label, "castle" if btn == 7 else "imperial", civ_index,
+            _missing_src)
+        if _missing_src:
+            _msg = (f"{label}: {len(_missing_src)} of its effects "
+                    f"{'is' if len(_missing_src) == 1 else 'are'} left out — your game "
+                    f"version doesn't have {'it' if len(_missing_src) == 1 else 'them'} "
+                    f"yet (vanilla tech {', '.join(map(str, _missing_src))}). Update "
+                    f"Age of Empires II and build again to include "
+                    f"{'it' if len(_missing_src) == 1 else 'them'}.")
+            print(f"  WARNING: {_msg}")
+            ut_warnings.append(_msg)
         eff_id = _append_effect(dat, Effect(name=f"{alias} {label}", effect_commands=cmds))
         pending_subs_per_slot.append([(eff_id, ec) for ec in pending_uu_subs])
         pending_base_subs_per_slot.append([(eff_id, ec) for ec in pending_base_uu_subs])

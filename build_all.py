@@ -226,6 +226,17 @@ def _kv_text(text: str) -> str:
     return re.sub(r'(?<!\\)"', r'\\"', text)
 
 
+def drop_unavailable(entries: list, civ_result: dict, team: bool = False) -> list:
+    """`entries` (civ or team bonus picks) less the cards apply_civ left out
+    because the player's game version lacks their content — a civ text that
+    lists a bonus the build skipped is the 2026-11-15 report's "no Varangian
+    Guard bonuses".  One filter for all three routes."""
+    br = civ_result.get("bonus_results") or {}
+    gone = set(br.get("team_unavailable" if team else "unavailable") or ())
+    return [e for e in entries
+            if not (isinstance(e, (list, tuple)) and e and int(e[0]) in gone)]
+
+
 def civ_description(head: str, bonus_texts: list[str], uu_name: str,
                     uts: list[tuple[str, str]], team_texts: list[str]) -> str:
     """The civ-selection description, in the game's own layout — one writer for
@@ -878,8 +889,8 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
         # the file (the wizard route already escaped these; this one did not).
         description = _kv_text(civ_def.get("tagline") or civ_def.get("description", "") or "")
         alias_kv = _kv_text(alias)
-        civ_bonuses        = get_civ_bonuses(civ_def)
-        team_bonus_entries = get_team_bonuses(civ_def)
+        civ_bonuses        = drop_unavailable(get_civ_bonuses(civ_def), civ_result)
+        team_bonus_entries = drop_unavailable(get_team_bonuses(civ_def), civ_result, team=True)
 
         bonus_texts = []
         for entry in civ_bonuses:

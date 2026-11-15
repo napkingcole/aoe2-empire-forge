@@ -36,7 +36,7 @@ from build_all import (_build_combined_data_zip, _build_combined_ui_zip, dat_jso
                        _ut_name, _ut_source, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS,
                        _kv_text, ut_name_and_desc, ut_selection_text, ut_research_label,
-                       hero_string_lines, civ_tip_lines, civ_description)
+                       hero_string_lines, civ_tip_lines, civ_description, drop_unavailable)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
@@ -987,8 +987,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             # the file (the wizard route already escaped these; this one did not).
             description   = _kv_text(civ_def.get("tagline") or civ_def.get("description", "") or "")
             alias_kv      = _kv_text(alias)
-            civ_bonuses        = _bonuses_raw_normalized
-            team_bonus_entries = _team_bonuses_raw_normalized
+            civ_bonuses        = drop_unavailable(_bonuses_raw_normalized, result)
+            team_bonus_entries = drop_unavailable(_team_bonuses_raw_normalized, result, team=True)
             _bonus_texts = [_BONUS_NAMES[str(e[0])] + (f" [x{e[1]}]" if len(e) > 1 and e[1] > 1 else "")
                             for e in civ_bonuses if isinstance(e, list) and _BONUS_NAMES.get(str(e[0]))]
             # Custom bonus cards — the other two routes list them; this one didn't.

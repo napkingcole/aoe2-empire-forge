@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 
 from build_all import (
-    _kv_text, hero_string_lines, civ_tip_lines, civ_description,
+    _kv_text, hero_string_lines, civ_tip_lines, civ_description, drop_unavailable,
     ut_name_and_desc, ut_selection_text, ut_research_label,
     _build_combined_data_zip, dat_json_files,
     _build_combined_ui_zip,
@@ -252,8 +252,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     # Build civ-picker description string
     tagline      = _kv_text(civ_def.get("description", "") or "")
     alias_kv     = _kv_text(alias)
-    civ_bonuses  = get_civ_bonuses(civ_def)
-    team_entries = get_team_bonuses(civ_def)
+    civ_bonuses  = drop_unavailable(get_civ_bonuses(civ_def), civ_result)
+    team_entries = drop_unavailable(get_team_bonuses(civ_def), civ_result, team=True)
 
     bullets = []
     for entry in civ_bonuses:
