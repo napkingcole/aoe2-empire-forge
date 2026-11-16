@@ -453,6 +453,19 @@ with contextlib.redirect_stdout(io.StringIO()):
 btn = [(l["building"], l["button"]) for l in rc.get("added_lines") or []]
 check("a new Barracks line skips button 3", btn and btn[0][1] != 3, btn)
 
+print("\n=== a tier after a unit gets that unit's bonuses (#130) ===")
+# The Hand Cannoneer has no AI line, so its extension had no role and joined
+# no line: "Gunpowder units cost -20%" (card 52) skipped the new tier.
+gp = {**wh, "bonuses": [{"id": 52, "multiplier": 1}],
+      "added_lines": [{"id": 1, "building": 87, "base": HC, "from": HC, "tiers": [{"age": 4, "name": "Elite Hand Cannoneer"}]}]}
+dat_g = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    rg, _ = apply_civ_with_overrides(dat_g, _draft_to_civ_def(gp), SLOT, gp)
+tier = ((rg.get("added_lines") or [{}])[0].get("units") or [None])[0]
+hits = [round(c.d, 3) for e in dat_g.effects for c in e.effect_commands
+        if c.type == 5 and int(c.a) == tier and int(c.c) == 100]
+check("the Elite Hand Cannoneer costs -20% too", hits == [0.8], (tier, hits))
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

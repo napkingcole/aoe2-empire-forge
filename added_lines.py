@@ -1001,7 +1001,15 @@ def extend_line_membership(dat, civ_index: int, lines: list[dict], unit_lines: l
                 if t.civ in (-1, civ_index) and tid not in ours}
     added = 0
     for line in lines:
-        members = set(role_chain(unit_lines, line.get("role"))) - set(line["units"])
+        members = set(role_chain(unit_lines, line.get("role")))
+        # An extension continues its unit's line, and a replacement takes its
+        # unit's place: either way what names that unit, or the ones before
+        # it, names ours too — with or without an AI line (the Hand Cannoneer
+        # has none, so "Gunpowder units cost -20%" skipped its Elite, #130).
+        for own in (line.get("from"), line.get("replaces")):
+            if own is not None:
+                members |= {own, *_earlier(dat, own)}
+        members -= set(line["units"])
         if not members:
             continue
         for eid in sorted(e for e in effects if 0 <= e < len(dat.effects)):
