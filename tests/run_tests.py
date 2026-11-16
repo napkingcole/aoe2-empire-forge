@@ -128,6 +128,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("UU bonus damage + armour",        "test_uu_class_overrides.py",   "build"),
     ("replacement with later tiers",    "test_replacement_tiers.py",    "build"),
     ("second unique unit",              "test_second_uu.py",            "build"),
+    ("Khmer card 81 (#126)",            "test_khmer_card.py",           "build"),
     ("tree panel upgrade filter",       "test_tree_steps_filter.py",    "build"),
     ("+ Add Unit lines",                "test_added_lines.py",          "build"),
     ("Real units in the tree",          "test_real_units.py",           "build"),

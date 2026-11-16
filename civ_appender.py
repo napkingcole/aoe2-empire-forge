@@ -5399,48 +5399,22 @@ def _create_bonus_handler(dat: DatFile, bonus_id: int, civ_index: int,
         return True
 
     if bonus_id == 81:           # No buildings required to advance ages or unlock buildings
-        # Mirrors the Khmer mechanism: tech 638 (civ=28, req_count=0) auto-fires at
-        # game start for Khmer.  Shadow Node+ techs 659/660/661 (one per age gate)
-        # use OR semantics (required_tech_count=1) and include 638 in their list.
-        # When 638 fires, the shadow nodes fire, satisfying age tech requirements
-        # without the player having built any buildings.
-        # We create a civ-specific clone of tech 638 and add its ID to the free
-        # OR slot in each of the three Shadow Node+ techs.
-        _SHADOW_NODES = (659, 660, 661)  # Shadow Node+ for Age Two/Three/Four
-
-        # Pre-flight: each shadow node has 6 required_techs slots. Count how
-        # many are still free across all three. If any is already full, fail
-        # now with a clear message rather than mid-loop.
-        for _sn in _SHADOW_NODES:
-            _free = sum(1 for r in dat.techs[_sn].required_techs if r == -1)
-            if _free == 0:
-                raise RuntimeError(
-                    f"bonus 81: tech {_sn} has no free required_techs slots — "
-                    f"too many civs with bonus 81 in this batch (max ~4)."
-                )
-
-        template = dat.techs[638]        # Khmer requirement (req_count=0, no effect)
-        new_req = deepcopy(template)
+        # Mirrors the Khmer mechanism: tech 638 (civ=28, req_count=0) auto-fires
+        # at game start for the Khmer, and every building requirement they skip
+        # lists it as one OR-option (required_tech_count=1): the three Shadow
+        # Node+ age gates 659/660/661, and the Mill (666), Barracks/Donjon (667),
+        # Blacksmith (668) and Farms (216) nodes.  Linking only the age gates
+        # left a Barracks needed for the Stable and Range (#126).  So: a copy of
+        # 638 for this civ, standing in for it everywhere through the shared
+        # alt-prereq gate, which takes one slot per dependent however many civs
+        # in the mod have the card (directly, the fourth one ran out of slots).
+        n_before = len(dat.techs)
+        new_req = deepcopy(dat.techs[638])   # Khmer requirement (req_count=0, no effect)
         new_req.civ = civ_index
         new_req.name = 'C-Bonus, No building requirement'
         dat.techs.append(new_req)
-        new_req_id = len(dat.techs) - 1
-
-        for shadow_tid in _SHADOW_NODES:
-            shadow = dat.techs[shadow_tid]
-            req_list = list(shadow.required_techs)
-            filled = False
-            for i, r in enumerate(req_list):
-                if r == -1:
-                    req_list[i] = new_req_id
-                    filled = True
-                    break
-            if not filled:
-                raise RuntimeError(
-                    f'bonus 81: no free slot in required_techs for shadow node tech {shadow_tid}'
-                )
-            shadow.required_techs = tuple(req_list)
-
+        n = _add_alt_prereq(dat, 638, len(dat.techs) - 1, limit=n_before)
+        print(f"       No building requirements: {n} requirements open to this civ")
         return True
 
     if bonus_id == 352:          # Siege Engineers available in Castle Age
