@@ -2133,12 +2133,20 @@ def _plan_button_layout(dat: DatFile, units, present: set[int],
     def building_of(uid, idx, tl):
         return runtime.get((uid, idx), tl.unit_id)
 
+    # Buildings only.  A villager (118) or Fishing Ship builds from menus, not
+    # pages: its economic and military menus reuse button numbers (Lumber Camp
+    # and Siege Workshop both on 4, told apart by interface_kind), and moving a
+    # building to "page 2" there left it with no button — the Mule Cart, beside
+    # card 99's Siege Workshop (#129).
+    def is_building(bldg):
+        return 0 <= bldg < len(units) and units[bldg] is not None and units[bldg].type == 80
+
     slot_units: dict[tuple[int, int], set[int]] = defaultdict(set)
     for uid, u in enumerate(units):
         if u is not None and u.creatable is not None:
             for idx, tl in enumerate(u.creatable.train_locations):
                 bldg = building_of(uid, idx, tl)
-                if bldg >= 0 and tl.button_id > 0:
+                if tl.button_id > 0 and is_building(bldg):
                     slot_units[(bldg, tl.button_id)].add(uid)
 
     neighbours = _upgrade_neighbours(dat)
