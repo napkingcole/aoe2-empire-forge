@@ -8070,6 +8070,16 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         _copy_architecture(arch_src_civ, dat.civs[civ_index])
         print(f"       Architecture: style {arch_val} (from DAT civ {arch_src})")
 
+    # Waypoint flag: resource 73, "Waypoint Sprite Graphic ID" — every civ has
+    # its own, and a custom civ inherited the Britons' from the template (#87).
+    # Chosen, or the architecture's civ's, as the Monk defaults.
+    _flag_src = civ_def.get("waypoint_flag")
+    _flag_civ = (_original_civ(dat, _flag_src) if isinstance(_flag_src, int) and 0 < _flag_src < len(dat.civs)
+                 else arch_src_civ)
+    if _flag_civ is not None and len(_flag_civ.resources) > 73 and _flag_civ.resources[73] > 0:
+        dat.civs[civ_index].resources[73] = _flag_civ.resources[73]
+        print(f"       Waypoint flag: {_flag_civ.name!r}'s ({int(_flag_civ.resources[73])})")
+
     # Monk skin: independent of architecture (see MONK_SKIN_OPTIONS).  Unset
     # falls back to the architecture's own Monk, which is the coherent default.
     # That fallback still goes through _copy_monk_skin rather than relying on

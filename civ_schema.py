@@ -245,6 +245,7 @@ def to_draft(schema: dict) -> dict:
         "monk_skin":             s.get("monk_skin"),
         # DAT civ index whose Monastery is copied (civ_appender.MONASTERY_SKIN_OPTIONS).
         "monastery_skin_building": s.get("monastery_skin_building"),
+        "waypoint_flag":           s.get("waypoint_flag"),
 
         "second_uu":              norm_second_uu(s.get("second_uu")),
         # Phase Two pass-throughs (not yet consumed by build pipeline)
@@ -364,6 +365,7 @@ def from_draft(draft: dict) -> dict:
         "starting_scout":          draft.get("starting_scout"),
         "monk_skin":               draft.get("monk_skin"),
         "monastery_skin_building": draft.get("monastery_skin_building"),
+        "waypoint_flag":           draft.get("waypoint_flag"),
 
         "unit_edits":              norm_unit_edits(draft.get("unit_edits")),
         "tech_edits":              norm_tech_edits(draft.get("tech_edits")),

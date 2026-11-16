@@ -519,7 +519,7 @@ def wake_strip(dat_path, part: str, angle: int = SOUTH_WEST) -> bytes | None:
 # "building" is any building by unit id, for a card that changes how one looks
 # (card 460 draws its Castle as the Wooden Fort, 2600).
 SCENE_SLOTS = ("architecture", "wonder", "castle", "monastery_skin_building", "monk_skin", "starting_scout",
-               "building")
+               "building", "waypoint_flag")
 _CASTLE, _WONDER, _MONK, _MONASTERY = 82, 276, 125, 104
 # Buildings are stored at half the sprite's size: the scene shows them at about
 # a quarter, so half is still sharp on a 2x screen, and an animated one (the
@@ -592,6 +592,13 @@ def _scene_graphic(dat, slot: str, value: int) -> tuple:
         unit = civs[idx].units[{"wonder": _WONDER, "castle": _CASTLE, "monk_skin": _MONK,
                                 "monastery_skin_building": _MONASTERY}[slot]]
         gid = unit.standing_graphic[0]
+    elif slot == "waypoint_flag":
+        # A civ's rally flag: its resource 73, "Waypoint Sprite Graphic ID" (#87).
+        if not 1 <= value < len(civs) or len(civs[value].resources) <= 73:
+            return None, ()
+        gid = int(civs[value].resources[73])
+        if gid <= 0:
+            return None, ()
     elif slot in ("starting_scout", "building"):
         units = civs[0].units
         if not 0 <= value < len(units) or units[value] is None:

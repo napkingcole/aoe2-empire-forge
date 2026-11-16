@@ -133,6 +133,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("camel riders without scouts (#110)", "test_camel_riders.py",      "build"),
     ("buildings an age earlier (#122)", "test_building_ages.py",        "build"),
     ("villager build menus (#129)",     "test_villager_menus.py",       "build"),
+    ("waypoint flag (#87)",             "test_waypoint_flag.py",        "build"),
     ("tree panel upgrade filter",       "test_tree_steps_filter.py",    "build"),
     ("+ Add Unit lines",                "test_added_lines.py",          "build"),
     ("Real units in the tree",          "test_real_units.py",           "build"),

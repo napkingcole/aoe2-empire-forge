@@ -454,6 +454,21 @@ const SCENE_SLOTS = {
     defaultLabel:    "Default",
     defaultCaption:  "Default Monk",
   },
+  // The rally flag (#87): a civ's resource 73, by DAT index.  No spot in the
+  // scene; the select shows it beside itself (_drawFlagPreview).
+  waypoint_flag: {
+    title:   "Select Waypoint Flag",
+    select:  "flag-select",
+    options: () => window._metaFlags || [],
+    get:     () => draft.waypoint_flag,
+    set:     v => { if (v < 0) delete draft.waypoint_flag; else draft.waypoint_flag = v; },
+    art:     v => _sceneArt("waypoint_flag", v),
+    name:    v => (window._metaFlags || []).find(o => o.value === v)?.label || `#${v}`,
+    caption: v => `${SCENE_SLOTS.waypoint_flag.name(v)} Flag`,
+    defaultable: true,
+    resolveDefault: () => { const c = _archRep(draft.architecture ?? DEFAULT_ARCHITECTURE); return c === null ? null : c + 1; },
+    defaultCaption: "Architecture Default Flag",
+  },
   starting_scout: {
     title:   "Select Starting Scout",
     select:  "scout-select",
@@ -748,6 +763,7 @@ function setSceneValue(key, value) {
   SCENE_SLOTS[key].set(value);
   saveDraft();
   renderScene();
+  _drawFlagPreview();          // its default follows the architecture
 }
 
 // ── Picker overlay ────────────────────────────────────────────────────────────
@@ -823,6 +839,18 @@ function playVoiceSample() {
 }
 
 // ── Scene wiring ──────────────────────────────────────────────────────────────
+
+// The chosen flag, or the architecture's, drawn from the game beside its select.
+function _drawFlagPreview() {
+  const img = document.getElementById("flag-preview");
+  if (!img) return;
+  const slot = SCENE_SLOTS.waypoint_flag;
+  const v = slot.get() ?? slot.resolveDefault();
+  if (v == null) { img.removeAttribute("src"); return; }
+  img.onerror = () => { img.style.visibility = "hidden"; };
+  img.onload = () => { img.style.visibility = ""; };
+  img.src = slot.art(v);
+}
 
 function bindScene() {
   document.querySelectorAll(".scene-slot").forEach(btn => {
@@ -949,6 +977,9 @@ function populateReview() {
     ? ((window._metaMonasteries || []).find(m => m.value === draft.monastery_skin_building)?.label
        || `#${draft.monastery_skin_building}`)
     : "Architecture Default";
+  const flagName = draft.waypoint_flag != null && draft.waypoint_flag >= 0
+    ? ((window._metaFlags || []).find(f => f.value === draft.waypoint_flag)?.label || `#${draft.waypoint_flag}`)
+    : "Architecture Default";
   const monkName = draft.monk_skin != null && draft.monk_skin >= 0
     ? ((window._metaMonks || []).find(m => m.value === draft.monk_skin)?.label
        || `#${draft.monk_skin}`)
@@ -964,6 +995,7 @@ function populateReview() {
     _reviewRow("Starting Scout", scoutName),
     _reviewRow("Monastery",    monasteryName),
     _reviewRow("Monk Skin",    monkName),
+    _reviewRow("Waypoint Flag", flagName),
     _reviewRow("Emblem",       draft.emblem ? "&#10003; Uploaded" : "<em class='text-muted'>None</em>"),
   ].join("");
 
@@ -5050,6 +5082,7 @@ async function init() {
     window._metaScouts        = meta.starting_scouts || [];
     window._metaMonks         = meta.monk_skins      || [];
     window._metaMonasteries   = meta.monastery_skins || [];
+    window._metaFlags         = meta.waypoint_flags  || [];
     window._artVersion        = meta.art_version     || "";
     window._treeVersion       = meta.tree_version    || 3;   // retired_cards.TREE_VERSION
     // Retired unit cards are not mirrored from the tree any more: the tree is
@@ -5092,6 +5125,8 @@ async function init() {
                    SCENE_SLOTS.monk_skin.defaultLabel);
     populateSelect("monastery-select", meta.monastery_skins || [], draft.monastery_skin_building,
                    DEFAULT_OPTION_LABEL);
+    populateSelect("flag-select", meta.waypoint_flags || [], draft.waypoint_flag, DEFAULT_OPTION_LABEL);
+    _drawFlagPreview();
 
     bindScene();
     renderScene();

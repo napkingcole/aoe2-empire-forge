@@ -1508,6 +1508,20 @@ def api_builder_meta():
     # those clips from the player's own Wwise banks, so offering a voice the
     # map can't name would silently ship a civ with no audio.  A rebuilt map
     # adds the option by itself.
+    # Waypoint flags (#87): one per civ, by DAT index (resource 73).  The
+    # Chronicles civs carry the generic flag, so they aren't offered; with the
+    # DAT parsed, only civs whose flag is their own.
+    flag_options = sorted([
+        {"value": i, "label": c.get("name", "")}
+        for i, c in enumerate(roster)
+        if i > 0 and c.get("era", "base") != "antiquity" and c.get("name")
+    ], key=lambda x: x["label"])
+    if dat_path and dat_path in _DAT_OBJ_CACHE:
+        _fd = _DAT_OBJ_CACHE[dat_path]
+        _generic = _fd.civs[0].resources[73] if len(_fd.civs[0].resources) > 73 else None
+        flag_options = [o for o in flag_options if o["value"] < len(_fd.civs)
+                        and len(_fd.civs[o["value"]].resources) > 73
+                        and _fd.civs[o["value"]].resources[73] not in (0, -1, _generic)]
     voice_options = sorted([
         {"value": i - 1, "label": c.get("name", "")}
         for i, c in enumerate(roster)
@@ -1539,6 +1553,7 @@ def api_builder_meta():
         "starting_scouts": _SCOUT_OPTIONS,
         "monk_skins": monk_options,
         "monastery_skins": monastery_options,
+        "waypoint_flags": flag_options,
         # Goes on every preview and scene-art URL, so a browser never shows art
         # it cached before game_sprites' output changed.
         "art_version": _PREVIEW_VERSION,

@@ -101,6 +101,7 @@ def _draft_to_civ_def(draft: dict) -> dict:
         "starting_scout":        draft.get("starting_scout"),
         "monk_skin":             draft.get("monk_skin"),
         "monastery_skin_building": draft.get("monastery_skin_building"),
+        "waypoint_flag":         draft.get("waypoint_flag"),
         # Which line keeps page 1 where two share a training button — read by
         # civ_appender._resolve_button_collisions; absent means the default table.
         "button_moves":          draft.get("button_moves") or [],
