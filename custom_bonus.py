@@ -715,10 +715,11 @@ def _norm_card(raw) -> dict | None:
                if e and kinds <= set(ATTRS[e["attr"]]["kinds"])]
     # A replaced cost: one effect per resource (the last wins), at most
     # _COST_SET_MAX, and not on a card that grows — "costs 60 food" has no
-    # running total to step.  Nor a generating building, whose rate is built
-    # as a single add.
+    # running total to step.  A generating building does grow: each age adds
+    # its increment to the buildings' rate resource (#117; it was stripped
+    # here while the wizard offered it, so the card did nothing).
     if when.get("steps"):
-        effects = [e for e in effects if e["attr"] not in ("cost_set", "trickle")]
+        effects = [e for e in effects if e["attr"] != "cost_set"]
     named: dict[str, int] = {}
     for i, e in enumerate(effects):
         if e["attr"] == "cost_set":

@@ -54,16 +54,22 @@ card = {"targets": [BARRACKS], "effects": [{"attr": "trickle", "op": "add", "val
 norm = cb.normalize([card])
 check("kept, with its resource", norm and norm[0]["effects"][0]["resource"] == "gold")
 check("its text", cb.card_text(norm[0]) == "Barracks: generate 10 gold per minute", cb.card_text(norm[0]))
+GROWING = {**card, "when": {"steps": True},
+           "effects": [{"attr": "trickle", "op": "add", "resource": "gold", "steps": {"0": 10, "102": 30}}]}
+g = cb.normalize([GROWING])
+check("a growing card keeps it (#117: it was stripped, so the card did nothing)",
+      g and g[0]["effects"] and g[0]["effects"][0].get("steps") == {"0": 10, "102": 30}, g)
 check("a trickle must name its resource",
       not cb.normalize([{**card, "effects": [{"attr": "trickle", "op": "add", "value": 10}]}]))
 
 print("the build")
 feitoria_before = [(t.resource_out, t.resource_multiplier, t.work_value_1)
                    for t in dat.civs[0].units[1021].bird.tasks if t.action_type == 151]
-SLOT, SLOT2, PLAIN = 5, 6, 7
+SLOT, SLOT2, PLAIN, GROW = 5, 6, 7, 8
 for slot, cards in ((SLOT, [card]),
                     (SLOT2, [{**card, "effects": [{"attr": "trickle", "op": "add", "value": 25, "resource": "gold"}]}]),
-                    (PLAIN, [])):
+                    (PLAIN, []),
+                    (GROW, [GROWING])):
     civ_def = {"alias": f"Trickle {slot}", "tagline": "", "architecture": 1, "language": 0, "wonder": -1,
                "castle": -1, "bonuses": [[], [], [], [], []], "tree": [[], [], []], "custom_bonuses": cards}
     with contextlib.redirect_stdout(io.StringIO()):
@@ -82,6 +88,11 @@ def card_cmds(slot):
 
 check("slot 5's card adds 10 to it", card_cmds(SLOT) == [(1, rate_res, 1, 10.0)], card_cmds(SLOT))
 check("slot 6's adds 25", card_cmds(SLOT2) == [(1, rate_res, 1, 25.0)], card_cmds(SLOT2))
+grow = sorted(([(c.type, int(c.a), int(c.b), c.d) for c in dat.effects[t.effect_id].effect_commands],
+               [q for q in t.required_techs if q >= 0])
+              for t in dat.techs if t.civ == GROW and t.name.startswith("C-Bonus, Custom") and t.effect_id >= 0)
+check("the growing card adds 10 from the start, then 20 more in the Castle Age",
+      grow == [([(1, rate_res, 1, 10.0)], []), ([(1, rate_res, 1, 20.0)], [102])], grow)
 
 with tempfile.TemporaryDirectory() as tmp:
     out = Path(tmp) / "empires2_x2_p1.dat"
