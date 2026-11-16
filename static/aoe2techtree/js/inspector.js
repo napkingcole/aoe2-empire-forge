@@ -26,10 +26,16 @@
         ['reload', 'Reload time',   0.05, 0.1,    100,   i => i.fights],
         ['speed',  'Speed',         0.01, 0,      10,    i => i.moves],
         ['los',    'Line of sight', 1,    0,      100,   () => true],
+        // Population taken (#121): 0.5 as the Karambit Warrior, 2 as the Sannahya.
+        ['pop',    'Population',    0.5,  0,      100,   i => i.pop != null],
     ];
     // The game's stat icons (static/icons/properties, as on the review step).
     const STAT_ICON = { hp: 'heart', attack: 'attack', melee: 'armor', pierce: 'pierce_armor',
-                        range: 'range', reload: 'reload_time', speed: 'speed', los: 'line_of_sight' };
+                        range: 'range', reload: 'reload_time', speed: 'speed', los: 'line_of_sight',
+                        pop: 'fa-solid fa-people-group' };
+    const statIcon = f => STAT_ICON[f].startsWith('fa-')
+        ? `<i class="${STAT_ICON[f]}" style="font-size:.8rem;opacity:.8"></i>`
+        : `<img src="/static/icons/properties/${STAT_ICON[f]}.png" alt="">`;
 
     let edits = { unit_edits: {}, tech_edits: {}, added_lines: [] };
     let panel = null;
@@ -1418,7 +1424,7 @@
             const id = `tt-insp-${f}`;
             return `<div class="tt-insp-row">${label(id, nm, inf[f], e[f] !== undefined)}
                 <div class="tt-insp-group"><span class="tt-insp-addon" aria-hidden="true">
-                    <img src="/static/icons/properties/${STAT_ICON[f]}.png" alt=""></span>
+                    ${statIcon(f)}</span>
                 ${numInput({ id, value: e[f], base: inf[f], step, min, max })}</div>
                 <div class="tt-insp-fu" data-fu="${f}"></div></div>`;
         }).join('');

@@ -4112,6 +4112,7 @@ const _UO_ROWS = [
   { id: "reload", statKey: "reload_time",  draftPfx: "reload" },
   { id: "speed",  statKey: "speed",        draftPfx: "speed"  },
   { id: "train",  statKey: "train_time",   draftPfx: "train"  },
+  { id: "pop",    statKey: "pop",          draftPfx: "pop"    },   // #121: 0.5 as the Karambit
 ];
 const _UO_COSTS = ["food", "wood", "stone", "gold"];
 
@@ -4381,7 +4382,7 @@ const _UO_MINS = {
 const _UO_NON_NEG = new Set([
   "hp_base","hp_elite","attack_base","attack_elite",
   "range_base","range_elite","reload_base","reload_elite",
-  "speed_base","speed_elite","train_base","train_elite",
+  "speed_base","speed_elite","train_base","train_elite","pop_base","pop_elite",
   "cost_food","cost_wood","cost_stone","cost_gold",
 ]);
 

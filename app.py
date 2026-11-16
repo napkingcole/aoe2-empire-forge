@@ -2049,6 +2049,7 @@ def api_builder_bonuses_catalog():
 
 def _unit_stats_block(u) -> dict:
     """Extract display stats from a genieutils unit object."""
+    from civ_overrides import unit_pop
     t50 = u.type_50
     bonuses = []
     for a in t50.attacks:
@@ -2072,6 +2073,7 @@ def _unit_stats_block(u) -> dict:
         "reload_time": round(t50.reload_time, 2),
         "speed":       round(u.speed, 2),
         "train_time":  train_time,
+        "pop":         unit_pop(u),
         "bonuses":     bonuses,
     }
 
@@ -3520,6 +3522,8 @@ def api_builder_node_info():
         "attack": int(stats.get("attack") or 0), "melee": int(stats.get("melee") or 0),
         "pierce": int(stats.get("pierce") or 0),
         "range": round(stats.get("range") or 0, 2), "reload": round(stats.get("reload") or 0, 3),
+        # None: it houses others (a House, a Castle), or has no room to hold one.
+        "pop": stats.get("pop"),
         "fights": co._fights(u), "moves": bool(u.speed),
         "train": int(trains[0]) if trains else 0,
         "cost": cost_of(slots), "cost_slots": spendable,

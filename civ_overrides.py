@@ -13,6 +13,8 @@ since they share the same key schema.  KM-format civ_defs have none of these
 keys so both functions are safe no-ops when called on them.
 """
 
+import math
+
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import ResearchLocation, ResearchResourceCost, Tech
 
@@ -188,6 +190,9 @@ def write_unit_stats(u, stats: dict) -> None:
                     break
             if u.creatable:
                 u.creatable.displayed_pierce_armour = v
+
+    if "pop" in stats:
+        write_unit_pop(u, float(stats["pop"]))
 
     if "train" in stats and u.creatable:
         # train_time is a field of each TrainLocation, not of the unit, so a
@@ -699,9 +704,57 @@ def _flow_down(succ: dict[int, set[int]], own: dict) -> dict:
     return out
 
 
+# Population, as the game writes it (#121): the room a unit takes is resource
+# storage 4 "Population Headroom" at -N and 11 "Current Population" at +N
+# (both flag 2), and its cost holds population at ceil(N), the room needed to
+# train it.  Karambit Warrior 0.5 (cost 1), Sannahya 2, Feitoria 20 (cost 1:
+# a building only needs room for one).  Storage 4 at a POSITIVE amount is a
+# building's housing (House, Castle): those have no population of their own.
+_HEADROOM, _CUR_POP = 4, 11
+
+
+def _houses(u) -> bool:
+    return any(s.type == _HEADROOM and s.amount > 0 for s in u.resource_storages)
+
+
+def unit_pop(u) -> float | None:
+    """The population `u` takes, or None when it can't take any: it houses
+    others, or it has no storage slots left to hold one."""
+    if _houses(u):
+        return None
+    have = {s.type for s in u.resource_storages}
+    if not {_HEADROOM, _CUR_POP} <= have and \
+            sum(1 for s in u.resource_storages if s.type == -1) < len({_HEADROOM, _CUR_POP} - have):
+        return None
+    return float(next((s.amount for s in u.resource_storages if s.type == _CUR_POP), 0.0))
+
+
+def write_unit_pop(u, n: float) -> None:
+    """Make `u` take `n` population (0 = none, as the Mule Cart)."""
+    if unit_pop(u) is None:
+        return
+    for typ, amount in ((_HEADROOM, -n), (_CUR_POP, n)):
+        s = next((s for s in u.resource_storages if s.type == typ), None) \
+            or next(s for s in u.resource_storages if s.type == -1)
+        s.type, s.amount, s.flag = typ, float(amount), 2
+    if u.creatable is None:
+        return
+    need = math.ceil(n) if n > 0 else 0
+    rc = u.creatable.resource_costs
+    slot = next((c for c in rc if c.type == _HEADROOM), None)
+    if slot is None and need:
+        slot = next((c for c in rc if c.type == -1), None)
+    if slot is None:
+        return          # two resources and no room: it trains whatever the room
+    slot.type, slot.amount, slot.flag = (_HEADROOM, need, 0) if need else (-1, 0, 0)
+
+
 def read_unit_stats(u) -> dict:
     """The values write_unit_stats writes, as the unit has them now."""
     out = {"hp": u.hit_points, "speed": u.speed, "los": u.line_of_sight}
+    pop = unit_pop(u)
+    if pop is not None:
+        out["pop"] = pop
     if u.type_50 is not None:
         dom = _dominant_attack(u)
         out.update(range=u.type_50.max_range, reload=u.type_50.reload_time,

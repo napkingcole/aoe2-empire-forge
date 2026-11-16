@@ -423,6 +423,8 @@ _UNIT_EDIT_FIELDS: dict[str, tuple[type, float, float]] = {
     "speed":  (float, 0,   10),
     "los":    (float, 0,   100),
     "train":  (int,   1,   _SHORT),
+    # Population taken: 0.5 as the Karambit Warrior, 2 as the Sannahya (#121).
+    "pop":    (float, 0,   100),
 }
 _RESOURCES = ("food", "wood", "stone", "gold")
 
