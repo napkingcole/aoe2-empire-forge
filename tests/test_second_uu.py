@@ -167,6 +167,20 @@ if len(tiers) == 3:
     check("a card for unique units reaches every tier", set(tiers) <= hp7, (tiers, sorted(hp7)))
     check("...and the first unique unit still", {r["uu_id"], r["elite_uu_id"]} <= hp7)
 
+print("=== an Elite Petard beside a second unique unit (#118) ===")
+PETARD = [{"id": 1, "building": CASTLE, "base": 440, "from": 440, "tiers": [{"age": 4, "name": "Elite Petard"}]}]
+from civ_schema import norm_added_lines  # noqa: E402
+check("a tier after the Petard is kept when the civ is saved (preview.1 dropped every Castle line)",
+      len(norm_added_lines(PETARD)) == 1)
+dat, r = build({"km_idx": KONNIK}, lines=PETARD)
+pl = (r.get("added_lines") or [{}])[0]
+check("built beside the second unique unit (an extension isn't the Castle's extra)",
+      pl.get("techs") and r.get("second_uu"), r["warnings"])
+if pl.get("techs"):
+    btn = [rl.button_id for rl in dat.techs[pl["techs"][0]].research_locations if rl.location_id == CASTLE]
+    check("its upgrade takes neither the second unique unit's Elite button (9) nor the page button (15)",
+          btn and btn[0] not in (9, 15), btn)
+
 print("=== a Konnik as the FIRST unique unit ===")
 dat, r = build(None, first=KONNIK)
 check("is the Konnik the Castle trains (1225/1227), not its dismounted form listed first",

@@ -49,9 +49,12 @@ _RES = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
 # Train buttons a line may take, page 1 then page 2; its upgrade goes +5.  No
 # vanilla unit or tech uses the fifth column at the Barracks, Archery Range or
 # Stable (DAT survey 2026-11-09): it is the building's commands — a Knight put
-# on button 5 answered the rally point's hotkey in game.
+# on button 5 answered the rally point's hotkey in game.  15 (35 on page 2)
+# is the page button once the building has a second page (the user,
+# 2026-11-13): a Castle with a second unique unit always has one, and an Elite
+# Petard's upgrade landed there.
 _TRAIN_BUTTONS = (1, 2, 3, 4, 21, 22, 23, 24)
-_RESERVED = {5, 10, 25, 30}
+_RESERVED = {5, 10, 15, 25, 30, 35}
 _ANY_BUTTONS = tuple(b for b in (*range(1, 16), *range(21, 36)) if b not in _RESERVED)
 
 
