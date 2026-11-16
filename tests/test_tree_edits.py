@@ -325,6 +325,12 @@ skins = {s["name"]: s for s in civ_appender.unit_skins(dat4, TREB_PACKED)}
 check("the Trebuchet offers the Chronicles civs' Palintonon",
       "Palintonon (Packed)" in skins and "Athenians" in skins["Palintonon (Packed)"]["civs"], list(skins))
 check("the Monk offers none (its look is the identity step's)", civ_appender.unit_skins(dat4, MONK) == [])
+check("the Battering Ram offers the Chronicles civs' own, under the same name (#120)",
+      [s["name"] for s in civ_appender.unit_skins(dat4, 1258)] == ["Battering Ram"]
+      and "Athenians" in civ_appender.unit_skins(dat4, 1258)[0]["civs"], civ_appender.unit_skins(dat4, 1258))
+check("...but not the ship art every architecture set has (the Galleon)",
+      civ_appender.unit_skins(dat4, 442) == [], [s["civ"] for s in civ_appender.unit_skins(dat4, 442)])
+check("...nor a villager's, which would dress one job only", civ_appender.unit_skins(dat4, 83) == [])
 check("the normalizer keeps a look; an added tier's edits don't",
       norm_unit_edits({"331": {"skin": " Athenians\n"}}) == {"331": {"skin": "Athenians"}}
       and "edits" not in civ_schema.norm_added_lines([{"id": 1, "building": 12, "base": 93,

@@ -1511,7 +1511,8 @@
                 setUnitField(inf.id, 'appearance', null);
                 setUnitField(inf.id, 'skin', civ);
                 const s = skins.find(x => x.civ === civ);
-                if (auto) setUnitField(inf.id, 'name', s ? skinName(s) : null);
+                // A same-name version (the Chronicles civs' Battering Ram) keeps the unit's own name.
+                if (auto) setUnitField(inf.id, 'name', s && skinName(s) !== own ? skinName(s) : null);
                 later();
             },
             onPick: id => {

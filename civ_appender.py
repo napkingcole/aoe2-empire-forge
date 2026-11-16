@@ -3480,11 +3480,18 @@ def skin_source_civ(dat: DatFile, civ_name: str):
     return next((c for c in [*_original_civs(dat).values(), *dat.civs] if c.name == civ_name), None)
 
 
+# The Chronicles civs draw their own version of many shared units under the
+# same name (their Battering Ram, Skirmisher, Scout...), art no architecture
+# set gives.  Other same-name versions are architecture's: every civ's ships.
+_CHRONICLES_CIVS = frozenset({"Achaemenids", "Athenians", "Spartans", "Macedonians", "Thracians", "Puru"})
+
+
 def unit_skins(dat: DatFile, uid: int) -> list[dict]:
     """Other civs' own versions of one unit slot: same unit, their art and
     their name — the Athenians' Trebuchet is the Palintonon, the Chronicles
-    civs' Knight the Lancer.  Only versions that differ from the Britons' in
-    both look and name, one per look.  The Monk is left out: its look is the
+    civs' Knight the Lancer.  Versions that differ from the Britons' in both
+    look and name, and the Chronicles civs' own art under the same name (their
+    Battering Ram, #120); one per look.  The Monk is left out: its look is the
     identity step's own choice (CLAUDE.md quirk 12).
     [{civ (the one the build copies), civ_index, name, icon_id, civs (all with it)}]"""
     from added_lines import chronicles_strings
@@ -3493,7 +3500,8 @@ def unit_skins(dat: DatFile, uid: int) -> list[dict]:
     names, chron = _string_table(), chronicles_strings()
     shown = lambda u: names.get(u.language_dll_name) or chron.get(u.language_dll_name)   # noqa: E731
     base = _original_civ(dat, 1).units[uid] if uid < len(_original_civ(dat, 1).units) else None
-    if base is None:
+    # A villager changes unit with every job, and the skin dresses only this one.
+    if base is None or base.class_ == 4:
         return []
     out: dict = {}                                   # look -> its entry, first civ first
     for i in range(1, len(dat.civs)):
@@ -3502,13 +3510,16 @@ def unit_skins(dat: DatFile, uid: int) -> list[dict]:
         if u is None or u.standing_graphic == base.standing_graphic:
             continue
         nm = shown(u)
-        if not nm or nm == shown(base):
+        if not nm:
             continue
         key = tuple(u.standing_graphic) if isinstance(u.standing_graphic, (list, tuple)) else u.standing_graphic
         entry = out.setdefault(key, {"civ": c.name, "civ_index": i, "name": nm,
-                                     "icon_id": u.icon_id, "civs": []})
+                                     "icon_id": u.icon_id, "civs": [], "_same": nm == shown(base)})
         entry["civs"].append(c.name)
-    return list(out.values())
+    # Under the same name, only art the Chronicles civs alone wear: theirs, not
+    # an architecture set's they borrow (their Galleon is the Goths').
+    return [{k: v for k, v in e.items() if k != "_same"} for e in out.values()
+            if not e["_same"] or set(e["civs"]) <= _CHRONICLES_CIVS]
 
 
 def _apply_unit_skin(dat: DatFile, civ_index: int, spec: dict,
