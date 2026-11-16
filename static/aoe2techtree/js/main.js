@@ -1879,6 +1879,12 @@ function _applyAddedLines(treeData) {
 function _applyAgeMoves(treeData) {
     const e = window.ttInspector ? window.ttInspector.edits() : null;
     if (!e) return;
+    // A building keeps its place (its column moves with it); its hover says
+    // when it's available (#122).
+    for (const b of treeData.buildings) {
+        const age = (e.unit_edits[String(b.node_id)] || {}).age;
+        if (age && age < b.age_id) b.age_moved = age;
+    }
     for (const item of treeData.units_techs) {
         const ed = item.use_type === 'Unit' ? e.unit_edits[String(item.node_id)]
             : item.use_type === 'Tech' ? e.tech_edits[String(item.node_id)] : null;
@@ -1906,6 +1912,14 @@ function _applyAgeMoves(treeData) {
 // The earliest age the panel offers for a node: its building's, and the
 // node before it in its line.
 window._ttMinAge = function (item) {
+    if (item.use_type === 'Building') {
+        // A building is held back by the one it hangs off (Siege Workshop: the
+        // Blacksmith), not by itself (#122).
+        const up = item.building_upgraded_from_id;
+        const from = up != null && up !== -1 ? up : item.link_id;
+        const parent = from != null && from !== -1 ? _nodeIndex[`${from}_${from}`] : null;
+        return parent ? parent.age_id || 1 : 1;
+    }
     const b = _nodeIndex[`${item.building_id}_${item.building_id}`];
     const prev = item.link_id != null ? _nodeIndex[`${item.building_id}_${item.link_id}`] : null;
     return Math.max(b ? b.age_id || 1 : 1, prev && prev.use_type !== 'Building' ? prev.age_id || 1 : 1);
