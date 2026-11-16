@@ -341,10 +341,11 @@ AGE_NAMES = {0: "Dark", **CIV_AGES}
 # fires a marker tech when the first one completes — the age-ups wait on these.
 # All are civ -1 with no prerequisites (checked against the DAT 2026-10-15).
 # The marker shown is vanilla's; the build reads the civ's own unit, so a
-# building whose marker moved still works.  Curated, not swept: the Watch
-# Tower's slot holds its make-available tech, and a Town Center's fires for
-# the starting one.  Houses, towers, walls and the Wonder have none.
-TRIGGER_BUILDINGS: dict[int, tuple[str, int]] = {
+# building whose marker moved still works.  Curated, not swept: a Town
+# Center's fires for the starting one.  Houses, towers, walls and the Wonder
+# have none; the towers and the Outpost get one of this civ's own from the build
+# (marker None here, MADE_TRIGGERS; #123).
+TRIGGER_BUILDINGS: dict[int, tuple[str, int | None]] = {
     68:   ("Mill", 110),            # Folwark too: same marker
     562:  ("Lumber Camp", 258),
     584:  ("Mining Camp", 282),
@@ -363,6 +364,16 @@ TRIGGER_BUILDINGS: dict[int, tuple[str, int]] = {
     1665: ("Donjon", 291),
     2556: ("Settlement", 1357),
     1808: ("Mule Cart", 933),
+    598:  ("Outpost", None),
+    79:   ("Tower", None),
+    236:  ("Bombard Tower", None),
+}
+# The buildings that fire the marker the build makes: a Tower is any of the
+# three (a Guard Tower is what the button builds after the upgrade).
+MADE_TRIGGERS: dict[int, tuple[int, ...]] = {
+    598: (598,),
+    79:  (79, 234, 235),
+    236: (236,),
 }
 
 COST_RESOURCES = ("all", *_RES_COST)

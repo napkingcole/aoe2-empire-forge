@@ -4096,6 +4096,29 @@ _GENERATE_ACTION = 151
 _FEITORIA = 1021
 
 
+def _made_marker(dat: DatFile, civ_index: int, bid: int) -> int:
+    """A "built" marker for a building the game gives none (a Tower, the
+    Outpost; custom_bonus.MADE_TRIGGERS): vanilla's shape — "Castle built"
+    (266) has no effect and needs one of no prerequisites, so only the
+    building's initiates-tech can fire it — owned by this civ, and set as the
+    initiates-tech of this civ's buildings of the group (#123).  Once per
+    group and civ.  Returns the tech id, or -1."""
+    import custom_bonus
+    units = dat.civs[civ_index].units
+    group = [u for u in custom_bonus.MADE_TRIGGERS.get(bid, ()) if u < len(units)
+             and units[u] is not None and units[u].building is not None]
+    have = next((units[u].building.tech_id for u in group if units[u].building.tech_id >= 0), -1)
+    if have >= 0 or not group:
+        return have
+    t = deepcopy(dat.techs[266])
+    t.civ, t.effect_id = civ_index, -1
+    t.name = f"{custom_bonus.TRIGGER_BUILDINGS[bid][0]} built"
+    tid = _append_tech(dat, t)
+    for u in group:
+        units[u].building.tech_id = tid
+    return tid
+
+
 def _trickle_rate_resource(dat: DatFile, building_ids: set[int], res_index: int) -> int | None:
     """The resource that scales `building_ids`' generate task for `res_index`
     (0 food, 1 wood, 2 stone, 3 gold), adding the task the first time."""
@@ -4329,6 +4352,8 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
     def marker_of(uid: int):
         u = units[uid] if 0 <= uid < n_units else None
         t = u.building.tech_id if u is not None and u.building is not None else -1
+        if t < 0 and uid in custom_bonus.MADE_TRIGGERS:
+            t = _made_marker(dat, civ_index, uid)
         return t if t >= 0 else None
 
     tree_buildings = _tree_building_ids(civ_def)

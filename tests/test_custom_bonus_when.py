@@ -176,6 +176,8 @@ for name in ("C-Bonus, +2% arc HP feudal", "C-Bonus, inf +1 armor castle"):
 
 units = dat.civs[1].units
 for bid, (label, marker) in cb.TRIGGER_BUILDINGS.items():
+    if marker is None:
+        continue                    # made by the build (MADE_TRIGGERS), checked below
     u = units[bid] if bid < len(units) else None
     got = u.building.tech_id if u is not None and u.building is not None else None
     t = dat.techs[marker] if got == marker else None
@@ -215,6 +217,29 @@ with contextlib.redirect_stdout(io.StringIO()):
                                           when={"building": 68})], buildings=[12, 1711]), target_slot=slot)
 check("a Folwark civ's 'once a Mill is built' doesn't warn — the Folwark fires the same marker",
       not any("can't build" in w for w in res.get("warnings", [])), res.get("warnings"))
+
+# Towers and the Outpost fire no marker in the game: the build gives this civ's
+# own, vanilla's "Castle built" shape (#123).
+dat = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    res = ca.apply_civ(dat, civ_def([card(ARCHERS, [{"attr": "hp", "op": "add", "value": 5}], when={"building": 79}),
+                                     card(ARCHERS, [{"attr": "hp", "op": "add", "value": 6}], when={"building": 598})],
+                                    buildings=[12, 79, 234, 235, 598]), target_slot=slot)
+us = dat.civs[slot].units
+tower = us[79].building.tech_id
+check("a Tower card: every tower form fires one marker of this civ's",
+      tower >= 0 and us[234].building.tech_id == us[235].building.tech_id == tower and dat.techs[tower].civ == slot,
+      (us[79].building.tech_id, us[234].building.tech_id, us[235].building.tech_id))
+check("...which nothing but building one fires (needs one of no prerequisites)",
+      tower >= 0 and all(r < 0 for r in dat.techs[tower].required_techs) and dat.techs[tower].required_tech_count == 1)
+outpost = us[598].building.tech_id
+gates = sorted(tuple(r for r in t.required_techs if r >= 0) for t in dat.techs
+               if t.civ == slot and t.name == "C-Bonus, Custom")
+check("the Outpost has its own, and each card waits on its marker",
+      outpost >= 0 and outpost != tower and gates == sorted([(tower,), (outpost,)]), (gates, tower, outpost))
+check("...without the can't-build warning", not any("can't build" in w for w in res.get("warnings", [])),
+      res.get("warnings"))
+check("other civs' towers are untouched", dat.civs[2].units[79].building.tech_id == -1)
 
 print("\nAll checks passed." if not failures else f"\n{failures} check(s) FAILED.")
 sys.exit(1 if failures else 0)
