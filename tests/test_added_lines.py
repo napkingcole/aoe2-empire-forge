@@ -423,6 +423,25 @@ check("the game's own upgrade into a unit few civs have, at its price (Houfnice)
 check("an upgrade the tree has a node for is left to the node (Paladin), others offered (Savar)",
       "Paladin" not in sug(CAVALIER) and "Savar" in sug(CAVALIER), list(sug(CAVALIER)))
 
+print("\n=== a tier after the Winged Hussar (#127) ===")
+# The Winged Hussar ships on Stable button 0, which is no button: the Poles'
+# and Lithuanians' techs move it to the Hussar's 6.  The tier after it takes
+# the button of the upgrade into it, so it took 0 and couldn't be researched.
+from retired_cards import TREE_VERSION  # noqa: E402
+WINGED, HUSSAR = 1707, 441
+wh = {**draft, "tree_version": TREE_VERSION, "custom_bonuses": [], "unit_edits": {}, "tech_edits": {},
+      "tree": {"units": [u for u in units if u != HUSSAR] + [WINGED], "buildings": buildings, "techs": techs},
+      "added_lines": [{"id": 1, "building": 101, "base": WINGED, "from": WINGED,
+                       "tiers": [{"age": 4, "name": "Elite Winged Hussar"}]}]}
+dat_w = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    rw, _ = apply_civ_with_overrides(dat_w, _draft_to_civ_def(wh), SLOT, wh)
+lw = (rw.get("added_lines") or [{}])[0]
+check("built", lw.get("techs"), rw["warnings"])
+if lw.get("techs"):
+    locs = [(rl.location_id, rl.button_id) for rl in dat_w.techs[lw["techs"][0]].research_locations]
+    check("its upgrade is on the Winged Hussar's button, 6, not 0", locs == [(101, 6)], locs)
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

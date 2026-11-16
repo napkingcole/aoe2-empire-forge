@@ -409,6 +409,15 @@ def _producer(dat, civ_index: int, unit: int, building: int) -> int | None:
     return min(found)[2] if found else None
 
 
+def _button_given(dat, tech: int) -> int | None:
+    """The research button some civ's effect gives `tech` (type 8, mode 5), or None."""
+    for e in dat.effects:
+        for c in e.effect_commands:
+            if c.type == 8 and int(c.a) == tech and int(c.b) == 5 and c.d > 0:
+                return int(c.d)
+    return None
+
+
 def _earlier(dat, unit: int) -> list[int]:
     """Every unit the game upgrades into `unit`, all the way down (Militia,
     Man-at-Arms, Long Swordsman and Two-Handed Swordsman for the Champion).
@@ -710,6 +719,13 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             producer = _producer(dat, civ_index, frm, building)
             prod_btn = next((rl.button_id for rl in (dat.techs[producer].research_locations if producer is not None else ())
                              if rl.location_id == building), None)
+            if prod_btn == 0:
+                # No button of its own: the game gives it one per civ (the
+                # Winged Hussar ships on button 0, and the Poles' and
+                # Lithuanians' techs move it to the Hussar's 6 with a type-8
+                # mode-5 command).  Button 0 is no button, so the tier after it
+                # couldn't be researched (#127).
+                prod_btn = _button_given(dat, producer)
             train_btn, hk_train = tl.button_id, tl.hot_key_id
             if prod_btn is not None:
                 up_btn = prod_btn
