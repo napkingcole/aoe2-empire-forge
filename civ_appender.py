@@ -3368,11 +3368,18 @@ def _rebuild_unlock_techs(dat: DatFile, civ_index: int, spec: dict) -> dict:
 # sounds are identical), so exactly these are copied; the names are written as
 # our own strings because 405062/405063 are Chronicles-only.  Every Trebuchet
 # tech keeps working: same unit ids.
+# Every art field that differs between two civs' versions of one unit (swept
+# over the whole DAT 2026-11-15).  The list was first worked out from the
+# Trebuchet and missed the last four: a Pikeman dressed as the Guardsman turned
+# back into a Pikeman for a moment when it attacked (#124).
 _UNIT_SKIN_FIELDS = (
     "standing_graphic", "dying_graphic", "icon_id",
     ("dead_fish", "walking_graphic"),
     ("type_50", "attack_graphic"), ("type_50", "frame_delay"), ("type_50", "graphic_displacement"),
     ("building", "construction_graphic_id"),
+    ("type_50", "attack_graphic_2"),
+    ("creatable", "idle_attack_graphic"), ("creatable", "special_graphic"),
+    ("creatable", "garrison_graphic"),
 )
 _UNIT_SKIN_BONUSES: dict[int, dict] = {
     # "attack_bonus": % added to every attack entry of the listed (firing) units,

@@ -330,7 +330,7 @@ check("the normalizer keeps a look; an added tier's edits don't",
       and "edits" not in civ_schema.norm_added_lines([{"id": 1, "building": 12, "base": 93,
           "tiers": [{"age": 2, "edits": {"skin": "Athenians"}}]}])[0]["tiers"][0])
 looked = dict(draft, unit_edits={str(TREB_PACKED): {"name": "Palintonon", "skin": "Athenians"},
-                                 str(KNIGHT): {"skin": "Nobody"}})
+                                 str(KNIGHT): {"skin": "Nobody"}, "358": {"skin": "Athenians"}})
 with contextlib.redirect_stdout(io.StringIO()):
     r4, _ = apply_civ_with_overrides(dat4, _draft_to_civ_def(looked), SLOT, looked)
     civ_appender._create_bonus_handler(dat4, 457, OTHER, 1, [], [])      # the card, on another civ
@@ -346,6 +346,13 @@ check("named with it, both forms", (texts4.get(u4[TREB].language_dll_name), text
       == ("Palintonon", "Palintonon (Packed)"),
       (texts4.get(u4[TREB].language_dll_name), texts4.get(u4[TREB_PACKED].language_dll_name)))
 check("stats untouched", u4[TREB].hit_points == ath[TREB].hit_points == before[TREB].hit_points)
+check("a Pikeman dressed as the Guardsman: every art field, so it never flashes back to a Pikeman (#124)",
+      all((getattr(getattr(u4[358], a, None) if a else u4[358], f) == getattr(getattr(ath[358], a, None) if a else ath[358], f))
+          for a, f in (("", "standing_graphic"), ("type_50", "attack_graphic"), ("type_50", "attack_graphic_2"),
+                       ("creatable", "idle_attack_graphic"), ("creatable", "special_graphic"),
+                       ("creatable", "garrison_graphic"))),
+      (u4[358].creatable.idle_attack_graphic, ath[358].creatable.idle_attack_graphic,
+       u4[358].creatable.special_graphic, ath[358].creatable.special_graphic))
 check("a civ the game hasn't got: kept its own look, and says so",
       art(u4[KNIGHT]) == art(dat4.civs[1].units[KNIGHT]) and any("Nobody" in w for w in r4["warnings"]), r4["warnings"])
 
