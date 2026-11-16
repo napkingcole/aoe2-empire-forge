@@ -480,6 +480,9 @@ def pop_space_ok(u) -> bool:
             and bool(u.resource_storages) and u.resource_storages[0].type in (_POP_STORAGE, -1))
 
 
+_BUILD_ACTION, _REPAIR_ACTION = 101, 106
+
+
 def _moves_resources(u) -> bool:
     return bool(u.bird) and any(t.resource_in >= 0 or t.resource_out >= 0 for t in u.bird.tasks)
 
@@ -506,8 +509,11 @@ _CAPABLE = {
     # Ranged and with an attack, or there is nothing to miss.
     "accuracy":      lambda u: bool(u.type_50) and u.type_50.max_range > 0
                                and any(a.amount > 0 for a in u.type_50.attacks),
+    # Gathering, healing, building or repairing: Builders and Repairers move no
+    # resources, and the filter hid their work rate (#119).
     "work_rate":     lambda u: _moves_resources(u) or (
-                         bool(u.bird) and any(t.action_type == _HEAL_ACTION for t in u.bird.tasks)),
+                         bool(u.bird) and any(t.action_type in (_HEAL_ACTION, _BUILD_ACTION, _REPAIR_ACTION)
+                                              for t in u.bird.tasks)),
 }
 
 
