@@ -1124,12 +1124,13 @@ def _age_of_req(dat, tid: int) -> int | None:
     return None
 
 
-def enabling_tech(dat, slot: int, unit: int) -> int | None:
+def enabling_tech(dat, slot: int | None, unit: int) -> int | None:
     """The tech that gives a unit: its make-available tech, or the upgrade
-    into it.  None for a unit the building trains from the start (Militia)."""
+    into it.  None for a unit the building trains from the start (Militia).
+    slot None: any civ's (the Portuguese' Feitoria tech, for the tree page)."""
     found = []
     for tid, t in enumerate(dat.techs):
-        if t.civ not in (-1, slot) or not 0 <= t.effect_id < len(dat.effects):
+        if (slot is not None and t.civ not in (-1, slot)) or not 0 <= t.effect_id < len(dat.effects):
             continue
         for c in dat.effects[t.effect_id].effect_commands:
             if (c.type == 2 and int(c.a) == unit and c.b == 1) or (c.type == 3 and int(c.b) == unit):
@@ -1221,7 +1222,9 @@ def _apply_age_moves(dat, slot: int, overrides: dict, civ_result: dict) -> int:
                 warnings.append(f"{unit_label(dat, slot, int(k))}: available from the start "
                                 "at its building, so its age can't change.")
                 continue
-            wants[tid] = (e["age"], "Unit", int(k))
+            u = dat.civs[slot].units[int(k)] if int(k) < len(dat.civs[slot].units) else None
+            # The F2 tree keeps buildings apart from units (build_civ).
+            wants[tid] = (e["age"], "Building" if u is not None and u.type == 80 else "Unit", int(k))
     for k, e in norm_tech_edits(overrides.get("tech_edits")).items():
         if "age" in e and 0 <= int(k) < len(dat.techs):
             wants[int(k)] = (e["age"], "Tech", int(k))

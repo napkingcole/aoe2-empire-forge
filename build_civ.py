@@ -1200,7 +1200,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
     # "Available from" (civ_overrides._apply_age_moves): the node moves age.
     for key, age in ((civ_result or {}).get("age_moves") or {}).items():
         kind, node_id = key.split(":")
-        for node in data.get("civ_techs_units", []):
+        for node in data.get("civ_techs_units", []) + data.get("civ_techs_buildings", []):
             if node.get("Use Type") == kind and node.get("Node ID") == int(node_id):
                 node["Age ID"] = age
                 changed += 1

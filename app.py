@@ -3539,7 +3539,12 @@ def api_builder_node_info():
         "forms": len(forms),
         "upgrade": upgrade,
         "desc": _unit_desc(dat, nid),
-        "age_move": _age_move_info(dat, co.enabling_tech(dat, 1, nid)) if kind == "unit" else None,
+        # A building too (#122): the Cumans' Feudal Siege Workshop, for anyone.
+        # A regional one (Feitoria) is its civ's tech here; the build moves the
+        # civ's own copy of it.
+        "age_move": _age_move_info(dat, co.enabling_tech(dat, 1, nid)
+                                   if co.enabling_tech(dat, 1, nid) is not None
+                                   else co.enabling_tech(dat, None, nid)),
         # Other civs' versions of it, for the Look row (Palintonon for the Trebuchet).
         "skins": unit_skins(dat, nid) if kind == "unit" else [],
         # Whether it may wear another unit's look (civ_appender.appearance_ok's kinds).
