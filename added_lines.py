@@ -521,6 +521,13 @@ def _occupied(dat, civ_index: int, civ_def: dict, building: int) -> set[int]:
     from civ_appender import _civ_present_units, _editor_nodes, _tree_tech_ids
     units = dat.civs[civ_index].units
     used: set[int] = set()
+    # An ally's team bonus can bring a unit in mid-game (the Italians'
+    # Condottiero on Barracks 3, the Berbers' Genitour), whatever this civ's
+    # tree says: a line put there overlapped it (#128).
+    for line in _TEAM_BONUS_UNITS:
+        u = units[line[0]] if line[0] < len(units) else None
+        if u is not None and u.creatable is not None:
+            used |= {tl.button_id for tl in u.creatable.train_locations if tl.unit_id == building}
     for uid in _civ_present_units(civ_def, dat, civ_index):
         u = units[uid] if 0 <= uid < len(units) else None
         if u is not None and u.creatable is not None:

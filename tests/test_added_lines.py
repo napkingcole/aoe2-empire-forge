@@ -442,6 +442,17 @@ if lw.get("techs"):
     locs = [(rl.location_id, rl.button_id) for rl in dat_w.techs[lw["techs"][0]].research_locations]
     check("its upgrade is on the Winged Hussar's button, 6, not 0", locs == [(101, 6)], locs)
 
+print("\n=== never on an ally's Condottiero button (#128) ===")
+# Barracks 3 is the Condottiero's alone in the game: an Italian ally's team
+# bonus brings it mid-game, whatever this civ's tree says.  A new line took
+# the first free train button, 3, and the two overlapped.
+cb_draft = {**wh, "added_lines": [{"id": 1, "building": 12, "base": 2110, "tiers": [{"age": 3}]}]}
+dat_c = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    rc, _ = apply_civ_with_overrides(dat_c, _draft_to_civ_def(cb_draft), SLOT, cb_draft)
+btn = [(l["building"], l["button"]) for l in rc.get("added_lines") or []]
+check("a new Barracks line skips button 3", btn and btn[0][1] != 3, btn)
+
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)
