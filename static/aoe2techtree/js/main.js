@@ -1962,6 +1962,10 @@ function civ(civName) {
         }
         for (const item of treeData.units_techs) {
             index[item.id] = item;
+            // The Camel Rider hangs under the Camel Scout, but it needs no Scout:
+            // every camel civ but the Gurjaras gets Riders at the Castle Age
+            // without ever having Scouts (#110).  Ticked or unticked on its own.
+            if (item.id === 'Unit_329_101') item.independent = true;
             // Key by building_id+node_id to avoid conflicts when different buildings
             // share a node_id (e.g. node 93 = Spearman in Barracks AND a University tech).
             _nodeIndex[`${item.building_id}_${item.node_id}`] = item;

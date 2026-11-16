@@ -130,6 +130,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("second unique unit",              "test_second_uu.py",            "build"),
     ("Khmer card 81 (#126)",            "test_khmer_card.py",           "build"),
     ("unit population (#121)",          "test_unit_population.py",      "build"),
+    ("camel riders without scouts (#110)", "test_camel_riders.py",      "build"),
     ("tree panel upgrade filter",       "test_tree_steps_filter.py",    "build"),
     ("+ Add Unit lines",                "test_added_lines.py",          "build"),
     ("Real units in the tree",          "test_real_units.py",           "build"),

@@ -1793,6 +1793,20 @@ def _apply_tree_wiring(dat: DatFile, civ_index: int, civ_def: dict,
         for _c in dat.effects[_eid].effect_commands:
             if _is_enable(_c):
                 _enables.setdefault(_tid, set()).add(int(_c.a))
+    # ...and what those units become with no click: an auto-fire upgrade
+    # (no research building).  "Make Camels Available" (235) enables the Camel
+    # Scout, which 860 turns into the Camel Rider the moment it arrives, so a
+    # tree with Camel Riders and no Camel Scout needs 235 kept (#110) — as
+    # every vanilla camel civ but the Gurjaras has it.
+    _auto_up: dict[int, set[int]] = {}
+    for _t in dat.techs:
+        if _t.civ == -1 and 0 <= _t.effect_id < len(dat.effects) \
+                and not any(rl.location_id >= 0 for rl in _t.research_locations):
+            for _c in dat.effects[_t.effect_id].effect_commands:
+                if _c.type == EC_UPGRADE and _c.a >= 0 and _c.b >= 0:
+                    _auto_up.setdefault(int(_c.a), set()).add(int(_c.b))
+    for _us in _enables.values():
+        _us |= {b for a in list(_us) for b in _auto_up.get(a, ())}
 
     _extra_disable: set[int] = set()
     _forced_off:    list[int] = []
