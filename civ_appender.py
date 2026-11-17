@@ -7195,6 +7195,36 @@ def _apply_km_uu(dat: DatFile, civ_index: int, km_uu_index: int) -> tuple[int, i
 SECOND_UU_BUTTON, SECOND_UU_ELITE_BUTTON = 4, 9
 SECOND_UU_HOTKEY = 16730                       # Castle button 4's own (the hero's)
 
+DONJON = 1665
+_DONJON_UU_HOTKEY = 16408                      # the Serjeant's Donjon button 1
+
+
+def _castle_twins(dat: DatFile, civ_index: int, civ_def: dict, unit_ids, has_krepost: bool) -> None:
+    """The Krepost and the Donjon train the civ's unique units, on their Castle
+    buttons, as the Bulgarians' Krepost trains the Konnik and the Sicilians'
+    Donjon the Serjeant.  Only the Serjeant ships with a Donjon slot, so any
+    other unique unit, and a second one, wasn't trainable there (#132).  A
+    unit that already has the slot keeps its own (the Serjeant's is slower)."""
+    has_donjon = DONJON in _tree_building_ids(civ_def) or any(
+        isinstance(e, (list, tuple)) and e and int(e[0]) == 109 for e in get_civ_bonuses(civ_def))
+    sites = ([km_custom_uu.BUILDING_KREPOST] if has_krepost else []) + ([DONJON] if has_donjon else [])
+    units = dat.civs[civ_index].units
+    for uid in dict.fromkeys(unit_ids):
+        u = units[uid] if 0 <= uid < len(units) else None
+        cre = u.creatable if u is not None else None
+        castle = next((tl for tl in (cre.train_locations if cre is not None else ())
+                       if tl.unit_id == BUILDING_CASTLE), None)
+        if castle is None:
+            continue
+        for site in sites:
+            if any(tl.unit_id == site for tl in cre.train_locations):
+                continue
+            tl = deepcopy(castle)
+            tl.unit_id = site
+            if site == DONJON and tl.button_id == 1:
+                tl.hot_key_id = _DONJON_UU_HOTKEY
+            cre.train_locations.append(tl)
+
 
 def _uu_unit_pair(dat: DatFile, make_avail: int, elite_tech: int) -> tuple[int, int]:
     """(unit, elite) for a unique unit's two techs: the unit its make-avail
@@ -8320,6 +8350,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # and the top one as "the Elite".
     uu2_base = uu2_ids[:-1] or uu2_ids
     uu2_elite = uu2_ids[-1:]
+    _castle_twins(dat, civ_index, civ_def, (uu_id, elite_uu_id, *uu2_ids), has_krepost)
 
     # 6c. Patch deferred UU-substitution effect commands (see
     #     UU_SUBSTITUTION_TYPES / _build_ut_effect_cmds) now that this civ's

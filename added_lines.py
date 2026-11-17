@@ -746,6 +746,13 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         else:
             producer = None
             train_btn, up_btn = _pick_buttons(used, len(tiers))
+        # A replacement or an extension also trains wherever its unit does
+        # besides this building, on the same button: the Spearman line at the
+        # Donjon, the Petard at the Krepost (#132).
+        kin = rep if rep is not None else frm
+        kin_u = target[kin] if kin is not None else None
+        also = [deepcopy(t) for t in (kin_u.creatable.train_locations if kin_u is not None and kin_u.creatable else ())
+                if t.unit_id >= 0 and t.unit_id != building]
         if train_btn is None or ((len(tiers) > 1 or frm is not None) and up_btn is None):
             msg = (f"Added line {line['id']}: {unit_label(dat, 0, building)} has no free "
                    f"button left — skipped")
@@ -800,6 +807,9 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             u.creatable.train_locations = [TrainLocation(
                 train_time=tl0.train_time if tl0 else 30, unit_id=building,
                 button_id=train_btn, hot_key_id=hk_train)]
+            for t in also:
+                u.creatable.train_locations.append(deepcopy(t))
+                u.creatable.train_locations[-1].train_time = tl0.train_time if tl0 else 30
             # A hero's copy is a unit like any other: no gold border, no
             # regeneration, convertible (hero status is creatable.hero_mode).
             u.creatable.hero_mode = 0
@@ -1022,4 +1032,37 @@ def extend_line_membership(dat, civ_index: int, lines: list[dict], unit_lines: l
                     if (typ, uid, b, attr, d) not in have:
                         cmds.append(EffectCommand(type=typ, a=uid, b=b, c=attr, d=d))
                         added += 1
+            # A train slot a tech inserts: MULTIPLY attr 158 adds an entry and
+            # the SETs after it fill it in (where, button, hotkey).  The
+            # Mapuche Settlement card trains the Spearmen there this way, and
+            # a tier replacing the Halberdier had none (#132).  One per
+            # building per unit, copied from a member's.
+            blocks = _slot_blocks(cmds)
+            held = {(u, bldg) for u, bldg, _ in blocks}
+            for u, bldg, block in blocks:
+                if u not in members:
+                    continue
+                for uid in line["units"]:
+                    if (uid, bldg) not in held:
+                        held.add((uid, bldg))
+                        cmds.extend(EffectCommand(type=c.type, a=uid, b=c.b, c=c.c, d=c.d) for c in block)
+                        added += len(block)
     return added
+
+
+def _slot_blocks(cmds) -> list[tuple[int, int, list]]:
+    """(unit, building, commands) for each train slot the commands insert."""
+    out = []
+    for i, c in enumerate(cmds):
+        if not (c.type == 5 and int(c.c) == 158 and c.d >= 32767):
+            continue
+        block, bldg = [c], None
+        for n in cmds[i + 1:]:
+            if n.type != 0 or int(n.a) != int(c.a) or int(n.c) == 158:
+                break
+            block.append(n)
+            if int(n.c) == 42:
+                bldg = int(n.d)
+        if bldg is not None:
+            out.append((int(c.a), bldg, block))
+    return out

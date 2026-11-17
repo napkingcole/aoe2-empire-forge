@@ -129,6 +129,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("replacement with later tiers",    "test_replacement_tiers.py",    "build"),
     ("second unique unit",              "test_second_uu.py",            "build"),
     ("Khmer card 81 (#126)",            "test_khmer_card.py",           "build"),
+    ("Donjon/Krepost/Settlement (#132)", "test_donjon_training.py",     "build"),
     ("unit population (#121)",          "test_unit_population.py",      "build"),
     ("camel riders without scouts (#110)", "test_camel_riders.py",      "build"),
     ("buildings an age earlier (#122)", "test_building_ages.py",        "build"),
