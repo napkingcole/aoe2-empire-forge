@@ -1186,9 +1186,7 @@ def build_mod(config_path: Path, dat_path: Path, out_path: Path) -> None:
     print("Done.")
     print()
     print("Known bonus limitations (partial implementation):")
-    print("  [81]  No buildings required to age up — IMPLEMENTED (Khmer shadow-node mechanism).")
-    print("        Limited to ~4 civs per batch; raises RuntimeError if Shadow Node+ prereq slots fill up.")
-    print("  [105] Economic upgrades −33% food, one age earlier — IMPLEMENTED "
+    print("  [105] Economic upgrades −40% food, one age earlier — IMPLEMENTED "
           "(Burgundian shim techs re-pointed per civ).")
     print("  [283] Chemistry + Hand Cannoneer in Castle Age — IMPLEMENTED (Castle Age gate clone).")
     print("  [352] Siege Engineers in Castle Age — IMPLEMENTED (Jurchen prereq-slot mechanism).")

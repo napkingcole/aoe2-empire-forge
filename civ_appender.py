@@ -7194,20 +7194,27 @@ def _apply_km_uu(dat: DatFile, civ_index: int, km_uu_index: int) -> tuple[int, i
 # row below as every UU's is.  The hero leaves button 4 for page 2 then.
 SECOND_UU_BUTTON, SECOND_UU_ELITE_BUTTON = 4, 9
 SECOND_UU_HOTKEY = 16730                       # Castle button 4's own (the hero's)
+DONJON = 1665
+_DONJON_UU_HOTKEY = 16408                      # the Serjeant's Donjon button 1
 
 
-def _castle_twins(dat: DatFile, civ_index: int, unit_ids, has_krepost: bool) -> None:
-    """The Krepost trains the civ's unique units on their Castle buttons, as
-    the Bulgarians' trains the Konnik — the second one and every tier of one
-    built at the Castle too (#132).
+def _castle_twins(dat: DatFile, civ_index: int, civ_def: dict, unit_ids, has_krepost: bool) -> None:
+    """The Krepost and the Donjon train the civ's unique units on their Castle
+    buttons, as the Bulgarians' Krepost trains the Konnik and the Sicilians'
+    Donjon the Serjeant — the second one and every tier of one built at the
+    Castle too (#132).
 
-    Not the Donjon (the user, 2026-11-17): it stands in the Feudal Age, so a
-    Castle Age unit trained there would be too strong.  It trains the
-    Spearman line, and the Serjeant, who ships with his own slot because he
-    builds Donjons."""
-    if not has_krepost:
+    The Donjon stands in the Feudal Age, but a unique unit only from the
+    Castle Age (the user, 2026-11-17): every unique unit's make-available
+    tech waits for the Castle Age, so the slot is idle until then.  The
+    Serjeant is the exception, as in the game — Feudal, with his own slot.
+    The Elite takes the same slot, so the upgrade at the Castle moves the
+    Donjon's button to it too (quirk 3)."""
+    has_donjon = DONJON in _tree_building_ids(civ_def) or any(
+        isinstance(e, (list, tuple)) and e and int(e[0]) == 109 for e in get_civ_bonuses(civ_def))
+    sites = ([km_custom_uu.BUILDING_KREPOST] if has_krepost else []) + ([DONJON] if has_donjon else [])
+    if not sites:
         return
-    sites = [km_custom_uu.BUILDING_KREPOST]
     units = dat.civs[civ_index].units
     for uid in dict.fromkeys(unit_ids):
         u = units[uid] if 0 <= uid < len(units) else None
@@ -7221,6 +7228,8 @@ def _castle_twins(dat: DatFile, civ_index: int, unit_ids, has_krepost: bool) -> 
                 continue
             tl = deepcopy(castle)
             tl.unit_id = site
+            if site == DONJON and tl.button_id == 1:
+                tl.hot_key_id = _DONJON_UU_HOTKEY
             cre.train_locations.append(tl)
 
 
@@ -7318,16 +7327,17 @@ def _apply_second_uu(dat: DatFile, civ_index: int, civ_def: dict, has_krepost: b
         t.language_dll_name, t.language_dll_description = s_el, _creation_sid(s_el)
         t.language_dll_help, t.language_dll_tech_tree = _help_sid(s_el), -1
 
-    # Castle (and Krepost) button 4; the Elite upgrade one row below.
+    # Castle (Krepost, Donjon) button 4; the Elite upgrade one row below.
+    # A Serjeant brings his own Donjon slot on button 1, the first unit's there.
     _, by_pos = _grid_hotkeys(dat)
     elite_hk = by_pos.get(SECOND_UU_ELITE_BUTTON)
     for uid in {uu_id, elite_id}:
         for tl in units[uid].creatable.train_locations:
-            if tl.unit_id in (BUILDING_CASTLE, km_custom_uu.BUILDING_KREPOST):
+            if tl.unit_id in (BUILDING_CASTLE, km_custom_uu.BUILDING_KREPOST, DONJON):
                 tl.button_id, tl.hot_key_id = SECOND_UU_BUTTON, SECOND_UU_HOTKEY
     if 0 <= et < len(dat.techs) and dat.techs[et].civ == civ_index:
         for rl in dat.techs[et].research_locations:
-            if rl.location_id in (BUILDING_CASTLE, km_custom_uu.BUILDING_KREPOST):
+            if rl.location_id in (BUILDING_CASTLE, km_custom_uu.BUILDING_KREPOST, DONJON):
                 rl.button_id = SECOND_UU_ELITE_BUTTON
                 if elite_hk:
                     rl.hot_key_id = elite_hk
@@ -8348,7 +8358,7 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # and the top one as "the Elite".
     uu2_base = uu2_ids[:-1] or uu2_ids
     uu2_elite = uu2_ids[-1:]
-    _castle_twins(dat, civ_index, (uu_id, elite_uu_id, *uu2_ids), has_krepost)
+    _castle_twins(dat, civ_index, civ_def, (uu_id, elite_uu_id, *uu2_ids), has_krepost)
 
     # 6c. Patch deferred UU-substitution effect commands (see
     #     UU_SUBSTITUTION_TYPES / _build_ut_effect_cmds) now that this civ's
