@@ -1422,10 +1422,15 @@ def tech_effect_commands(eff: dict, tech_ids: list[int], costs_of=None) -> list[
     a, v = eff["attr"], float(eff.get("value") or 0)
     out: list[EffectCommand] = []
     for tid in tech_ids:
-        if a in ("free", "instant"):
-            if a == "free":
-                out += [EffectCommand(type=EC_TECH_COST, a=tid, b=r, c=TECH_SET, d=0.0) for r in range(4)]
+        if a == "free":
+            out += [EffectCommand(type=EC_TECH_COST, a=tid, b=r, c=TECH_SET, d=0.0) for r in range(4)]
             out.append(EffectCommand(type=EC_TECH_TIME, a=tid, b=-1, c=TECH_SET, d=0.0))
+        elif a == "instant":
+            # One second, as the Goths' Instant Loom (effect 341): still
+            # clicked and paid for.  The game only ever sets a time of 0 on a
+            # tech it also makes free, and a player saw "instant" research
+            # come free.
+            out.append(EffectCommand(type=EC_TECH_TIME, a=tid, b=-1, c=TECH_SET, d=1.0))
         elif a == "research_speed":
             out.append(EffectCommand(type=EC_TECH_TIME, a=tid, b=-1, c=TECH_MUL, d=1.0 / (1.0 + v / 100.0)))
         elif a == "tech_cost":

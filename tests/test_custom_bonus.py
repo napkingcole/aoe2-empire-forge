@@ -159,6 +159,10 @@ import civ_appender as _ca                                # noqa: E402
 check("'free' on a tech writes exactly what _free_tech_cmds writes (free AND instant)",
       [(c.type, c.a, c.b, c.c, c.d) for c in cb.card_commands(gold, None)]
       == [(c.type, c.a, c.b, c.c, c.d) for c in _ca._free_tech_cmds([55, 182])])
+inst = cb.card_commands(T("set_gold", {"attr": "instant", "op": "set"})[0], None)
+check("'instant' is one second and leaves the cost, as the Goths' Instant Loom",
+      [(c.type, c.c, c.d) for c in inst] == [(cb.EC_TECH_TIME, cb.TECH_SET, 1.0)] * 2,
+      [(c.type, c.a, c.b, c.c, c.d) for c in inst])
 pct = cb.card_commands(T("age_all", {"attr": "tech_cost", "op": "mul", "value": -15})[0], None)
 check("-15% cost on all resources is one b=-1 multiply per tech (the Italians' age discount)",
       [(c.type, c.a, c.b, c.c, round(c.d, 4)) for c in pct]
