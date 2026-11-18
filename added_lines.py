@@ -595,7 +595,11 @@ def _upgrade_icon(dat, unit_icon: int, role_tech: int | None) -> int:
                 continue
             for c in dat.effects[t.effect_id].effect_commands:
                 b = int(c.b)
-                if c.type == EC_UPGRADE and 0 <= b < len(units) and units[b] is not None:
+                # Units only: building icons are another sheet, so the Guard
+                # Tower's number is the Mangonel's (a built Mangonel line wore
+                # a tower on its upgrade, 2026-11-18).
+                if (c.type == EC_UPGRADE and 0 <= b < len(units) and units[b] is not None
+                        and units[b].type != 80):
                     by_look.setdefault(units[b].icon_id, t.icon_id)
         _ICON_CACHE.clear()
         _ICON_CACHE[key] = by_look
@@ -702,9 +706,16 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
                 warnings.append(msg)
                 tiers = tiers[:1]
             # Ours takes the unit's button, so the upgrade moves the button to it
-            # (quirk 3); a later tier's upgrade goes one row below, as an added line's.
+            # (quirk 3); a later tier's upgrade follows the upgrade into it on
+            # its button, as the game's chained upgrades do (it waits for that
+            # one, so the two never show together; the user, 2026-11-18), else
+            # one row below, as an added line's.
             train_btn, hk_train, up_btn = tl.button_id, tl.hot_key_id, None
-            if len(tiers) > 1:
+            prod_btn = next((rl.button_id for rl in dat.techs[producer].research_locations
+                             if rl.location_id == building and rl.button_id > 0), None)
+            if len(tiers) > 1 and prod_btn is not None:
+                up_btn = prod_btn
+            elif len(tiers) > 1:
                 below = train_btn + 5
                 up_btn = below if below not in used and below not in _RESERVED else next(
                     (b for b in _ANY_BUTTONS if b not in used and (b - 1) % 20 >= 5), None)

@@ -1065,8 +1065,13 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                             _bonus_enabled_units.add(int(ec.b))
 
     # Pre-compute UT retargeting info from civ_result (if available).
-    _orig_castle_ut_tid = (civ_result or {}).get("orig_castle_ut_tech_id")
-    _orig_imp_ut_tid    = (civ_result or {}).get("orig_imp_ut_tech_id")
+    # Every tech the slot's civ had on the UT button (a retired one can share
+    # it with the current, which is the one the F2 tree names).
+    _cr = civ_result or {}
+    _orig_castle_ut_tids = set(_cr.get("orig_castle_ut_tech_ids") or ()) | (
+        {_cr["orig_castle_ut_tech_id"]} if _cr.get("orig_castle_ut_tech_id") is not None else set())
+    _orig_imp_ut_tids = set(_cr.get("orig_imp_ut_tech_ids") or ()) | (
+        {_cr["orig_imp_ut_tech_id"]} if _cr.get("orig_imp_ut_tech_id") is not None else set())
     _new_castle_ut_tid  = (civ_result or {}).get("castle_ut_tech_id")
     _new_imp_ut_tid     = (civ_result or {}).get("imp_ut_tech_id")
     _castle_ut_sid      = (civ_result or {}).get("castle_ut_sid")
@@ -1110,7 +1115,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
             # bundled pre-DLC trees still say "Research" (issue #46).
             if (use_type == "Tech" and node_type in ("Research", "UniqueTech")
                     and node.get("Building ID") == 82):
-                if node_id == _orig_castle_ut_tid and _new_castle_ut_tid is not None:
+                if node_id in _orig_castle_ut_tids and _new_castle_ut_tid is not None:
                     node["Node ID"] = _new_castle_ut_tid
                     if _castle_ut_sid:
                         node["Name String ID"] = _castle_ut_sid
@@ -1120,7 +1125,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                     node["Node Status"] = STATUS_OK
                     changed += 1
                     continue
-                if node_id == _orig_imp_ut_tid and _new_imp_ut_tid is not None:
+                if node_id in _orig_imp_ut_tids and _new_imp_ut_tid is not None:
                     node["Node ID"] = _new_imp_ut_tid
                     if _imp_ut_sid:
                         node["Name String ID"] = _imp_ut_sid

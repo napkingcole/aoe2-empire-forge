@@ -7947,21 +7947,26 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
     # by Node ID and retarget them to our new tech IDs. The sids captured
     # here are no longer used for naming — UT name strings now live in a
     # fresh high-range (STR_UT_BASE), see _append_unique_tech_stubs.
-    orig_castle_ut_sid: int | None = None
-    orig_imp_ut_sid:    int | None = None
-    orig_castle_ut_tech_id: int | None = None
-    orig_imp_ut_tech_id:    int | None = None
+    #
+    # A button can hold a retired UT beside the current one (the Franks keep
+    # Bearded Axe 83 with Ordonnance Companies 1496 on Castle 7; Saracens,
+    # Italians, Slavs and Portuguese likewise), and the F2 tree names only the
+    # current one — so every tech on the button is kept, and the patcher
+    # retargets whichever node it finds (the first alone missed Ordonnance
+    # Companies, left crossed out beside a custom UT, 2026-11-18).
+    orig_castle_ut_tech_ids: list[int] = []
+    orig_imp_ut_tech_ids:    list[int] = []
     if overwrite:
         for ti, tech in enumerate(dat.techs):
             if tech.civ == civ_index:
                 for loc in (tech.research_locations or []):
                     if loc.location_id == BUILDING_CASTLE:
-                        if loc.button_id == 7 and orig_castle_ut_sid is None:
-                            orig_castle_ut_sid = tech.language_dll_name
-                            orig_castle_ut_tech_id = ti
-                        elif loc.button_id == 8 and orig_imp_ut_sid is None:
-                            orig_imp_ut_sid = tech.language_dll_name
-                            orig_imp_ut_tech_id = ti
+                        if loc.button_id == 7:
+                            orig_castle_ut_tech_ids.append(ti)
+                        elif loc.button_id == 8:
+                            orig_imp_ut_tech_ids.append(ti)
+    orig_castle_ut_tech_id = orig_castle_ut_tech_ids[0] if orig_castle_ut_tech_ids else None
+    orig_imp_ut_tech_id = orig_imp_ut_tech_ids[0] if orig_imp_ut_tech_ids else None
 
     if overwrite:
         # When no UU is being set, preserve the vanilla UU make-avail techs,
@@ -8662,6 +8667,8 @@ def apply_civ(dat: DatFile, civ_def: dict, target_slot: int | None = None) -> di
         "imp_ut_tech_id":        imp_ut_tech_id,
         "orig_castle_ut_tech_id":  orig_castle_ut_tech_id,
         "orig_imp_ut_tech_id":    orig_imp_ut_tech_id,
+        "orig_castle_ut_tech_ids": orig_castle_ut_tech_ids,
+        "orig_imp_ut_tech_ids":    orig_imp_ut_tech_ids,
         "km_uu_make_avail_tech_id": km_uu_make_avail_tech_id,
         "km_uu_elite_tech_id":      km_uu_elite_tech_id,
         "second_uu":                second_uu,

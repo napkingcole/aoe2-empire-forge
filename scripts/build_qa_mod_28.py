@@ -5,7 +5,7 @@
     UU        Konnik, +10 vs infantry (Elite +20); Castle UT Anarchy
     2nd UU    Serjeant, renamed "Castellan", Elite at 600F/300G 30s
     Hero      Liu Bei (to Castle page 2)
-    Buildings Krepost and Donjon in the tree
+    Buildings Krepost and Donjon, from their cards (93, 109) as a player gets them
     Barracks  Halberdier replaced: Heavy Spearman (Castle), then a custom
               Halberdier (Imperial) in the Halberdier's look;
               Halberdier upgrade at 150F/100G
@@ -25,7 +25,8 @@
     Looks     the Spearman line and the rams as the Achaemenids'
 
   QA Mule (over Goths): cards a player reported.
-    Mule Cart (1 population) with card 99; cards 81, 105, and 345 with 86 (free Lumber Camp)
+    Mule Cart (a building, in place of the camps; 1 population) with card 99;
+    cards 81, 105, and 345 with 86 (free Lumber Camp)
 
   QA Settle (over Teutons): the Settlement and an Italian ally.
     Card 371; Halberdier replaced by a Heavy Spearman; a Shotel Warrior line
@@ -92,8 +93,9 @@ QA = [
         second_uu={"km_idx": SERJEANT, "name": "Castellan", "description": "A test second unique unit.",
                    "elite_upgrade": {"cost": {"food": 600, "gold": 300}, "time": 30}},
         hero_unit={"base_unit_id": LIU_BEI, "name": "", "description": "", "overrides": {}, "flags": {}},
+        bonuses=B(93, 109),
         castle_ut=anarchy("Castle Anarchy"), imperial_ut=preset(0, "imperial"),
-        tree=tree(add_buildings=(KREPOST, DONJON)),
+        tree=tree(),
         unit_edits={str(KNIGHT): {"pop": 2, "armour": {"8": 10}}, str(ARCHER): {"pop": 0.5},
                     str(HALB): {"age": 3}},          # the Heavy Spearman (the Halberdier's place) in Castle
         tech_edits={str(HALB_TECH): {"cost": {"food": 150, "gold": 100}}},
@@ -146,7 +148,7 @@ QA = [
         unique_unit={"km_idx": KONNIK, "name": "", "description": ""},
         bonuses=B(99, 81, 105, 345, 86),
         castle_ut=preset(2, "castle"), imperial_ut=preset(0, "imperial"),
-        tree=tree(add_units=(MULE_CART,), add_techs=(CROP_ROTATION,)),   # the Spanish lack it
+        tree=tree(add_buildings=(MULE_CART,), add_techs=(CROP_ROTATION,)),   # the Spanish lack Crop Rotation
         unit_edits={str(MULE_CART): {"pop": 1}},
     )),
     ("teutons", civ(

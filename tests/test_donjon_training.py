@@ -9,6 +9,9 @@ by commands naming the vanilla Spearmen.  The Krepost and the Donjon train
 every unique unit, the second and a built one too — at the Donjon from the
 Castle Age only (the user, 2026-11-17), which the units' own make-available
 techs already ensure; the Serjeant stays Feudal there, as in the game.
+A player has the Donjon from card 109 and the Krepost from card 93 (the tree
+drops a Donjon node, and a Krepost node alone builds nothing), so these civs
+take the cards — the first QA mod ticked the nodes and could build neither.
 DAT-gated.
 
     venv/bin/python tests/test_donjon_training.py
@@ -55,14 +58,16 @@ MAILLOTINS, KONNIK, SERJEANT = 65, 31, 36                    # km indices
 units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
 
 
-def build(bonuses=(), extra_buildings=(DONJON,), second=None, lines=(), first=MAILLOTINS):
+DONJON_CARD, KREPOST_CARD = 109, 93
+
+
+def build(bonuses=(DONJON_CARD,), second=None, lines=(), first=MAILLOTINS):
     draft = {"tree_version": TREE_VERSION, "alias": "Donjon", "architecture": 2, "language": 0,
              "bonuses": [{"id": b, "multiplier": 1} for b in bonuses], "team_bonuses": [],
              "unique_unit": {"km_idx": first}, "second_uu": second,
              "castle_ut": {"mode": "vanilla", "effects": [{"id": 3, "multiplier": 1}]},
              "imperial_ut": {"mode": "vanilla", "effects": [{"id": 4, "multiplier": 1}]},
-             "tree": {"units": units, "buildings": sorted(set(buildings) | set(extra_buildings)),
-                      "techs": techs},
+             "tree": {"units": units, "buildings": buildings, "techs": techs},
              "added_lines": list(lines)}
     dat = load_dat(str(dat_path))
     with contextlib.redirect_stdout(io.StringIO()):
@@ -119,7 +124,7 @@ check("trains at the Donjon too", after and (DONJON, 2) in slots(dat, after[0]),
       slots(dat, after[0]) if after else r["warnings"])
 
 print("=== no Donjon, no Donjon slot ===")
-dat, r = build(extra_buildings=(), lines=[HEAVY])
+dat, r = build(bonuses=(), lines=[HEAVY])
 check("the Maillotins train at the Castle only", slots(dat, r["uu_id"]) == [(CASTLE, 1)], slots(dat, r["uu_id"]))
 
 print("=== the Serjeant, who builds Donjons ===")
@@ -136,7 +141,7 @@ if s:
           [(rl.location_id, rl.button_id) for rl in dat.techs[s["elite_tech"]].research_locations])
 
 print("=== a second unique unit, and the Krepost ===")
-dat, r = build(extra_buildings=(DONJON, KREPOST), second={"km_idx": KONNIK}, lines=[ELITE_PETARD])
+dat, r = build(bonuses=(DONJON_CARD, KREPOST_CARD), second={"km_idx": KONNIK}, lines=[ELITE_PETARD])
 s = r.get("second_uu")
 check("the second unique unit trains at the Castle, Krepost and Donjon, all on button 4",
       s and slots(dat, s["unit_id"]) == [(CASTLE, 4), (KREPOST, 4), (DONJON, 4)],
@@ -150,14 +155,35 @@ check("an Elite Petard trains at the Krepost, as the Petard does",
 
 print("=== built at the Castle (a second unique unit made from a unit) ===")
 BUILT = {"id": 4, "building": CASTLE, "base": 280, "name": "Super Mangonel", "tiers": [{"age": 3}, {"age": 4}]}
-dat, r = build(extra_buildings=(DONJON, KREPOST), lines=[BUILT])
+dat, r = build(bonuses=(DONJON_CARD, KREPOST_CARD), lines=[BUILT])
 tiers = (r.get("added_lines") or [{}])[0].get("units") or []
 check("every tier trains at the Krepost and the Donjon too",
       len(tiers) == 2 and all({b for b, _ in slots(dat, t)} == {CASTLE, KREPOST, DONJON} for t in tiers),
       [slots(dat, t) for t in tiers] or r["warnings"])
 
+print("=== tiers past a replacement, and their pictures ===")
+TWO = {"id": 5, "building": BARRACKS, "base": PIKEMAN, "replaces": HALBERDIER,
+       "tiers": [{"age": 3, "name": "Heavy Spearman"}, {"age": 4, "name": "Halberdier"}]}
+MANGOS = {"id": 6, "building": CASTLE, "base": 280, "name": "Super Mangonel",
+          "tiers": [{"age": 3}, {"age": 3}, {"age": 4}]}
+dat, r = build(lines=[TWO, MANGOS])
+two = next((ln for ln in r.get("added_lines") or [] if ln["id"] == 5), None)
+halb_btn = {rl.button_id for rl in dat.techs[429].research_locations if rl.location_id == BARRACKS}
+check("the next tier's upgrade shares the Halberdier upgrade's button, as the game's chains do (7)",
+      two and two["upgrade_button"] in halb_btn and halb_btn == {7},
+      (two or {}).get("upgrade_button"))
+units0 = dat.civs[0].units
+tower_icons = {t.icon_id for t in dat.techs if 0 <= t.effect_id < len(dat.effects) and any(
+    c.type == 3 and 0 <= int(c.b) < len(units0) and units0[int(c.b)] is not None and units0[int(c.b)].type == 80
+    for c in dat.effects[t.effect_id].effect_commands)}
+mangos = next((ln for ln in r.get("added_lines") or [] if ln["id"] == 6), None)
+icons = [dat.techs[t].icon_id for t in (mangos or {}).get("techs", []) if dat.techs[t].research_locations
+         and any(rl.location_id >= 0 for rl in dat.techs[t].research_locations)]
+check("a Mangonel line's upgrades wear no building's picture (the Guard Tower's shares its number)",
+      mangos and icons and not set(icons) & tower_icons, icons)
+
 print("=== the Mapuche Settlement card (371) ===")
-dat, r = build(bonuses=(371,), lines=[HEAVY])
+dat, r = build(bonuses=(DONJON_CARD, 371), lines=[HEAVY])
 check("the game's Spearmen get a Settlement slot from it", SETTLEMENT in inserted(dat, HALBERDIER),
       inserted(dat, HALBERDIER))
 heavy = (r.get("added_lines") or [{}])[0].get("units") or []
