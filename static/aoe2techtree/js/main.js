@@ -1879,11 +1879,15 @@ function _applyAddedLines(treeData) {
 function _applyAgeMoves(treeData) {
     const e = window.ttInspector ? window.ttInspector.edits() : null;
     if (!e) return;
-    // A building keeps its place (its column moves with it); its hover says
-    // when it's available (#122).
+    // A building moves up to its new age's row, its column with it, and its
+    // hover says when it's available (#122).  Its units and techs may then
+    // move as early as it (_ttMinAge reads age_id).
     for (const b of treeData.buildings) {
         const age = (e.unit_edits[String(b.node_id)] || {}).age;
-        if (age && age < b.age_id) b.age_moved = age;
+        if (!age || age >= b.age_id) continue;
+        b.age_moved = age;
+        b.age_id = age;
+        b.row = Math.min(b.row, (age - 1) * 2);
     }
     for (const item of treeData.units_techs) {
         const ed = item.use_type === 'Unit' ? e.unit_edits[String(item.node_id)]
@@ -1923,6 +1927,13 @@ window._ttMinAge = function (item) {
     const b = _nodeIndex[`${item.building_id}_${item.building_id}`];
     const prev = item.link_id != null ? _nodeIndex[`${item.building_id}_${item.link_id}`] : null;
     return Math.max(b ? b.age_id || 1 : 1, prev && prev.use_type !== 'Building' ? prev.age_id || 1 : 1);
+};
+
+// The units and techs a building's column holds in this civ, for the panel's
+// "Move its units and techs up" (added tiers keep their own ages).
+window._ttItemsOf = function (buildingId) {
+    return (_buildingItems[buildingId] || []).filter(it => !it.add && !it.added && !it.uu
+        && (it.use_type === 'Unit' || it.use_type === 'Tech') && (!_canEdit || _isSelected(it)));
 };
 
 // A line changed shape: redraw (the panel re-opens its node via rebind).
@@ -2009,7 +2020,10 @@ function civ(civName) {
                 width = Math.max(width, thisBuildingWidth);
                 if (previousRow === building.row) building.row++;
             }
-            if (building.link_id !== -1) {
+            // A building moved to an earlier age stays on its age's row beside
+            // the one it hangs from (the Siege Workshop by the Blacksmith):
+            // one row down would sit on its own units, moved up with it.
+            if (building.link_id !== -1 && !building.age_moved) {
                 for (let lb of treeData.buildings) {
                     if (lb.node_id === building.link_id && lb.row === building.row) building.row++;
                 }

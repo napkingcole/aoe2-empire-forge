@@ -1379,9 +1379,20 @@
         await Promise.all((inf.line_before || []).map(a => info('unit', a)));
         if (!current || current.item !== item) return;
         body.innerHTML = ageRow(item, inf, kind) + (kind === 'tech' ? techBody(inf) : unitBody(inf, kind));
-        body.querySelector('#tt-insp-age')?.addEventListener('change', e => {
+        body.querySelector('#tt-insp-age')?.addEventListener('change', async e => {
             const v = +e.target.value;
+            const was = kind === 'building' ? (unitEdit(item.node_id).age ?? inf.age_move.age) : null;
             (kind === 'tech' ? setTechField : setUnitField)(item.node_id, 'age', v === inf.age_move.age ? null : v);
+            // A building moved later takes the units and techs moved earlier
+            // with it, as many ages (none ends up before it).
+            if (kind === 'building' && v > was) await shiftContents(item, (own, game) => Math.max(v, own + v - was));
+            relayout(item.id);
+        });
+        body.querySelector('#tt-insp-shift')?.addEventListener('click', async () => {
+            const own = unitEdit(item.node_id).age;
+            if (own == null) return;
+            const n = inf.age_move.age - own;
+            await shiftContents(item, (_, game) => Math.max(own, game - n), true);
             relayout(item.id);
         });
         wire(body, inf, kind);
@@ -1389,6 +1400,24 @@
         panel.scrollTop = scrollTop;
         restoreFocus(focused);
         if (kind !== 'tech') fillUpgrades(body, inf, kind);
+    }
+
+    // A moved building's units and techs (the user, 2026-11-18: a Feudal
+    // University with Castle techs was no use).  `to(own, game)` gives each
+    // one's new age from its edited and its game age; `all` includes the ones
+    // not yet moved, else only those already earlier than the game's.  One
+    // that can't move (available from the start, tangled requirements) stays.
+    async function shiftContents(building, to, all = false) {
+        for (const kid of window._ttItemsOf?.(building.node_id) || []) {
+            const k = kindOf(kid);
+            const ki = await info(k, kid.node_id);
+            const mv = ki && ki.status === 'ok' ? ki.age_move : null;
+            if (!mv || !mv.ok) continue;
+            const own = (k === 'tech' ? techEdit(kid.node_id) : unitEdit(kid.node_id)).age;
+            if (own == null && !all) continue;
+            const age = to(own ?? mv.age, mv.age);
+            (k === 'tech' ? setTechField : setUnitField)(kid.node_id, 'age', age < mv.age ? age : null);
+        }
     }
 
     // "Available from": an age earlier than the game's, down to its building's
@@ -1408,9 +1437,12 @@
         const ao = ageOptions(item, inf, kind);
         if (!ao) return '';
         const { opts, own } = ao;
+        const n = kind === 'building' && own != null ? inf.age_move.age - own : 0;
         return `<div class="tt-insp-row"><label class="tt-insp-label" for="tt-insp-age">Available from</label>
             <select id="tt-insp-age" class="${own != null ? 'is-edited' : ''}" ${opts.length < 2 ? 'disabled' : ''}
-                title="${opts.length < 2 ? 'Its building, or what comes before it, isn\'t available any earlier' : ''}">${opts.join('')}</select></div>`;
+                title="${opts.length < 2 ? 'Its building, or what comes before it, isn\'t available any earlier' : ''}">${opts.join('')}</select></div>`
+            + (n > 0 ? `<button type="button" class="tt-insp-reset" id="tt-insp-shift"
+                title="Each of its units and techs ${n} age${n > 1 ? 's' : ''} earlier than the game's, none before the building">Move its units and techs up ${n} age${n > 1 ? 's' : ''}</button>` : '');
     }
 
     function label(id, nm, base, edited) {
