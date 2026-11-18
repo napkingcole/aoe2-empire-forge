@@ -93,6 +93,8 @@
 
   function arm(el, rect) {
     clearTimeout(timer);
+    // A condensed card already shows its full text (builder.js card views).
+    if (document.documentElement.dataset.cards && el.matches(".bonus-card")) { hide(); return; }
     target = el;
     if (shown || Date.now() - hiddenAt < WARM) show(el, rect);
     else timer = setTimeout(() => { if (target === el) show(el, rect); }, DELAY);

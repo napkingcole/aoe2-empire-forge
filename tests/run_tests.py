@@ -45,6 +45,7 @@ TESTS: list[tuple[str, str, str]] = [
     ("cache hygiene (startup prune, browser)", "test_cache_hygiene.py", "data"),
     ("catalog resource ids",            "test_resource_ids.py",         "data"),
     ("civ roster",                      "test_civ_roster.py",           "data"),
+    ("card source civs (#95)",          "test_card_sources.py",         "data"),
     ("game strings + exe bundle",       "test_game_strings.py",         "data"),
     ("no blank unit icons",             "test_blank_uniticons.py",      "data"),
     ("button pages",                    "test_button_pages.py",         "build"),

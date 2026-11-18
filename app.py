@@ -2767,6 +2767,96 @@ def api_builder_ut_catalog():
                     "imperial": _entries(_UNIQUE_IMP_STRINGS, _KM_IMP_UT_TECHS, "imperial")})
 
 
+# ── Where a card comes from (#95) ───────────────────────────────────────────
+# A vanilla bonus or unique tech wears the emblem of the civ it was taken
+# from.  The source is the game's own: the civ-gated techs a bonus copies
+# (tech.civ), the civ whose team bonus effect a team card copies, and a unique
+# tech's vanilla tech.  A card that resolves to no civ, or to more than one
+# (Stone Miners also generate gold: the Poles' and a Gaia tech), shows none.
+# Emblems come from the player's game (every civ, newest DLC included), else
+# the aoe2techtree set this app ships (fine to use, the user said 2026-11-18).
+_CARD_SOURCES_CACHE: dict[str, dict] = {}
+# DAT civ names that aren't the emblem's (and display) name.
+_CIV_EMBLEM_NAMES = {"british": ("britons", "Britons"), "french": ("franks", "Franks"),
+                     "byzantine": ("byzantines", "Byzantines"), "mayan": ("mayans", "Mayans")}
+_GAME_EMBLEM_FILES = {"hindustanis": "indians"}           # the game's file name, where it differs
+_DISK_EMBLEMS = Path(__file__).parent / "static" / "aoe2techtree" / "img" / "Civs"
+
+
+def _civ_emblem_path(dat_path: str | None, key: str) -> Path | None:
+    """The emblem for `key`: the game's civ-picker shield (<game>/widgetui/
+    textures/menu/civs; not resources/_common/wpfg/resources/civ_emblems, which
+    holds wide pen sketches), else the copy on disk; None if neither has it."""
+    if dat_path:
+        game = (Path(dat_path).parents[3] / "widgetui" / "textures" / "menu" / "civs"
+                / f"{_GAME_EMBLEM_FILES.get(key, key)}.png")
+        if game.exists():
+            return game
+    disk = _DISK_EMBLEMS / f"{key}.png"
+    return disk if disk.exists() else None
+
+
+def _card_sources(dat_path: str) -> dict:
+    if dat_path in _CARD_SOURCES_CACHE:
+        return _CARD_SOURCES_CACHE[dat_path]
+    from bonus_catalog import civ_bonus_techs, team_bonus_tech
+    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
+    dat = _get_dat(dat_path)
+    civs: dict[int, dict] = {}
+    for i, c in enumerate(dat.civs):
+        key, name = _CIV_EMBLEM_NAMES.get(c.name.lower(), (c.name.lower(), c.name))
+        if i > 0 and _civ_emblem_path(dat_path, key):
+            civs[i] = {"name": name, "emblem": key}
+
+    def one(slots) -> int | None:
+        """The one civ, or None for none, several, or one without an emblem."""
+        return next(iter(slots)) if len(slots) == 1 and next(iter(slots)) in civs else None
+
+    def tech_civ(tid: int) -> int:
+        return dat.techs[tid].civ if 0 <= tid < len(dat.techs) else -1
+
+    out = {"civs": {str(i): v for i, v in civs.items()}, "civ": {}, "team": {}, "castle": {}, "imperial": {}}
+    with open(Path(__file__).parent / "bonus_names.json", encoding="utf-8") as f:
+        for k in json.load(f):
+            if (s := one({tech_civ(int(t)) for t in civ_bonus_techs(int(k)) or []} - {-1})) is not None:
+                out["civ"][k] = s
+    team_owner: dict[int, set] = {}
+    for i, c in enumerate(dat.civs):
+        team_owner.setdefault(c.team_bonus_id, set()).add(i)
+    with open(Path(__file__).parent / "team_bonus_names.json", encoding="utf-8") as f:
+        for k in json.load(f):
+            e = team_bonus_tech(int(k))
+            if e is not None and (s := one(team_owner.get(e, set()))) is not None:
+                out["team"][k] = s
+    for tier, table in (("castle", _KM_CASTLE_UT_TECHS), ("imperial", _KM_IMP_UT_TECHS)):
+        for k, tid in table.items():
+            if (s := one({tech_civ(tid)} - {-1})) is not None:
+                out[tier][str(k)] = s
+    _CARD_SOURCES_CACHE[dat_path] = out
+    return out
+
+
+@app.route("/api/builder/card-sources")
+def api_builder_card_sources():
+    """{civs: {slot: {name, emblem}}, civ|team|castle|imperial: {card id: slot}}
+    — the civ each vanilla card comes from (_card_sources); empty without a game."""
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"civs": {}, "civ": {}, "team": {}, "castle": {}, "imperial": {}})
+    return jsonify(_card_sources(dat_path))
+
+
+@app.route("/api/civ-emblem/<name>")
+def api_civ_emblem(name: str):
+    """A civ's emblem (_civ_emblem_path): the player's game, else the copy on disk."""
+    if not re.fullmatch(r"[a-z_]+", name):
+        return ("", 404)
+    path = _civ_emblem_path(_resolve_dat_path(request.args.get("dat_path")), name)
+    if path is None:
+        return ("", 404)
+    return send_file(path, mimetype="image/png", max_age=0)
+
+
 _HERO_CATALOG_CACHE: dict[str, list] = {}
 
 

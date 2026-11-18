@@ -2091,7 +2091,9 @@ function _parseBonusCard(id, label) {
 //   /static/icons/attrs/{attrKey}.svg      — attribute icon
 //   /static/icons/ages/{age}.svg           — age badge (dark/feudal/castle/imperial)
 
-function _renderBonusCardInner(p, cat, mult) {
+// `extra`: markup appended to the card body (the full text the condensed
+// views show).
+function _renderBonusCardInner(p, cat, mult, extra = '') {
   const catLabel  = cat.key.charAt(0).toUpperCase() + cat.key.slice(1);
   const err = `onerror="this.style.display='none'"`;
 
@@ -2143,6 +2145,7 @@ function _renderBonusCardInner(p, cat, mult) {
       ${hasIcon ? `<img class="card-icon" src="${iconSrc}" alt="${whoInfo.label}" ${err}>` : ''}
       <ul class="card-desc-lines">${linesHtml}</ul>
       ${whoCell}
+      ${extra}
     </div>`;
   }
 
@@ -2169,6 +2172,7 @@ function _renderBonusCardInner(p, cat, mult) {
       <div class="card-heading">${valueLabel}</div>
       <div class="card-stat">${dualAttrLabel}</div>
       ${dualWho}
+      ${extra}
     </div>`;
   }
 
@@ -2201,6 +2205,7 @@ function _renderBonusCardInner(p, cat, mult) {
       <div class="card-prog-label">${leadText}</div>
       <div class="age-bonus-table">${ageItems}</div>
       ${whoCell}
+      ${extra}
     </div>`;
   }
 
@@ -2211,6 +2216,7 @@ function _renderBonusCardInner(p, cat, mult) {
       <div class="card-heading">${valueLabel}</div>
       <div class="card-stat">${attrLabel}</div>
       ${whoCell}
+      ${extra}
     </div>`;
 }
 
@@ -2346,6 +2352,48 @@ async function loadUTCatalog() {
 }
 
 
+// ── Where a card comes from (#95) ───────────────────────────────────────────
+// /api/builder/card-sources: the civ each vanilla bonus, team bonus and unique
+// tech is taken from, read from the player's game (app._card_sources).  A card
+// from one civ wears its emblem bottom-left (the Chronicles helmet keeps
+// bottom-right), says so in its tooltip, and answers the Civilization filter.
+let _cardSources = null;
+async function loadCardSources() {
+  if (_cardSources) return _cardSources;
+  try {
+    _cardSources = await (await fetch("/api/builder/card-sources")).json();
+  } catch (e) {
+    _cardSources = { civs: {}, civ: {}, team: {}, castle: {}, imperial: {} };
+  }
+  return _cardSources;
+}
+
+// kind: "civ", "team", "castle" or "imperial".  {slot, name, emblem} or null.
+function _cardSource(kind, id) {
+  const slot = _cardSources?.[kind]?.[String(id)];
+  const civ = slot == null ? null : _cardSources.civs[String(slot)];
+  return civ ? { slot: String(slot), ...civ } : null;
+}
+
+function _civBadge(src) {
+  return src
+    ? `<img class="civ-badge" src="/api/civ-emblem/${src.emblem}" alt="${_esc(src.name)}" loading="lazy" onerror="this.remove()">`
+    : '';
+}
+
+// What the condensed views show in place of the card face: the full text the
+// tooltip has (which those views turn off), and the source civ — its emblem
+// inline there, since the corner badges sit out those views.
+function _cardSourceLine(src) {
+  return src
+    ? `<span class="card-fulltext-src"><img src="/api/civ-emblem/${src.emblem}" alt="" loading="lazy" onerror="this.remove()">${_esc(src.name)}</span>`
+    : '';
+}
+
+function _cardFullText(text, src) {
+  return `<div class="card-fulltext">${_renderTokens(_esc(text))}${_cardSourceLine(src)}</div>`;
+}
+
 // Cards ported from the Chronicles civs carry a small helmet badge.  Both card
 // renderers (the bulk grid and _makeBonusCardEl) must call this.  Its
 // explanation is in the card's tooltip (_bonusTipAttrs), not a title.
@@ -2358,11 +2406,16 @@ function _chroniclesBadge(p) {
 // The hover tooltip (tooltip.js) for a vanilla bonus card: the category as
 // its heading, the full bonus text below — the card face has room for only a
 // shortened version.  Replaces the card's old `title`.
-function _bonusTipAttrs(c, cat, p, team) {
+function _bonusTipLines(c, p, src) {
+  return [c.label,
+          ...(src ? [`From the ${src.name}.`] : []),
+          ...(p.chronicles ? ["From the Chronicles civilizations."] : [])];
+}
+
+function _bonusTipAttrs(c, cat, p, team, src) {
   const catLabel = cat.key.charAt(0).toUpperCase() + cat.key.slice(1);
-  const lines = [c.label];
-  if (p.chronicles) lines.push("From the Chronicles civilizations.");
-  return `data-tip-title="${_esc(`${catLabel} · ${team ? "Team bonus" : "Civilization bonus"}`)}" data-tip="${_esc(lines.join("\n"))}"`;
+  return `data-tip-title="${_esc(`${catLabel} · ${team ? "Team bonus" : "Civilization bonus"}`)}" data-tip="${_esc(_bonusTipLines(c, p, src).join("\n"))}"`
+       + (src ? ` data-src-civ="${src.slot}"` : '');
 }
 
 function _makeBonusCardEl(c, mult, isSelected, toggleFn, getDraftEntry, prefix = '') {
@@ -2377,8 +2430,10 @@ function _makeBonusCardEl(c, mult, isSelected, toggleFn, getDraftEntry, prefix =
   el.dataset.cat     = cat.key;
   el.style.cssText   = `--cat-color:var(--cat-${cat.key});`;
   el.dataset.tipTitle = `${cat.key.charAt(0).toUpperCase() + cat.key.slice(1)} · ${prefix === 'T' ? "Team bonus" : "Civilization bonus"}`;
-  el.dataset.tip      = [c.label, ...(p.chronicles ? ["From the Chronicles civilizations."] : [])].join("\n");
-  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult)}${_chroniclesBadge(p)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
+  const src = _cardSource(prefix === 'T' ? 'team' : 'civ', c.id);
+  el.dataset.tip      = _bonusTipLines(c, p, src).join("\n");
+  if (src) el.dataset.srcCiv = src.slot;
+  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult, _cardFullText(c.label, src))}${_chroniclesBadge(p)}${_civBadge(src)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
   // Use c.id directly in closures — no need to parse data-bonus-id
   el.addEventListener('click', e => {
     if (e.target.closest('.multiplier-circle')) return;
@@ -2416,7 +2471,88 @@ function _watchStickyNav() {
 
 // searchId: the page's search box.  When given, a "Clear filters" button
 // follows the pills and resets both (the civ and team bonus pages).
-function _renderCatPills(containerId, filterSet, filterFn, categories = _BONUS_CATEGORIES, searchId = null) {
+// The Civilization filter's ticked civ slots, per category filter (one per
+// list), so _cardVisible and the UT grid find it from what they already hold.
+const _civFilters = new WeakMap();
+function _civFilterFor(catFilter) {
+  if (!_civFilters.has(catFilter)) _civFilters.set(catFilter, new Set());
+  return _civFilters.get(catFilter);
+}
+
+// The Civilization chip: a checklist of the civs this list's cards come from
+// (kinds: which _cardSources tables), with a search box and Clear.  Ticked
+// civs combine as "any of these".
+function _civFilterPill(kinds, civs, filterFn) {
+  const wrap = document.createElement('div');
+  wrap.className = 'civ-filter';
+  const pill = document.createElement('button');
+  pill.type = 'button';
+  pill.className = 'cat-pill civ-filter-pill';
+  pill.setAttribute('aria-haspopup', 'true');
+  pill.setAttribute('aria-expanded', 'false');
+  const label = () => {
+    pill.innerHTML = `<i class="fa-solid fa-flag"></i> Civilization${civs.size ? ` (${civs.size})` : ''} <i class="fa-solid fa-caret-down"></i>`;
+    pill.classList.toggle('active', civs.size > 0);
+  };
+  label();
+  const menu = document.createElement('div');
+  menu.className = 'civ-filter-menu';
+  menu.hidden = true;
+  wrap.append(pill, menu);
+
+  const build = () => {
+    const slots = new Set(kinds.flatMap(k => Object.values(_cardSources?.[k] || {}).map(String)));
+    const list = [...slots].map(s => ({ slot: s, ...(_cardSources.civs[s] || {}) }))
+      .filter(c => c.name).sort((a, b) => a.name.localeCompare(b.name));
+    menu.innerHTML = `<input type="search" class="form-control form-control-sm civ-filter-search" placeholder="Find a civilization…" aria-label="Find a civilization">
+      <div class="civ-filter-list">${list.map(c => `
+        <label class="civ-filter-item" data-name="${_esc(c.name.toLowerCase())}">
+          <input type="checkbox" value="${c.slot}"${civs.has(c.slot) ? ' checked' : ''}>
+          <img src="/api/civ-emblem/${c.emblem}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+          <span>${_esc(c.name)}</span>
+        </label>`).join('') || '<div class="text-muted small p-2">No civilizations found.</div>'}</div>
+      <button type="button" class="btn btn-sm btn-link civ-filter-clear">Clear</button>`;
+    menu.querySelector('.civ-filter-search').addEventListener('input', e => {
+      const q = e.target.value.trim().toLowerCase();
+      menu.querySelectorAll('.civ-filter-item').forEach(it => { it.hidden = !!q && !it.dataset.name.includes(q); });
+    });
+    menu.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+      if (cb.checked) civs.add(cb.value); else civs.delete(cb.value);
+      label();
+      filterFn();
+    }));
+    menu.querySelector('.civ-filter-clear').addEventListener('click', () => {
+      civs.clear();
+      menu.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+      label();
+      filterFn();
+    });
+  };
+  const close = () => {
+    menu.hidden = true;
+    pill.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('mousedown', outside, true);
+    document.removeEventListener('keydown', onKey);
+  };
+  const outside = e => { if (!wrap.contains(e.target)) close(); };
+  const onKey = e => { if (e.key === 'Escape') { close(); pill.focus(); } };
+  pill.addEventListener('click', async () => {
+    if (!menu.hidden) return close();
+    await loadCardSources();
+    build();
+    menu.hidden = false;
+    pill.setAttribute('aria-expanded', 'true');
+    document.addEventListener('mousedown', outside, true);
+    document.addEventListener('keydown', onKey);
+    menu.querySelector('.civ-filter-search').focus();
+  });
+  wrap.refresh = label;
+  return wrap;
+}
+
+// civKinds: the _cardSources tables this list's cards come from — adds the
+// Civilization chip.  Every bar ends with the card view switch (card_views.js).
+function _renderCatPills(containerId, filterSet, filterFn, categories = _BONUS_CATEGORIES, searchId = null, civKinds = null) {
   const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = '';
@@ -2441,20 +2577,25 @@ function _renderCatPills(containerId, filterSet, filterFn, categories = _BONUS_C
     });
     container.appendChild(pill);
   }
-  if (searchId) {
+  const civPill = civKinds ? _civFilterPill(civKinds, _civFilterFor(filterSet), filterFn) : null;
+  if (civPill) container.appendChild(civPill);
+  if (searchId || civPill) {
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'cat-pill-clear';
     clear.innerHTML = '<i class="fa-solid fa-xmark"></i> Clear filters';
     clear.addEventListener('click', () => {
       filterSet.clear();
+      _civFilterFor(filterSet).clear();
       container.querySelectorAll('.cat-pill.active').forEach(p => p.classList.remove('active'));
-      const search = document.getElementById(searchId);
+      civPill?.refresh();
+      const search = searchId && document.getElementById(searchId);
       if (search) search.value = '';
       filterFn();
     });
     container.appendChild(clear);
   }
+  if (window.efCardViewSwitch) container.appendChild(efCardViewSwitch());
 }
 
 function _updateBonusDivider(selSection, divider) {
@@ -2483,7 +2624,8 @@ function _buildGridHtml(catalog, selIds, bonuses, q, idPrefix) {
     if (visible) anyVisible = true;
     const typeClass = p.type !== 'value' ? ` ${p.type}-bonus` : '';
     const styleAttr = `--cat-color:var(--cat-${cat.key})${visible ? '' : ';display:none'}`;
-    const html = `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${idStr}" data-cat="${cat.key}" style="${styleAttr}" ${_bonusTipAttrs(c, cat, p, idPrefix === 'T')}>${_renderBonusCardInner(p, cat, mult)}${_chroniclesBadge(p)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
+    const src = _cardSource(idPrefix === 'T' ? 'team' : 'civ', c.id);
+    const html = `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${idStr}" data-cat="${cat.key}" style="${styleAttr}" ${_bonusTipAttrs(c, cat, p, idPrefix === 'T', src)}>${_renderBonusCardInner(p, cat, mult, _cardFullText(c.label, src))}${_chroniclesBadge(p)}${_civBadge(src)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
     if (sel) selHtml += html;
     else availHtml += html;
   }
@@ -2597,7 +2739,8 @@ function _cardVisible(el, id, catalog, q, catFilter) {
   const c = catalog.find(c => c.id === id);
   const textMatch = !q || (c && c.label.toLowerCase().includes(q));
   const catMatch  = catFilter.size === 0 || catFilter.has(el.dataset.cat);
-  return textMatch && catMatch;
+  const civs      = _civFilterFor(catFilter);
+  return textMatch && catMatch && (civs.size === 0 || civs.has(el.dataset.srcCiv));
 }
 
 function _filterBonusGrid(q) {
@@ -3299,13 +3442,15 @@ function renderUTGrid(step) {
     const ageName = tier === "castle" ? "Castle" : "Imperial";
     const tierBadge = `<img class="ut-tier-badge" src="/static/icons/units/${tier}_age.png" alt="${ageName} Age tech">`;
     const cost = _utCostOf(tier, t.id);
+    const src  = _cardSource(tier, t.id);
     const tip = [
       t.desc,
       cost ? `Research cost: ${_formatCostStr(cost.cost, cost.time)}` : "",   // the tech's, not what it changes
       tier === own ? `${ageName} Age tech.`
                    : `Originally ${tier === "imperial" ? "an" : "a"} ${ageName} Age tech — here it takes effect when this tech is researched.`,
+      src ? `From the ${src.name}.` : "",
     ].filter(Boolean).join("\n");
-    return `<div class="bonus-card${pick ? ' selected' : ''}" data-ut-id="${t.id}" data-ut-tier="${tier}" data-cat="${cat.key}"
+    return `<div class="bonus-card${pick ? ' selected' : ''}" data-ut-id="${t.id}" data-ut-tier="${tier}" data-cat="${cat.key}"${src ? ` data-src-civ="${src.slot}"` : ''}
       style="--cat-color:var(--cat-${cat.key})" data-tip-title="${_esc(t.name)}" data-tip="${_esc(tip)}" role="button" tabindex="0" aria-pressed="${!!pick}">
       <div class="card-header">
         <div><i class="fa-solid ${cat.icon}"></i><span class="bonus-type">${catLabel}</span>${tierBadge}</div>
@@ -3315,7 +3460,9 @@ function renderUTGrid(step) {
         ${iconHtml}
         <div class="ut-card-name">${t.name}</div>
         <div class="card-who"><span class="card-who-label">${t.desc}</span></div>
+        <div class="card-fulltext"><strong>${_esc(t.name)}</strong> ${_renderTokens(_esc(t.desc))}${_cardSourceLine(src)}</div>
       </div>
+      ${_civBadge(src)}
       <div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>
     </div>`;
   };
@@ -3333,6 +3480,8 @@ function renderUTGrid(step) {
       const cat = (_UT_CATEGORIES.find(c => c.key === (_utCards[tier][String(t.id)] || {}).category) || _UT_CATEGORIES.at(-1)).key;
       if (q && !t.name.toLowerCase().includes(q) && !t.desc.toLowerCase().includes(q)) continue;
       if (catFilter.size && !catFilter.has(cat)) continue;
+      const civs = _civFilterFor(catFilter);
+      if (civs.size && !civs.has(_cardSource(tier, t.id)?.slot)) continue;
       availHtml += cardHtml(t, tier, null);
       shown++;
     }
@@ -3741,9 +3890,9 @@ function initUTPanel(step) {
   }
 
   const catFilter = step === 6 ? _cutCatFilter : _iutCatFilter;
-  _renderCatPills(`${prefix}-cat-pills`, catFilter, () => renderUTGrid(step), _UT_CATEGORIES);
+  _renderCatPills(`${prefix}-cat-pills`, catFilter, () => renderUTGrid(step), _UT_CATEGORIES, null, ["castle", "imperial"]);
 
-  Promise.all([loadUTCatalog(), loadUTCosts()]).then(() => {
+  Promise.all([loadUTCatalog(), loadUTCosts(), loadCardSources()]).then(() => {
     // A pick with no name yet (a KM import, a draft from before the merge)
     // takes its name, description and cost from the pick, as a click would.
     const ut = draft[key];
@@ -5310,7 +5459,7 @@ async function init() {
     }
   });
 
-  Promise.all([loadBonusCatalog(), loadUTCatalog()]).then(() => {
+  Promise.all([loadBonusCatalog(), loadUTCatalog(), loadCardSources()]).then(() => {
     // Restore UT panels if user had already filled them in a previous session
     if (draft.castle_ut)   initUTPanel(6);
     if (draft.imperial_ut) initUTPanel(7);
@@ -5318,9 +5467,9 @@ async function init() {
     const _getBonusQ = () => (document.getElementById("bonus-search")?.value || "").toLowerCase();
     const _getTeamQ  = () => (document.getElementById("team-bonus-search")?.value || "").toLowerCase();
     _renderCatPills("bonus-cat-pills",      _bonusCatFilter, () => _filterBonusGrid(_getBonusQ()),
-                    _BONUS_CATEGORIES, "bonus-search");
+                    _BONUS_CATEGORIES, "bonus-search", ["civ"]);
     _renderCatPills("team-bonus-cat-pills", _teamCatFilter,  () => _filterTeamBonusGrid(_getTeamQ()),
-                    _BONUS_CATEGORIES, "team-bonus-search");
+                    _BONUS_CATEGORIES, "team-bonus-search", ["team"]);
     // Wire search inputs to filter the grids
     document.getElementById("bonus-search")
       .addEventListener("input", e => _filterBonusGrid(e.target.value.toLowerCase()));

@@ -500,6 +500,7 @@ function cbCardHtml(card, opts = {}) {
       ${icons}
       ${middle}
       <div class="card-who"><span class="card-who-label">${cbEsc(footer)}</span></div>
+      <div class="card-fulltext">${_cbTokensHtml(cbEsc(_cbTipText(card)))}</div>
       ${opts.why ? `<div class="cb-card-why">${cbEsc(opts.why)}</div>` : ""}
       ${opts.actions || ""}
     </div>
@@ -1328,6 +1329,12 @@ async function cbSaveToLibrary(card) {
 
 async function _cbLibraryPage() {
   const list   = document.getElementById("cb-library-list");
+  if (window.efCardViewSwitch) {
+    const bar = document.createElement("div");
+    bar.className = "d-flex justify-content-end mb-2";
+    bar.appendChild(efCardViewSwitch());
+    list.before(bar);
+  }
   const status = document.getElementById("cb-status");
   let library  = [];
 
