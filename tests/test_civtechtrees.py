@@ -253,5 +253,46 @@ for node_type in ("Research", "UniqueTech"):
     check(f"[{node_type}] custom UTs shown as available",
           all(ids.get(t, {}).get("Node Status") == "ResearchedCompleted" for t in (9001, 9002)))
 
+# ── A retired UT sharing the button (2026-11-18) ──────────────────────────────
+# The Franks keep Bearded Axe (83) beside Ordonnance Companies (1496) on Castle
+# button 7, and the F2 tree names only 1496.  apply_civ took the first tech on
+# the button, so the patcher missed the node: Ordonnance Companies stayed,
+# crossed out, where the custom UT should have been.
+franks = load("FRANKS")
+with tempfile.TemporaryDirectory() as tmp:
+    p = Path(tmp) / "FRANKS.json"
+    p.write_text(json.dumps(franks), encoding="utf-8")
+    out = json.loads(_patch_per_civ_techtree(p, {"tree": {"units": [], "buildings": [], "techs": []}},
+        civ_result={"orig_castle_ut_tech_id": 83, "orig_castle_ut_tech_ids": [83, 1496],
+                    "orig_imp_ut_tech_id": 493, "orig_imp_ut_tech_ids": [493],
+                    "castle_ut_tech_id": 9001, "imp_ut_tech_id": 9002,
+                    "castle_ut_name": "Probe Drill", "imp_ut_name": "Probe Quote"}))
+ids = {n["Node ID"] for n in out["civ_techs_units"] if n.get("Building ID") == 82
+       and n.get("Node Type") == "UniqueTech"}
+check("Franks: Ordonnance Companies' node becomes the custom Castle UT", ids == {9001, 9002}, sorted(ids))
+
+# Every civ's F2 UT nodes are among the techs it has on Castle buttons 7 and 8,
+# which is what apply_civ now collects (the first alone fails the Franks).
+if _dat:
+    from dat_reader import load_dat                         # noqa: E402
+    _d = load_dat(str(_dat))
+    _on = {}
+    for _ti, _t in enumerate(_d.techs):
+        for _rl in _t.research_locations:
+            if _t.civ > 0 and _rl.location_id == 82 and _rl.button_id in (7, 8):
+                _on.setdefault(_t.civ, set()).add(_ti)
+    _missed = {}
+    for _ci, _civ in enumerate(_d.civs):
+        from civ_appender import _CHRONICLES_CIVS               # noqa: E402  (not replaceable)
+        _f = CIVDIR / f"{_civ.name.upper()}.json" if _ci and _civ.name not in _CHRONICLES_CIVS else None
+        if _f is None or not _f.exists():
+            continue
+        _nodes = {n["Node ID"] for n in json.loads(_f.read_text(encoding="utf-8")).get("civ_techs_units", [])
+                  if n.get("Building ID") == 82 and n.get("Use Type") == "Tech"
+                  and n.get("Node Type") == "UniqueTech"}
+        if _nodes - _on.get(_ci, set()):
+            _missed[_civ.name] = sorted(_nodes - _on.get(_ci, set()))
+    check("every civ's F2 Castle UT nodes sit on its Castle buttons 7/8", not _missed, _missed)
+
 print("\nAll checks passed." if not failures else f"\n{failures} check(s) failed.")
 sys.exit(1 if failures else 0)

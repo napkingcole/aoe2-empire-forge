@@ -35,9 +35,11 @@ from civ_appender import (apply_civ, _KM_UU_TECHS, _KM_UU_NAMES, get_km_uu_index
                           _civ_present_units)
 import km_custom_uu
 
-# Languages KM ships string files for.
+# Every language folder the game ships under resources/.  KM's list had 15 and
+# no "pl" or "ru", so a Polish or Russian player saw the vanilla civ names and
+# none of the mod's text (found 2026-11-15).
 LANGUAGES = ["br", "de", "en", "es", "fr", "hi", "it", "jp",
-             "ko", "ms", "mx", "tr", "tw", "vi", "zh"]
+             "ko", "ms", "mx", "pl", "ru", "tr", "tw", "vi", "zh"]
 
 AI_PER_STUB = b"; Civbuilder generated AI File\n; Feel free to edit as you please\n"
 
@@ -317,7 +319,7 @@ def _build_ui_zip(civ_def: dict, ui_civ_name: str, name_string_id: int) -> bytes
             # causes it to stretch into a giant emblem in the UI.
             # Phase 2: supply proper 450×280 artwork.
 
-        # Language string files — all 15 langs get the same English strings.
+        # Language string files — every language gets the same English strings.
         # Phase 2: proper per-language translations.
         for lang in LANGUAGES:
             zf.writestr(
@@ -1063,8 +1065,13 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                             _bonus_enabled_units.add(int(ec.b))
 
     # Pre-compute UT retargeting info from civ_result (if available).
-    _orig_castle_ut_tid = (civ_result or {}).get("orig_castle_ut_tech_id")
-    _orig_imp_ut_tid    = (civ_result or {}).get("orig_imp_ut_tech_id")
+    # Every tech the slot's civ had on the UT button (a retired one can share
+    # it with the current, which is the one the F2 tree names).
+    _cr = civ_result or {}
+    _orig_castle_ut_tids = set(_cr.get("orig_castle_ut_tech_ids") or ()) | (
+        {_cr["orig_castle_ut_tech_id"]} if _cr.get("orig_castle_ut_tech_id") is not None else set())
+    _orig_imp_ut_tids = set(_cr.get("orig_imp_ut_tech_ids") or ()) | (
+        {_cr["orig_imp_ut_tech_id"]} if _cr.get("orig_imp_ut_tech_id") is not None else set())
     _new_castle_ut_tid  = (civ_result or {}).get("castle_ut_tech_id")
     _new_imp_ut_tid     = (civ_result or {}).get("imp_ut_tech_id")
     _castle_ut_sid      = (civ_result or {}).get("castle_ut_sid")
@@ -1108,7 +1115,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
             # bundled pre-DLC trees still say "Research" (issue #46).
             if (use_type == "Tech" and node_type in ("Research", "UniqueTech")
                     and node.get("Building ID") == 82):
-                if node_id == _orig_castle_ut_tid and _new_castle_ut_tid is not None:
+                if node_id in _orig_castle_ut_tids and _new_castle_ut_tid is not None:
                     node["Node ID"] = _new_castle_ut_tid
                     if _castle_ut_sid:
                         node["Name String ID"] = _castle_ut_sid
@@ -1118,7 +1125,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                     node["Node Status"] = STATUS_OK
                     changed += 1
                     continue
-                if node_id == _orig_imp_ut_tid and _new_imp_ut_tid is not None:
+                if node_id in _orig_imp_ut_tids and _new_imp_ut_tid is not None:
                     node["Node ID"] = _new_imp_ut_tid
                     if _imp_ut_sid:
                         node["Name String ID"] = _imp_ut_sid
@@ -1198,7 +1205,7 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
     # "Available from" (civ_overrides._apply_age_moves): the node moves age.
     for key, age in ((civ_result or {}).get("age_moves") or {}).items():
         kind, node_id = key.split(":")
-        for node in data.get("civ_techs_units", []):
+        for node in data.get("civ_techs_units", []) + data.get("civ_techs_buildings", []):
             if node.get("Use Type") == kind and node.get("Node ID") == int(node_id):
                 node["Age ID"] = age
                 changed += 1
@@ -1215,6 +1222,14 @@ def _patch_per_civ_techtree(civ_json_path: Path, civ_def: dict,
                              "Picture Index": dat.civs[slot].units[line["units"][0]].icon_id})
                 changed += 1
     added = _added_line_nodes(dat, slot, (civ_result or {}).get("added_lines") or [])
+    # The second unique unit: a Castle line of its own (civ_appender._apply_second_uu).
+    second = (civ_result or {}).get("second_uu")
+    if second:
+        n = 1 if second["elite_id"] == second["unit_id"] else 2
+        added += _added_line_nodes(dat, slot, [{
+            "units": [second["unit_id"], second["elite_id"]][:n], "sids": second["sids"][:n],
+            "names": second["names"][:n], "ages": [3, 4][:n],
+            "techs": [second["make_avail"], second["elite_tech"]][:n], "building": 82}])
     if added:
         data.setdefault("civ_techs_units", []).extend(added)
         changed += len(added)
@@ -1233,12 +1248,19 @@ def _added_line_nodes(dat, slot, lines: list[dict]) -> list[dict]:
         return out
     units = dat.civs[slot].units
     for line in lines:
-        if line.get("replaces") is not None:
-            continue                          # shown on the vanilla unit's node
+        rep = line.get("replaces")
         # An extension's first tier hangs off the vanilla unit it upgrades from.
         frm = line.get("from")
-        for n, (uid, sid, age, tech) in enumerate(zip(line["units"], line["sids"], line["ages"], line["techs"])):
-            if frm is not None:
+        # A replacement's first tier is shown on the vanilla unit's node, and
+        # its techs start with the hidden one and the renamed upgrade, so a
+        # later tier's upgrade is techs[n + 1].
+        techs = [None, *line["techs"][2:]] if rep is not None else line["techs"]
+        for n, (uid, sid, age, tech) in enumerate(zip(line["units"], line["sids"], line["ages"], techs)):
+            if rep is not None and n == 0:
+                continue
+            if rep is not None:
+                kind, link = "UnitUpgrade", "UnitUpgrade"
+            elif frm is not None:
                 kind, link = "UnitUpgrade", ("UnitUpgrade" if n or line.get("from_is_upgrade") else "Unit")
             else:
                 kind = "Unit" if n == 0 else "UnitUpgrade"
@@ -1250,7 +1272,9 @@ def _added_line_nodes(dat, slot, lines: list[dict]) -> list[dict]:
                     "Node Status": "ResearchedCompleted", "Name String ID": sid,
                     "Age ID": age, "Building ID": line["building"], "Help String ID": sid + 100000,
                     "Node ID": uid, "Picture Index": units[uid].icon_id, "Trigger Tech ID": tech}
-            if n:
+            if n == 1 and rep is not None:
+                node["Link ID"] = rep              # the vanilla node showing tier 1
+            elif n:
                 node["Link ID"] = line["units"][n - 1]
             elif frm is not None:
                 node["Link ID"] = frm

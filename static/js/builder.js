@@ -88,6 +88,9 @@ let maxStep     = 1;  // highest step ever reached — gates nav dot clicks
 // ── Step navigation ───────────────────────────────────────────────────────────
 
 function showStep(n) {
+  // Step 5 (Unique Unit) moved onto the tech tree's Castle (2026-11-13): its
+  // panel stays as the panels' parking spot, and the steps go round it.
+  if (n === 5) n = currentStep > 5 ? 4 : 6;
   document.querySelectorAll(".wizard-panel").forEach(p => p.classList.add("d-none"));
   document.getElementById(`panel-${n}`).classList.remove("d-none");
 
@@ -121,7 +124,7 @@ function showStep(n) {
     }
   }
   if (n === 1) renderScene();      // a card picked since (460) can change it
-  if (n === 2) warmTreeSteps();
+  if (n === 2) { warmTreeSteps(); updateUUSummary(); }
   if (n === 6 || n === 7) initUTPanel(n);
 
   const btnPrev = document.getElementById("btn-prev");
@@ -139,7 +142,7 @@ function showStep(n) {
     btnNext.disabled  = false;
   }
 
-  document.getElementById("step-counter").textContent = `Step ${n} of ${TOTAL_STEPS}`;
+  document.getElementById("step-counter").textContent = `Step ${n > 5 ? n - 1 : n} of ${TOTAL_STEPS - 1}`;
   currentStep = n;
 
   if (n === 8) loadHeroCatalog().then(() => { renderHeroGrid(); _heroRefreshUI(); });
@@ -197,7 +200,7 @@ function validateStep(n) {
     }
     showArchError(false);
   }
-  if (n === 5) {
+  if (n === 2) {
     if (!draft.unique_unit || draft.unique_unit.km_idx == null) {
       showUUError(true);
       return false;
@@ -234,15 +237,27 @@ function validateStep(n) {
 }
 
 function showUUError(show) {
-  let err = document.getElementById("uu-error");
-  if (!err && show) {
-    err = document.createElement("div");
-    err.id = "uu-error";
-    err.className = "text-danger small mt-2";
-    err.textContent = "Please select a Unique Unit before continuing.";
-    document.getElementById("uu-grid").after(err);
-  }
-  if (err) err.style.display = show ? "" : "none";
+  updateUUSummary(show);
+}
+
+// The Tech Tree step's line about the unique units, chosen on the tree's Castle.
+function updateUUSummary(error = false) {
+  const el = document.getElementById("uu-summary");
+  if (!el) return;
+  const one = slot => {
+    const u = window.efUU?.unit(slot);
+    if (!u) return "";
+    return `<span class="d-inline-flex align-items-center gap-2 me-3">
+      <img src="${window.efUU.image(slot)}" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:4px;">
+      <span><span class="fw-semibold">${_esc(window.efUU.name(slot, 0))}</span>
+      <span class="text-muted small">${slot === "second_uu" ? "second unique unit" : "unique unit"}</span></span></span>`;
+  };
+  const have = one("unique_unit") + one("second_uu");
+  el.innerHTML = have
+    ? `<div class="small">${have}<span class="text-muted">Change them at the Castle in the tech tree.</span></div>`
+    : `<div class="small ${error ? "text-danger fw-semibold" : "text-muted"}">
+        <i class="fa-solid fa-hand-fist me-1"></i>Choose your unique unit: open the tech tree and click the
+        unique-unit tile at the Castle. You can add a second one there too.</div>`;
 }
 
 function showArchError(show) {
@@ -438,6 +453,21 @@ const SCENE_SLOTS = {
     // Short enough to stay on one line in a picker tile and the select.
     defaultLabel:    "Default",
     defaultCaption:  "Default Monk",
+  },
+  // The rally flag (#87): a civ's resource 73, by DAT index.  No spot in the
+  // scene; the select shows it beside itself (_drawFlagPreview).
+  waypoint_flag: {
+    title:   "Select Waypoint Flag",
+    select:  "flag-select",
+    options: () => window._metaFlags || [],
+    get:     () => draft.waypoint_flag,
+    set:     v => { if (v < 0) delete draft.waypoint_flag; else draft.waypoint_flag = v; },
+    art:     v => _sceneArt("waypoint_flag", v),
+    name:    v => (window._metaFlags || []).find(o => o.value === v)?.label || `#${v}`,
+    caption: v => `${SCENE_SLOTS.waypoint_flag.name(v)} Flag`,
+    defaultable: true,
+    resolveDefault: () => { const c = _archRep(draft.architecture ?? DEFAULT_ARCHITECTURE); return c === null ? null : c + 1; },
+    defaultCaption: "Architecture Default Flag",
   },
   starting_scout: {
     title:   "Select Starting Scout",
@@ -733,6 +763,7 @@ function setSceneValue(key, value) {
   SCENE_SLOTS[key].set(value);
   saveDraft();
   renderScene();
+  _drawFlagPreview();          // its default follows the architecture
 }
 
 // ── Picker overlay ────────────────────────────────────────────────────────────
@@ -808,6 +839,18 @@ function playVoiceSample() {
 }
 
 // ── Scene wiring ──────────────────────────────────────────────────────────────
+
+// The chosen flag, or the architecture's, drawn from the game beside its select.
+function _drawFlagPreview() {
+  const img = document.getElementById("flag-preview");
+  if (!img) return;
+  const slot = SCENE_SLOTS.waypoint_flag;
+  const v = slot.get() ?? slot.resolveDefault();
+  if (v == null) { img.removeAttribute("src"); return; }
+  img.onerror = () => { img.style.visibility = "hidden"; };
+  img.onload = () => { img.style.visibility = ""; };
+  img.src = slot.art(v);
+}
 
 function bindScene() {
   document.querySelectorAll(".scene-slot").forEach(btn => {
@@ -934,6 +977,9 @@ function populateReview() {
     ? ((window._metaMonasteries || []).find(m => m.value === draft.monastery_skin_building)?.label
        || `#${draft.monastery_skin_building}`)
     : "Architecture Default";
+  const flagName = draft.waypoint_flag != null && draft.waypoint_flag >= 0
+    ? ((window._metaFlags || []).find(f => f.value === draft.waypoint_flag)?.label || `#${draft.waypoint_flag}`)
+    : "Architecture Default";
   const monkName = draft.monk_skin != null && draft.monk_skin >= 0
     ? ((window._metaMonks || []).find(m => m.value === draft.monk_skin)?.label
        || `#${draft.monk_skin}`)
@@ -949,6 +995,7 @@ function populateReview() {
     _reviewRow("Starting Scout", scoutName),
     _reviewRow("Monastery",    monasteryName),
     _reviewRow("Monk Skin",    monkName),
+    _reviewRow("Waypoint Flag", flagName),
     _reviewRow("Emblem",       draft.emblem ? "&#10003; Uploaded" : "<em class='text-muted'>None</em>"),
   ].join("");
 
@@ -995,20 +1042,23 @@ function populateReview() {
 
   // ── UU ──────────────────────────────────────────────────────────────────
   let uuHtml = "<em class='text-danger'>Not set</em>";
-  if (draft.unique_unit?.km_idx != null) {
-    const base     = _uuCatalog.find(u => u.km_idx === draft.unique_unit.km_idx);
-    const baseName = base?.name || `Unit #${draft.unique_unit.km_idx}`;
+  for (const slot of ["unique_unit", "second_uu"]) {
+    const uu = draft[slot];
+    if (uu?.km_idx == null) continue;
+    if (slot === "unique_unit") uuHtml = "";
+    const base     = _uuCatalog.find(u => u.km_idx === uu.km_idx);
+    const baseName = base?.name || `Unit #${uu.km_idx}`;
     const iconSrc  = base?.icon || UU_PLACEHOLDER;
-    const override = draft.unique_unit.name;
+    const override = uu.name;
     const display  = override || baseName;
-    const lookId   = draft.unique_unit.appearance;
+    const lookId   = uu.appearance;
     const lookName = lookId == null ? null
       : (_HERO_NAMES[lookId] || _uuCatalog.find(u => u.preview_unit === lookId)?.name
          || _uuLooks.looks.find(l => l.id === lookId)?.name || `Unit #${lookId}`);
     const subtitle = (override ? `<div class="text-muted" style="font-size:.7rem;">base: ${baseName}</div>` : "")
       + (lookName ? `<div class="text-muted" style="font-size:.7rem;">looks like: ${_esc(lookName)}</div>` : "");
-    const _uuRevImg = `<img id="uu-review-icon" src="${iconSrc}" style="width:32px;height:32px;object-fit:contain;background:oklch(from var(--body-bg) calc(l+0.06) c h);border-radius:4px;">`;
-    uuHtml = `<div class="d-flex align-items-center gap-2">${_uuRevImg}<div><div>${display}</div>${subtitle}</div></div>`;
+    const _uuRevImg = `<img ${slot === "unique_unit" ? 'id="uu-review-icon" ' : ""}src="${iconSrc}" style="width:32px;height:32px;object-fit:contain;background:oklch(from var(--body-bg) calc(l+0.06) c h);border-radius:4px;">`;
+    uuHtml += `<div class="d-flex align-items-center gap-2${slot === "second_uu" ? " mt-2" : ""}">${_uuRevImg}<div><div>${display}</div>${subtitle}</div></div>`;
   }
 
   // ── UT helper ───────────────────────────────────────────────────────────
@@ -1074,7 +1124,7 @@ function populateReview() {
       </div>
       <div class="col-md-3">
         <div class="card h-100">
-          <div class="card-header small fw-semibold"><i class="fa-solid fa-hand-fist me-1" style="color:var(--accent-2)"></i>Unique Unit</div>
+          <div class="card-header small fw-semibold"><i class="fa-solid fa-hand-fist me-1" style="color:var(--accent-2)"></i>Unique Unit${draft.second_uu?.km_idx != null ? "s" : ""}</div>
           <div class="card-body p-2">${uuHtml}</div>
         </div>
       </div>
@@ -1363,6 +1413,9 @@ function _startGround(stage, img, meta, wake = null) {
 function openUnitPreview(unitId, name, civ = null) {
   const el = document.getElementById("modal-unit-preview");
   if (!el) return;
+  // Out of <main>, which is hidden while the tree is full screen (the unique
+  // unit's picker and looks open from there): it opened as a backdrop only.
+  if (el.parentElement !== document.body) document.body.appendChild(el);
   _previewModal = _previewModal || new bootstrap.Modal(el);
   el.querySelector(".modal-title").textContent = name || "";
   const img = el.querySelector("#unit-preview-img");
@@ -1751,8 +1804,8 @@ function _classifyBonus(id, label) {
   // civ_appender._UNLOCK_UNIT_BONUSES automatically and the hardcoded 405-417
   // entries above are now belt-and-braces rather than load-bearing.
   if (_isUnlockBonus(id)) {
-    // Units from the Chronicles civs get their own purple banner; Chronicles
-    // bonuses and techs stay filed by what they do, marked only by the badge.
+    // Units from the Chronicles civs get their own purple banner, as do the
+    // Chronicles bonuses (their card data names the category, above).
     const key = _cardOverrides[String(id)]?.chronicles ? 'chronicles' : 'unlock';
     return _BONUS_CATEGORIES.find(c => c.key === key) || _BONUS_CATEGORIES.at(-1);
   }
@@ -2038,7 +2091,9 @@ function _parseBonusCard(id, label) {
 //   /static/icons/attrs/{attrKey}.svg      — attribute icon
 //   /static/icons/ages/{age}.svg           — age badge (dark/feudal/castle/imperial)
 
-function _renderBonusCardInner(p, cat, mult) {
+// `extra`: markup appended to the card body (the full text the condensed
+// views show).
+function _renderBonusCardInner(p, cat, mult, extra = '') {
   const catLabel  = cat.key.charAt(0).toUpperCase() + cat.key.slice(1);
   const err = `onerror="this.style.display='none'"`;
 
@@ -2090,6 +2145,7 @@ function _renderBonusCardInner(p, cat, mult) {
       ${hasIcon ? `<img class="card-icon" src="${iconSrc}" alt="${whoInfo.label}" ${err}>` : ''}
       <ul class="card-desc-lines">${linesHtml}</ul>
       ${whoCell}
+      ${extra}
     </div>`;
   }
 
@@ -2116,6 +2172,7 @@ function _renderBonusCardInner(p, cat, mult) {
       <div class="card-heading">${valueLabel}</div>
       <div class="card-stat">${dualAttrLabel}</div>
       ${dualWho}
+      ${extra}
     </div>`;
   }
 
@@ -2148,6 +2205,7 @@ function _renderBonusCardInner(p, cat, mult) {
       <div class="card-prog-label">${leadText}</div>
       <div class="age-bonus-table">${ageItems}</div>
       ${whoCell}
+      ${extra}
     </div>`;
   }
 
@@ -2158,6 +2216,7 @@ function _renderBonusCardInner(p, cat, mult) {
       <div class="card-heading">${valueLabel}</div>
       <div class="card-stat">${attrLabel}</div>
       ${whoCell}
+      ${extra}
     </div>`;
 }
 
@@ -2272,8 +2331,14 @@ async function loadBonusCatalog() {
   }
 }
 
-async function loadUTCatalog() {
-  if (_castleUtCatalog.length) return;
+// One load, shared: callers that arrive while it is in flight wait on it
+// rather than each fetching and pushing another copy of the catalog.
+let _utCatalogLoad = null;
+function loadUTCatalog() {
+  return _utCatalogLoad ||= _loadUTCatalog();
+}
+
+async function _loadUTCatalog() {
   try {
     const [catalogRes, overridesRes, cardsRes] = await Promise.all([
       fetch("/api/builder/ut/catalog"),
@@ -2289,9 +2354,61 @@ async function loadUTCatalog() {
     _utCards = { castle: cards.castle || {}, imperial: cards.imperial || {} };
   } catch (e) {
     console.warn("Could not load UT catalog:", e);
+    _utCatalogLoad = null;                 // let a later call try again
   }
 }
 
+
+// ── Where a card comes from (#95) ───────────────────────────────────────────
+// /api/builder/card-sources: the civ each vanilla bonus, team bonus and unique
+// tech is taken from, read from the player's game (app._card_sources).  A card
+// from one civ wears its emblem bottom-left (the Chronicles helmet keeps
+// bottom-right), says so in its tooltip, and answers the Civilization filter.
+let _cardSources = null;
+async function loadCardSources() {
+  if (_cardSources) return _cardSources;
+  try {
+    _cardSources = await (await fetch("/api/builder/card-sources")).json();
+  } catch (e) {
+    _cardSources = { civs: {}, civ: {}, team: {}, castle: {}, imperial: {} };
+  }
+  return _cardSources;
+}
+
+// kind: "civ", "team", "castle" or "imperial".  A card can come from more
+// than one civ (Caravanserai: the Hindustanis and the Persians).
+// {slot: "2 31" (data-src-civ), civs: [{name, emblem}], name: "Hindustanis and Persians"} or null.
+function _cardSource(kind, id) {
+  const civs = (_cardSources?.[kind]?.[String(id)] || [])
+    .map(s => ({ slot: String(s), ..._cardSources.civs[String(s)] })).filter(c => c.name);
+  if (!civs.length) return null;
+  const names = civs.map(c => c.name);
+  return { slot: civs.map(c => c.slot).join(' '), civs,
+           name: names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0] };
+}
+
+function _srcMatches(slots, civs) {
+  return !!slots && slots.split(' ').some(s => civs.has(s));
+}
+
+function _civBadge(src) {
+  return src
+    ? `<span class="civ-badge">${src.civs.map(c => `<img src="/api/civ-emblem/${c.emblem}" alt="${_esc(c.name)}" loading="lazy" onerror="this.remove()">`).join('')}</span>`
+    : '';
+}
+
+// What the condensed views show in place of the card face: the full text the
+// tooltip has (which those views turn off), and the source civ — its emblem
+// inline there, since the corner badges sit out those views.
+function _cardSourceLine(src) {
+  return src
+    ? `<span class="card-fulltext-src">${src.civs.map(c => `<img src="/api/civ-emblem/${c.emblem}" alt="" loading="lazy" onerror="this.remove()">`).join('')}${_esc(src.name)}</span>`
+    : '';
+}
+
+function _cardFullText(text, src) {
+  return `<div class="card-fulltext">${_renderTokens(_esc(text))}${_cardSourceLine(src)}</div>`;
+}
 
 // Cards ported from the Chronicles civs carry a small helmet badge.  Both card
 // renderers (the bulk grid and _makeBonusCardEl) must call this.  Its
@@ -2305,11 +2422,16 @@ function _chroniclesBadge(p) {
 // The hover tooltip (tooltip.js) for a vanilla bonus card: the category as
 // its heading, the full bonus text below — the card face has room for only a
 // shortened version.  Replaces the card's old `title`.
-function _bonusTipAttrs(c, cat, p, team) {
+function _bonusTipLines(c, p, src) {
+  return [c.label,
+          ...(src ? [`From the ${src.name}.`] : []),
+          ...(p.chronicles ? ["From the Chronicles civilizations."] : [])];
+}
+
+function _bonusTipAttrs(c, cat, p, team, src) {
   const catLabel = cat.key.charAt(0).toUpperCase() + cat.key.slice(1);
-  const lines = [c.label];
-  if (p.chronicles) lines.push("From the Chronicles civilizations.");
-  return `data-tip-title="${_esc(`${catLabel} · ${team ? "Team bonus" : "Civilization bonus"}`)}" data-tip="${_esc(lines.join("\n"))}"`;
+  return `data-tip-title="${_esc(`${catLabel} · ${team ? "Team bonus" : "Civilization bonus"}`)}" data-tip="${_esc(_bonusTipLines(c, p, src).join("\n"))}"`
+       + (src ? ` data-src-civ="${src.slot}"` : '');
 }
 
 function _makeBonusCardEl(c, mult, isSelected, toggleFn, getDraftEntry, prefix = '') {
@@ -2324,8 +2446,10 @@ function _makeBonusCardEl(c, mult, isSelected, toggleFn, getDraftEntry, prefix =
   el.dataset.cat     = cat.key;
   el.style.cssText   = `--cat-color:var(--cat-${cat.key});`;
   el.dataset.tipTitle = `${cat.key.charAt(0).toUpperCase() + cat.key.slice(1)} · ${prefix === 'T' ? "Team bonus" : "Civilization bonus"}`;
-  el.dataset.tip      = [c.label, ...(p.chronicles ? ["From the Chronicles civilizations."] : [])].join("\n");
-  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult)}${_chroniclesBadge(p)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
+  const src = _cardSource(prefix === 'T' ? 'team' : 'civ', c.id);
+  el.dataset.tip      = _bonusTipLines(c, p, src).join("\n");
+  if (src) el.dataset.srcCiv = src.slot;
+  el.innerHTML       = `${_renderBonusCardInner(p, cat, mult, _cardFullText(c.label, src))}${_chroniclesBadge(p)}${_civBadge(src)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>`;
   // Use c.id directly in closures — no need to parse data-bonus-id
   el.addEventListener('click', e => {
     if (e.target.closest('.multiplier-circle')) return;
@@ -2363,7 +2487,88 @@ function _watchStickyNav() {
 
 // searchId: the page's search box.  When given, a "Clear filters" button
 // follows the pills and resets both (the civ and team bonus pages).
-function _renderCatPills(containerId, filterSet, filterFn, categories = _BONUS_CATEGORIES, searchId = null) {
+// The Civilization filter's ticked civ slots, per category filter (one per
+// list), so _cardVisible and the UT grid find it from what they already hold.
+const _civFilters = new WeakMap();
+function _civFilterFor(catFilter) {
+  if (!_civFilters.has(catFilter)) _civFilters.set(catFilter, new Set());
+  return _civFilters.get(catFilter);
+}
+
+// The Civilization chip: a checklist of the civs this list's cards come from
+// (kinds: which _cardSources tables), with a search box and Clear.  Ticked
+// civs combine as "any of these".
+function _civFilterPill(kinds, civs, filterFn) {
+  const wrap = document.createElement('div');
+  wrap.className = 'civ-filter';
+  const pill = document.createElement('button');
+  pill.type = 'button';
+  pill.className = 'cat-pill civ-filter-pill';
+  pill.setAttribute('aria-haspopup', 'true');
+  pill.setAttribute('aria-expanded', 'false');
+  const label = () => {
+    pill.innerHTML = `<i class="fa-solid fa-flag"></i> Civilization${civs.size ? ` (${civs.size})` : ''} <i class="fa-solid fa-caret-down"></i>`;
+    pill.classList.toggle('active', civs.size > 0);
+  };
+  label();
+  const menu = document.createElement('div');
+  menu.className = 'civ-filter-menu';
+  menu.hidden = true;
+  wrap.append(pill, menu);
+
+  const build = () => {
+    const slots = new Set(kinds.flatMap(k => Object.values(_cardSources?.[k] || {}).flat().map(String)));
+    const list = [...slots].map(s => ({ slot: s, ...(_cardSources.civs[s] || {}) }))
+      .filter(c => c.name).sort((a, b) => a.name.localeCompare(b.name));
+    menu.innerHTML = `<input type="search" class="form-control form-control-sm civ-filter-search" placeholder="Find a civilization…" aria-label="Find a civilization">
+      <div class="civ-filter-list">${list.map(c => `
+        <label class="civ-filter-item" data-name="${_esc(c.name.toLowerCase())}">
+          <input type="checkbox" value="${c.slot}"${civs.has(c.slot) ? ' checked' : ''}>
+          <img src="/api/civ-emblem/${c.emblem}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+          <span>${_esc(c.name)}</span>
+        </label>`).join('') || '<div class="text-muted small p-2">No civilizations found.</div>'}</div>
+      <button type="button" class="btn btn-sm btn-link civ-filter-clear">Clear</button>`;
+    menu.querySelector('.civ-filter-search').addEventListener('input', e => {
+      const q = e.target.value.trim().toLowerCase();
+      menu.querySelectorAll('.civ-filter-item').forEach(it => { it.hidden = !!q && !it.dataset.name.includes(q); });
+    });
+    menu.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+      if (cb.checked) civs.add(cb.value); else civs.delete(cb.value);
+      label();
+      filterFn();
+    }));
+    menu.querySelector('.civ-filter-clear').addEventListener('click', () => {
+      civs.clear();
+      menu.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+      label();
+      filterFn();
+    });
+  };
+  const close = () => {
+    menu.hidden = true;
+    pill.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('mousedown', outside, true);
+    document.removeEventListener('keydown', onKey);
+  };
+  const outside = e => { if (!wrap.contains(e.target)) close(); };
+  const onKey = e => { if (e.key === 'Escape') { close(); pill.focus(); } };
+  pill.addEventListener('click', async () => {
+    if (!menu.hidden) return close();
+    await loadCardSources();
+    build();
+    menu.hidden = false;
+    pill.setAttribute('aria-expanded', 'true');
+    document.addEventListener('mousedown', outside, true);
+    document.addEventListener('keydown', onKey);
+    menu.querySelector('.civ-filter-search').focus();
+  });
+  wrap.refresh = label;
+  return wrap;
+}
+
+// civKinds: the _cardSources tables this list's cards come from — adds the
+// Civilization chip.  Every bar ends with the card view switch (card_views.js).
+function _renderCatPills(containerId, filterSet, filterFn, categories = _BONUS_CATEGORIES, searchId = null, civKinds = null) {
   const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = '';
@@ -2388,20 +2593,25 @@ function _renderCatPills(containerId, filterSet, filterFn, categories = _BONUS_C
     });
     container.appendChild(pill);
   }
-  if (searchId) {
+  const civPill = civKinds ? _civFilterPill(civKinds, _civFilterFor(filterSet), filterFn) : null;
+  if (civPill) container.appendChild(civPill);
+  if (searchId || civPill) {
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'cat-pill-clear';
     clear.innerHTML = '<i class="fa-solid fa-xmark"></i> Clear filters';
     clear.addEventListener('click', () => {
       filterSet.clear();
+      _civFilterFor(filterSet).clear();
       container.querySelectorAll('.cat-pill.active').forEach(p => p.classList.remove('active'));
-      const search = document.getElementById(searchId);
+      civPill?.refresh();
+      const search = searchId && document.getElementById(searchId);
       if (search) search.value = '';
       filterFn();
     });
     container.appendChild(clear);
   }
+  if (window.efCardViewSwitch) container.appendChild(efCardViewSwitch());
 }
 
 function _updateBonusDivider(selSection, divider) {
@@ -2430,7 +2640,8 @@ function _buildGridHtml(catalog, selIds, bonuses, q, idPrefix) {
     if (visible) anyVisible = true;
     const typeClass = p.type !== 'value' ? ` ${p.type}-bonus` : '';
     const styleAttr = `--cat-color:var(--cat-${cat.key})${visible ? '' : ';display:none'}`;
-    const html = `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${idStr}" data-cat="${cat.key}" style="${styleAttr}" ${_bonusTipAttrs(c, cat, p, idPrefix === 'T')}>${_renderBonusCardInner(p, cat, mult)}${_chroniclesBadge(p)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
+    const src = _cardSource(idPrefix === 'T' ? 'team' : 'civ', c.id);
+    const html = `<div class="bonus-card${sel ? ' selected' : ''}${typeClass}" data-bonus-id="${idStr}" data-cat="${cat.key}" style="${styleAttr}" ${_bonusTipAttrs(c, cat, p, idPrefix === 'T', src)}>${_renderBonusCardInner(p, cat, mult, _cardFullText(c.label, src))}${_chroniclesBadge(p)}${_civBadge(src)}<div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div></div>`;
     if (sel) selHtml += html;
     else availHtml += html;
   }
@@ -2544,7 +2755,8 @@ function _cardVisible(el, id, catalog, q, catFilter) {
   const c = catalog.find(c => c.id === id);
   const textMatch = !q || (c && c.label.toLowerCase().includes(q));
   const catMatch  = catFilter.size === 0 || catFilter.has(el.dataset.cat);
-  return textMatch && catMatch;
+  const civs      = _civFilterFor(catFilter);
+  return textMatch && catMatch && (civs.size === 0 || _srcMatches(el.dataset.srcCiv, civs));
 }
 
 function _filterBonusGrid(q) {
@@ -3164,6 +3376,7 @@ function _utChange(step, mutate) {
   saveDraft();
   _utFillForm(step);
   renderUTGrid(step);
+  renderUTGrid(step === 6 ? 7 : 6);       // its picks are greyed out there
   _updateUTCostPreview(step);
   _renderCardHome(step === 6 ? "castle" : "imperial");
 }
@@ -3178,11 +3391,21 @@ function _utFillForm(step) {
   set(`${prefix}-time`, ut.time ?? 60);
 }
 
+// A tech picked in the other unique tech, by that slot's name ("" if not):
+// picking it twice would run its effect twice, so each tech goes in one.
+function _utTakenBy(step, tier, id) {
+  const ut = draft[UT_STEPS[step].key];
+  const picked = (ut?.effects || []).some(e => e.id === id && (e.tier || _utOwnTier(step)) === tier)
+    || (!ut?.effects?.length && ut?.vanilla_km_idx === id && tier === _utOwnTier(step));
+  return picked ? (step === 6 ? "Castle Age unique tech" : "Imperial Age unique tech") : "";
+}
+
 function _utToggle(step, tier, id) {
   const { prefix } = UT_STEPS[step];
   const ut = _utDraft(step);
   _utNormalize(step);
   const at = ut.effects.findIndex(e => e.id === id && e.tier === tier);
+  if (at < 0 && _utTakenBy(step === 6 ? 7 : 6, tier, id)) return;
   const limit = document.getElementById(`${prefix}-limit`);
   if (at < 0 && _utUsed(ut) >= MAX_UT_EFFECTS) {
     // Inline, not alert(): a browser dialog blocks the page.
@@ -3227,8 +3450,9 @@ function renderUTGrid(step) {
   const catFilter  = own === "castle" ? _cutCatFilter : _iutCatFilter;
   const tierFilter = _utTierFilter[step];
   const picks = (draft[key] || {}).effects || [];
+  const otherStep = step === 6 ? 7 : 6;
 
-  const cardHtml = (t, tier, pick) => {
+  const cardHtml = (t, tier, pick, takenBy = "") => {
     const card     = _utCards[tier][String(t.id)] || {};
     const cat      = _UT_CATEGORIES.find(c => c.key === card.category) || _UT_CATEGORIES.at(-1);
     const catLabel = cat.key.charAt(0).toUpperCase() + cat.key.slice(1);
@@ -3246,14 +3470,17 @@ function renderUTGrid(step) {
     const ageName = tier === "castle" ? "Castle" : "Imperial";
     const tierBadge = `<img class="ut-tier-badge" src="/static/icons/units/${tier}_age.png" alt="${ageName} Age tech">`;
     const cost = _utCostOf(tier, t.id);
+    const src  = _cardSource(tier, t.id);
     const tip = [
       t.desc,
       cost ? `Research cost: ${_formatCostStr(cost.cost, cost.time)}` : "",   // the tech's, not what it changes
       tier === own ? `${ageName} Age tech.`
                    : `Originally ${tier === "imperial" ? "an" : "a"} ${ageName} Age tech — here it takes effect when this tech is researched.`,
+      src ? `From the ${src.name}.` : "",
+      takenBy ? `Already in your ${takenBy} — a tech can be picked once.` : "",
     ].filter(Boolean).join("\n");
-    return `<div class="bonus-card${pick ? ' selected' : ''}" data-ut-id="${t.id}" data-ut-tier="${tier}" data-cat="${cat.key}"
-      style="--cat-color:var(--cat-${cat.key})" data-tip-title="${_esc(t.name)}" data-tip="${_esc(tip)}" role="button" tabindex="0" aria-pressed="${!!pick}">
+    return `<div class="bonus-card${pick ? ' selected' : ''}${takenBy ? ' ut-taken' : ''}" data-ut-id="${t.id}" data-ut-tier="${tier}" data-cat="${cat.key}"${src ? ` data-src-civ="${src.slot}"` : ''}
+      style="--cat-color:var(--cat-${cat.key})" data-tip-title="${_esc(t.name)}" data-tip="${_esc(tip)}" role="button" tabindex="${takenBy ? -1 : 0}" aria-pressed="${!!pick}"${takenBy ? ' aria-disabled="true"' : ''}>
       <div class="card-header">
         <div><i class="fa-solid ${cat.icon}"></i><span class="bonus-type">${catLabel}</span>${tierBadge}</div>
         ${multWidget}
@@ -3262,7 +3489,9 @@ function renderUTGrid(step) {
         ${iconHtml}
         <div class="ut-card-name">${t.name}</div>
         <div class="card-who"><span class="card-who-label">${t.desc}</span></div>
+        <div class="card-fulltext"><strong>${_esc(t.name)}</strong> ${_renderTokens(_esc(t.desc))}${_cardSourceLine(src)}</div>
       </div>
+      ${_civBadge(src)}
       <div class="card-shadow"></div><div class="top-corners"></div><div class="bottom-corners"></div>
     </div>`;
   };
@@ -3280,7 +3509,9 @@ function renderUTGrid(step) {
       const cat = (_UT_CATEGORIES.find(c => c.key === (_utCards[tier][String(t.id)] || {}).category) || _UT_CATEGORIES.at(-1)).key;
       if (q && !t.name.toLowerCase().includes(q) && !t.desc.toLowerCase().includes(q)) continue;
       if (catFilter.size && !catFilter.has(cat)) continue;
-      availHtml += cardHtml(t, tier, null);
+      const civs = _civFilterFor(catFilter);
+      if (civs.size && !_srcMatches(_cardSource(tier, t.id)?.slot, civs)) continue;
+      availHtml += cardHtml(t, tier, null, _utTakenBy(otherStep, tier, t.id));
       shown++;
     }
   }
@@ -3293,7 +3524,7 @@ function renderUTGrid(step) {
   const used = _utUsed(draft[key]);
   if (count) count.textContent = used ? `${used} of ${MAX_UT_EFFECTS} picked` : "";
 
-  grid.querySelectorAll('.bonus-card[data-ut-id]').forEach(el => {
+  grid.querySelectorAll('.bonus-card[data-ut-id]:not(.ut-taken)').forEach(el => {
     const toggle = () => _utToggle(step, el.dataset.utTier, parseInt(el.dataset.utId, 10));
     el.addEventListener('click', e => { if (!e.target.closest('.multiplier-circle')) toggle(); });
     el.addEventListener('keydown', e => {
@@ -3688,9 +3919,9 @@ function initUTPanel(step) {
   }
 
   const catFilter = step === 6 ? _cutCatFilter : _iutCatFilter;
-  _renderCatPills(`${prefix}-cat-pills`, catFilter, () => renderUTGrid(step), _UT_CATEGORIES);
+  _renderCatPills(`${prefix}-cat-pills`, catFilter, () => renderUTGrid(step), _UT_CATEGORIES, null, ["castle", "imperial"]);
 
-  Promise.all([loadUTCatalog(), loadUTCosts()]).then(() => {
+  Promise.all([loadUTCatalog(), loadUTCosts(), loadCardSources()]).then(() => {
     // A pick with no name yet (a KM import, a draft from before the merge)
     // takes its name, description and cost from the pick, as a click would.
     const ut = draft[key];
@@ -3865,9 +4096,11 @@ function renderUUGrid() {
     return;
   }
 
-  const selectedIdx = draft.unique_unit?.km_idx;
+  const selectedIdx = draft[_uuSlot]?.km_idx;
+  // The other unique unit can't be picked twice (civ_appender._apply_second_uu).
+  const otherIdx = draft[_uuSlot === "second_uu" ? "unique_unit" : "second_uu"]?.km_idx;
   // Retired units (KM's custom ones) show only for a civ that already has one.
-  let items = _uuCatalog.filter(u => !u.retired || u.km_idx === selectedIdx);
+  let items = _uuCatalog.filter(u => (!u.retired || u.km_idx === selectedIdx) && u.km_idx !== otherIdx);
   if (typeFilter === "vanilla")    items = items.filter(u => u.vanilla && !u.chronicles);
   if (typeFilter === "chronicles") items = items.filter(u => u.chronicles);
   if (typeFilter === "scenario")   items = items.filter(u => u.scenario);
@@ -3927,22 +4160,38 @@ function renderUUGrid() {
 }
 
 function selectUU(kmIdx) {
-  const prevIdx = draft.unique_unit?.km_idx;
+  const prevIdx = draft[_uuSlot]?.km_idx;
   const unit = _uuCatalog.find(u => u.km_idx === kmIdx);
   if (!unit) return;
 
-  if (!draft.unique_unit) draft.unique_unit = {};
+  if (!draft[_uuSlot]) draft[_uuSlot] = {};
   // Switching unit → clear any previous overrides and advanced flags
   if (prevIdx != null && prevIdx !== kmIdx) {
-    delete draft.unique_unit.overrides;
-    delete draft.unique_unit.advanced_flags;
-    delete draft.unique_unit.elite_upgrade;
-    delete draft.unique_unit.appearance;     // a look fits one unit's kind and size
+    delete draft[_uuSlot].overrides;
+    delete draft[_uuSlot].advanced_flags;
+    delete draft[_uuSlot].elite_upgrade;
+    delete draft[_uuSlot].appearance;     // a look fits one unit's kind and size
   }
-  draft.unique_unit.km_idx = kmIdx;
+  draft[_uuSlot].km_idx = kmIdx;
   saveDraft();
   showUUError(false);
+  _uuFillPanel();
+  _uuModal?.hide();
+  // The Castle's tiles show the new unit; a second one just picked opens.
+  if (_uuSlot === "second_uu") window.ttInspector?.focus?.("Unit_uu2_0_82");
+  window._ttRelayout?.();
+}
 
+// Fill the panels from draft[_uuSlot] (selectUU, or switching slots on the tree).
+function _uuFillPanel() {
+  const unit = _uuCatalog.find(u => u.km_idx === draft[_uuSlot]?.km_idx);
+  if (!unit) {
+    document.getElementById("uu-selected-panel").classList.add("d-none");
+    document.getElementById("uu-overrides-card")?.classList.add("d-none");
+    document.getElementById("uu-advanced-card")?.classList.add("d-none");
+    renderUUGrid();
+    return;
+  }
   document.getElementById("uu-no-selection").classList.add("d-none");
   document.getElementById("uu-selected-panel").classList.remove("d-none");
 
@@ -3955,8 +4204,8 @@ function selectUU(kmIdx) {
     : unit.chronicles ? "Chronicles unit" : unit.scenario ? "Scenario unit"
     : unit.vanilla ? "Vanilla base unit" : "Custom unit, from Krakenmeister's civ builder";
 
-  document.getElementById("uu-name-override").value = draft.unique_unit.name       || "";
-  document.getElementById("uu-description").value   = draft.unique_unit.description || "";
+  document.getElementById("uu-name-override").value = draft[_uuSlot].name       || "";
+  document.getElementById("uu-description").value   = draft[_uuSlot].description || "";
 
   _updateUUCostPreview(unit);
   populateUUOverrides(unit);
@@ -3970,7 +4219,7 @@ function selectUU(kmIdx) {
 let _uuLooks = { unit: null, looks: [] };
 
 function _selectedUUUnit() {
-  const sel = _uuCatalog.find(u => u.km_idx === draft.unique_unit?.km_idx);
+  const sel = _uuCatalog.find(u => u.km_idx === draft[_uuSlot]?.km_idx);
   return sel?.preview_unit ?? null;
 }
 
@@ -3988,7 +4237,7 @@ async function _loadUULooks() {
 }
 
 async function _renderUUAppearance() {
-  const id = draft.unique_unit?.appearance;
+  const id = draft[_uuSlot]?.appearance;
   const nameEl = document.getElementById("uu-appearance-name");
   const icon = document.getElementById("uu-appearance-icon");
   const reset = document.getElementById("uu-appearance-reset");
@@ -4007,11 +4256,12 @@ async function _renderUUAppearance() {
 }
 
 function _setUUAppearance(id) {
-  if (!draft.unique_unit) return;
-  if (id == null) delete draft.unique_unit.appearance;
-  else draft.unique_unit.appearance = id;
+  if (!draft[_uuSlot]) return;
+  if (id == null) delete draft[_uuSlot].appearance;
+  else draft[_uuSlot].appearance = id;
   saveDraft();
   _renderUUAppearance();
+  window._ttRelayout?.();
 }
 
 let _appearanceModal = null;
@@ -4025,7 +4275,7 @@ async function openUUAppearancePicker() {
   const looks = await _loadUULooks();
   const draw = () => {
     const q = search.value.trim().toLowerCase();
-    const cur = draft.unique_unit?.appearance;
+    const cur = draft[_uuSlot]?.appearance;
     const shown = looks.filter(l => !q || l.name.toLowerCase().includes(q));
     grid.innerHTML = shown.map(l => `
       <div class="uu-card${l.id === cur ? " selected" : ""}" data-look="${l.id}">
@@ -4051,7 +4301,7 @@ document.getElementById("uu-appearance-btn")?.addEventListener("click", openUUAp
 document.getElementById("uu-appearance-reset")?.addEventListener("click", () => _setUUAppearance(null));
 
 function clearUU() {
-  delete draft.unique_unit;
+  delete draft[_uuSlot];
   saveDraft();
   document.getElementById("uu-no-selection").classList.remove("d-none");
   document.getElementById("uu-selected-panel").classList.add("d-none");
@@ -4072,6 +4322,7 @@ const _UO_ROWS = [
   { id: "reload", statKey: "reload_time",  draftPfx: "reload" },
   { id: "speed",  statKey: "speed",        draftPfx: "speed"  },
   { id: "train",  statKey: "train_time",   draftPfx: "train"  },
+  { id: "pop",    statKey: "pop",          draftPfx: "pop"    },   // #121: 0.5 as the Karambit
 ];
 const _UO_COSTS = ["food", "wood", "stone", "gold"];
 
@@ -4122,7 +4373,7 @@ function populateUUOverrides(unit) {
   }
 
   // Restore saved values (or clear if switching units)
-  const saved = draft.unique_unit?.overrides || {};
+  const saved = draft[_uuSlot]?.overrides || {};
   for (const row of _UO_ROWS) {
     const bi = document.getElementById(`uo-${row.id}-base`);
     const ei = document.getElementById(`uo-${row.id}-elite`);
@@ -4133,13 +4384,163 @@ function populateUUOverrides(unit) {
     const el = document.getElementById(`uo-cost-${r}`);
     if (el) el.value = saved[`cost_${r}`] ?? "";
   }
-  const savedEu = draft.unique_unit?.elite_upgrade || {};
+  const savedEu = draft[_uuSlot]?.elite_upgrade || {};
   for (const r of _UO_EU) {
     const el = document.getElementById(`uo-eu-${r}`);
     if (el) el.value = (r === "time" ? savedEu.time : savedEu.cost?.[r]) || "";
   }
 
   _uoUpdateBadge();
+  _uoRenderBonus(unit);
+}
+
+// ── UU bonus damage (overrides.bonus_base / bonus_elite = {class: amount}) ────
+// The unit's classes come from /api/builder/uu/combat, read the way the mod
+// builds it.  An override is only what differs from the game's; 0 removes a
+// class (civ_overrides.write_bonus_attacks).
+const _uoCombatCache = {};
+let _uoCombat = null;          // { km_idx, base, elite, names }
+
+function _uoCombatFor(kmIdx) {
+  if (!_uoCombatCache[kmIdx]) {
+    _uoCombatCache[kmIdx] = fetch(`/api/builder/uu/combat?km_idx=${kmIdx}&dat_path=${encodeURIComponent(draft.dat_path || "")}`)
+      .then(r => r.json()).catch(() => ({ status: "error" }));
+  }
+  return _uoCombatCache[kmIdx];
+}
+
+// The game's bonus for one tier: {class: amount}, melee and pierce left out.
+function _uoGameBonus(tier) {
+  const t = _uoCombat?.[tier] || (tier === "elite" ? _uoCombat?.base : null);
+  const out = {};
+  for (const [c, a] of Object.entries(t?.attacks || {})) if (a > 0 && c !== "3" && c !== "4") out[c] = a;
+  return out;
+}
+
+async function _uoRenderBonus(unit) {
+  const box = document.getElementById("uo-bonus");
+  if (!box) return;
+  const kmIdx = unit?.km_idx;
+  if (kmIdx == null) { box.classList.add("d-none"); return; }
+  const r = await _uoCombatFor(kmIdx);
+  if (draft[_uuSlot]?.km_idx !== kmIdx) return;          // picked another meanwhile
+  if (!r || r.status !== "ok") { box.classList.add("d-none"); return; }
+  _uoCombat = { km_idx: kmIdx, base: r.base, elite: r.elite,
+                names: Object.fromEntries(r.bonus_classes.map(c => [String(c.cls), c.name])),
+                order: r.bonus_classes.map(c => String(c.cls)) };
+  box.classList.remove("d-none");
+  _uoDrawBonusRows();
+  _uoDrawArmour();
+}
+
+// ── UU armour classes (overrides.armour_base / armour_elite) ──────────────────
+// The shared editor (static/js/armour_classes.js), one tier at a time.
+let _uoArmourTier = "base";
+
+async function _uoDrawArmour() {
+  const el = document.getElementById("uo-armour");
+  if (!el || !_uoCombat || !window.ArmourClasses) return;
+  const kmIdx = _uoCombat.km_idx;
+  const classes = await window.ArmourClasses.load(draft.dat_path || "");
+  if (!_uoCombat || _uoCombat.km_idx !== kmIdx || !classes.length) { el.innerHTML = ""; return; }
+  const hasElite = !!_uoCombat.elite;
+  const tier = hasElite ? _uoArmourTier : "base";
+  const ov = draft[_uuSlot]?.overrides || {};
+  const game = (_uoCombat[tier] || _uoCombat.base)?.armours || {};
+  const stat = (f, g) => ov[`${f}_${tier}`] ?? g;
+  const tierBtn = (t, label) => `<button type="button" class="ac-btn${tier === t ? " fw-bold" : ""}" data-uo-tier="${t}"
+      aria-pressed="${tier === t}">${label}</button>`;
+  window.ArmourClasses.render(el, {
+    classes, prefix: "uo-ac", game, edits: ov[`armour_${tier}`],
+    melee: stat("melee", game["4"]), pierce: stat("pierce", game["3"]),
+    statsWhere: "in the M. Armor and P. Armor rows above",
+    extra: hasElite ? `<div class="d-flex gap-2 align-items-center mb-1" style="font-size:12px;">Editing:
+        ${tierBtn("base", "Standard")}${tierBtn("elite", "Elite")}</div>` : "",
+    onChange: m => {
+      if (!draft[_uuSlot]) return;
+      const o = draft[_uuSlot].overrides || (draft[_uuSlot].overrides = {});
+      if (m) o[`armour_${tier}`] = m; else delete o[`armour_${tier}`];
+      saveDraft();
+      _uoUpdateBadge();
+      _uoDrawArmour();
+    },
+    onStat: f => {
+      const box = document.getElementById(`uo-${f}-${tier}`);
+      box?.scrollIntoView({ block: "center", behavior: "smooth" });
+      box?.focus();
+    },
+  });
+  el.querySelectorAll("[data-uo-tier]").forEach(b => b.addEventListener("click", () => {
+    _uoArmourTier = b.dataset.uoTier;
+    _uoDrawArmour();
+  }));
+}
+
+function _uoDrawBonusRows() {
+  const rowsEl = document.getElementById("uo-bonus-rows");
+  if (!rowsEl || !_uoCombat) return;
+  const ov = draft[_uuSlot]?.overrides || {};
+  const game = { base: _uoGameBonus("base"), elite: _uoGameBonus("elite") };
+  const own  = { base: ov.bonus_base || {}, elite: ov.bonus_elite || {} };
+  const shown = new Set([...Object.keys(game.base), ...Object.keys(game.elite),
+                         ...Object.keys(own.base), ...Object.keys(own.elite)]);
+  const name = c => _uoCombat.names[c] || `class ${c}`;
+  const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  const cell = (tier, c) => {
+    const g = game[tier][c] || 0, v = own[tier][c];
+    return `<div class="col-4">
+        <input type="text" class="form-control form-control-sm uo-input uo-bonus-in" data-tier="${tier}" data-cls="${c}"
+               pattern="[0-9]*" inputmode="numeric" placeholder="${g || "—"}" autocomplete="off" value="${v ?? ""}"
+               aria-label="${tier === "base" ? "Standard" : "Elite"} bonus vs ${esc(name(c))}">
+        <div class="uo-def">${g ? `Default: +${g}` : "Not in the game"}</div></div>`;
+  };
+  rowsEl.innerHTML = [...shown].sort((a, b) => _uoCombat.order.indexOf(a) - _uoCombat.order.indexOf(b)).map(c => `
+    <div class="row g-2 mb-2 align-items-start">
+      <div class="col-4 small fw-semibold d-flex align-items-start gap-1" style="padding-top:.3rem;">
+        <span class="flex-grow-1">vs ${esc(name(c))}</span>
+        <button type="button" class="btn btn-link btn-sm p-0 text-muted uo-bonus-x" data-cls="${c}"
+                title="Remove this bonus" aria-label="Remove bonus vs ${esc(name(c))}">&times;</button>
+      </div>${cell("base", c)}${cell("elite", c)}
+    </div>`).join("") || `<div class="uo-def mb-2">None in the game.</div>`;
+
+  const sel = document.getElementById("uo-bonus-cls");
+  if (sel) sel.innerHTML = `<option value="">Add bonus vs…</option>` + _uoCombat.order.filter(c => !shown.has(c))
+    .map(c => `<option value="${c}">${esc(name(c))}</option>`).join("");
+
+  rowsEl.querySelectorAll(".uo-bonus-in").forEach(el => el.addEventListener("change", () =>
+    _uoSaveBonus(el.dataset.tier, el.dataset.cls, el.value)));
+  rowsEl.querySelectorAll(".uo-bonus-x").forEach(b => b.addEventListener("click", () => {
+    _uoSaveBonus("base", b.dataset.cls, "0", false);
+    _uoSaveBonus("elite", b.dataset.cls, "0");
+  }));
+}
+
+// One tier's bonus vs one class: blank or the game's own value drops the edit.
+function _uoSaveBonus(tier, cls, raw, redraw = true) {
+  if (!draft[_uuSlot]) return;
+  const ov = draft[_uuSlot].overrides || (draft[_uuSlot].overrides = {});
+  const key = `bonus_${tier}`;
+  const map = Object.assign({}, ov[key]);
+  const n = String(raw).trim() === "" ? null : Math.max(0, Math.min(32767, Math.floor(Number(raw))));
+  const g = _uoGameBonus(tier)[cls] || 0;
+  if (n === null || isNaN(n) || n === g) delete map[cls];
+  else map[cls] = n;
+  if (Object.keys(map).length) ov[key] = map;
+  else delete ov[key];
+  saveDraft();
+  _uoUpdateBadge();
+  if (redraw) _uoDrawBonusRows();
+}
+
+function _uoAddBonus() {
+  const cls = document.getElementById("uo-bonus-cls")?.value;
+  const b = document.getElementById("uo-bonus-new-base");
+  const e = document.getElementById("uo-bonus-new-elite");
+  if (!cls || !b || String(b.value).trim() === "" || !(Number(b.value) > 0)) return;
+  _uoSaveBonus("base", cls, b.value, false);
+  _uoSaveBonus("elite", cls, String(e?.value).trim() !== "" ? e.value : b.value);
+  b.value = "";
+  if (e) e.value = "";
 }
 
 // Elite upgrade cost and research time (#68): unique_unit.elite_upgrade =
@@ -4148,20 +4549,20 @@ function populateUUOverrides(unit) {
 const _UO_EU = ["food", "wood", "stone", "gold", "time"];
 
 function _uoSaveEliteUpgrade(r, rawVal) {
-  if (!draft.unique_unit) return;
+  if (!draft[_uuSlot]) return;
   let val = rawVal === "" ? 0 : Math.max(0, Math.floor(Number(rawVal)));
   if (isNaN(val)) val = 0;
-  const eu = draft.unique_unit.elite_upgrade
-          || (draft.unique_unit.elite_upgrade = { cost: {}, time: 0 });
+  const eu = draft[_uuSlot].elite_upgrade
+          || (draft[_uuSlot].elite_upgrade = { cost: {}, time: 0 });
   if (r === "time") eu.time = val;
   else { eu.cost = eu.cost || {}; eu.cost[r] = val; }
-  if (!eu.time && !Object.values(eu.cost || {}).some(Boolean)) delete draft.unique_unit.elite_upgrade;
+  if (!eu.time && !Object.values(eu.cost || {}).some(Boolean)) delete draft[_uuSlot].elite_upgrade;
   saveDraft();
   _uoUpdateBadge();
 }
 
 function clearUUOverrides() {
-  if (draft.unique_unit) { delete draft.unique_unit.overrides; saveDraft(); }
+  if (draft[_uuSlot]) { delete draft[_uuSlot].overrides; saveDraft(); }
   for (const row of _UO_ROWS) {
     const bi = document.getElementById(`uo-${row.id}-base`);
     const ei = document.getElementById(`uo-${row.id}-elite`);
@@ -4172,12 +4573,14 @@ function clearUUOverrides() {
     const el = document.getElementById(`uo-cost-${r}`);
     if (el) el.value = "";
   }
-  if (draft.unique_unit) { delete draft.unique_unit.elite_upgrade; saveDraft(); }
+  if (draft[_uuSlot]) { delete draft[_uuSlot].elite_upgrade; saveDraft(); }
   for (const r of _UO_EU) {
     const el = document.getElementById(`uo-eu-${r}`);
     if (el) el.value = "";
   }
   _uoUpdateBadge();
+  _uoDrawBonusRows();
+  _uoDrawArmour();
 }
 
 // Minimums enforced in JS (pattern attr only validates visually, not saves).
@@ -4189,13 +4592,13 @@ const _UO_MINS = {
 const _UO_NON_NEG = new Set([
   "hp_base","hp_elite","attack_base","attack_elite",
   "range_base","range_elite","reload_base","reload_elite",
-  "speed_base","speed_elite","train_base","train_elite",
+  "speed_base","speed_elite","train_base","train_elite","pop_base","pop_elite",
   "cost_food","cost_wood","cost_stone","cost_gold",
 ]);
 
 function _uoSave(key, rawVal) {
-  if (!draft.unique_unit) return;
-  if (!draft.unique_unit.overrides) draft.unique_unit.overrides = {};
+  if (!draft[_uuSlot]) return;
+  if (!draft[_uuSlot].overrides) draft[_uuSlot].overrides = {};
   let val = rawVal === "" ? null : Number(rawVal);
   if (val !== null && isNaN(val)) val = null;
   if (val !== null && _UO_NON_NEG.has(key) && val < 0) val = 0;
@@ -4206,8 +4609,8 @@ function _uoSave(key, rawVal) {
     const el = document.getElementById(`uo-${key.replace(/_/g, "-")}`);
     if (el) el.value = val;
   }
-  if (val === null) delete draft.unique_unit.overrides[key];
-  else              draft.unique_unit.overrides[key] = val;
+  if (val === null) delete draft[_uuSlot].overrides[key];
+  else              draft[_uuSlot].overrides[key] = val;
   saveDraft();
   _uoUpdateBadge();
 }
@@ -4215,8 +4618,8 @@ function _uoSave(key, rawVal) {
 function _uoUpdateBadge() {
   const badge = document.getElementById("uo-badge");
   if (!badge) return;
-  const n = Object.keys(draft.unique_unit?.overrides || {}).length
-          + (draft.unique_unit?.elite_upgrade ? 1 : 0);
+  const n = Object.keys(draft[_uuSlot]?.overrides || {}).length
+          + (draft[_uuSlot]?.elite_upgrade ? 1 : 0);
   if (n > 0) { badge.textContent = `${n} override${n > 1 ? "s" : ""}`; badge.classList.remove("d-none"); }
   else        { badge.classList.add("d-none"); }
 }
@@ -4236,6 +4639,7 @@ function _wireUUOverrides() {
     document.getElementById(`uo-eu-${r}`)
       ?.addEventListener("input", e => _uoSaveEliteUpgrade(r, e.target.value));
   }
+  document.getElementById("uo-bonus-add")?.addEventListener("click", _uoAddBonus);
   document.getElementById("btn-clear-overrides")
     ?.addEventListener("click", clearUUOverrides);
   document.getElementById("uu-overrides-body")
@@ -4252,18 +4656,19 @@ function _uaSetCheck(id, val) {
 }
 
 function _uaLoad() {
-  // "Attack ignores armor" was removed on 2026-09-18 — AoE2 has no data-level
-  // way to grant it, and the old implementation left the unit dealing 1 damage
-  // to everything.  Drop it from any saved civ that still carries it, so the
-  // flag count is honest and the build stops warning about it.
-  if (draft.unique_unit?.advanced_flags?.ignore_armor) {
-    delete draft.unique_unit.advanced_flags.ignore_armor;
+  // The first "Attack ignores armor" (key ignore_armor, retired 2026-09-18)
+  // left the unit dealing 1 damage to everything.  Drop it from any saved civ
+  // that still carries it; the working trait is "ignores_armor", a new key so
+  // the old tick doesn't turn it on unasked.
+  if (draft[_uuSlot]?.advanced_flags?.ignore_armor) {
+    delete draft[_uuSlot].advanced_flags.ignore_armor;
     saveDraft();
   }
-  const flags = draft.unique_unit?.advanced_flags || {};
+  const flags = draft[_uuSlot]?.advanced_flags || {};
 
   _uaSetCheck("ua-no-convert",   flags.no_convert);
   _uaSetCheck("ua-trample",      flags.trample);
+  _uaSetCheck("ua-ignores-armor", flags.ignores_armor);
 
   _uaSetCheck("ua-regen-hp", flags.regen_hp);
   document.querySelector(".ua-regen-inputs")?.classList.toggle("d-none", !flags.regen_hp);
@@ -4284,33 +4689,42 @@ function _uaLoad() {
   if (cp) cp.value = flags.charge_pool ?? "";
   if (cr) cr.value = flags.charge_rate  ?? "";
 
+  _uaSetCheck("ua-defense", flags.defense_charge);
+  document.querySelector(".ua-defense-inputs")?.classList.toggle("d-none", !flags.defense_charge);
+  const dk = document.getElementById("ua-defense-kind");
+  const ds = document.getElementById("ua-defense-secs");
+  if (dk) dk.value = flags.defense_charge || "melee";
+  if (ds) { ds.value = flags.defense_recharge ?? ""; ds.placeholder = _UA_DEFENSE_SECS[dk?.value || "melee"]; }
+
   _uaUpdateBadge();
 }
 
 function _uaClear() {
-  if (!draft.unique_unit) return;
-  delete draft.unique_unit.advanced_flags;
+  if (!draft[_uuSlot]) return;
+  delete draft[_uuSlot].advanced_flags;
   _uaLoad();
 }
 
 function _uaSave(key, val) {
-  if (!draft.unique_unit) return;
-  if (!draft.unique_unit.advanced_flags) draft.unique_unit.advanced_flags = {};
+  if (!draft[_uuSlot]) return;
+  if (!draft[_uuSlot].advanced_flags) draft[_uuSlot].advanced_flags = {};
   if (val === null || val === false || val === "" || val === undefined)
-    delete draft.unique_unit.advanced_flags[key];
+    delete draft[_uuSlot].advanced_flags[key];
   else
-    draft.unique_unit.advanced_flags[key] = val;
+    draft[_uuSlot].advanced_flags[key] = val;
   saveDraft();
   _uaUpdateBadge();
 }
 
 // Only count top-level traits (checkbox-gated), not sub-inputs like regen_amount.
-const _UA_TOP_FLAGS = new Set(["no_convert","trample","regen_hp","bonus_dmg_resist","charge_pool"]);
+const _UA_TOP_FLAGS = new Set(["no_convert","trample","ignores_armor","regen_hp","bonus_dmg_resist","charge_pool","defense_charge"]);
+// The vanilla recharge for each defensive charge: Iron Pagoda, Shrivamsha Rider.
+const _UA_DEFENSE_SECS = { melee: 40, ranged: 4 };
 
 function _uaUpdateBadge() {
   const badge = document.getElementById("ua-badge");
   if (!badge) return;
-  const flags = draft.unique_unit?.advanced_flags || {};
+  const flags = draft[_uuSlot]?.advanced_flags || {};
   const n = [..._UA_TOP_FLAGS].filter(k => flags[k]).length;
   if (n > 0) { badge.textContent = `${n} flag${n > 1 ? "s" : ""}`; badge.classList.remove("d-none"); }
   else        { badge.classList.add("d-none"); }
@@ -4321,6 +4735,8 @@ function _wireUUAdvanced() {
     ?.addEventListener("change", e => _uaSave("no_convert", e.target.checked || null));
   document.getElementById("ua-trample")
     ?.addEventListener("change", e => _uaSave("trample", e.target.checked || null));
+  document.getElementById("ua-ignores-armor")
+    ?.addEventListener("change", e => _uaSave("ignores_armor", e.target.checked || null));
   document.getElementById("ua-regen-hp")?.addEventListener("change", e => {
     _uaSave("regen_hp", e.target.checked || null);
     document.querySelector(".ua-regen-inputs")?.classList.toggle("d-none", !e.target.checked);
@@ -4340,6 +4756,13 @@ function _wireUUAdvanced() {
     ?.addEventListener("input", e => _uaSave("bonus_dmg_resist", e.target.value ? Number(e.target.value) : null));
 
   document.getElementById("ua-charge")?.addEventListener("change", e => {
+    if (e.target.checked && document.getElementById("ua-defense")?.checked) {
+      // One charge per unit: the attack replaces the defence.
+      _uaSave("defense_charge", null);
+      _uaSave("defense_recharge", null);
+      _uaSetCheck("ua-defense", false);
+      document.querySelector(".ua-defense-inputs")?.classList.add("d-none");
+    }
     if (e.target.checked) {
       _uaSave("charge_pool", Number(document.getElementById("ua-charge-pool")?.value) || 10);
       _uaSave("charge_rate", Number(document.getElementById("ua-charge-rate")?.value) || 0.25);
@@ -4354,6 +4777,25 @@ function _wireUUAdvanced() {
     ?.addEventListener("input", e => _uaSave("charge_pool", e.target.value ? Number(e.target.value) : null));
   document.getElementById("ua-charge-rate")
     ?.addEventListener("input", e => _uaSave("charge_rate", e.target.value ? Number(e.target.value) : null));
+
+  document.getElementById("ua-defense")?.addEventListener("change", e => {
+    if (e.target.checked && document.getElementById("ua-charge")?.checked) {
+      _uaSave("charge_pool", null);
+      _uaSave("charge_rate", null);
+      _uaSetCheck("ua-charge", false);
+      document.querySelector(".ua-charge-inputs")?.classList.add("d-none");
+    }
+    _uaSave("defense_charge", e.target.checked ? (document.getElementById("ua-defense-kind")?.value || "melee") : null);
+    if (!e.target.checked) _uaSave("defense_recharge", null);
+    document.querySelector(".ua-defense-inputs")?.classList.toggle("d-none", !e.target.checked);
+  });
+  document.getElementById("ua-defense-kind")?.addEventListener("change", e => {
+    const ds = document.getElementById("ua-defense-secs");
+    if (ds) ds.placeholder = _UA_DEFENSE_SECS[e.target.value];
+    if (document.getElementById("ua-defense")?.checked) _uaSave("defense_charge", e.target.value);
+  });
+  document.getElementById("ua-defense-secs")
+    ?.addEventListener("input", e => _uaSave("defense_recharge", Number(e.target.value) > 0 ? Number(e.target.value) : null));
 
   // Rotate chevron on collapse toggle
   document.getElementById("uu-advanced-body")
@@ -4371,6 +4813,119 @@ function _wireUUAdvanced() {
 // Galleon and its Elite, no variant.  A civ's own template is taken as
 // shipped, its variant over the Cannon Galleon some list beside it.
 const _SIEGE_SHIPS = Object.freeze({ cg: 420, elite: 691, variants: [2633, 1795, 1948] });
+// ── Unique units on the tech tree (the user, 2026-11-13) ─────────────────────
+// The Unique Unit step's panels now live in the tree's side panel: the Castle's
+// unique-unit tile edits draft.unique_unit, a second one at the Castle
+// draft.second_uu (civ_appender._apply_second_uu).  The same panels serve both;
+// _uuSlot says which.  They are moved in while a tile is open and parked back in
+// their step when it closes, so nothing is built twice.
+let _uuSlot = "unique_unit";
+const _UU_PARTS = ["uu-selected-panel", "uu-overrides-card", "uu-advanced-card"];
+const _uuHomes = {};                 // part id -> [parent, next sibling]
+let _uuModal = null;
+
+// A modal from the hidden wizard page, raised above the full-screen tree
+// (inspector.js does the same for its unit picker).
+function _uuRaise(el) {
+  if (!el) return;
+  if (el.parentElement !== document.body) document.body.appendChild(el);
+  el.classList.add("tt-unit-picker");
+  if (!el.dataset.raised) {
+    el.dataset.raised = "1";
+    el.addEventListener("show.bs.modal", () => document.body.classList.add("tt-picker-open"));
+    el.addEventListener("hidden.bs.modal", () => document.body.classList.remove("tt-picker-open"));
+  }
+}
+
+function _uuPickerModal() {
+  if (_uuModal) return _uuModal;
+  const el = document.createElement("div");
+  el.className = "modal fade";
+  el.id = "modal-uu-pick";
+  el.tabIndex = -1;
+  el.innerHTML = `<div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable modal-fullscreen-lg-down">
+      <div class="modal-content">
+        <div class="modal-header"><div><h5 class="modal-title" id="uu-pick-title">Choose a unique unit</h5>
+          <div class="small text-muted">Every unit keeps its in-game stats; a scenario unit with no Elite of its own gets a standard one.</div></div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body" id="uu-pick-body"></div>
+      </div></div>`;
+  document.body.appendChild(el);
+  // The step's search, filter, grid and legend, as they were.
+  const body = el.querySelector("#uu-pick-body");
+  const grid = document.getElementById("uu-grid");
+  const search = document.getElementById("uu-search")?.closest(".row");
+  for (const part of [search, document.getElementById("uu-stats-loading"), grid, grid?.nextElementSibling]) {
+    if (part) body.appendChild(part);
+  }
+  _uuRaise(el);
+  _uuModal = new bootstrap.Modal(el);
+  return _uuModal;
+}
+
+window.efUU = {
+  slot: () => _uuSlot,
+  has: slot => draft[slot]?.km_idx != null,
+  unit: slot => _uuCatalog.find(u => u.km_idx === draft[slot]?.km_idx) || null,
+  name(slot, n) {
+    const u = this.unit(slot);
+    if (!u) return n ? "" : (slot === "second_uu" ? "Second unique unit" : "Choose a unique unit");
+    const own = (draft[slot].name || "").trim() || u.name;
+    return n ? `Elite ${own}` : own;
+  },
+  image(slot) {
+    const look = draft[slot]?.appearance;
+    if (look != null) return `/api/unit-icon/${look}${_datQuery()}`;
+    return this.unit(slot)?.icon || UU_PLACEHOLDER;
+  },
+  pick(slot) {
+    _uuSlot = slot;
+    if (!_uuCatalog.length) loadUUCatalogFast().then(renderUUGrid);
+    document.getElementById("uu-search") && (document.getElementById("uu-search").value = "");
+    const m = _uuPickerModal();
+    document.getElementById("uu-pick-title").textContent =
+      slot === "second_uu" ? "Choose a second unique unit" : "Choose your unique unit";
+    renderUUGrid();
+    m.show();
+  },
+  remove(slot) {
+    delete draft[slot];
+    saveDraft();
+    window._ttRelayout?.();
+  },
+  // Show the panels for `slot` inside `host` (the tree's side panel).
+  mount(host, slot) {
+    _uuSlot = slot;
+    _uuRaise(document.getElementById("modal-uu-appearance"));
+    const pop = _getUUPopup();
+    if (pop && pop.parentElement !== document.body) document.body.appendChild(pop);
+    if (pop) pop.style.zIndex = 10080;
+    for (const id of _UU_PARTS) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (!_uuHomes[id]) _uuHomes[id] = [el.parentElement, el.nextSibling];
+      host.appendChild(el);
+    }
+    // The step's own header row (icon, name, "Change unit") is the tree's head now.
+    document.querySelector("#uu-selected-panel > hr")?.classList.add("d-none");
+    document.querySelector("#uu-selected-panel > h6")?.classList.add("d-none");
+    document.querySelector("#uu-selected-panel > .d-flex.align-items-center.gap-3")?.classList.add("d-none");
+    _uuFillPanel();
+    // The step loaded the stats ("Default: ..." under each box); now the tree does.
+    if (!_uuCatalogHasStats) loadUUCatalog().then(() => {
+      if (host.contains(document.getElementById("uu-selected-panel"))) _uuFillPanel();
+    }).catch(console.error);
+  },
+  // Put them back before the side panel is redrawn or closed.
+  unmount() {
+    for (const id of [..._UU_PARTS].reverse()) {          // a part's home sibling may be the next part
+      const el = document.getElementById(id), home = _uuHomes[id];
+      if (el && home && el.parentElement !== home[0]) home[0].insertBefore(el, home[1]);
+    }
+    _uuSlot = "unique_unit";
+  },
+};
+
 function _withSiegeShip(units, seed) {
   const cg = id => id === _SIEGE_SHIPS.cg || id === _SIEGE_SHIPS.elite;
   if (seed) {
@@ -4501,6 +5056,37 @@ window.efMeter = (() => {
 })();
 document.addEventListener("DOMContentLoaded", () => window.efMeter.count());
 
+// ── Back to top, for the long card lists ─────────────────────────────────────
+// The bonus, team bonus and unique tech grids scroll inside themselves and run
+// to dozens of rows.  Once one is scrolled past its first screenful, a button
+// just outside its bottom-right corner takes it back to the top.  It is fixed
+// to the window (kept on screen when the grid's bottom is below it) and a
+// child of the grid's step, so it hides with the step.
+function _wireBackToTop(grid) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ef-back-top";
+  btn.title = "Back to the top of the list";
+  btn.setAttribute("aria-label", btn.title);
+  btn.innerHTML = '<i class="fa-solid fa-arrow-up" aria-hidden="true"></i>';
+  btn.addEventListener("click", () => grid.scrollTo({ top: 0, behavior: "smooth" }));
+  grid.insertAdjacentElement("afterend", btn);
+  const place = () => {
+    const r = grid.getBoundingClientRect();
+    const show = r.height > 0 && grid.scrollTop > grid.clientHeight && r.top < innerHeight - 60;
+    btn.classList.toggle("is-shown", show);
+    if (!show) return;
+    const size = btn.offsetWidth || 40, gap = 10;
+    const outside = r.right + gap + size <= document.documentElement.clientWidth - 8;
+    btn.style.left = `${outside ? r.right + gap : r.right - size - gap}px`;
+    btn.style.top  = `${Math.min(r.bottom - size, innerHeight - size - 16)}px`;
+  };
+  grid.addEventListener("scroll", place, { passive: true });
+  addEventListener("scroll", place, { passive: true });
+  addEventListener("resize", place);
+}
+document.addEventListener("DOMContentLoaded", () => document.querySelectorAll(".bonus-grid").forEach(_wireBackToTop));
+
 // ── Tech tree ─────────────────────────────────────────────────────────────────
 
 // The side panel's upgrade numbers need one ~15 s build per set of cards;
@@ -4548,6 +5134,7 @@ function updateTreeSummary() {
   document.getElementById("tt-count-buildings").textContent = t.buildings.length;
   document.getElementById("tt-count-techs").textContent     = t.techs.length;
   document.getElementById("btn-open-tree-label").textContent = "Edit Tech Tree";
+  updateUUSummary();
 }
 
 async function populateTtTemplates() {
@@ -4742,6 +5329,7 @@ async function init() {
     window._metaScouts        = meta.starting_scouts || [];
     window._metaMonks         = meta.monk_skins      || [];
     window._metaMonasteries   = meta.monastery_skins || [];
+    window._metaFlags         = meta.waypoint_flags  || [];
     window._artVersion        = meta.art_version     || "";
     window._treeVersion       = meta.tree_version    || 3;   // retired_cards.TREE_VERSION
     // Retired unit cards are not mirrored from the tree any more: the tree is
@@ -4784,6 +5372,8 @@ async function init() {
                    SCENE_SLOTS.monk_skin.defaultLabel);
     populateSelect("monastery-select", meta.monastery_skins || [], draft.monastery_skin_building,
                    DEFAULT_OPTION_LABEL);
+    populateSelect("flag-select", meta.waypoint_flags || [], draft.waypoint_flag, DEFAULT_OPTION_LABEL);
+    _drawFlagPreview();
 
     bindScene();
     renderScene();
@@ -4913,13 +5503,15 @@ async function init() {
   _wireUUAdvanced();
 
   document.getElementById("uu-name-override").addEventListener("input", e => {
-    if (!draft.unique_unit) return;
-    draft.unique_unit.name = e.target.value.trim();
+    if (!draft[_uuSlot]) return;
+    draft[_uuSlot].name = e.target.value.trim();
     saveDraft();
   });
+  // The tree's tiles carry the name.
+  document.getElementById("uu-name-override").addEventListener("change", () => window._ttRelayout?.());
   document.getElementById("uu-description").addEventListener("input", e => {
-    if (!draft.unique_unit) return;
-    draft.unique_unit.description = e.target.value;
+    if (!draft[_uuSlot]) return;
+    draft[_uuSlot].description = e.target.value;
     saveDraft();
   });
 
@@ -4934,7 +5526,7 @@ async function init() {
     }
   });
 
-  Promise.all([loadBonusCatalog(), loadUTCatalog()]).then(() => {
+  Promise.all([loadBonusCatalog(), loadUTCatalog(), loadCardSources()]).then(() => {
     // Restore UT panels if user had already filled them in a previous session
     if (draft.castle_ut)   initUTPanel(6);
     if (draft.imperial_ut) initUTPanel(7);
@@ -4942,9 +5534,9 @@ async function init() {
     const _getBonusQ = () => (document.getElementById("bonus-search")?.value || "").toLowerCase();
     const _getTeamQ  = () => (document.getElementById("team-bonus-search")?.value || "").toLowerCase();
     _renderCatPills("bonus-cat-pills",      _bonusCatFilter, () => _filterBonusGrid(_getBonusQ()),
-                    _BONUS_CATEGORIES, "bonus-search");
+                    _BONUS_CATEGORIES, "bonus-search", ["civ"]);
     _renderCatPills("team-bonus-cat-pills", _teamCatFilter,  () => _filterTeamBonusGrid(_getTeamQ()),
-                    _BONUS_CATEGORIES, "team-bonus-search");
+                    _BONUS_CATEGORIES, "team-bonus-search", ["team"]);
     // Wire search inputs to filter the grids
     document.getElementById("bonus-search")
       .addEventListener("input", e => _filterBonusGrid(e.target.value.toLowerCase()));

@@ -45,14 +45,14 @@ raw = [
                {"age": 2},                                # back an age: dropped
                {"age": 4}, {"age": 4}]},
     {"id": 1, "building": 12, "base": 93, "tiers": [{"age": 2}]},       # duplicate id
-    {"id": 2, "building": 82, "base": 4, "tiers": [{"age": 2}]},        # the Castle: UU step
+    {"id": 2, "building": 82, "base": 4, "tiers": [{"age": 3}]},        # the Castle: its one extra unit (2026-11-13)
     {"id": 3, "building": 87, "base": "lizard", "tiers": [{"age": 2}]},
     {"id": 4, "building": 87, "base": 4, "tiers": []},
     {"id": 5, "building": 87, "base": 4, "role": 7, "tiers": [{"age": 9}, {"age": 1}]},
     "junk", None,
 ]
 n = norm_added_lines(raw)
-check("only valid lines survive", [l["id"] for l in n] == [1, 5], [l["id"] for l in n])
+check("only valid lines survive", [l["id"] for l in n] == [1, 2, 5], [l["id"] for l in n])
 t = n[0]["tiers"]
 check("ages never go back, at most two tiers an age, at most 4 tiers", [x["age"] for x in t] == [2, 3, 3, 4], t)
 check("names cleaned; edits keep stats, not names",
@@ -60,7 +60,7 @@ check("names cleaned; edits keep stats, not names",
 check("tier 1 has no upgrade; costs clamp", "upgrade" not in t[0]
       and t[1]["upgrade"] == {"cost": {"food": 0, "wood": 0, "stone": 0, "gold": 50}, "time": 30}, t[1])
 check("a role outside unitlines' range is dropped; age 9 clamps to Imperial",
-      n[1]["role"] is None and [x["age"] for x in n[1]["tiers"]] == [4], n[1])
+      n[2]["role"] is None and [x["age"] for x in n[2]["tiers"]] == [4], n[2])
 check("saves and loads", to_draft(from_draft({"added_lines": raw}))["added_lines"] == n)
 x = norm_added_lines([{"id": 1, "building": 87, "base": 6, "from": "6",
                        "tiers": [{"age": 4, "upgrade": {"time": 50}}]}])
@@ -422,6 +422,49 @@ check("the game's own upgrade into a unit few civs have, at its price (Houfnice)
       == {{0: "food", 1: "wood", 2: "stone", 3: "gold"}[c.type]: c.amount for c in t787.resource_costs if c.amount > 0}, houf)
 check("an upgrade the tree has a node for is left to the node (Paladin), others offered (Savar)",
       "Paladin" not in sug(CAVALIER) and "Savar" in sug(CAVALIER), list(sug(CAVALIER)))
+
+print("\n=== a tier after the Winged Hussar (#127) ===")
+# The Winged Hussar ships on Stable button 0, which is no button: the Poles'
+# and Lithuanians' techs move it to the Hussar's 6.  The tier after it takes
+# the button of the upgrade into it, so it took 0 and couldn't be researched.
+from retired_cards import TREE_VERSION  # noqa: E402
+WINGED, HUSSAR = 1707, 441
+wh = {**draft, "tree_version": TREE_VERSION, "custom_bonuses": [], "unit_edits": {}, "tech_edits": {},
+      "tree": {"units": [u for u in units if u != HUSSAR] + [WINGED], "buildings": buildings, "techs": techs},
+      "added_lines": [{"id": 1, "building": 101, "base": WINGED, "from": WINGED,
+                       "tiers": [{"age": 4, "name": "Elite Winged Hussar"}]}]}
+dat_w = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    rw, _ = apply_civ_with_overrides(dat_w, _draft_to_civ_def(wh), SLOT, wh)
+lw = (rw.get("added_lines") or [{}])[0]
+check("built", lw.get("techs"), rw["warnings"])
+if lw.get("techs"):
+    locs = [(rl.location_id, rl.button_id) for rl in dat_w.techs[lw["techs"][0]].research_locations]
+    check("its upgrade is on the Winged Hussar's button, 6, not 0", locs == [(101, 6)], locs)
+
+print("\n=== never on an ally's Condottiero button (#128) ===")
+# Barracks 3 is the Condottiero's alone in the game: an Italian ally's team
+# bonus brings it mid-game, whatever this civ's tree says.  A new line took
+# the first free train button, 3, and the two overlapped.
+cb_draft = {**wh, "added_lines": [{"id": 1, "building": 12, "base": 2110, "tiers": [{"age": 3}]}]}
+dat_c = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    rc, _ = apply_civ_with_overrides(dat_c, _draft_to_civ_def(cb_draft), SLOT, cb_draft)
+btn = [(l["building"], l["button"]) for l in rc.get("added_lines") or []]
+check("a new Barracks line skips button 3", btn and btn[0][1] != 3, btn)
+
+print("\n=== a tier after a unit gets that unit's bonuses (#130) ===")
+# The Hand Cannoneer has no AI line, so its extension had no role and joined
+# no line: "Gunpowder units cost -20%" (card 52) skipped the new tier.
+gp = {**wh, "bonuses": [{"id": 52, "multiplier": 1}],
+      "added_lines": [{"id": 1, "building": 87, "base": HC, "from": HC, "tiers": [{"age": 4, "name": "Elite Hand Cannoneer"}]}]}
+dat_g = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    rg, _ = apply_civ_with_overrides(dat_g, _draft_to_civ_def(gp), SLOT, gp)
+tier = ((rg.get("added_lines") or [{}])[0].get("units") or [None])[0]
+hits = [round(c.d, 3) for e in dat_g.effects for c in e.effect_commands
+        if c.type == 5 and int(c.a) == tier and int(c.c) == 100]
+check("the Elite Hand Cannoneer costs -20% too", hits == [0.8], (tier, hits))
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")

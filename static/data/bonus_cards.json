@@ -497,7 +497,7 @@
   "48": {
     "type": "dual",
     "heading": "-50% [wood]",
-    "stat": "Ranged Soldiers & Infantry production cost",
+    "stat": "Ranged Soldiers & Infantry production cost; Warships -20% wood",
     "entity": "archer",
     "entity2": "fire_lancer",
     "description": "Ranged & Infantry"
@@ -2271,11 +2271,11 @@
   },
   "312": {
     "type": "desc",
-    "entity": "lumber_camp",
+    "entity": "mule_cart",
     "description": "Economy",
     "lines": [
-      "Wood and mining upgrades are 40% more effective",
-      "Economic drop-off buildings cost -25%"
+      "Mule Carts cost -25%",
+      "Wood and mining upgrades are 40% more effective"
     ]
   },
   "313": {
@@ -3421,6 +3421,7 @@
   },
   "441": {
     "chronicles": true,
+    "category": "chronicles",
     "type": "dual",
     "heading": "Shared Armor",
     "stat": "Infantry armor upgrades also apply to cavalry",
@@ -3430,6 +3431,7 @@
   },
   "442": {
     "chronicles": true,
+    "category": "chronicles",
     "heading": "+1P / +30%",
     "stat": "Siege +1 pierce armor and +30% damage vs. buildings",
     "entity": "mangonel",
@@ -3437,6 +3439,7 @@
   },
   "443": {
     "chronicles": true,
+    "category": "chronicles",
     "heading": "+50%",
     "stat": "Stable technologies research 50% faster",
     "entity": "stable",
@@ -3444,6 +3447,7 @@
   },
   "444": {
     "chronicles": true,
+    "category": "chronicles",
     "type": "progression",
     "stat": "HP Regeneration",
     "entity": "skirmisher",
@@ -3462,6 +3466,7 @@
   },
   "445": {
     "chronicles": true,
+    "category": "chronicles",
     "type": "dual",
     "heading": "+[food]",
     "stat": "Villagers gathering stone slowly generate food",
@@ -3562,7 +3567,7 @@
   },
   "458": {
     "chronicles": true,
-    "category": "building",
+    "category": "chronicles",
     "heading": "Any Elevation",
     "stat": "All buildings except Town Centers can be built on any elevation",
     "entity": "house",
@@ -3580,11 +3585,34 @@
     "description": "Lumberjacks + Miners"
   },
   "460": {
-    "category": "building",
+    "chronicles": true,
+    "category": "chronicles",
     "heading": "Wooden",
     "stat": "Castles are Wooden Forts: 300 stone + 500 wood, built in 175 s, with 3000 HP and the same arrows",
     "entity": "castle",
     "description": "Castles",
     "multiplier": false
+  },
+  "461": {
+    "heading": "+35% ACCURACY",
+    "stat": "Trebuchets fire more accurately at units and small targets",
+    "entity": "trebuchet",
+    "description": "Trebuchets"
+  },
+  "462": {
+    "type": "dual",
+    "heading": "-50% [food]",
+    "stat": "Bloodlines and Scout Cavalry-line upgrades cost",
+    "entity": "light_cavalry",
+    "entity2": "knight",
+    "description": "Stable upgrades"
+  },
+  "463": {
+    "type": "dual",
+    "heading": "-50%",
+    "stat": "Bombard Tower and Elite Cannon Galleon upgrades cost",
+    "entity": "bombard_tower",
+    "entity2": "cannon_galleon",
+    "description": "Gunpowder techs"
   }
 }

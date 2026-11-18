@@ -227,12 +227,87 @@ JOBS: dict[str, dict] = {
 # Villager is ever trained.
 _RES_COST = {"food": 103, "wood": 104, "gold": 105, "stone": 106}
 
+# What an aura can give, and how the game writes each (task work_value_1),
+# read off its own auras:
+#   work rate      a fraction, multiply flag: Georgian Fortified Church 0.18
+#                  farmers / 0.1 villagers, Thracian Castle 0.15
+#   speed          the factor, multiply flag: Caravanserai 1.2 Trade Carts
+#   attack speed   1 - 1/(1+p), multiply flag: Cao Cao (Campaign) 0.0909 =
+#                  +10% (reload x 1/1.1); the Centurion's 0.1667 = +20%
+#   regeneration   HP per minute: Stronghold 30, Bimaristan 75
+#   attack         +N: the Strategos's +1 / +2
+#   armour         116 melee, 117 pierce — no table names them; the Sparabara
+#                  gives nearby units +2 on 117, the Hoplite phalanx 116
+#                  (inferred, so check in game)
+AURA_STATS: dict[str, dict] = {
+    "work_rate":    {"label": "work rate",           "attr": 13,  "pct": True, "max": 100},
+    "speed":        {"label": "movement speed",      "attr": 5,   "pct": True, "max": 100},
+    "attack_speed": {"label": "attack speed",        "attr": 10,  "pct": True, "max": 100},
+    "regen":        {"label": "HP regeneration per minute", "attr": 109, "max": 300},
+    "attack":       {"label": "attack",              "attr": 9,   "max": 20},
+    "melee_armor":  {"label": "melee armor",         "attr": 116, "max": 20},
+    "pierce_armor": {"label": "pierce armor",        "attr": 117, "max": 20},
+}
+AURA_RANGE = (1, 20, 8)          # min, max, default — the game's run 3 to 16
+
+
+def aura_task_value(stat: str, value: float) -> tuple[float, bool]:
+    """(work_value_1, multiply flag) for an aura of +`value` (% or flat)."""
+    p = value / 100
+    if stat == "work_rate":
+        return p, True
+    if stat == "speed":
+        return 1 + p, True
+    if stat == "attack_speed":
+        return 1 - 1 / (1 + p), True
+    return float(value), False
+
+
+def aura_affects_options() -> list[dict]:
+    """Who an aura can reach: every unit group, then each villager job."""
+    return ([{"id": g, "label": v["label"]} for g, v in GROUPS.items() if v["kind"] == "unit"]
+            + [{"id": f"job:{j}", "label": v["label"]} for j, v in JOBS.items()])
+
+
+def _aura_target(affects: str) -> dict | None:
+    if affects.startswith("job:"):
+        return {"type": "job", "id": affects[4:]} if affects[4:] in JOBS else None
+    g = GROUPS.get(affects)
+    return {"type": "group", "id": affects} if g and g["kind"] == "unit" else None
+
+
+def _aura_affects_label(affects: str) -> str:
+    t = _aura_target(affects)
+    if t is None:
+        return affects
+    return (JOBS if t["type"] == "job" else GROUPS)[t["id"]]["label"]
+
+# Armour class names, from the UGC guide's damage table (docs/general/
+# damage_calculation.md); 41 and 60 are named from the units that carry them
+# (fire ships; galleys, caravels and the other warships).  The unit editor's
+# armour panel and the "bonus damage" effect offer these classes.
+DAMAGE_CLASSES: dict[int, str] = {
+    1: "Infantry", 2: "Turtle Ships", 5: "War Elephants", 8: "Cavalry", 15: "Archers",
+    16: "Ships", 17: "Rams, Trebuchets, Siege Towers", 19: "Unique Units", 20: "Siege Weapons",
+    23: "Gunpowder Units", 25: "Monks", 27: "Spearmen", 28: "Cavalry Archers",
+    29: "Eagle Warriors", 30: "Camels", 32: "Condottieri", 34: "Fishing Ships", 35: "Mamelukes",
+    36: "Heroes and Kings", 37: "Hussite Wagons", 38: "Skirmishers", 41: "Fire Ships", 60: "Warships",
+}
+
 ATTRS: dict[str, dict] = {
     "hp":            {"label": "HP",               "ops": ("add", "mul"), "fields": [0],         "kinds": ("unit", "building")},
     "melee_armor":   {"label": "melee armor",      "ops": ("add",),       "field": 8, "armor": 4, "kinds": ("unit", "building", "job")},
     "pierce_armor":  {"label": "pierce armor",     "ops": ("add",),       "field": 8, "armor": 3, "kinds": ("unit", "building", "job")},
     "melee_attack":  {"label": "melee attack",     "ops": ("add",),       "field": 9, "armor": 4, "kinds": ("unit", "job")},
     "pierce_attack": {"label": "pierce attack",    "ops": ("add",),       "field": 9, "armor": 3, "kinds": ("unit", "building")},
+    # Bonus damage against one armour class (a Discord request, 2026-11-18):
+    # the same packed attack, its class picked from DAMAGE_CLASSES.  Flat goes
+    # either way: a minus past the unit's own bonus is a penalty, as the game's
+    # Hand Cannoneer has -10 vs Condottieri (261 negative entries ship).  A
+    # percentage only raises it — vanilla multiplies bonus damage 697 times,
+    # never by under 1 ("+20/30/40% Cav bonus damage" is x1.20, x1.11, x1.05).
+    "bonus_damage":  {"label": "bonus damage",     "ops": ("add", "mul"), "field": 9, "damage_class": True,
+                      "kinds": ("unit", "building")},
     "range":         {"label": "range",            "ops": ("add",),       "fields": [12, 1, 23], "kinds": ("unit", "building")},
     "los":           {"label": "line of sight",    "ops": ("add",),       "fields": [1, 23],     "kinds": ("unit", "building", "job")},
     "speed":         {"label": "movement speed",   "ops": ("mul",),       "fields": [5],         "kinds": ("unit", "job")},
@@ -251,8 +326,12 @@ ATTRS: dict[str, dict] = {
     # a player's request): N per minute, one resource per effect.  The build
     # gives the buildings a generate task and this civ the rate (see the
     # "trickle" resolver in civ_appender); other civs' copies make nothing.
+    # A villager job too (#113): the Puru stone miners' food, all in the DAT —
+    # a generate task aimed at what the job works on, so it runs only while
+    # working (Paper Money and the Portuguese foragers are the same task, added
+    # by the game's script).
     "trickle":       {"label": "generates per minute", "ops": ("add",), "positive": True, "max": 300,
-                      "fields": [], "kinds": ("building",)},
+                      "fields": [], "kinds": ("building", "job")},
     "regen":         {"label": "HP regeneration per minute", "ops": ("add",), "fields": [109], "kinds": ("unit", "building")},
     # On a building, attribute 13 is how fast it trains and researches — as
     # Conscription, Chivalry, Perfusion and the Goths', Huns' and Britons' team
@@ -284,6 +363,30 @@ ATTRS: dict[str, dict] = {
     # (Thumb Ring and Warwolf SET 100), so what the engine does there is untested.
     "accuracy":      {"label": "accuracy", "ops": ("add",), "max": 100, "pct": True, "ceiling": 100,
                       "unit_field": "accuracy_percent", "fields": [11], "kinds": ("unit", "building")},
+    # #114/#111.  Extra shots: attribute 102 (projectiles fired) and 107 (the
+    # most it can fire), ADDed together as every vanilla one does — Bolt
+    # Magazine, Yasama, Hul'che Spearthrowers, "Navy +1 projectile".  Per unit,
+    # only units that fire a projectile, so a card on the Unique unit skips a
+    # melee one.  A unit with no secondary projectile repeats its own, as the
+    # Longship, Organ Gun and Turtle Ship already do.
+    "projectiles":   {"label": "projectiles", "ops": ("add",), "positive": True, "max": 20,
+                      "unit_field": "total_projectiles", "unit_part": "creatable",
+                      "fields": [102, 107], "kinds": ("unit", "building")},
+    # #111.  How far a melee unit reaches: its range, attribute 12, which the
+    # Kamayuk and Steppe Lancer (1), Hoplite (0.5) and Phalangite (1.8) ship
+    # with.  No vanilla effect grants it to a unit at 0, so that is inferred.
+    # Melee units only — on a ranged one it would be "range", which also
+    # widens line of sight.
+    "reach":         {"label": "melee reach", "ops": ("add",), "max": 3, "unit_field": "max_range",
+                      "fields": [12], "kinds": ("unit",)},
+    # #103.  An aura: nearby units get a stat while they stand in range.  The
+    # game's own are DAT tasks (action 155) on the source, switched on by
+    # Combat Ability bit 32 — the Caravanserai, Centurion, Thracian Castle;
+    # Thracians and Delian League switch theirs on with an EC_SET of 63.  One
+    # effect carries its stat (AURA_STATS), who it reaches (`affects`, a unit
+    # group or villager job) and its range.  See the "aura" resolver.
+    "aura":          {"label": "aura", "ops": ("add",), "positive": True, "aura": True,
+                      "fields": [], "kinds": ("unit", "building", "job")},
     # ── Techs ── (EC_TECH_COST / EC_TECH_TIME; see tech_effect_commands)
     "tech_cost":     {"label": "cost",             "ops": ("mul", "add"),                        "kinds": ("tech",)},
     "research_speed":{"label": "research speed",   "ops": ("mul",), "faster": True,             "kinds": ("tech",)},
@@ -335,16 +438,28 @@ _POP_CAP_RESOURCE = 32
 # adding THAT age's increment.  The player types totals; card_steps works out
 # the increments (a ratio for percentages, which compound).
 STEP_AGES = (0, 101, 102, 103)          # 0 = the start (Dark Age)
+
+# "Per relic" (#112): {"relics": N} — the card's effects once per relic the
+# player holds, up to N.  Vanilla's Lithuanian "+1 attack per relic" (techs
+# 699-702) is the shape: a chain of auto-fire techs, the first needing the Dark
+# Age and a Monastery built, each later one the step before; tech k "costs" k
+# relics (resource 7).  The game takes a step back when relics are lost (the
+# user, 2026-11-18) — nothing in the DAT does that, so it's the engine's.
+RELIC_RESOURCE = 7
+RELIC_MAX = 10
+_DARK_AGE = 104
+_MONASTERY = 104                        # the building, whose marker is tech 107
 AGE_NAMES = {0: "Dark", **CIV_AGES}
 
 # "Once a X is built": a building's "initiates tech" (unit.building.tech_id)
 # fires a marker tech when the first one completes — the age-ups wait on these.
 # All are civ -1 with no prerequisites (checked against the DAT 2026-10-15).
 # The marker shown is vanilla's; the build reads the civ's own unit, so a
-# building whose marker moved still works.  Curated, not swept: the Watch
-# Tower's slot holds its make-available tech, and a Town Center's fires for
-# the starting one.  Houses, towers, walls and the Wonder have none.
-TRIGGER_BUILDINGS: dict[int, tuple[str, int]] = {
+# building whose marker moved still works.  Curated, not swept: a Town
+# Center's fires for the starting one.  Houses, towers, walls and the Wonder
+# have none; the towers and the Outpost get one of this civ's own from the build
+# (marker None here, MADE_TRIGGERS; #123).
+TRIGGER_BUILDINGS: dict[int, tuple[str, int | None]] = {
     68:   ("Mill", 110),            # Folwark too: same marker
     562:  ("Lumber Camp", 258),
     584:  ("Mining Camp", 282),
@@ -363,6 +478,16 @@ TRIGGER_BUILDINGS: dict[int, tuple[str, int]] = {
     1665: ("Donjon", 291),
     2556: ("Settlement", 1357),
     1808: ("Mule Cart", 933),
+    598:  ("Outpost", None),
+    79:   ("Tower", None),
+    236:  ("Bombard Tower", None),
+}
+# The buildings that fire the marker the build makes: a Tower is any of the
+# three (a Guard Tower is what the button builds after the upgrade).
+MADE_TRIGGERS: dict[int, tuple[int, ...]] = {
+    598: (598,),
+    79:  (79, 234, 235),
+    236: (236,),
 }
 
 COST_RESOURCES = ("all", *_RES_COST)
@@ -469,6 +594,9 @@ def pop_space_ok(u) -> bool:
             and bool(u.resource_storages) and u.resource_storages[0].type in (_POP_STORAGE, -1))
 
 
+_BUILD_ACTION, _REPAIR_ACTION = 101, 106
+
+
 def _moves_resources(u) -> bool:
     return bool(u.bird) and any(t.resource_in >= 0 or t.resource_out >= 0 for t in u.bird.tasks)
 
@@ -477,14 +605,28 @@ def _attack(u, cls: int) -> bool:
     return bool(u.type_50) and any(a.class_ == cls and a.amount > 0 for a in u.type_50.attacks)
 
 
+_COMBAT_ABILITY = 63
+_AURA_BIT = 32
+# "Bulk volley release": every projectile leaves at once.  Without it the
+# first goes and the rest follow a moment later.  The units Bolt Magazine and
+# Hul'che give extra shots carry it (Archer, Skirmisher lines, Genitour), as
+# do the Mounted Crossbowman and Kipchak; the Longbowman and Cavalry Archer
+# don't, so an extra-projectiles card adds it — to units only: towers and
+# Castles fire one after another, as Yasama's do (the user, 2026-11-18).
+_VOLLEY_BIT = 16
+
 _CAPABLE = {
     "garrison":      lambda u: (u.garrison_capacity or 0) > 0,
     "range":         lambda u: bool(u.type_50) and u.type_50.max_range > 0,
     "melee_attack":  lambda u: _attack(u, 4),
     "pierce_attack": lambda u: _attack(u, 3),
+    "bonus_damage":  lambda u: bool(u.type_50) and any(a.amount > 0 for a in u.type_50.attacks),
     "attack_speed":  lambda u: bool(u.type_50) and u.type_50.reload_time > 0
                                and any(a.amount > 0 for a in u.type_50.attacks),
     "carry":         _moves_resources,
+    # A building generates all the time; a villager job only while gathering,
+    # so Builders and Repairers have nothing to aim it at.
+    "trickle":       lambda u: u.type == 80 or _moves_resources(u),
     # Something to replace: it costs a resource now.
     "cost_set":      lambda u: bool(u.creatable) and any(
                          r.flag and r.type in (0, 1, 2, 3) and r.amount > 0 for r in u.creatable.resource_costs),
@@ -492,11 +634,18 @@ _CAPABLE = {
     "min_range":     lambda u: bool(u.type_50) and u.type_50.min_range > 0,
     "no_min_range":  lambda u: bool(u.type_50) and u.type_50.min_range > 0,
     "blast_radius":  _splashes,
+    "projectiles":   lambda u: bool(u.type_50) and bool(u.creatable) and u.type_50.projectile_unit_id >= 0
+                               and u.type_50.max_range > 0 and any(a.amount > 0 for a in u.type_50.attacks),
+    "reach":         lambda u: bool(u.type_50) and u.type != 80 and u.type_50.projectile_unit_id < 0
+                               and any(a.amount > 0 for a in u.type_50.attacks),
     # Ranged and with an attack, or there is nothing to miss.
     "accuracy":      lambda u: bool(u.type_50) and u.type_50.max_range > 0
                                and any(a.amount > 0 for a in u.type_50.attacks),
+    # Gathering, healing, building or repairing: Builders and Repairers move no
+    # resources, and the filter hid their work rate (#119).
     "work_rate":     lambda u: _moves_resources(u) or (
-                         bool(u.bird) and any(t.action_type == _HEAL_ACTION for t in u.bird.tasks)),
+                         bool(u.bird) and any(t.action_type in (_HEAL_ACTION, _BUILD_ACTION, _REPAIR_ACTION)
+                                              for t in u.bird.tasks)),
 }
 
 
@@ -664,11 +813,17 @@ def catalog() -> dict:
                     "positive": bool(a.get("positive")), "pct": bool(a.get("pct"))}
                    for k, a in ATTRS.items()],
         "cost_resources": list(COST_RESOURCES),
+        "damage_classes": [{"id": k, "name": v} for k, v in DAMAGE_CLASSES.items()],
         "civ_ages": [{"id": k, "label": f"{v} Age"} for k, v in CIV_AGES.items()],
         "step_ages": [{"id": k, "label": f"{AGE_NAMES[k]} Age"} for k in STEP_AGES],
         "triggers": [{"id": k, "label": label} for k, (label, _) in
                      sorted(TRIGGER_BUILDINGS.items(), key=lambda kv: kv[1][0])],
         "civ_resources": list(CIV_RESOURCES),
+        "relic_max": RELIC_MAX,
+        "aura_stats": [{"id": k, "label": v["label"], "pct": bool(v.get("pct")), "max": v["max"]}
+                       for k, v in AURA_STATS.items()],
+        "aura_affects": aura_affects_options(),
+        "aura_range": {"min": AURA_RANGE[0], "max": AURA_RANGE[1], "default": AURA_RANGE[2]},
         "tokens": {k: {"word": w, "icon": f"/static/icons/{icon}"} for k, (w, icon) in TEXT_TOKENS.items()},
     }
 
@@ -715,10 +870,14 @@ def _norm_card(raw) -> dict | None:
                if e and kinds <= set(ATTRS[e["attr"]]["kinds"])]
     # A replaced cost: one effect per resource (the last wins), at most
     # _COST_SET_MAX, and not on a card that grows — "costs 60 food" has no
-    # running total to step.  Nor a generating building, whose rate is built
-    # as a single add.
+    # running total to step.  A generating building does grow: each age adds
+    # its increment to the buildings' rate resource (#117; it was stripped
+    # here while the wizard offered it, so the card did nothing).
     if when.get("steps"):
-        effects = [e for e in effects if e["attr"] not in ("cost_set", "trickle")]
+        effects = [e for e in effects if e["attr"] != "cost_set"]
+    if when.get("relics"):
+        # Switched on, not stacked: an aura is the same at one relic as at four.
+        effects = [e for e in effects if e["attr"] != "aura"]
     named: dict[str, int] = {}
     for i, e in enumerate(effects):
         if e["attr"] == "cost_set":
@@ -872,6 +1031,14 @@ def _norm_effect(raw) -> dict | None:
     if value == int(value):
         value = int(value)
     out = {"attr": raw["attr"], "op": op, "value": value}
+    if spec.get("damage_class"):
+        try:
+            cls = int(raw.get("class"))
+        except (TypeError, ValueError):
+            return None
+        if cls not in DAMAGE_CLASSES or (op == "mul" and value < 0):
+            return None                  # no class to aim at; a percent only raises it
+        out["class"] = cls
     if raw["attr"] in ("cost", "tech_cost"):
         res = raw.get("resource", "all")
         out["resource"] = res if res in COST_RESOURCES else "all"
@@ -884,6 +1051,17 @@ def _norm_effect(raw) -> dict | None:
         if value == 0:
             return None
         out["value"] = int(value) if value == int(value) else value
+    if spec.get("aura"):
+        stat, affects = raw.get("stat"), raw.get("affects")
+        if stat not in AURA_STATS or not isinstance(affects, str) or _aura_target(affects) is None:
+            return None
+        lo, hi, default = AURA_RANGE
+        try:
+            rng = float(raw.get("range", default))
+        except (TypeError, ValueError):
+            rng = default
+        rng = max(lo, min(hi, round(rng)))
+        out.update(value=min(out["value"], AURA_STATS[stat]["max"]), stat=stat, affects=affects, range=int(rng))
     if raw["attr"] == "resources":
         res = raw.get("resource", "gold")
         out["resource"] = res if res in CIV_RESOURCES else "gold"
@@ -902,6 +1080,14 @@ def _norm_when(raw, family: str, first_target: dict) -> dict:
     grants have no running total to step."""
     raw = raw if isinstance(raw, dict) else {}
     when: dict = {}
+    if raw.get("relics") and family != "civ":
+        # Alone: it waits on a Monastery itself, and an age or a growing
+        # amount on top would be a second gate nobody asked for.
+        try:
+            n = int(raw["relics"])
+        except (TypeError, ValueError):
+            n = 4
+        return {"relics": max(1, min(RELIC_MAX, n))}
     if raw.get("steps") and family != "civ":
         when["steps"] = True
     else:
@@ -935,8 +1121,8 @@ def _norm_stepped_effect(raw) -> dict | None:
     spec = ATTRS.get(raw.get("attr"))
     if spec is None:
         return None
-    if spec.get("novalue"):
-        return _norm_effect(raw)
+    if spec.get("novalue") or spec.get("aura"):
+        return _norm_effect(raw)                 # an aura doesn't grow: it comes with the first step
     raw_steps = raw.get("steps")
     if not isinstance(raw_steps, dict):
         raw_steps = {"0": raw.get("value")}          # a plain effect: from the start
@@ -1009,6 +1195,11 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
     def bare(unit: str = "") -> str:
         return "/".join(f"{_fmt_num(abs(x))}{unit}" for x in vals)
 
+    if eff["attr"] == "aura":
+        st = AURA_STATS[eff["stat"]]
+        amount = f"+{_fmt_num(v)}{'%' if st.get('pct') else ''}"
+        return (f"gives nearby {_aura_affects_label(eff['affects'])} {amount} {st['label']} "
+                f"(range {eff['range']})")
     if eff["attr"] == "cost_set":
         text = f"costs {_fmt_num(v)} {eff['resource']}"
     elif eff["attr"] == "trickle":
@@ -1016,6 +1207,8 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
     elif eff["attr"] in ("tech_cost", "cost"):
         res = eff.get("resource", "all")
         text = f"{signed(pct)} {'cost' if res == 'all' else f'{res} cost'}"
+    elif spec.get("damage_class"):
+        text = f"{signed(pct)} bonus damage vs {DAMAGE_CLASSES.get(eff.get('class'), 'class ' + str(eff.get('class')))}"
     elif eff["attr"] == "research_speed":
         text = f"research {bare('%')} {'faster' if v > 0 else 'slower'}"
     elif spec.get("faster"):
@@ -1052,6 +1245,8 @@ def gate_text(card: dict) -> str:
     """' from the Castle Age', ' once a Mill is built', both, or ''.  A growing
     card names its ages per effect, so only the building is left here."""
     when = card.get("when") or {}
+    if when.get("relics"):
+        return f" per relic in a Monastery (up to {when['relics']})"
     parts = []
     if when.get("age") and card_family(card) != "civ":    # a civ card says it per grant
         parts.append(f"from the {CIV_AGES[when['age']]} Age")
@@ -1155,12 +1350,22 @@ def card_steps(card: dict, line_of, resolve=None) -> list[dict]:
 
       from the start      one step, no prerequisites — every card before gating
       from an age / once a building is built   one step, gated
+      per relic           one step per relic, each the card's whole effect,
+                          chained, step k costing k relics (see RELIC_RESOURCE)
       grows each age      one step per age that changes something, each gated
                           on its age (and the building), adding the increment
     """
     if card_family(card) == "civ":
         return civ_steps(card, resolve)
     when = card.get("when") or {}
+    if when.get("relics"):
+        cmds = _plain_commands(card, line_of, resolve)
+        if not cmds:
+            return []
+        marker = resolve("trigger", _MONASTERY) if resolve else TRIGGER_BUILDINGS[_MONASTERY][1]
+        return [{"cmds": cmds, "after": None if k == 1 else k - 2, "relics": k,
+                 "reqs": [_DARK_AGE] + ([marker if marker is not None else -1] if k == 1 else [])}
+                for k in range(1, when["relics"] + 1)]
     if not when.get("steps"):
         cmds = _plain_commands(card, line_of, resolve)
         return [{"cmds": cmds, "reqs": _gate_reqs(card, resolve), "after": None}] if cmds else []
@@ -1342,6 +1547,9 @@ def effect_commands(eff: dict, selectors: list[tuple[int, int]]) -> list[EffectC
     v    = float(eff["value"])
     out: list[EffectCommand] = []
 
+    if spec.get("damage_class"):
+        return _bonus_damage_commands(eff, v, selectors)
+
     if "armor" in spec:
         # The amount is one byte: past 255 it would spill into the class, so
         # larger values go out as several commands (issue #49's sweep).
@@ -1374,6 +1582,28 @@ def effect_commands(eff: dict, selectors: list[tuple[int, int]]) -> list[EffectC
 _RES_INDEX = {"food": 0, "wood": 1, "stone": 2, "gold": 3}   # EC_TECH_COST b
 
 
+def _bonus_damage_commands(eff: dict, v: float, selectors) -> list[EffectCommand]:
+    """Bonus damage vs eff["class"], packed as class*256 + a byte.  Flat: the
+    byte is the amount, a reduction the negated whole, past 255 several
+    commands (as armour above).  Percent: the byte is the factor x100, as
+    "C-Bonus, +20% Cav bonus damage" writes 120 — at most x2.55 a command, so
+    a bigger factor is several that multiply up to it."""
+    cls = int(eff["class"])
+    if eff["op"] == "add":
+        total = int(round(abs(v)))
+        chunks = [255] * (total // 255) + ([total % 255] if total % 255 else [])
+        cmd_type, ds = EC_ADD, [float(cls * 256 + n) * (1 if v > 0 else -1) for n in chunks]
+    else:
+        factor, chunks = 1 + v / 100, []
+        while factor > 2.55:
+            chunks.append(255)
+            factor /= 2.55
+        if round(factor * 100) > 100:
+            chunks.append(round(factor * 100))
+        cmd_type, ds = EC_MULTIPLY, [float(cls * 256 + n) for n in chunks]
+    return [EffectCommand(type=cmd_type, a=a, b=b, c=9, d=d) for d in ds for a, b in selectors]
+
+
 def _tech_ids(card: dict, resolve=None) -> list[int]:
     """Tech ids a tech card addresses — resolved to this civ when building.
     A set, so a tech two targets share (Forging is a Blacksmith tech AND a
@@ -1404,10 +1634,15 @@ def tech_effect_commands(eff: dict, tech_ids: list[int], costs_of=None) -> list[
     a, v = eff["attr"], float(eff.get("value") or 0)
     out: list[EffectCommand] = []
     for tid in tech_ids:
-        if a in ("free", "instant"):
-            if a == "free":
-                out += [EffectCommand(type=EC_TECH_COST, a=tid, b=r, c=TECH_SET, d=0.0) for r in range(4)]
+        if a == "free":
+            out += [EffectCommand(type=EC_TECH_COST, a=tid, b=r, c=TECH_SET, d=0.0) for r in range(4)]
             out.append(EffectCommand(type=EC_TECH_TIME, a=tid, b=-1, c=TECH_SET, d=0.0))
+        elif a == "instant":
+            # One second, as the Goths' Instant Loom (effect 341): still
+            # clicked and paid for.  The game only ever sets a time of 0 on a
+            # tech it also makes free, and a player saw "instant" research
+            # come free.
+            out.append(EffectCommand(type=EC_TECH_TIME, a=tid, b=-1, c=TECH_SET, d=1.0))
         elif a == "research_speed":
             out.append(EffectCommand(type=EC_TECH_TIME, a=tid, b=-1, c=TECH_MUL, d=1.0 / (1.0 + v / 100.0)))
         elif a == "tech_cost":
@@ -1467,6 +1702,17 @@ def _plain_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
         if eff["attr"] == "cost_set":
             cmds.extend(EffectCommand(type=EC_SET, a=a, b=b, c=_RES_COST[eff["resource"]], d=float(eff["value"]))
                         for a, b in cost_sel)
+        elif eff["attr"] == "aura":
+            # Tasks on this civ's sources (the build), then the switch: Combat
+            # Ability bit 32, ADDed as the game's own scripts do (Stronghold,
+            # Bimaristan) — and only where the unit lacks it, since adding a bit
+            # it has would carry into the next one.  Not a SET (Thracians,
+            # Delian League): a projectiles card ADDs bit 16 to the same
+            # attribute, and a SET would wipe it.
+            if resolve:
+                cmds.extend(EffectCommand(type=EC_ADD, a=uid, b=-1, c=_COMBAT_ABILITY, d=float(_AURA_BIT))
+                            for uid, _ in resolve("aura", (sel, eff))
+                            if resolve("ability_bit", (uid, _AURA_BIT, eff)))
         elif eff["attr"] == "trickle":
             # The buildings get a generate task scaled by a civ resource of its
             # own; this card adds its rate to that resource (an add, so two
@@ -1489,7 +1735,11 @@ def _plain_commands(card: dict, line_of, resolve=None) -> list[EffectCommand]:
                     if spec.get("ceiling") is not None:
                         d = min(d, spec["ceiling"] - base)      # accuracy stops at 100%
                     if d:
-                        cmds.append(EffectCommand(type=EC_ADD, a=uid, b=-1, c=spec["fields"][0], d=d))
+                        cmds.extend(EffectCommand(type=EC_ADD, a=uid, b=-1, c=f, d=d) for f in spec["fields"])
+                        if (eff["attr"] == "projectiles" and not resolve("is_building", uid)
+                                and resolve("ability_bit", (uid, _VOLLEY_BIT, eff))):
+                            cmds.append(EffectCommand(type=EC_ADD, a=uid, b=-1, c=_COMBAT_ABILITY,
+                                                      d=float(_VOLLEY_BIT)))
         elif ATTRS[eff["attr"]].get("per_building"):
             # Class-wide would reach Farms and walls; the build expands the
             # selectors to the buildings that qualify (and readies their slot).
@@ -1533,6 +1783,8 @@ def team_problem(card: dict) -> str | None:
         return "An added line is this civ's own, which allies don't train."
     if any(e["attr"] == "pop_space" for e in card["effects"]):
         return "Population space only works on this civ's own buildings."
+    if any(e["attr"] == "aura" for e in card["effects"]):
+        return "An aura is written onto this civ's own units and buildings, which allies don't have."
     return None
 
 

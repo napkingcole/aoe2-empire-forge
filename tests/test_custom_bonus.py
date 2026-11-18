@@ -78,6 +78,27 @@ minus = cb.effect_commands({"attr": "melee_attack", "op": "add", "value": -1}, [
 check("-1 melee attack is the negated whole, -1025 (Forging on unit 1923)",
       [(c.a, c.b, c.c, c.d) for c in minus] == [(74, -1, 9, -1025.0)])
 
+# Bonus damage: the same packed attack, aimed at one armour class.
+bd = cb.normalize([{"target": {"type": "unit", "id": 93, "name": "Spearman"},
+                    "effects": [{"attr": "bonus_damage", "op": "add", "value": 4, "class": 8},
+                                {"attr": "bonus_damage", "op": "add", "value": -10, "class": 30},
+                                {"attr": "bonus_damage", "op": "mul", "value": 25, "class": 8}]}])[0]
+check("bonus damage reads 'vs' its class, either sign",
+      cb.card_text(bd) == "Spearman line: +4 bonus damage vs Cavalry, -10 bonus damage vs Camels, "
+                          "+25% bonus damage vs Cavalry", cb.card_text(bd))
+cmds = [(c.type, c.d) for e in bd["effects"] for c in cb.effect_commands(e, [(93, -1)])]
+check("...flat is EC_ADD class*256 + amount, a minus the negated whole; percent is EC_MULTIPLY x100 "
+      "('+20% Cav bonus damage' writes 120)",
+      cmds == [(cb.EC_ADD, 8 * 256 + 4.0), (cb.EC_ADD, -(30 * 256 + 10.0)), (cb.EC_MULTIPLY, 8 * 256 + 125.0)], cmds)
+big = cb.effect_commands({"attr": "bonus_damage", "op": "mul", "value": 300, "class": 8}, [(-1, 6)])
+check("...a percent past x2.55 is several commands that multiply up to it",
+      [int(c.d) & 255 for c in big] == [255, 157], [int(c.d) & 255 for c in big])
+check("...a percent below zero, no class, or melee/pierce as the class is dropped",
+      cb.normalize([{"target": {"type": "unit", "id": 93}, "effects": [
+          {"attr": "bonus_damage", "op": "mul", "value": -50, "class": 8},
+          {"attr": "bonus_damage", "op": "add", "value": 2},
+          {"attr": "bonus_damage", "op": "add", "value": 2, "class": 4}]}]) == [])
+
 rng = cb.effect_commands({"attr": "range", "op": "add", "value": 1}, [(-1, 0)])
 check("+1 range also raises LOS and search radius, as Fletching does",
       sorted(c.c for c in rng) == [1, 12, 23])
@@ -159,6 +180,10 @@ import civ_appender as _ca                                # noqa: E402
 check("'free' on a tech writes exactly what _free_tech_cmds writes (free AND instant)",
       [(c.type, c.a, c.b, c.c, c.d) for c in cb.card_commands(gold, None)]
       == [(c.type, c.a, c.b, c.c, c.d) for c in _ca._free_tech_cmds([55, 182])])
+inst = cb.card_commands(T("set_gold", {"attr": "instant", "op": "set"})[0], None)
+check("'instant' is one second and leaves the cost, as the Goths' Instant Loom",
+      [(c.type, c.c, c.d) for c in inst] == [(cb.EC_TECH_TIME, cb.TECH_SET, 1.0)] * 2,
+      [(c.type, c.a, c.b, c.c, c.d) for c in inst])
 pct = cb.card_commands(T("age_all", {"attr": "tech_cost", "op": "mul", "value": -15})[0], None)
 check("-15% cost on all resources is one b=-1 multiply per tech (the Italians' age discount)",
       [(c.type, c.a, c.b, c.c, round(c.d, 4)) for c in pct]
@@ -491,6 +516,17 @@ with contextlib.redirect_stdout(io.StringIO()):
     res = ca.apply_civ(dat, civ_def(cards), target_slot=13)
 check("a normal civ raises no effect-size warning",
       not any("effect commands" in w for w in res.get("warnings", [])), res.get("warnings"))
+
+# Bonus damage against a class the unit has no entry for: the engine changes
+# only classes a unit carries, so the build gives it one at 0 (#243's fix).
+SKIRM = 7
+check("the Skirmisher has no bonus vs Cavalry to add to (else this proves nothing)",
+      8 not in {a.class_ for a in dat.civs[1].units[SKIRM].type_50.attacks})
+res, _ = built_ids([{"target": {"type": "unit", "id": SKIRM, "name": "Skirmisher"},
+                     "effects": [{"attr": "bonus_damage", "op": "add", "value": 3, "class": 8}]}], 17)
+check("a Skirmisher +3 vs Cavalry card reaches the line", res and {SKIRM, 6} <= res[0][0], res)
+check("...and the civ's Skirmisher gains a Cavalry entry at 0 for it to land on",
+      {a.class_: a.amount for a in dat.civs[17].units[SKIRM].type_50.attacks}.get(8) == 0)
 
 # ── Techs (DAT) ──────────────────────────────────────────────────────────────
 S = ca._string_table()

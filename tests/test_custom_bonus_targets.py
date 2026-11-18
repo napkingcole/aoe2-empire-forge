@@ -63,6 +63,9 @@ EXPECT = [
     ("building:68", {"hp", "build_speed"}, {"pierce_attack", "attack_speed", "range", "garrison"}),
     ("building:82", {"garrison", "pierce_attack", "range", "attack_speed"}, set()),
     ("group:monks", {"work_rate"}, {"attack_speed", "melee_attack", "pierce_attack"}),
+    # Builders and Repairers move no resources; their work rate was hidden (#119).
+    ("job:builder", {"work_rate"}, {"carry"}),
+    ("job:repairer", {"work_rate"}, {"carry"}),
 ]
 for key, has, lacks in EXPECT:
     got = allowed.get(key, set())

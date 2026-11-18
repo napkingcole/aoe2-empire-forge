@@ -194,7 +194,7 @@
 
 .scene-controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));   /* three across, as the user asked */
   gap: 10px 12px;
   margin-top: 12px;
 }
@@ -264,4 +264,9 @@
   .scene-stage { min-height: 230px; padding-inline: 10px; }
   .scene-row   { --scene-building-gap: 6px; }
   .scene-units { gap: 10px; }
+}
+
+/* Phones: three columns of dropdowns don't fit; one per row. */
+@media (max-width: 575.98px) {
+  .scene-controls { grid-template-columns: 1fr; }
 }

@@ -197,6 +197,30 @@ out_flags = (back.get("unique_unit") or {}).get("advanced_flags") or {}
 check("from_draft never writes ignore_armor back out",
       "ignore_armor" not in out_flags, f"flags={out_flags}")
 
+# ── 3b. Attack Ignores Armor, the working way (#2026-11-18) ──────────────────
+# Combat Ability (attribute 63 = type_50.break_off_combat) flag 1: the Leitis
+# ships with it, and Wootz Steel ADDs 1 to infantry and cavalry.
+leitis = dat.civs[0].units[1234].type_50.break_off_combat
+check("precedent: the Leitis carries Combat Ability flag 1", leitis & 1 == 1, f"{leitis}")
+wootz = next(e for e in dat.effects if e.name == "Wootz Steel")
+check("precedent: Wootz Steel ADDs 1 to attribute 63",
+      any(c.type == 4 and int(c.c) == 63 and c.d == 1.0 for c in wootz.effect_commands))
+for uid, elite, label, slot, plain in ((46, 557, "Janissary", 9, 11), (25, 554, "Teutonic Knight", 10, 12)):
+    before = {u: dat.civs[slot].units[u].type_50.break_off_combat for u in (uid, elite)}
+    with contextlib.redirect_stdout(io.StringIO()):
+        _apply_uu_overrides(dat, slot, {"unit_id": uid, "elite_id": elite}, civ_def([], {"ignores_armor": True}))
+        _apply_uu_overrides(dat, plain, {"unit_id": uid, "elite_id": elite}, civ_def([], {}))
+    atk = {u: [(a.class_, a.amount) for a in dat.civs[plain].units[u].type_50.attacks] for u in (uid, elite)}
+    for u in (uid, elite):
+        t50 = dat.civs[slot].units[u].type_50
+        check(f"{label} {u}: flag 1 set, other flags kept",
+              t50.break_off_combat == (before[u] | 1), f"{before[u]} -> {t50.break_off_combat}")
+        check(f"{label} {u}: attacks as without the flag", [(a.class_, a.amount) for a in t50.attacks] == atk[u])
+d = to_draft({"format": "empireforge_v2", "schema_version": 2, "alias": "New",
+              "unique_unit": {"km_idx": 9, "advanced_flags": {"ignores_armor": True}}})
+check("the new key survives the schema doors",
+      ((from_draft(d).get("unique_unit") or {}).get("advanced_flags") or {}).get("ignores_armor") is True)
+
 # ── 4. Charge Attack is the Comitatenses charge ──────────────────────────────
 # It wrote charge_type 2 — undocumented and used by no vanilla unit — while its
 # help text cited the Comitatenses, which use type 1.  The precedent is read
@@ -217,6 +241,23 @@ for uid, elite, label in ((46, 557, "Janissary (ranged)"), (25, 554, "Teutonic K
         check(f"{label} {u}: pool and rate as entered",
               (cr.max_charge, cr.recharge_rate) == (5.0, 0.25),
               f"got {(cr.max_charge, cr.recharge_rate)}")
+
+# ── 5. Defensive Charge (#125) is the Iron Pagoda's / Shrivamsha Rider's ─────
+# Read from the units themselves, so a DE change to either shows up here.
+units = dat.civs[0].units
+for kind, uid, secs in (("melee", 1908, None), ("ranged", 1751, None), ("melee", 1908, 20)):
+    ref = units[uid].creatable
+    flags = {"defense_charge": kind, **({"defense_recharge": secs} if secs else {})}
+    with contextlib.redirect_stdout(io.StringIO()):
+        _apply_uu_overrides(dat, 8, {"unit_id": 25, "elite_id": 554}, civ_def([], flags))
+    for u in (25, 554):
+        cr = dat.civs[8].units[u].creatable
+        want_rate = 1 / secs if secs else ref.recharge_rate
+        check(f"{kind}{' ' + str(secs) + ' s' if secs else ''}: Teutonic Knight {u} has unit {uid}'s charge",
+              (cr.charge_type, cr.charge_event, cr.max_charge) == (ref.charge_type, ref.charge_event, ref.max_charge)
+              and abs(cr.recharge_rate - want_rate) < 1e-4,
+              f"got {(cr.charge_type, cr.charge_event, cr.max_charge, cr.recharge_rate)}, "
+              f"want {(ref.charge_type, ref.charge_event, ref.max_charge, want_rate)}")
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")

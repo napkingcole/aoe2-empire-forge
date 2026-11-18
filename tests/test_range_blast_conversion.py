@@ -111,6 +111,36 @@ check("card text reads as a percentage",
       cb.card_text(cards(SIEGE, {"attr": "accuracy", "op": "add", "value": 20})[0]).endswith("+20% accuracy"),
       cb.card_text(cards(SIEGE, {"attr": "accuracy", "op": "add", "value": 20})[0]))
 
+print("\n=== extra projectiles (#114) ===")
+INFANTRY = {"type": "group", "id": "infantry"}
+MILITIA, SPEAR, AXEMAN = 74, 93, 281
+got = built(12, cards(ARCHERS, {"attr": "projectiles", "op": "add", "value": 2}))
+check("Archer +2 to 102 and 107, as Bolt Magazine", got.get((ARCHER, 102)) == [(4, 2.0)]
+      and got.get((ARCHER, 107)) == [(4, 2.0)], f"{got.get((ARCHER, 102))} {got.get((ARCHER, 107))}")
+check("the Archer already fires as one volley (bit 16): nothing added to 63", (ARCHER, 63) not in got, got.get((ARCHER, 63)))
+got = built(15, cards({"type": "group", "id": "cavalry_archers"}, {"attr": "projectiles", "op": "add", "value": 2}))
+check("the Cavalry Archer gets bit 16 so its arrows leave together, as the Mounted Crossbowman's",
+      got.get((39, 63)) == [(4, 16.0)], got.get((39, 63)))
+check("precedent: the Mounted Crossbowman carries bit 16, the Cavalry Archer doesn't",
+      dat.civs[0].units[2700].type_50.break_off_combat & 16 and not dat.civs[0].units[39].type_50.break_off_combat & 16)
+got = built(13, cards(INFANTRY, {"attr": "projectiles", "op": "add", "value": 1}))
+check("infantry: the Throwing Axeman shoots one more", got.get((AXEMAN, 102)) == [(4, 1.0)], f"{got}")
+check("...a Militia doesn't", (MILITIA, 102) not in got and (MILITIA, 107) not in got)
+check("a negative number is refused", not cards(ARCHERS, {"attr": "projectiles", "op": "add", "value": -1}))
+check("card text", cb.card_text(cards(ARCHERS, {"attr": "projectiles", "op": "add", "value": 2})[0])
+      == "Archers: +2 projectiles", cb.card_text(cards(ARCHERS, {"attr": "projectiles", "op": "add", "value": 2})[0]))
+bm = next(e for e in dat.effects if e.name == "Bolt Magazine")
+check("precedent: Bolt Magazine ADDs both 102 and 107",
+      {int(c.c) for c in bm.effect_commands if c.type == 4} >= {102, 107})
+
+print("\n=== melee reach (#111) ===")
+got = built(14, cards(INFANTRY, {"attr": "reach", "op": "add", "value": 1}))
+check("Spearman 0 -> +1 range (attribute 12)", got.get((SPEAR, 12)) == [(4, 1.0)], f"{got.get((SPEAR, 12))}")
+check("Militia too", got.get((MILITIA, 12)) == [(4, 1.0)])
+check("the Throwing Axeman (ranged) gets no reach", (AXEMAN, 12) not in got, f"{got.get((AXEMAN, 12))}")
+check("no line of sight comes with it, unlike range", (SPEAR, 1) not in got)
+check("Kamayuk ships with reach 1 — the precedent", dat.civs[0].units[879].type_50.max_range == 1.0)
+
 print("\n=== conversion ===")
 got = built(10, cards({"type": "civ"}, {"attr": "convert_time", "op": "add", "value": -1}))
 check("faster Monks: 176 and 177 -1, as Inquisition", got.get((176, "res")) == [(1, -1.0)]
@@ -131,15 +161,19 @@ check("Inquisition writes 176 and 177", {(1, 176), (1, 177)} <= effect_res("Inqu
 check("Faith writes 178 and 179", {(1, 178), (1, 179)} <= effect_res("Faith"))
 
 print("\n=== offered where they mean something ===")
-allowed = cb.allowed_attrs(dat, [(f"unit:{u}", "unit", u) for u in (MANGONEL, TREB, SCORPION, ARCHER, SKIRM, WAR_ELE)])
+allowed = cb.allowed_attrs(dat, [(f"unit:{u}", "unit", u) for u in (MANGONEL, TREB, SCORPION, ARCHER, SKIRM, WAR_ELE)]
+                           + [("building:79", "building", 79)])
 for uid, has, lacks in ((MANGONEL, {"min_range", "no_min_range", "blast_radius"}, set()),
                         (TREB, {"min_range", "blast_radius"}, set()),
                         (SCORPION, {"min_range"}, {"blast_radius"}),
                         (SKIRM, {"min_range"}, {"blast_radius"}),
                         (ARCHER, {"accuracy"}, {"min_range", "no_min_range", "blast_radius"}),
-                        (WAR_ELE, set(), {"accuracy"})):
+                        (WAR_ELE, {"reach"}, {"accuracy", "projectiles"}),
+                        (ARCHER, {"projectiles"}, {"reach"})):
     a = set(allowed[f"unit:{uid}"])
     check(f"unit {uid}: offers {sorted(has)}, not {sorted(lacks)}", has <= a and not (lacks & a), f"{sorted(a)}")
+check("a Watch Tower offers projectiles (Yasama), not reach",
+      "projectiles" in allowed["building:79"] and "reach" not in allowed["building:79"], allowed["building:79"])
 
 print()
 print("FAIL" if failures else "PASS", f"({failures} failure(s))")

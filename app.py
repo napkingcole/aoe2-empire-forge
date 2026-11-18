@@ -36,7 +36,7 @@ from build_all import (_build_combined_data_zip, _build_combined_ui_zip, dat_jso
                        _ut_name, _ut_source, _BONUS_NAMES, _TEAM_BONUS_NAMES,
                        _UNIQUE_CASTLE_STRINGS, _UNIQUE_IMP_STRINGS,
                        _kv_text, ut_name_and_desc, ut_selection_text, ut_research_label,
-                       hero_string_lines, civ_tip_lines, civ_description)
+                       hero_string_lines, civ_tip_lines, civ_description, drop_unavailable)
 from build_civ import (
     AI_PER_STUB, LANGUAGES, KM_TECHTREE_ORDER,
     _find_civ_slot, _civ_techtree_index, _civ_file_name,
@@ -987,8 +987,8 @@ def _run_build_job(job_id, sd, dat_path, civs_meta, ordered, replace_map, mod_na
             # the file (the wizard route already escaped these; this one did not).
             description   = _kv_text(civ_def.get("tagline") or civ_def.get("description", "") or "")
             alias_kv      = _kv_text(alias)
-            civ_bonuses        = _bonuses_raw_normalized
-            team_bonus_entries = _team_bonuses_raw_normalized
+            civ_bonuses        = drop_unavailable(_bonuses_raw_normalized, result)
+            team_bonus_entries = drop_unavailable(_team_bonuses_raw_normalized, result, team=True)
             _bonus_texts = [_BONUS_NAMES[str(e[0])] + (f" [x{e[1]}]" if len(e) > 1 and e[1] > 1 else "")
                             for e in civ_bonuses if isinstance(e, list) and _BONUS_NAMES.get(str(e[0]))]
             # Custom bonus cards — the other two routes list them; this one didn't.
@@ -1508,6 +1508,20 @@ def api_builder_meta():
     # those clips from the player's own Wwise banks, so offering a voice the
     # map can't name would silently ship a civ with no audio.  A rebuilt map
     # adds the option by itself.
+    # Waypoint flags (#87): one per civ, by DAT index (resource 73).  The
+    # Chronicles civs carry the generic flag, so they aren't offered; with the
+    # DAT parsed, only civs whose flag is their own.
+    flag_options = sorted([
+        {"value": i, "label": c.get("name", "")}
+        for i, c in enumerate(roster)
+        if i > 0 and c.get("era", "base") != "antiquity" and c.get("name")
+    ], key=lambda x: x["label"])
+    if dat_path and dat_path in _DAT_OBJ_CACHE:
+        _fd = _DAT_OBJ_CACHE[dat_path]
+        _generic = _fd.civs[0].resources[73] if len(_fd.civs[0].resources) > 73 else None
+        flag_options = [o for o in flag_options if o["value"] < len(_fd.civs)
+                        and len(_fd.civs[o["value"]].resources) > 73
+                        and _fd.civs[o["value"]].resources[73] not in (0, -1, _generic)]
     voice_options = sorted([
         {"value": i - 1, "label": c.get("name", "")}
         for i, c in enumerate(roster)
@@ -1539,6 +1553,7 @@ def api_builder_meta():
         "starting_scouts": _SCOUT_OPTIONS,
         "monk_skins": monk_options,
         "monastery_skins": monastery_options,
+        "waypoint_flags": flag_options,
         # Goes on every preview and scene-art URL, so a browser never shows art
         # it cached before game_sprites' output changed.
         "art_version": _PREVIEW_VERSION,
@@ -2049,6 +2064,7 @@ def api_builder_bonuses_catalog():
 
 def _unit_stats_block(u) -> dict:
     """Extract display stats from a genieutils unit object."""
+    from civ_overrides import unit_pop
     t50 = u.type_50
     bonuses = []
     for a in t50.attacks:
@@ -2072,8 +2088,71 @@ def _unit_stats_block(u) -> dict:
         "reload_time": round(t50.reload_time, 2),
         "speed":       round(u.speed, 2),
         "train_time":  train_time,
+        "pop":         unit_pop(u),
         "bonuses":     bonuses,
     }
+
+
+_UU_COMBAT_CACHE: dict[tuple, dict] = {}
+
+
+def _uu_combat(dat_path: str, km_idx: int) -> dict | None:
+    """The UU's attack and armour classes, base and elite, built the way the
+    mod builds it: a vanilla UU's units from its make-avail and elite techs,
+    a custom or scenario one copied and given its preset (km_custom_uu.
+    _apply_preset_stats).  {base: {attacks, armours}, elite: {...} | None},
+    each {"<class>": amount}; None for a UU the DAT can't resolve."""
+    import civ_appender as ca
+    import km_custom_uu as kcu
+    from copy import deepcopy
+    key = (dat_path, km_idx)
+    if key in _UU_COMBAT_CACHE:
+        return _UU_COMBAT_CACHE[key]
+    dat = _get_dat(dat_path)
+    units = dat.civs[1].units
+    bu = eu = None
+    if km_idx in ca._KM_UU_TECHS:
+        t1, t2 = ca._KM_UU_TECHS[km_idx]
+        base = next((int(c.a) for c in dat.effects[dat.techs[t1].effect_id].effect_commands if c.type == 2), None)
+        if base is not None:
+            elite = next((int(c.b) for c in dat.effects[dat.techs[t2].effect_id].effect_commands
+                          if c.type == 3 and int(c.a) == base), None)
+            bu = units[base]
+            eu = units[elite] if elite is not None and elite != base else None
+    elif (p := getattr(kcu, "PRESETS", {}).get(km_idx)) is not None:
+        bu = deepcopy(units[p["base_unit_id"]])
+        eu = deepcopy(units[p.get("elite_unit_id") or p["base_unit_id"]])
+        kcu._apply_preset_stats(bu, eu, p)               # the build's own step
+    if bu is None or bu.type_50 is None:
+        return None
+
+    def tier(u):
+        if u is None or u.type_50 is None:
+            return None
+        return {"attacks": {str(a.class_): int(a.amount) for a in u.type_50.attacks},
+                "armours": {str(a.class_): int(a.amount) for a in u.type_50.armours}}
+    out = {"base": tier(bu), "elite": tier(eu)}
+    _UU_COMBAT_CACHE[key] = out
+    return out
+
+
+@app.route("/api/builder/uu/combat")
+def api_builder_uu_combat():
+    """The UU tab's bonus damage and armour rows: the unit's classes (_uu_combat)
+    and the names to show them by.  ?km_idx=N."""
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    try:
+        km_idx = int(request.args.get("km_idx", ""))
+    except ValueError:
+        return jsonify({"status": "error", "error": "bad km_idx"}), 400
+    combat = _uu_combat(dat_path, km_idx)
+    if combat is None:
+        return jsonify({"status": "error", "error": "unknown unit"}), 404
+    return jsonify({"status": "ok", **combat,
+                    "bonus_classes": [{"cls": c, "name": n} for c, n in sorted(_PANEL_CLASS_NAMES.items(),
+                                                                               key=lambda kv: kv[1])]})
 
 
 def _build_all_uu_stats(dat_path: str) -> dict[int, dict]:
@@ -2688,6 +2767,127 @@ def api_builder_ut_catalog():
                     "imperial": _entries(_UNIQUE_IMP_STRINGS, _KM_IMP_UT_TECHS, "imperial")})
 
 
+# ── Where a card comes from (#95) ───────────────────────────────────────────
+# A vanilla bonus or unique tech wears the emblem of the civ it was taken
+# from.  The source is the game's own: the civ-gated techs a bonus copies
+# (tech.civ), the civ whose team bonus effect a team card copies, and a unique
+# tech's vanilla tech.  A card that resolves to no civ, or to more than one
+# (Stone Miners also generate gold: the Poles' and a Gaia tech), shows none.
+# Emblems come from the player's game (every civ, newest DLC included), else
+# the aoe2techtree set this app ships (fine to use, the user said 2026-11-18).
+_CARD_SOURCES_CACHE: dict[str, dict] = {}
+# DAT civ names that aren't the emblem's (and display) name.
+_CIV_EMBLEM_NAMES = {"british": ("britons", "Britons"), "french": ("franks", "Franks"),
+                     "byzantine": ("byzantines", "Byzantines"), "mayan": ("mayans", "Mayans")}
+_GAME_EMBLEM_FILES = {"hindustanis": "indians"}           # the game's file name, where it differs
+_DISK_EMBLEMS = Path(__file__).parent / "static" / "aoe2techtree" / "img" / "Civs"
+
+
+def _civ_emblem_path(dat_path: str | None, key: str) -> Path | None:
+    """The emblem for `key`: the game's civ-picker shield (<game>/widgetui/
+    textures/menu/civs; not resources/_common/wpfg/resources/civ_emblems, which
+    holds wide pen sketches), else the copy on disk; None if neither has it."""
+    if dat_path:
+        game = (Path(dat_path).parents[3] / "widgetui" / "textures" / "menu" / "civs"
+                / f"{_GAME_EMBLEM_FILES.get(key, key)}.png")
+        if game.exists():
+            return game
+    disk = _DISK_EMBLEMS / f"{key}.png"
+    return disk if disk.exists() else None
+
+
+# Bonuses the techs can't place: built from an effect list or a handler (no
+# civ-gated tech), or one the DAT gives to two civs (281: the Poles' and a
+# Gaia tech), or a bonus a second civ has since been given (Caravanserai).
+# Checked bullet by bullet against every civ's in-game help text (2026-11-18,
+# the aoe2techtree help strings); a card whose numbers differ from today's is
+# listed when it is that civ's bonus at an older value (128: Aztecs 11%).
+_CARD_SOURCE_EXTRA: dict[str, dict[int, tuple[str, ...]]] = {"civ": {
+    105: ("Burgundians",), 103: ("Burgundians",), 138: ("Burgundians",),
+    110: ("Franks",), 111: ("Magyars",), 112: ("Slavs",), 113: ("Byzantines",),
+    114: ("Teutons",), 115: ("Turks",), 117: ("Vikings",), 119: ("Vietnamese",),
+    120: ("Slavs",), 121: ("Italians",), 122: ("Italians",), 123: ("Italians",),
+    124: ("Byzantines",), 125: ("Spanish",), 126: ("Spanish",), 127: ("Spanish",),
+    128: ("Aztecs",), 129: ("Aztecs",), 131: ("Huns",), 132: ("Mayans",), 133: ("Mayans",),
+    135: ("Koreans",), 136: ("Vietnamese",), 137: ("Bulgarians",), 149: ("Malay",),
+    202: ("Bohemians",), 212: ("Hindustanis",), 219: ("Slavs",), 221: ("Armenians",),
+    227: ("Spanish",), 247: ("Persians",), 281: ("Poles",), 283: ("Bohemians",),
+    287: ("Persians",), 290: ("Dravidians",), 339: ("Wu",), 352: ("Jurchens",),
+    356: ("Khitans",), 404: ("Bohemians",), 424: ("Persians",), 425: ("Persians",),
+    427: ("Aztecs",), 52: ("Italians",), 81: ("Khmer",),
+    116: ("Turks",), 118: ("Koreans",),
+    461: ("Huns",), 462: ("Poles",), 463: ("Turks",),        # added from this pass
+}, "team": {}}
+
+
+def _card_sources(dat_path: str) -> dict:
+    if dat_path in _CARD_SOURCES_CACHE:
+        return _CARD_SOURCES_CACHE[dat_path]
+    from bonus_catalog import civ_bonus_techs, team_bonus_tech
+    from civ_appender import _KM_CASTLE_UT_TECHS, _KM_IMP_UT_TECHS
+    dat = _get_dat(dat_path)
+    civs: dict[int, dict] = {}
+    for i, c in enumerate(dat.civs):
+        key, name = _CIV_EMBLEM_NAMES.get(c.name.lower(), (c.name.lower(), c.name))
+        if i > 0 and _civ_emblem_path(dat_path, key):
+            civs[i] = {"name": name, "emblem": key}
+
+    def one(slots) -> list[int] | None:
+        """[the one civ], or None for none, several, or one without an emblem."""
+        return [next(iter(slots))] if len(slots) == 1 and next(iter(slots)) in civs else None
+
+    def tech_civ(tid: int) -> int:
+        return dat.techs[tid].civ if 0 <= tid < len(dat.techs) else -1
+
+    out = {"civs": {str(i): v for i, v in civs.items()}, "civ": {}, "team": {}, "castle": {}, "imperial": {}}
+    with open(Path(__file__).parent / "bonus_names.json", encoding="utf-8") as f:
+        for k in json.load(f):
+            if (s := one({tech_civ(int(t)) for t in civ_bonus_techs(int(k)) or []} - {-1})) is not None:
+                out["civ"][k] = s
+    team_owner: dict[int, set] = {}
+    for i, c in enumerate(dat.civs):
+        team_owner.setdefault(c.team_bonus_id, set()).add(i)
+    with open(Path(__file__).parent / "team_bonus_names.json", encoding="utf-8") as f:
+        for k in json.load(f):
+            e = team_bonus_tech(int(k))
+            if e is not None and (s := one(team_owner.get(e, set()))) is not None:
+                out["team"][k] = s
+    for tier, table in (("castle", _KM_CASTLE_UT_TECHS), ("imperial", _KM_IMP_UT_TECHS)):
+        for k, tid in table.items():
+            if (s := one({tech_civ(tid)} - {-1})) is not None:
+                out[tier][str(k)] = s
+    slot_of = {v["name"]: i for i, v in civs.items()}
+    for kind, table in _CARD_SOURCE_EXTRA.items():
+        for k, names in table.items():
+            have = out[kind].setdefault(str(k), [])
+            have += [slot_of[n] for n in names if n in slot_of and slot_of[n] not in have]
+            if not have:
+                del out[kind][str(k)]
+    _CARD_SOURCES_CACHE[dat_path] = out
+    return out
+
+
+@app.route("/api/builder/card-sources")
+def api_builder_card_sources():
+    """{civs: {slot: {name, emblem}}, civ|team|castle|imperial: {card id: [slots]}}
+    — the civ each vanilla card comes from (_card_sources); empty without a game."""
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"civs": {}, "civ": {}, "team": {}, "castle": {}, "imperial": {}})
+    return jsonify(_card_sources(dat_path))
+
+
+@app.route("/api/civ-emblem/<name>")
+def api_civ_emblem(name: str):
+    """A civ's emblem (_civ_emblem_path): the player's game, else the copy on disk."""
+    if not re.fullmatch(r"[a-z_]+", name):
+        return ("", 404)
+    path = _civ_emblem_path(_resolve_dat_path(request.args.get("dat_path")), name)
+    if path is None:
+        return ("", 404)
+    return send_file(path, mimetype="image/png", max_age=0)
+
+
 _HERO_CATALOG_CACHE: dict[str, list] = {}
 
 
@@ -3167,6 +3367,53 @@ _PANEL_CLASS_NAMES: dict[int, str] = {
 }
 
 
+# Armour class names: custom_bonus.DAMAGE_CLASSES, which the "bonus damage"
+# card effect offers too.
+ARMOUR_CLASS_NAMES: dict[int, str] = custom_bonus.DAMAGE_CLASSES
+# Never offered: the melee and pierce stats (4, 3), class 31 (on nearly every
+# unit, attacked by nothing), and the buildings', walls', trees' and animals'
+# own classes, which no unit should carry.
+_ARMOUR_NOT_OFFERED = frozenset({3, 4, 31, 0, 11, 13, 14, 18, 21, 22, 24, 26})
+_DAMAGE_CLASSES_CACHE: dict[str, list] = {}
+
+
+def _damage_classes(dat_path: str) -> list[dict]:
+    """[{cls, name, attackers: [{name, amount}]}]: each armour class the
+    panels offer, with every trainable, non-hero unit that deals bonus damage
+    to it (best first, one row per name)."""
+    if dat_path in _DAMAGE_CLASSES_CACHE:
+        return _DAMAGE_CLASSES_CACHE[dat_path]
+    from civ_appender import _display_name
+    dat = _get_dat(dat_path)
+    best: dict[int, dict[str, int]] = {}
+    for u in dat.civs[1].units:
+        if (u is None or u.type_50 is None or u.creatable is None or u.type >= 80
+                or u.creatable.hero_mode or not any(tl.unit_id >= 0 for tl in u.creatable.train_locations)):
+            continue
+        name = _display_name(u.language_dll_name, None)
+        if not name:
+            continue
+        for a in u.type_50.attacks:
+            if a.amount > 0 and a.class_ not in _ARMOUR_NOT_OFFERED:
+                row = best.setdefault(a.class_, {})
+                row[name] = max(row.get(name, 0), int(a.amount))
+    out = [{"cls": c, "name": ARMOUR_CLASS_NAMES.get(c, f"Class {c}"),
+            "attackers": [{"name": n, "amount": a} for n, a in sorted(row.items(), key=lambda kv: (-kv[1], kv[0]))]}
+           for c, row in sorted(best.items()) if c in ARMOUR_CLASS_NAMES]
+    _DAMAGE_CLASSES_CACHE[dat_path] = out
+    return out
+
+
+@app.route("/api/builder/damage-classes")
+def api_builder_damage_classes():
+    """The armour classes a unit's "Advanced: armour classes" section offers,
+    with who deals bonus damage to each (_damage_classes)."""
+    dat_path = _resolve_dat_path(request.args.get("dat_path"))
+    if not dat_path or not Path(dat_path).exists():
+        return jsonify({"status": "no_dat"})
+    return jsonify({"status": "ok", "classes": _damage_classes(dat_path)})
+
+
 _ADD_OPTIONS_CACHE: dict[str, dict] = {}
 
 
@@ -3403,10 +3650,14 @@ def api_builder_node_info():
         "attack": int(stats.get("attack") or 0), "melee": int(stats.get("melee") or 0),
         "pierce": int(stats.get("pierce") or 0),
         "range": round(stats.get("range") or 0, 2), "reload": round(stats.get("reload") or 0, 3),
+        # None: it houses others (a House, a Castle), or has no room to hold one.
+        "pop": stats.get("pop"),
         "fights": co._fights(u), "moves": bool(u.speed),
         "train": int(trains[0]) if trains else 0,
         "cost": cost_of(slots), "cost_slots": spendable,
         "bonus": bonus,
+        "armours": ({str(a.class_): int(a.amount) for a in u.type_50.armours}
+                    if u.type_50 is not None else {}),
         "bonus_classes": [{"cls": c, "name": n} for c, n in sorted(_PANEL_CLASS_NAMES.items(),
                                                                    key=lambda kv: kv[1])],
         # Ancestors latest first (Paladin: Cavalier, then Knight), the order the
@@ -3416,7 +3667,12 @@ def api_builder_node_info():
         "forms": len(forms),
         "upgrade": upgrade,
         "desc": _unit_desc(dat, nid),
-        "age_move": _age_move_info(dat, co.enabling_tech(dat, 1, nid)) if kind == "unit" else None,
+        # A building too (#122): the Cumans' Feudal Siege Workshop, for anyone.
+        # A regional one (Feitoria) is its civ's tech here; the build moves the
+        # civ's own copy of it.
+        "age_move": _age_move_info(dat, co.enabling_tech(dat, 1, nid)
+                                   if co.enabling_tech(dat, 1, nid) is not None
+                                   else co.enabling_tech(dat, None, nid)),
         # Other civs' versions of it, for the Look row (Palintonon for the Trebuchet).
         "skins": unit_skins(dat, nid) if kind == "unit" else [],
         # Whether it may wear another unit's look (civ_appender.appearance_ok's kinds).

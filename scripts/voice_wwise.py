@@ -86,9 +86,10 @@ VOICE_DIR = ROOT / "ignore" / "voice_files"   # local archive; builds use voice_
 CIV_SWITCH_GROUP = 1977672554
 CALIBRATION_CIV = 1                    # Britons: covered by the spreadsheet
 # DAT name -> the name Wwise hashed, where they differ.
-STATE_ALIASES = {"indians": "hindustanis"}
-# Chronicles-only civs: never offered (see project_chronicles_dlc_blacklist).
-SKIP_CIVS = {"achaemenids", "athenians", "spartans", "macedonians", "thracians", "puru"}
+STATE_ALIASES = {"indians": "hindustanis", "puru": "pauravas"}
+# The Chronicles civs were skipped while they weren't offered as voices; their
+# voices are in Base.pck like everyone's (#102, 2026-11-16).
+SKIP_CIVS: set[str] = set()
 
 
 def fnv1(name: str) -> int:

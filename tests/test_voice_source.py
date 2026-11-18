@@ -43,7 +43,7 @@ check("('voice_files'" not in spec, "spec does not bundle voice_files/")
 check("('voice_wwise_map.json'" in spec, "spec bundles voice_wwise_map.json")
 
 values = voice_source.voice_values()
-check(len(values) >= 56, f"map offers {len(values)} voices (>= 56)")
+check(len(values) >= 62, f"map offers {len(values)} voices (>= 62, the Chronicles civs included: #102)")
 
 app_src = (ROOT / "app.py").read_text(encoding="utf-8")
 check("in voice_values() and" in app_src, "Voice picker is driven by the map")

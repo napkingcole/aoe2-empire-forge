@@ -612,7 +612,7 @@ function _useTypeKey(useType) {
 }
 
 function _isSelected(item) {
-    if (item.added || item.add) return true;     // added lines are in by being there
+    if (item.added || item.add || item.uu) return true;     // added lines and unique units are in by being there
     if (item.use_type === 'Building' && HARD_ALWAYS_ON_BUILDINGS.has(item.node_id)) return true;
     const key = _useTypeKey(item.use_type);
     if (!key) return true;  // unknown types treated as always-selected
@@ -1041,8 +1041,9 @@ function _disableBuildingItems(building, element_height) {
 }
 
 function _toggleNode(item, element_height) {
-    // An added line is removed from its panel, and a "+" only adds.
-    if (item.added || item.add) return;
+    // An added line is removed from its panel, a "+" only adds, and a unique
+    // unit is changed or removed from its own.
+    if (item.added || item.add || item.uu) return;
     // A real unit a "+" added: off takes it out (its Elite with it), so its
     // node goes; the "+" brings it back.
     // A replacement (the Savar for the Paladin) gives the line back.
@@ -1219,6 +1220,7 @@ function _addedTipHtml(t) {
     }
     if (t.replaces) html += div('margin-top:4px;font-size:11px;opacity:.7;',
         `Replaces the ${_esc(t.replaces)}: its upgrade gives this unit (the button keeps the ${_esc(t.replaces)}'s picture)`);
+    else if (t.after) html += div('margin-top:4px;font-size:11px;opacity:.7;', `Upgrade after the ${_esc(t.after)} · tier ${t.n + 1} of ${t.of}`);
     else if (t.of) html += div('margin-top:4px;font-size:11px;opacity:.7;', `Added unit · tier ${t.n + 1} of ${t.of}`);
     return html;
 }
@@ -1243,6 +1245,18 @@ function _showEditTooltip(itemToDraw, svgNodeLeft, svgNodeRight, svgY) {
     }
 
     const name = _nodeName(itemToDraw);
+    if (itemToDraw.uu) {
+        const { slot, n } = itemToDraw.uu;
+        const chosen = window.efUU?.has(slot);
+        const what = slot === 'second_uu' ? 'Your second unique unit' : 'Your unique unit';
+        content.innerHTML = `<div style="font-weight:700;font-size:13px;">${_esc(String(name).replace(/\n/g, ' '))}</div>
+            <div style="margin-top:4px;font-size:11px;opacity:.8;">${n ? `${what}'s Elite upgrade, at the Castle.`
+                : chosen ? `${what}. Click to change it, its stats and its look.` : 'Click to choose your unique unit.'}</div>`;
+        document.getElementById('helptext__advanced_stats').innerHTML = '';
+        panel.style.display = 'block';
+        _placeEditTooltip(panel, svgNodeLeft, svgX, svgY);
+        return;
+    }
     const idParts = itemToDraw.id.split('_');  // e.g. ["Unit","4","87"]
     const dataType = idParts[0];               // "Unit", "Tech", "Building"
     const dataId   = idParts[1];
@@ -1344,10 +1358,39 @@ window._ttRelabel = function (item, element_height) {
     if (!el) return;
     const want = _nodeName(item).toString();
     if (el.textContent === want.replace(/\n/g, '')) return;
-    SVG(el).text(want)
-        .cx(item.x + element_height / 2)
-        .y(item.y + element_height * 0.67);
+    _fitLabel(SVG(el).text(want), item, element_height);
 };
+
+// A node's name under its picture: 10px at most, smaller on a small tile, and
+// shrunk further when a line is still wider than the tile (a long single word
+// like "Varangian Guard" fits no tile) or the lines run past its bottom.
+function _fitLabel(text, item, element_height) {
+    let size = Math.min(10, Math.max(8, element_height * 0.2));
+    text.font({ size, weight: '500', leading: 0.95 });
+    const measure = () => (text.node.getBBox ? text.node.getBBox() : null);
+    let box = measure();
+    // One line too wide: break it at the space nearest its middle first.
+    const one = text.text();
+    if (box && box.width > element_height - 4 && !one.includes('\n') && one.includes(' ')) {
+        const mid = one.length / 2;
+        let at = -1;
+        for (let i = 0; i < one.length; i++) if (one[i] === ' ' && (at < 0 || Math.abs(i - mid) < Math.abs(at - mid))) at = i;
+        text.text(one.slice(0, at) + '\n' + one.slice(at + 1)).font({ size, weight: '500', leading: 0.95 });
+        box = measure();
+    }
+    if (box && box.width && box.height) {
+        const top = element_height * 0.58 + 3;           // below the picture
+        const fit = Math.min((element_height - 4) / box.width, (element_height - top - 1) / box.height);
+        if (fit < 1) {
+            size = Math.max(6.5, size * fit);
+            text.font({ size });
+        }
+    }
+    const h = text.node.getBBox ? text.node.getBBox().height : size * 2;
+    text.cx(item.x + element_height / 2)
+        .y(item.y + Math.max(element_height * 0.58 + 2, element_height - 1 - h));
+    return text;
+}
 
 // A "+" box (tree page, "+ Add Unit"): a dim square with a plus, brighter on
 // hover; clicking it opens the unit picker for that building and age.
@@ -1355,6 +1398,8 @@ function _drawAddSlot(slot, element_height, draw) {
     const g = draw.group().attr({ id: slot.id }).addClass('node tt-add-slot');
     const x = slot.x, y = slot.y, s = element_height;
     g.rect(s, s).attr({ id: `${slot.id}_bg`, fill: '#000', 'fill-opacity': 0.15 }).move(x, y).addClass('tt-add-bg');
+    // The Castle has its one extra unit: the "+" stays, greyed, to say why not.
+    if (slot.add.full) g.addClass('is-full');
     const arm = s * 0.36, w = Math.max(2, s * 0.042);   // ~6px at the usual node size
     g.rect(arm, w).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - arm) / 2, y + (s - w) / 2);
     g.rect(w, arm).attr({ fill: '#fff', 'fill-opacity': 0.7 }).move(x + (s - w) / 2, y + (s - arm) / 2);
@@ -1366,7 +1411,11 @@ function _drawAddSlot(slot, element_height, draw) {
         .mouseover(() => column().forEach(el => { if (el.id !== slot.id) el.classList.add('is-dim'); }))
         .mouseout(() => column().forEach(el => el.classList.remove('is-dim')))
         .click(() => window.ttInspector?.select(slot, element_height));
-    g.element('title').words(`Add a unit to the ${slot.add.buildingName} in the ${['Dark', 'Feudal', 'Castle', 'Imperial'][slot.add.age - 1]} Age`);
+    g.element('title').words(slot.add.full
+        ? 'The Castle has its second unique unit. What if I want more? Click to see.'
+        : slot.add.building === 82
+        ? `Add a second unique unit in the ${['Dark', 'Feudal', 'Castle', 'Imperial'][slot.add.age - 1]} Age`
+        : `Add a unit to the ${slot.add.buildingName} in the ${['Dark', 'Feudal', 'Castle', 'Imperial'][slot.add.age - 1]} Age`);
 }
 
 function drawItem(itemToDraw, element_height, tree_height, draw) {
@@ -1378,13 +1427,11 @@ function drawItem(itemToDraw, element_height, tree_height, draw) {
     }).move(itemToDraw.x, itemToDraw.y);
 
     const name = _nodeName(itemToDraw);
-    // Text anchored near the card bottom. SVG.js splits on \n → two tspans stacking downward,
-    // so position the first line high enough that the second line still clears the card edge.
-    item.text(name.toString())
-        .font({ size: 11, weight: '500', leading: 0.85 })
-        .attr({ fill: '#fff', opacity: 1, 'text-anchor': 'middle', id: itemToDraw.id + '_text' })
-        .cx(itemToDraw.x + element_height / 2)
-        .y(itemToDraw.y + element_height * 0.67);
+    // SVG.js splits on \n into tspans stacking downward; _fitLabel sizes them
+    // and sets them on the card's bottom edge.
+    _fitLabel(item.text(name.toString())
+        .attr({ fill: '#fff', opacity: 1, 'text-anchor': 'middle', id: itemToDraw.id + '_text' }),
+        itemToDraw, element_height);
 
     // Image occupies the top 58% of the card, centered horizontally.
     const imgSize = element_height * 0.58;
@@ -1504,6 +1551,9 @@ const COMMON_CASTLE_TECH_IDS = new Set([315, 379, 408, 321]); // Conscription, H
 function _stripCastleUuAndUt(treeData) {
     const utIndex = {};
     for (const ut of treeData.units_techs) utIndex[ut.id] = ut;
+    // A layout's unique-unit nodes are another civ's: gone.  In the editor the
+    // Castle gets tiles for the civ's own instead (the user, 2026-11-13).
+    const uu = _canEdit && window.efUU ? window.efUU : null;
     for (const b of treeData.buildings) {
         if (b.name !== 'Castle') continue;
         for (let r = 0; r < b.grid.length; r++) {
@@ -1518,15 +1568,46 @@ function _stripCastleUuAndUt(treeData) {
                 }
             }
         }
+        if (!uu) continue;
+        // Our own tiles, in new columns at the Castle's left: the unit in the
+        // Castle Age row, its Elite one row below, as on every Castle.  (The
+        // full-tree layouts have no unique-unit nodes to reuse.)
+        const rows = b.grid.length;
+        const rowOf = a => { const r = (a - 1) * 2; return r <= b.row ? b.row + 1 : r; };
+        const at = [rowOf(3), Math.max(rowOf(4), rowOf(3) + 1)];
+        const slots = uu.has('second_uu') ? ['unique_unit', 'second_uu'] : ['unique_unit'];
+        for (let r = 0; r < rows; r++) b.grid[r].splice(0, 0, ...slots.map(() => null));
+        slots.forEach((slot, c) => {
+            const key = slot === 'second_uu' ? 'uu2' : 'uu1';
+            [0, 1].forEach(n => {
+                if (at[n] >= rows) return;
+                const id = `Unit_${key}_${n}_${b.node_id}`;
+                treeData.units_techs.push({
+                    id, node_id: `${key}.${n}`, building_id: b.node_id, use_type: 'Unit', node_type: 'UniqueUnit',
+                    link_id: n ? `${key}.0` : null, link_node_type: n ? 'UniqueUnit' : 'BuildingTech',
+                    picture_index: 0, age_id: n ? 4 : 3, row: at[n],
+                    uu: { slot, n }, name: '', name_string_id: -1, help_string_id: -1,
+                    image_url: uu.image(slot),
+                });
+                b.grid[at[n]][c] = id;
+            });
+        });
     }
 }
 
+// The Castle's one extra unit (civ_appender._apply_second_uu, added_lines):
+// a second unique unit, or one line added there.
+function _castleFull() {
+    if (window.efUU?.has('second_uu')) return true;
+    const lines = window.ttInspector ? window.ttInspector.addedLines() : [];
+    return lines.some(l => l.building === 82 && l.from == null && l.replaces == null);
+}
+
 // ── "+ Add Unit" (added_lines.py) ────────────────────────────────────────────
-// Buildings that can take an added line; the Castle's second unit is the
-// unique-unit step's.
+// Buildings that can take an added line.
 const _ADD_LINE_BUILDINGS = new Set([12, 87, 101, 49, 45, 104, 109, 82]);
-// At the Castle the "+" adds siege only (the user, 2026-11-11): a unit there is
-// the unique unit step's business.  No upgrade after or replacement either.
+// The Castle's "+" adds its one extra unit (the user, 2026-11-13): a second
+// unique unit, or any unit as a line.  No upgrade after or replacement there.
 const _SIEGE_ONLY_BUILDINGS = new Set([82]);
 
 // The game's own units a "+" added (added_lines.real_units): in the tree as
@@ -1687,7 +1768,7 @@ function _applyAddedLines(treeData) {
                     link_id: n ? `a${line.id}.${n - 1}` : line.from,
                     link_node_type: n ? 'UnitUpgrade' : from.node_type,
                     picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
-                    image_url: window.ttInspector.lineImage(line),
+                    image_url: window.ttInspector.lineImage(line, n),
                     name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row: at[n],
                     beside_of: n === 0 ? beside : null,
                     added: { line: line.id, n, buildingAge: from.age_id || 1, buildingName: name,
@@ -1702,20 +1783,46 @@ function _applyAddedLines(treeData) {
             const v = treeData.units_techs.find(i => i.id === vid);
             if (!v || (_canEdit && !_isSelected(v))) continue;
             const id = `Unit_a${line.id}_0_${b.node_id}`;
+            // Later tiers need the replaced unit to end its line (added_lines.py
+            // checks the same): nothing in the tree upgrades on from it.
+            const lineEnds = !treeData.units_techs.some(i => i.building_id === b.node_id && i.use_type === 'Unit'
+                && i.link_id === v.node_id && !i.added && (!_canEdit || _isSelected(i)));
+            const added = { line: line.id, buildingAge: v.age_id || 1, buildingName: name, buildingRow: b.row,
+                            replacesName: _nodeName(v).replace(/\n/g, ' '), fromAge: v.age_id || 1,
+                            repRow: v.row, repEnds: lineEnds };
             treeData.units_techs.push({
                 id, node_id: `a${line.id}.0`, building_id: b.node_id, use_type: 'Unit',
                 node_type: v.node_type, link_id: v.link_id, link_node_type: v.link_node_type,
                 replaces: v.node_id, replaced_node: v,
                 picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
-                image_url: window.ttInspector.lineImage(line),
+                image_url: window.ttInspector.lineImage(line, 0),
                 name: '', name_string_id: -1, help_string_id: -1, age_id: v.age_id, row: v.row,
-                added: { line: line.id, n: 0, buildingAge: v.age_id || 1, buildingName: name,
-                         replacesName: _nodeName(v).replace(/\n/g, ' '), fromAge: v.age_id || 1 },
+                added: Object.assign({ n: 0 }, added),
             });
+            let col = -1;
             for (let r = 0; r < rows; r++) {
                 const c = b.grid[r].indexOf(vid);
-                if (c >= 0) b.grid[r][c] = id;
+                if (c >= 0) { b.grid[r][c] = id; col = c; }
             }
+            // Its later tiers, our own upgrades, down the same column.
+            let prev = v.row;
+            line.tiers.forEach((t, n) => {
+                if (!n || col < 0 || !lineEnds) return;
+                const r = Math.max(rowOf(t.age), prev + 1);
+                if (r >= rows || r > (t.age - 1) * 2 + 1 || b.grid[r][col]) return;
+                prev = r;
+                const tid = `Unit_a${line.id}_${n}_${b.node_id}`;
+                treeData.units_techs.push({
+                    id: tid, node_id: `a${line.id}.${n}`, building_id: b.node_id, use_type: 'Unit',
+                    node_type: 'UnitUpgrade', link_id: `a${line.id}.${n - 1}`,
+                    link_node_type: n === 1 ? v.node_type : 'UnitUpgrade',
+                    picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
+                    image_url: window.ttInspector.lineImage(line, n),
+                    name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row: r,
+                    added: Object.assign({ n }, added),
+                });
+                b.grid[r][col] = tid;
+            });
         }
         const cols = [];
         for (const line of mine.filter(l => l.from == null && l.replaces == null)) {
@@ -1733,7 +1840,7 @@ function _applyAddedLines(treeData) {
                     link_id: n ? `a${line.id}.${n - 1}` : null,
                     link_node_type: n === 0 ? 'BuildingTech' : n === 1 ? 'Unit' : 'UnitUpgrade',
                     picture_index: window.ttInspector.baseIcon(line.base) ?? 0,
-                    image_url: window.ttInspector.lineImage(line),
+                    image_url: window.ttInspector.lineImage(line, n),
                     name: '', name_string_id: -1, help_string_id: -1, age_id: t.age, row,
                     added: { line: line.id, n, buildingAge: b.age_id || 1, buildingName: name, buildingRow: b.row },
                 });
@@ -1750,7 +1857,8 @@ function _applyAddedLines(treeData) {
                 treeData.units_techs.push({
                     id, node_id: id, building_id: b.node_id, use_type: 'Add', node_type: 'AddSlot',
                     link_id: null, age_id: age, row, name: '', name_string_id: -1,
-                    add: { building: b.node_id, age, buildingName: name },
+                    add: { building: b.node_id, age, buildingName: name,
+                           full: b.node_id === 82 && _castleFull() },
                 });
                 col[row] = id;
             }
@@ -1771,6 +1879,16 @@ function _applyAddedLines(treeData) {
 function _applyAgeMoves(treeData) {
     const e = window.ttInspector ? window.ttInspector.edits() : null;
     if (!e) return;
+    // A building moves up to its new age's row, its column with it, and its
+    // hover says when it's available (#122).  Its units and techs may then
+    // move as early as it (_ttMinAge reads age_id).
+    for (const b of treeData.buildings) {
+        const age = (e.unit_edits[String(b.node_id)] || {}).age;
+        if (!age || age >= b.age_id) continue;
+        b.age_moved = age;
+        b.age_id = age;
+        b.row = Math.min(b.row, (age - 1) * 2);
+    }
     for (const item of treeData.units_techs) {
         const ed = item.use_type === 'Unit' ? e.unit_edits[String(item.node_id)]
             : item.use_type === 'Tech' ? e.tech_edits[String(item.node_id)] : null;
@@ -1798,9 +1916,24 @@ function _applyAgeMoves(treeData) {
 // The earliest age the panel offers for a node: its building's, and the
 // node before it in its line.
 window._ttMinAge = function (item) {
+    if (item.use_type === 'Building') {
+        // A building is held back by the one it hangs off (Siege Workshop: the
+        // Blacksmith), not by itself (#122).
+        const up = item.building_upgraded_from_id;
+        const from = up != null && up !== -1 ? up : item.link_id;
+        const parent = from != null && from !== -1 ? _nodeIndex[`${from}_${from}`] : null;
+        return parent ? parent.age_id || 1 : 1;
+    }
     const b = _nodeIndex[`${item.building_id}_${item.building_id}`];
     const prev = item.link_id != null ? _nodeIndex[`${item.building_id}_${item.link_id}`] : null;
     return Math.max(b ? b.age_id || 1 : 1, prev && prev.use_type !== 'Building' ? prev.age_id || 1 : 1);
+};
+
+// The units and techs a building's column holds in this civ, for the panel's
+// "Move its units and techs up" (added tiers keep their own ages).
+window._ttItemsOf = function (buildingId) {
+    return (_buildingItems[buildingId] || []).filter(it => !it.add && !it.added && !it.uu
+        && (it.use_type === 'Unit' || it.use_type === 'Tech') && (!_canEdit || _isSelected(it)));
 };
 
 // A line changed shape: redraw (the panel re-opens its node via rebind).
@@ -1825,7 +1958,7 @@ function civ(civName) {
 
         const tree_height = Math.max(window.innerHeight - 80, 100);
         const row_height  = tree_height / 4;
-        const element_height = row_height * 0.38;
+        const element_height = row_height * 0.42;
 
         const connections = [];
         const index = {};
@@ -1854,6 +1987,10 @@ function civ(civName) {
         }
         for (const item of treeData.units_techs) {
             index[item.id] = item;
+            // The Camel Rider hangs under the Camel Scout, but it needs no Scout:
+            // every camel civ but the Gurjaras gets Riders at the Castle Age
+            // without ever having Scouts (#110).  Ticked or unticked on its own.
+            if (item.id === 'Unit_329_101') item.independent = true;
             // Key by building_id+node_id to avoid conflicts when different buildings
             // share a node_id (e.g. node 93 = Spearman in Barracks AND a University tech).
             _nodeIndex[`${item.building_id}_${item.node_id}`] = item;
@@ -1883,7 +2020,10 @@ function civ(civName) {
                 width = Math.max(width, thisBuildingWidth);
                 if (previousRow === building.row) building.row++;
             }
-            if (building.link_id !== -1) {
+            // A building moved to an earlier age stays on its age's row beside
+            // the one it hangs from (the Siege Workshop by the Blacksmith):
+            // one row down would sit on its own units, moved up with it.
+            if (building.link_id !== -1 && !building.age_moved) {
                 for (let lb of treeData.buildings) {
                     if (lb.node_id === building.link_id && lb.row === building.row) building.row++;
                 }
@@ -1951,7 +2091,9 @@ function civ(civName) {
         });
 
         const tree_width = startX + PADDING_BETWEEN_COLUMNS;
-        const draw = SVG().addTo('#techtree').id('root').size(tree_width, tree_height)
+        // Room for the last row's tiles, which reach past the window on a short one.
+        const draw = SVG().addTo('#techtree').id('root')
+            .size(tree_width, Math.max(tree_height, Math.ceil(3.5 * row_height + TOP_PADDING + element_height + 4)))
             .click((e) => { if (e.target.id === 'root') hideHelp(); });
         document.getElementById('techtree').onclick = (e) => { if (e.target.id === 'techtree') hideHelp(); };
 
@@ -1981,7 +2123,8 @@ function civ(civName) {
         for (let conn of connections) {
             const from = index[conn[0]], to = index[conn[1]];
             const off = element_height / 2;
-            const ih = (from.y + off) + (element_height * 2 / 3);
+            // Halfway down the gap under the parent, which shrinks as tiles grow.
+            const ih = from.y + element_height + (row_height / 2 - element_height) / 2;
             cg.polyline([from.x + off, from.y + off, from.x + off, ih, to.x + off, ih, to.x + off, to.y + off])
                 .attr({ id: `connection_${conn[0]}_${conn[1]}`, fill: 'none', stroke: 'rgba(60,30,10,0.6)', 'stroke-width': 1.5 })
                 .addClass('connection').click(hideHelp);
@@ -2047,7 +2190,8 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
     const resetBtn = mkBtn('Disable All',    '#5a1a1a', _disableAll);
     const hint     = document.createElement('span');
     hint.style.cssText = 'color:#aaa;font-size:12px;margin-left:8px;';
-    hint.textContent = 'Click a unit, building or tech for its details. Shift-click to turn it on or off.';
+    hint.textContent = 'Click a unit, building or tech for its details. Shift-click to turn it on or off. '
+                     + 'The mouse wheel or the \u2190 \u2192 keys scroll the tree.';
 
     toolbar.appendChild(doneBtn);
     toolbar.appendChild(fillBtn);
@@ -2211,6 +2355,11 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         .tt-add-slot:hover .tt-add-bg { fill-opacity: .32; }
         .tt-add-slot.is-dim .tt-add-bg { fill-opacity: .06; }
         .tt-add-slot.is-dim { opacity: .55; }
+        .tt-add-slot.is-full { opacity: .35; }
+        /* The Unique Unit step's panels, moved into the side panel: one column. */
+        .tt-uu-host .col-md-6 { flex: 0 0 100%; max-width: 100%; }
+        .tt-uu-host .card { margin-top: 10px; }
+        .tt-add-slot.is-full:hover { opacity: .6; }
         .tt-insp-search { width: 100%; margin: 6px 0 2px; box-sizing: border-box; }
         .tt-insp-picks { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
         .tt-insp-pick { display: flex; align-items: center; gap: 8px; padding: 3px 6px; text-align: left;
@@ -2300,6 +2449,21 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         e.preventDefault();
     }, { passive: false });
 
+    // The left and right arrow keys move a quarter of the visible tree a
+    // press (the browser's own step is a few dozen pixels).  Not while a
+    // field has the keys, and gone with the overlay.
+    const onArrow = function (e) {
+        if (!treeWrap.isConnected) { document.removeEventListener('keydown', onArrow); return; }
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        const t = e.target;
+        if (t && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))) return;
+        const step = treeWrap.clientWidth / 4;
+        treeWrap.scrollBy({ left: e.key === 'ArrowLeft' ? -step : step, behavior: e.repeat ? 'auto' : 'smooth' });
+        e.preventDefault();
+    };
+    document.addEventListener('keydown', onArrow);
+
     // Load data then render
     const dataUrl = relativepath + '/aoe2techtree/data/data.json';
     const locUrl  = relativepath + '/aoe2techtree/data/locales/en/strings.json';
@@ -2340,6 +2504,7 @@ function _saveTechTree() {
 }
 
 function _closeTreeOverlay() {
+    window.efUU?.unmount();          // the unique-unit panels go back to their step
     const container = document.getElementById('tt-container');
     if (container) container.remove();
     document.getElementById('tt-tree-styles')?.remove();

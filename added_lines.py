@@ -49,9 +49,12 @@ _RES = {"food": 0, "wood": 1, "stone": 2, "gold": 3}
 # Train buttons a line may take, page 1 then page 2; its upgrade goes +5.  No
 # vanilla unit or tech uses the fifth column at the Barracks, Archery Range or
 # Stable (DAT survey 2026-11-09): it is the building's commands — a Knight put
-# on button 5 answered the rally point's hotkey in game.
+# on button 5 answered the rally point's hotkey in game.  15 (35 on page 2)
+# is the page button once the building has a second page (the user,
+# 2026-11-13): a Castle with a second unique unit always has one, and an Elite
+# Petard's upgrade landed there.
 _TRAIN_BUTTONS = (1, 2, 3, 4, 21, 22, 23, 24)
-_RESERVED = {5, 10, 25, 30}
+_RESERVED = {5, 10, 15, 25, 30, 35}
 _ANY_BUTTONS = tuple(b for b in (*range(1, 16), *range(21, 36)) if b not in _RESERVED)
 
 
@@ -409,6 +412,15 @@ def _producer(dat, civ_index: int, unit: int, building: int) -> int | None:
     return min(found)[2] if found else None
 
 
+def _button_given(dat, tech: int) -> int | None:
+    """The research button some civ's effect gives `tech` (type 8, mode 5), or None."""
+    for e in dat.effects:
+        for c in e.effect_commands:
+            if c.type == 8 and int(c.a) == tech and int(c.b) == 5 and c.d > 0:
+                return int(c.d)
+    return None
+
+
 def _earlier(dat, unit: int) -> list[int]:
     """Every unit the game upgrades into `unit`, all the way down (Militia,
     Man-at-Arms, Long Swordsman and Two-Handed Swordsman for the Champion).
@@ -509,6 +521,13 @@ def _occupied(dat, civ_index: int, civ_def: dict, building: int) -> set[int]:
     from civ_appender import _civ_present_units, _editor_nodes, _tree_tech_ids
     units = dat.civs[civ_index].units
     used: set[int] = set()
+    # An ally's team bonus can bring a unit in mid-game (the Italians'
+    # Condottiero on Barracks 3, the Berbers' Genitour), whatever this civ's
+    # tree says: a line put there overlapped it (#128).
+    for line in _TEAM_BONUS_UNITS:
+        u = units[line[0]] if line[0] < len(units) else None
+        if u is not None and u.creatable is not None:
+            used |= {tl.button_id for tl in u.creatable.train_locations if tl.unit_id == building}
     for uid in _civ_present_units(civ_def, dat, civ_index):
         u = units[uid] if 0 <= uid < len(units) else None
         if u is not None and u.creatable is not None:
@@ -576,7 +595,11 @@ def _upgrade_icon(dat, unit_icon: int, role_tech: int | None) -> int:
                 continue
             for c in dat.effects[t.effect_id].effect_commands:
                 b = int(c.b)
-                if c.type == EC_UPGRADE and 0 <= b < len(units) and units[b] is not None:
+                # Units only: building icons are another sheet, so the Guard
+                # Tower's number is the Mangonel's (a built Mangonel line wore
+                # a tower on its upgrade, 2026-11-18).
+                if (c.type == EC_UPGRADE and 0 <= b < len(units) and units[b] is not None
+                        and units[b].type != 80):
                     by_look.setdefault(units[b].icon_id, t.icon_id)
         _ICON_CACHE.clear()
         _ICON_CACHE[key] = by_look
@@ -587,14 +610,16 @@ def _upgrade_icon(dat, unit_icon: int, role_tech: int | None) -> int:
 
 
 def _write_edits(u, e: dict) -> None:
-    from civ_overrides import write_bonus_attacks, write_unit_cost, write_unit_stats
-    stats = {k: v for k, v in e.items() if k not in ("cost", "bonus", "name")}
+    from civ_overrides import write_armours, write_bonus_attacks, write_unit_cost, write_unit_stats
+    stats = {k: v for k, v in e.items() if k not in ("cost", "bonus", "armour", "name")}
     if stats:
         write_unit_stats(u, stats)
     if "cost" in e:
         write_unit_cost(u, e["cost"], f"added unit {u.id}")
     if e.get("bonus"):
         write_bonus_attacks(u, e["bonus"])
+    if e.get("armour"):
+        write_armours(u, e["armour"])
 
 
 def _costs(cost: dict) -> tuple:
@@ -627,8 +652,20 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
     from civ_appender import _tree_building_ids
     have = _tree_building_ids(civ_def)
     replaced: dict[int, tuple[int, list]] = {}      # vanilla unit -> (ours, its techs)
+    # The Castle takes one extra unit beside its unique unit (the user,
+    # 2026-11-13): a second unique unit, or one line added here.
+    from civ_appender import get_second_uu_index
+    castle_taken = get_second_uu_index(civ_def) is not None
     for line in lines:
         base, building, tiers = line["base"], line["building"], line["tiers"]
+        if building == 82 and line.get("from") is None and line.get("replaces") is None:
+            if castle_taken:
+                msg = (f"Added line {line['id']}: the Castle already has its second unique unit "
+                       f"({'a standard one' if get_second_uu_index(civ_def) is not None else 'another built one'}) — skipped")
+                print(f"       WARNING: {msg}")
+                warnings.append(msg)
+                continue
+            castle_taken = True
         # The tree page hides a line whose building is off; the build agrees.
         # (The Town Center is always on; a tree with no buildings listed is a
         # KM file that never chose, so it keeps them.)
@@ -659,8 +696,29 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
                 print(f"       WARNING: {msg}")
                 warnings.append(msg)
                 continue
-            # Ours takes the unit's button, so the upgrade moves the button to it (quirk 3).
+            # Later tiers continue the line past the unit it replaced, so that
+            # unit must end its line (the Halberdier, not the Cavalier).
+            later = _later_upgrade(dat, civ_index, civ_def, rep) if len(tiers) > 1 else None
+            if later is not None:
+                msg = (f"Added line {line['id']}: {unit_label(dat, 0, rep)} still upgrades further "
+                       f"({dat.techs[later].name}), so its replacement can't take more tiers — kept the first")
+                print(f"       WARNING: {msg}")
+                warnings.append(msg)
+                tiers = tiers[:1]
+            # Ours takes the unit's button, so the upgrade moves the button to it
+            # (quirk 3); a later tier's upgrade follows the upgrade into it on
+            # its button, as the game's chained upgrades do (it waits for that
+            # one, so the two never show together; the user, 2026-11-18), else
+            # one row below, as an added line's.
             train_btn, hk_train, up_btn = tl.button_id, tl.hot_key_id, None
+            prod_btn = next((rl.button_id for rl in dat.techs[producer].research_locations
+                             if rl.location_id == building and rl.button_id > 0), None)
+            if len(tiers) > 1 and prod_btn is not None:
+                up_btn = prod_btn
+            elif len(tiers) > 1:
+                below = train_btn + 5
+                up_btn = below if below not in used and below not in _RESERVED else next(
+                    (b for b in _ANY_BUTTONS if b not in used and (b - 1) % 20 >= 5), None)
         elif frm is not None:
             fu = target[frm] if 0 <= frm < len(target) else None
             tl = next((t for t in (fu.creatable.train_locations if fu is not None and fu.creatable else ())
@@ -682,6 +740,13 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             producer = _producer(dat, civ_index, frm, building)
             prod_btn = next((rl.button_id for rl in (dat.techs[producer].research_locations if producer is not None else ())
                              if rl.location_id == building), None)
+            if prod_btn == 0:
+                # No button of its own: the game gives it one per civ (the
+                # Winged Hussar ships on button 0, and the Poles' and
+                # Lithuanians' techs move it to the Hussar's 6 with a type-8
+                # mode-5 command).  Button 0 is no button, so the tier after it
+                # couldn't be researched (#127).
+                prod_btn = _button_given(dat, producer)
             train_btn, hk_train = tl.button_id, tl.hot_key_id
             if prod_btn is not None:
                 up_btn = prod_btn
@@ -692,7 +757,14 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
         else:
             producer = None
             train_btn, up_btn = _pick_buttons(used, len(tiers))
-        if train_btn is None or ((len(tiers) > 1 or frm is not None) and up_btn is None and rep is None):
+        # A replacement or an extension also trains wherever its unit does
+        # besides this building, on the same button: the Spearman line at the
+        # Donjon, the Petard at the Krepost (#132).
+        kin = rep if rep is not None else frm
+        kin_u = target[kin] if kin is not None else None
+        also = [deepcopy(t) for t in (kin_u.creatable.train_locations if kin_u is not None and kin_u.creatable else ())
+                if t.unit_id >= 0 and t.unit_id != building]
+        if train_btn is None or ((len(tiers) > 1 or frm is not None) and up_btn is None):
             msg = (f"Added line {line['id']}: {unit_label(dat, 0, building)} has no free "
                    f"button left — skipped")
             print(f"       WARNING: {msg}")
@@ -746,11 +818,16 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             u.creatable.train_locations = [TrainLocation(
                 train_time=tl0.train_time if tl0 else 30, unit_id=building,
                 button_id=train_btn, hot_key_id=hk_train)]
+            for t in also:
+                u.creatable.train_locations.append(deepcopy(t))
+                u.creatable.train_locations[-1].train_time = tl0.train_time if tl0 else 30
             # A hero's copy is a unit like any other: no gold border, no
             # regeneration, convertible (hero status is creatable.hero_mode).
             u.creatable.hero_mode = 0
             _write_edits(u, edits)
-            wear = look_last if (n == len(ids) - 1 and look_last is not None) else look
+            wear = tier.get("appearance")                 # this tier's own look, else the line's
+            if wear is None:
+                wear = look_last if (n == len(ids) - 1 and look_last is not None) else look
             if wear is not None:
                 if appearance_ok(template[wear], u):
                     copy_unit_look(template[wear], u)
@@ -815,7 +892,9 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             if producer is not None:
                 hk_up = next((rl.hot_key_id for rl in dat.techs[producer].research_locations
                               if rl.location_id == building), hk_up)
-        chain = ([frm] if frm is not None else []) + (ids if rep is None else [])
+        # A replacement's tier 1 comes from the hidden tech (techs[0]), and its
+        # later tiers are upgraded from there like an added line's.
+        chain = ([frm] if frm is not None else []) + ids
         below = _earlier(dat, frm) if frm is not None else []     # the vanilla line under frm
         all_names = ([fname] if frm is not None else []) + names
         for n in range(1, len(chain)):
@@ -848,7 +927,7 @@ def apply_added_lines(dat, civ_index: int, civ_def: dict, warnings: list) -> lis
             # After the age and the step before: our previous upgrade, or for an
             # extension's first, the vanilla upgrade into the unit (if it has one).
             # A unit nothing upgrades into waits for the tech that unlocks it.
-            before = techs[-1] if techs else producer if producer is not None else (
+            before = (techs[0] if rep is not None and n == 1 else techs[-1]) if techs else producer if producer is not None else (
                 _unlocker(dat, civ_index, frm) if frm is not None else None)
             tech.required_techs = (AGE_TECHS[age], before if before is not None else -1, -1, -1, -1, -1)
             tech.required_tech_count = 2 if before is not None else 1
@@ -943,7 +1022,15 @@ def extend_line_membership(dat, civ_index: int, lines: list[dict], unit_lines: l
                 if t.civ in (-1, civ_index) and tid not in ours}
     added = 0
     for line in lines:
-        members = set(role_chain(unit_lines, line.get("role"))) - set(line["units"])
+        members = set(role_chain(unit_lines, line.get("role")))
+        # An extension continues its unit's line, and a replacement takes its
+        # unit's place: either way what names that unit, or the ones before
+        # it, names ours too — with or without an AI line (the Hand Cannoneer
+        # has none, so "Gunpowder units cost -20%" skipped its Elite, #130).
+        for own in (line.get("from"), line.get("replaces")):
+            if own is not None:
+                members |= {own, *_earlier(dat, own)}
+        members -= set(line["units"])
         if not members:
             continue
         for eid in sorted(e for e in effects if 0 <= e < len(dat.effects)):
@@ -956,4 +1043,37 @@ def extend_line_membership(dat, civ_index: int, lines: list[dict], unit_lines: l
                     if (typ, uid, b, attr, d) not in have:
                         cmds.append(EffectCommand(type=typ, a=uid, b=b, c=attr, d=d))
                         added += 1
+            # A train slot a tech inserts: MULTIPLY attr 158 adds an entry and
+            # the SETs after it fill it in (where, button, hotkey).  The
+            # Mapuche Settlement card trains the Spearmen there this way, and
+            # a tier replacing the Halberdier had none (#132).  One per
+            # building per unit, copied from a member's.
+            blocks = _slot_blocks(cmds)
+            held = {(u, bldg) for u, bldg, _ in blocks}
+            for u, bldg, block in blocks:
+                if u not in members:
+                    continue
+                for uid in line["units"]:
+                    if (uid, bldg) not in held:
+                        held.add((uid, bldg))
+                        cmds.extend(EffectCommand(type=c.type, a=uid, b=c.b, c=c.c, d=c.d) for c in block)
+                        added += len(block)
     return added
+
+
+def _slot_blocks(cmds) -> list[tuple[int, int, list]]:
+    """(unit, building, commands) for each train slot the commands insert."""
+    out = []
+    for i, c in enumerate(cmds):
+        if not (c.type == 5 and int(c.c) == 158 and c.d >= 32767):
+            continue
+        block, bldg = [c], None
+        for n in cmds[i + 1:]:
+            if n.type != 0 or int(n.a) != int(c.a) or int(n.c) == 158:
+                break
+            block.append(n)
+            if int(n.c) == 42:
+                bldg = int(n.d)
+        if bldg is not None:
+            out.append((int(c.a), bldg, block))
+    return out

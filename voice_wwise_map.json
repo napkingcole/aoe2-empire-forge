@@ -2776,6 +2776,192 @@
     "gevpms4": 236337429
    }
   },
+  "Achaemenids": {
+   "value": 45,
+   "files": {
+    "ackm1": 80970431,
+    "ackm2": 894169025,
+    "ackm3": 207771396,
+    "ackm4": 882034660,
+    "acks1": 646327752,
+    "acks2": 673980453,
+    "acks3": 334422186,
+    "acks4": 814451367,
+    "acvfb": 133148472,
+    "acvffa": 382807313,
+    "acvffi": 88780897,
+    "acvffo": 191087469,
+    "acvfh": 823528927,
+    "acvfl": 498948990,
+    "acvfm": 355608302,
+    "acvfm1": 1063232906,
+    "acvfm2": 792900953,
+    "acvfm3": 311427674,
+    "acvfm4": 449461718,
+    "acvfr": 598500166,
+    "acvfs1": 720216135,
+    "acvfs2": 232175507,
+    "acvfs3": 619167078,
+    "acvfs4": 110105831,
+    "acvmb": 238725498,
+    "acvmfa": 52943782,
+    "acvmfi": 8886293,
+    "acvmfo": 631554591,
+    "acvmh": 761247191,
+    "acvml": 440981434,
+    "acvmm": 330036747,
+    "acvmm1": 80970431,
+    "acvmm2": 894169025,
+    "acvmm3": 988242739,
+    "acvmm4": 882034660,
+    "acvmma1": 800530799,
+    "acvmma2": 770686625,
+    "acvmma3": 605974171,
+    "acvmmm1": 905420207,
+    "acvmmm2": 860045999,
+    "acvmmm3": 542916063,
+    "acvmms1": 418575714,
+    "acvmms2": 356786725,
+    "acvmms3": 435563707,
+    "acvmr": 556207785,
+    "acvms1": 376171710,
+    "acvms2": 673980453,
+    "acvms3": 814451367,
+    "acvms4": 334422186,
+    "acvpmm1": 988242739,
+    "acvpmm2": 207771396,
+    "acvpmm3": 894169025,
+    "acvpmm4": 882034660,
+    "acvpms1": 334422186,
+    "acvpms2": 984843345,
+    "acvpms3": 376171710,
+    "acvpms4": 646327752
+   }
+  },
+  "Athenians": {
+   "value": 46,
+   "files": {
+    "athkm1": 351253467,
+    "athkm2": 673591863,
+    "athkm3": 593105854,
+    "athkm4": 172479321,
+    "athks1": 440711129,
+    "athks2": 382962911,
+    "athks3": 638808028,
+    "athks4": 71546946,
+    "athvfb": 621474526,
+    "athvffa": 140506155,
+    "athvffi": 88157713,
+    "athvffo": 748678346,
+    "athvfh": 276163863,
+    "athvfl": 1025828118,
+    "athvfm": 287875395,
+    "athvfm1": 40760317,
+    "athvfm2": 74475383,
+    "athvfm3": 79941768,
+    "athvfm4": 255761547,
+    "athvfr": 140506155,
+    "athvfs1": 499585954,
+    "athvfs2": 1035059273,
+    "athvfs3": 389681689,
+    "athvfs4": 31712409,
+    "athvmb": 705700752,
+    "athvmfa": 810463822,
+    "athvmfi": 1018442412,
+    "athvmfo": 799254010,
+    "athvmh": 483707920,
+    "athvml": 644365191,
+    "athvmm": 32688012,
+    "athvmm1": 415877114,
+    "athvmm2": 351253467,
+    "athvmm3": 593105854,
+    "athvmm4": 990663668,
+    "athvmma1": 24458079,
+    "athvmma2": 1041607799,
+    "athvmma3": 601458156,
+    "athvmmm1": 59738346,
+    "athvmmm2": 504005470,
+    "athvmmm3": 427698029,
+    "athvmms1": 369862032,
+    "athvmms2": 823631265,
+    "athvmms3": 998439033,
+    "athvmr": 914245432,
+    "athvms1": 71546946,
+    "athvms2": 440711129,
+    "athvms3": 994621931,
+    "athvms4": 382962911,
+    "athvpmm1": 172479321,
+    "athvpmm2": 415877114,
+    "athvpmm3": 990663668,
+    "athvpmm4": 351253467,
+    "athvpms1": 638808028,
+    "athvpms2": 440711129,
+    "athvpms3": 382962911,
+    "athvpms4": 762939040
+   }
+  },
+  "Spartans": {
+   "value": 47,
+   "files": {
+    "sparkm1": 933296650,
+    "sparkm2": 361141112,
+    "sparkm3": 492295915,
+    "sparkm4": 586235368,
+    "sparks1": 996098200,
+    "sparks2": 700674982,
+    "sparks3": 187440765,
+    "sparks4": 281464354,
+    "sparvfb": 831241768,
+    "sparvffa": 1029180421,
+    "sparvffi": 71118060,
+    "sparvffo": 985462780,
+    "sparvfh": 148366027,
+    "sparvfl": 204765504,
+    "sparvfm": 59597120,
+    "sparvfm1": 1009846142,
+    "sparvfm2": 873396109,
+    "sparvfm3": 328296754,
+    "sparvfm4": 11226021,
+    "sparvfr": 119780709,
+    "sparvfs1": 131442836,
+    "sparvfs2": 161766224,
+    "sparvfs3": 790429620,
+    "sparvfs4": 900065385,
+    "sparvmb": 746384724,
+    "sparvmfa": 993312666,
+    "sparvmfi": 128056768,
+    "sparvmfo": 486420048,
+    "sparvmh": 272471923,
+    "sparvml": 633273934,
+    "sparvmm": 1024053932,
+    "sparvmm1": 361141112,
+    "sparvmm2": 598380100,
+    "sparvmm3": 586235368,
+    "sparvmm4": 492295915,
+    "sparvmma1": 557566282,
+    "sparvmma2": 353435095,
+    "sparvmma3": 146096789,
+    "sparvmmm1": 560808378,
+    "sparvmmm2": 1012543730,
+    "sparvmmm3": 672402448,
+    "sparvmms1": 953179160,
+    "sparvmms2": 522765458,
+    "sparvmms3": 559463320,
+    "sparvmr": 402972471,
+    "sparvms1": 581599181,
+    "sparvms2": 187440765,
+    "sparvms3": 281464354,
+    "sparvms4": 700674982,
+    "sparvpmm1": 598380100,
+    "sparvpmm2": 933296650,
+    "sparvpmm3": 492295915,
+    "sparvpmm4": 361141112,
+    "sparvpms1": 308931315,
+    "sparvpms2": 581599181,
+    "sparvpms3": 281464354,
+    "sparvpms4": 187440765
+   }
+  },
   "Shu": {
    "value": 48,
    "files": {
@@ -3202,6 +3388,332 @@
     "khivpms2": 234990096,
     "khivpms3": 571252869,
     "khivpms4": 899048171
+   }
+  },
+  "Macedonians": {
+   "value": 53,
+   "rebuild": [
+    "one file for several lines: ['macvmb']",
+    "another civ's files: ['thracvfm']"
+   ],
+   "lines": {
+    "295": [
+     "macvmb"
+    ],
+    "297": [
+     "macvmfo"
+    ],
+    "298": [
+     "macvmh"
+    ],
+    "299": [
+     "macvml"
+    ],
+    "300": [
+     "macvmm"
+    ],
+    "301": [
+     "macvmm1",
+     "macvmm2",
+     "macvmm3",
+     "macvmm4"
+    ],
+    "302": [
+     "macvmr"
+    ],
+    "303": [
+     "macvms1",
+     "macvms2",
+     "macvms3",
+     "macvms4"
+    ],
+    "420": [
+     "macvmms1",
+     "macvmms2",
+     "macvmms3"
+    ],
+    "421": [
+     "macvmmm1",
+     "macvmmm2",
+     "macvmmm3"
+    ],
+    "422": [
+     "macvmma1",
+     "macvmma2",
+     "macvmma3",
+     "macvmma4"
+    ],
+    "434": [
+     "macvfm1",
+     "macvfm2",
+     "macvfm3",
+     "macvfm4"
+    ],
+    "435": [
+     "macvfs1",
+     "macvfs2",
+     "macvfs3",
+     "macvfs4"
+    ],
+    "437": [
+     "macvfb"
+    ],
+    "438": [
+     "macvffa"
+    ],
+    "440": [
+     "macvffo"
+    ],
+    "441": [
+     "macvfh"
+    ],
+    "442": [
+     "macvfl"
+    ],
+    "443": [
+     "macvfm"
+    ],
+    "444": [
+     "macvfr"
+    ],
+    "448": [
+     "macvmfi"
+    ],
+    "455": [
+     "macvmfa"
+    ],
+    "487": [
+     "macvffi"
+    ]
+   },
+   "files": {
+    "macvfb": 168877339,
+    "macvffa": 23146697,
+    "macvffi": 246243147,
+    "macvffo": 436893480,
+    "macvfh": 180376225,
+    "macvfl": 577038937,
+    "macvfm": 559360235,
+    "macvfm1": 597759744,
+    "macvfm2": 985365896,
+    "macvfm3": 410540861,
+    "macvfm4": 688320030,
+    "macvfr": 425604622,
+    "macvfs1": 896850706,
+    "macvfs2": 15954472,
+    "macvfs3": 589951775,
+    "macvfs4": 482171019,
+    "macvmb": 814802518,
+    "macvmfa": 223462849,
+    "macvmfi": 973927019,
+    "macvmfo": 721389700,
+    "macvmh": 557457778,
+    "macvml": 326849079,
+    "macvmm": 1055457680,
+    "macvmm1": 911764203,
+    "macvmm2": 331571998,
+    "macvmm3": 673044859,
+    "macvmm4": 871742891,
+    "macvmma1": 263390356,
+    "macvmma2": 36529058,
+    "macvmma3": 22800700,
+    "macvmma4": 430112719,
+    "macvmmm1": 628950193,
+    "macvmmm2": 59790424,
+    "macvmmm3": 495801259,
+    "macvmms1": 197745818,
+    "macvmms2": 274169001,
+    "macvmms3": 964576803,
+    "macvmr": 796165378,
+    "macvms1": 914341584,
+    "macvms2": 650514070,
+    "macvms3": 885698027,
+    "macvms4": 819190733
+   }
+  },
+  "Thracians": {
+   "value": 54,
+   "rebuild": [
+    "another civ's files: ['puruvfl']"
+   ],
+   "lines": {
+    "295": [
+     "thracvmb"
+    ],
+    "297": [
+     "thracvmfo"
+    ],
+    "298": [
+     "thracvmh"
+    ],
+    "299": [
+     "thracvml"
+    ],
+    "300": [
+     "thracvmm"
+    ],
+    "301": [
+     "thracvmm1",
+     "thracvmm2",
+     "thracvmm3",
+     "thracvmm4"
+    ],
+    "302": [
+     "thracvmr"
+    ],
+    "303": [
+     "thracvms1",
+     "thracvms2",
+     "thracvms3",
+     "thracvms4"
+    ],
+    "420": [
+     "thracvmms1",
+     "thracvmms2",
+     "thracvmms3"
+    ],
+    "421": [
+     "thracvmmm1",
+     "thracvmmm2",
+     "thracvmmm3"
+    ],
+    "422": [
+     "thracvmma1",
+     "thracvmma2",
+     "thracvmma3",
+     "thracvmma4"
+    ],
+    "434": [
+     "thracvfm1",
+     "thracvfm2",
+     "thracvfm3",
+     "thracvfm4"
+    ],
+    "435": [
+     "thracvfs1",
+     "thracvfs2",
+     "thracvfs3",
+     "thracvfs4"
+    ],
+    "437": [
+     "thracvfb"
+    ],
+    "438": [
+     "thracvffa"
+    ],
+    "440": [
+     "thracvffo"
+    ],
+    "441": [
+     "thracvfh"
+    ],
+    "442": [
+     "thracvfl"
+    ],
+    "443": [
+     "thracvfm"
+    ],
+    "444": [
+     "thracvfr"
+    ],
+    "448": [
+     "thracvmfi"
+    ],
+    "455": [
+     "thracvmfa"
+    ],
+    "487": [
+     "thracvffi"
+    ]
+   },
+   "files": {
+    "thracvfb": 249777603,
+    "thracvffa": 507646553,
+    "thracvffi": 745879478,
+    "thracvffo": 830977508,
+    "thracvfh": 224656742,
+    "thracvfl": 1028857833,
+    "thracvfm": 530828124,
+    "thracvfm1": 519537265,
+    "thracvfm2": 314358549,
+    "thracvfm3": 808177938,
+    "thracvfm4": 843438137,
+    "thracvfr": 204836430,
+    "thracvfs1": 460274271,
+    "thracvfs2": 148186743,
+    "thracvfs3": 19634917,
+    "thracvfs4": 733519794,
+    "thracvmb": 670647558,
+    "thracvmfa": 386727172,
+    "thracvmfi": 300736107,
+    "thracvmfo": 937027368,
+    "thracvmh": 72672481,
+    "thracvml": 607381303,
+    "thracvmm": 722690338,
+    "thracvmm1": 210704530,
+    "thracvmm2": 904880717,
+    "thracvmm3": 940655621,
+    "thracvmm4": 716294439,
+    "thracvmma1": 613974500,
+    "thracvmma2": 957314025,
+    "thracvmma3": 43166758,
+    "thracvmma4": 820737679,
+    "thracvmmm1": 849591086,
+    "thracvmmm2": 519715441,
+    "thracvmmm3": 515262506,
+    "thracvmms1": 143411981,
+    "thracvmms2": 892656823,
+    "thracvmms3": 756516862,
+    "thracvmr": 853785542,
+    "thracvms1": 458293481,
+    "thracvms2": 158760267,
+    "thracvms3": 540375349,
+    "thracvms4": 85828132
+   }
+  },
+  "Puru": {
+   "value": 55,
+   "files": {
+    "puruvfb": 901841300,
+    "puruvffa": 264815814,
+    "puruvffi": 390471297,
+    "puruvffo": 304623780,
+    "puruvfh": 1052954681,
+    "puruvfm": 864825126,
+    "puruvfm1": 486119094,
+    "puruvfm2": 225163189,
+    "puruvfm3": 526011331,
+    "puruvfm4": 236085882,
+    "puruvfr": 419776675,
+    "puruvfs1": 684638534,
+    "puruvfs2": 843103776,
+    "puruvfs3": 506714295,
+    "puruvfs4": 202646706,
+    "puruvmb": 49896584,
+    "puruvmfa": 298160122,
+    "puruvmfi": 835479870,
+    "puruvmfo": 981850000,
+    "puruvmh": 716240562,
+    "puruvml": 113915082,
+    "puruvmm": 710625972,
+    "puruvmm1": 3024957,
+    "puruvmm2": 16650913,
+    "puruvmm3": 879268569,
+    "puruvmm4": 826812268,
+    "puruvmma1": 135829169,
+    "puruvmma2": 924551609,
+    "puruvmma3": 477025857,
+    "puruvmmm1": 64684602,
+    "puruvmmm2": 166193254,
+    "puruvmmm3": 587947520,
+    "puruvmms1": 200330824,
+    "puruvmms2": 859767569,
+    "puruvmms3": 966034694,
+    "puruvmr": 873231471,
+    "puruvms1": 757767732,
+    "puruvms2": 19126736,
+    "puruvms3": 559063428,
+    "puruvms4": 72545219
    }
   },
   "Muisca": {

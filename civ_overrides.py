@@ -13,6 +13,8 @@ since they share the same key schema.  KM-format civ_defs have none of these
 keys so both functions are safe no-ops when called on them.
 """
 
+import math
+
 from genieutils.effect import Effect, EffectCommand
 from genieutils.tech import ResearchLocation, ResearchResourceCost, Tech
 
@@ -92,6 +94,7 @@ def _set_tech_cost_time(tech, cost: dict | None, time_val) -> None:
 _CASTLE_BUILDING     = 82
 _KREPOST_BUILDING    = 1251
 _CASTLE_BTN1_HOTKEY  = 16101   # Q key, Castle/Krepost button 1
+_SECOND_UU_BUTTON, _SECOND_UU_HOTKEY = 4, 16730   # civ_appender.SECOND_UU_BUTTON / _HOTKEY
 
 
 def _refresh_uu_tooltips(dat, slot: int, civ_result: dict | None) -> None:
@@ -188,6 +191,9 @@ def write_unit_stats(u, stats: dict) -> None:
             if u.creatable:
                 u.creatable.displayed_pierce_armour = v
 
+    if "pop" in stats:
+        write_unit_pop(u, float(stats["pop"]))
+
     if "train" in stats and u.creatable:
         # train_time is a field of each TrainLocation, not of the unit, so a
         # UU that trains in more than one building has one copy per slot.
@@ -240,7 +246,8 @@ def write_unit_cost(u, cost: dict, label: str = "unit") -> None:
         rc[i].flag   = 0
 
 
-def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> None:
+def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict,
+                        key: str = "unique_unit", button: int = 1) -> None:
     """
     Apply wizard stat overrides and advanced flags to UU unit objects in the DAT.
     Called after apply_civ so the base unit data is already in place.
@@ -252,7 +259,7 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
     """
     if uu_info is None:
         return
-    uu = draft.get("unique_unit") or {}
+    uu = draft.get(key) or {}
     # Every read below is a membership test ("cost_food" in overrides), which an
     # explicit null passes before reaching int(None).  to_draft strips nulls, so
     # the wizard door could never hit that; the upload door hands us the raw
@@ -284,8 +291,8 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
         tl = u.creatable.train_locations[0]
         if tl.unit_id not in (_CASTLE_BUILDING, _KREPOST_BUILDING):
             tl.unit_id    = _CASTLE_BUILDING
-            tl.button_id  = 1
-            tl.hot_key_id = _CASTLE_BTN1_HOTKEY
+            tl.button_id  = button
+            tl.hot_key_id = _CASTLE_BTN1_HOTKEY if button == 1 else _SECOND_UU_HOTKEY
 
     if not overrides and not flags:
         return
@@ -297,7 +304,12 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
     for u, sfx in tiers:
         if u is not None:
             write_unit_stats(u, {k[:-len(sfx)]: v for k, v in overrides.items()
-                                 if k.endswith(sfx)})
+                                 if k.endswith(sfx) and not isinstance(v, dict)})
+            # Bonus damage and armour classes, {class: amount} per tier, as on the tech tree.
+            if isinstance(overrides.get(f"bonus{sfx}"), dict):
+                write_bonus_attacks(u, overrides[f"bonus{sfx}"])
+            if isinstance(overrides.get(f"armour{sfx}"), dict):
+                write_armours(u, overrides[f"armour{sfx}"])
 
     # Training cost overrides (shared — applies to both tiers).  The four boxes
     # are the complete spendable cost, matching the wizard's one combined
@@ -351,6 +363,17 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
               "it — the unit keeps its normal attack. (The previous behaviour "
               "was worse: it reduced the unit to 1 damage.)")
 
+    # Attack Ignores Armor, as the Leitis: Combat Ability (attribute 63, the
+    # unit's break_off_combat) flag 1, "ignore melee and pierce armours of the
+    # targeted unit".  Wootz Steel ADDs 1 to it for infantry and cavalry; a bit
+    # OR here, so a unit that has the flag already keeps one.  The retired
+    # "ignore_armor" above is a different key on purpose: it was ticked under
+    # the broken version, and must not switch this on unasked.
+    if flags.get("ignores_armor"):
+        for u, _ in tiers:
+            if u and u.type_50:
+                u.type_50.break_off_combat = int(u.type_50.break_off_combat or 0) | 1
+
     if flags.get("bonus_dmg_resist") is not None:
         pct = float(flags["bonus_dmg_resist"])
         resistance = max(0.0, min(1.0, 1.0 - pct / 100.0))
@@ -373,6 +396,25 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
                 u.creatable.charge_event  = 1
                 u.creatable.charge_type   = 1
 
+    # Defensive Charge (#125), as the game's own: type 5 "ignore melee attack"
+    # is the Iron Pagoda (1 stored, back every 40 s), type 4 "agility" the
+    # Shrivamsha Rider's projectile dodge (5 stored, one back every 4 s).
+    # Charging is passive (event 0).  A unit has one charge, so this replaces
+    # a Charge Attack; the wizard lets only one be ticked.
+    kind = flags.get("defense_charge")
+    if kind in _DEFENSE_CHARGES:
+        ctype, stored, secs = _DEFENSE_CHARGES[kind]
+        secs = float(flags.get("defense_recharge") or secs)
+        if flags.get("charge_pool") is not None:
+            print("       WARNING: the unique unit has both Charge Attack and Defensive Charge; "
+                  "a unit has one charge, so Defensive Charge was kept.")
+        for u, _ in tiers:
+            if u and u.creatable:
+                u.creatable.max_charge    = float(stored)
+                u.creatable.recharge_rate = 1.0 / max(secs, 0.1)
+                u.creatable.charge_event  = 0
+                u.creatable.charge_type   = ctype
+
     if flags.get("regen_hp"):
         regen_amount   = float(flags.get("regen_amount")   or 1)
         regen_interval = float(flags.get("regen_interval") or 5)
@@ -383,6 +425,10 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict) -> No
                 tt_eff.effect_commands.append(
                     EffectCommand(type=0, a=uid, b=-1, c=109, d=regen_per_min)
                 )
+
+
+# Defensive Charge: kind -> (charge type, charges stored, seconds per charge).
+_DEFENSE_CHARGES = {"melee": (5, 1, 40.0), "ranged": (4, 5, 4.0)}
 
 
 # ── Hero unit ─────────────────────────────────────────────────────────────────
@@ -692,9 +738,57 @@ def _flow_down(succ: dict[int, set[int]], own: dict) -> dict:
     return out
 
 
+# Population, as the game writes it (#121): the room a unit takes is resource
+# storage 4 "Population Headroom" at -N and 11 "Current Population" at +N
+# (both flag 2), and its cost holds population at ceil(N), the room needed to
+# train it.  Karambit Warrior 0.5 (cost 1), Sannahya 2, Feitoria 20 (cost 1:
+# a building only needs room for one).  Storage 4 at a POSITIVE amount is a
+# building's housing (House, Castle): those have no population of their own.
+_HEADROOM, _CUR_POP = 4, 11
+
+
+def _houses(u) -> bool:
+    return any(s.type == _HEADROOM and s.amount > 0 for s in u.resource_storages)
+
+
+def unit_pop(u) -> float | None:
+    """The population `u` takes, or None when it can't take any: it houses
+    others, or it has no storage slots left to hold one."""
+    if _houses(u):
+        return None
+    have = {s.type for s in u.resource_storages}
+    if not {_HEADROOM, _CUR_POP} <= have and \
+            sum(1 for s in u.resource_storages if s.type == -1) < len({_HEADROOM, _CUR_POP} - have):
+        return None
+    return float(next((s.amount for s in u.resource_storages if s.type == _CUR_POP), 0.0))
+
+
+def write_unit_pop(u, n: float) -> None:
+    """Make `u` take `n` population (0 = none, as the Mule Cart)."""
+    if unit_pop(u) is None:
+        return
+    for typ, amount in ((_HEADROOM, -n), (_CUR_POP, n)):
+        s = next((s for s in u.resource_storages if s.type == typ), None) \
+            or next(s for s in u.resource_storages if s.type == -1)
+        s.type, s.amount, s.flag = typ, float(amount), 2
+    if u.creatable is None:
+        return
+    need = math.ceil(n) if n > 0 else 0
+    rc = u.creatable.resource_costs
+    slot = next((c for c in rc if c.type == _HEADROOM), None)
+    if slot is None and need:
+        slot = next((c for c in rc if c.type == -1), None)
+    if slot is None:
+        return          # two resources and no room: it trains whatever the room
+    slot.type, slot.amount, slot.flag = (_HEADROOM, need, 0) if need else (-1, 0, 0)
+
+
 def read_unit_stats(u) -> dict:
     """The values write_unit_stats writes, as the unit has them now."""
     out = {"hp": u.hit_points, "speed": u.speed, "los": u.line_of_sight}
+    pop = unit_pop(u)
+    if pop is not None:
+        out["pop"] = pop
     if u.type_50 is not None:
         dom = _dominant_attack(u)
         out.update(range=u.type_50.max_range, reload=u.type_50.reload_time,
@@ -721,6 +815,29 @@ def write_bonus_attacks(u, bonus: dict) -> None:
             have.amount = amount
         else:
             u.type_50.attacks.append(AttackOrArmor(class_=cls, amount=amount))
+
+
+def write_armours(u, armour: dict) -> None:
+    """{armour class: amount | "immune"}: set the unit's armour in each class,
+    adding the class when the unit lacks it.  "immune" removes the class, so
+    no attacker's bonus against it reaches the unit (a missing class counts as
+    the base armour, ~1000).  0 is a real value: the full bonus.  Classes 3
+    and 4 are the melee and pierce armour stats, written by write_unit_stats."""
+    if u.type_50 is None:
+        return
+    from genieutils.unit import AttackOrArmor
+    for cls, amount in armour.items():
+        cls = int(cls)
+        if cls in (3, 4):
+            continue
+        have = next((a for a in u.type_50.armours if a.class_ == cls), None)
+        if amount == "immune":
+            if have is not None:
+                u.type_50.armours.remove(have)
+        elif have is not None:
+            have.amount = int(amount)
+        else:
+            u.type_50.armours.append(AttackOrArmor(class_=cls, amount=int(amount)))
 
 
 def _fights(u) -> bool:
@@ -757,7 +874,8 @@ def _apply_unit_edits(dat, slot: int, overrides: dict) -> int:
     # difference, so they keep their own (a Barracks gains 300 HP and 1 armour
     # an age: edited to 2000 in the Dark Age, it is 2900 in Imperial).
     for uid, e in sorted(edits.items()):
-        stats = {k: v for k, v in e.items() if k not in ("cost", "train", "bonus", "name", "age", "skin", "appearance")}
+        stats = {k: v for k, v in e.items()
+                 if k not in ("cost", "train", "bonus", "armour", "name", "age", "skin", "appearance")}
         if not (0 <= uid < len(units) and units[uid] is not None):
             continue
         node_now = read_unit_stats(units[uid])
@@ -778,6 +896,9 @@ def _apply_unit_edits(dat, slot: int, overrides: dict) -> int:
                 write_unit_stats(u, own)
             if e.get("bonus") and (is_node or _fights(u)):
                 write_bonus_attacks(u, e["bonus"])
+            # Armour on every form: a packed Trebuchet takes the same bonuses.
+            if e.get("armour"):
+                write_armours(u, e["armour"])
     return len(touched)
 
 
@@ -801,9 +922,9 @@ def edited_fields(dat, units, raw_edits) -> dict[int, set[str]]:
             mark(uid, field)
     for uid, e in edits.items():
         for k, v in e.items():
-            if k == "bonus":
+            if k in ("bonus", "armour"):
                 for cls in v:
-                    mark(uid, f"bonus:{cls}")
+                    mark(uid, f"{k}:{cls}")
             elif k not in ("cost", "train"):
                 mark(uid, k)
     return out
@@ -1037,12 +1158,13 @@ def _age_of_req(dat, tid: int) -> int | None:
     return None
 
 
-def enabling_tech(dat, slot: int, unit: int) -> int | None:
+def enabling_tech(dat, slot: int | None, unit: int) -> int | None:
     """The tech that gives a unit: its make-available tech, or the upgrade
-    into it.  None for a unit the building trains from the start (Militia)."""
+    into it.  None for a unit the building trains from the start (Militia).
+    slot None: any civ's (the Portuguese' Feitoria tech, for the tree page)."""
     found = []
     for tid, t in enumerate(dat.techs):
-        if t.civ not in (-1, slot) or not 0 <= t.effect_id < len(dat.effects):
+        if (slot is not None and t.civ not in (-1, slot)) or not 0 <= t.effect_id < len(dat.effects):
             continue
         for c in dat.effects[t.effect_id].effect_commands:
             if (c.type == 2 and int(c.a) == unit and c.b == 1) or (c.type == 3 and int(c.b) == unit):
@@ -1134,7 +1256,9 @@ def _apply_age_moves(dat, slot: int, overrides: dict, civ_result: dict) -> int:
                 warnings.append(f"{unit_label(dat, slot, int(k))}: available from the start "
                                 "at its building, so its age can't change.")
                 continue
-            wants[tid] = (e["age"], "Unit", int(k))
+            u = dat.civs[slot].units[int(k)] if int(k) < len(dat.civs[slot].units) else None
+            # The F2 tree keeps buildings apart from units (build_civ).
+            wants[tid] = (e["age"], "Building" if u is not None and u.type == 80 else "Unit", int(k))
     for k, e in norm_tech_edits(overrides.get("tech_edits")).items():
         if "age" in e and 0 <= int(k) < len(dat.techs):
             wants[int(k)] = (e["age"], "Tech", int(k))
@@ -1188,6 +1312,14 @@ def apply_civ_with_overrides(dat, civ_def: dict, slot: int,
     uu_info = _resolve_uu_info(civ_def, dat, slot, civ_result)
     _override_ut_costs(dat, civ_result, overrides)
     _apply_uu_overrides(dat, slot, uu_info, overrides)
+    second = civ_result.get("second_uu")
+    if second:
+        _apply_uu_overrides(dat, slot, {"unit_id": second["unit_id"], "elite_id": second["elite_id"]},
+                            overrides, key="second_uu", button=_SECOND_UU_BUTTON)
+        elite_up = norm_elite_upgrade((overrides.get("second_uu") or {}).get("elite_upgrade"))
+        et = second.get("elite_tech")
+        if elite_up and isinstance(et, int) and 0 <= et < len(dat.techs):
+            _set_tech_cost_time(dat.techs[et], elite_up["cost"], elite_up["time"])
     _refresh_uu_tooltips(dat, slot, civ_result)
     _apply_hero_unit(dat, slot, overrides)
     _apply_unit_edits(dat, slot, overrides)

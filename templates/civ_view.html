@@ -154,8 +154,8 @@ function cvApplyOpts() {
   card.classList.toggle("cv-light", !!_cvOpts.light);
   document.getElementById("cv-desc").style.display = _cvOpts.show_description ? "" : "none";
   document.getElementById("cv-sec-tree").style.display = _cvOpts.show_tech_tree ? "" : "none";
-  const stats = document.getElementById("cv-uu-stats");
-  if (stats) stats.style.display = _cvOpts.show_unit_stats ? "" : "none";
+  for (const stats of document.querySelectorAll("#cv-uu-stats, .cv-uu-stats2"))
+    stats.style.display = _cvOpts.show_unit_stats ? "" : "none";
 }
 
 function cvRender(s) {
@@ -163,18 +163,18 @@ function cvRender(s) {
   const list = (items, id) => items && items.length
     ? `<ul id="${id}" contenteditable="true" spellcheck="false">${items.map(x => `<li>${cvEsc(x)}</li>`).join("")}</ul>` : "";
   let uu = "";
-  if (s.unique_unit) {
-    const u = s.unique_unit;
+  for (const u of [s.unique_unit, s.second_unique_unit].filter(Boolean)) {
+    const first = u === s.unique_unit;
     const hasElite = u.stats.some(r => r.elite != null && r.elite !== r.base);
     const stats = u.stats.length ? `<table class="cv-stats"><thead><tr><th></th><th>Base</th>${hasElite ? "<th>Elite</th>" : ""}</tr></thead><tbody>${
       u.stats.map(r => `<tr class="${r.changed ? "cv-changed" : ""}"><th>${cvEsc(r.label)}</th><td>${cvNum(r.base)}</td>${hasElite ? `<td>${cvNum(r.elite)}</td>` : ""}</tr>`).join("")
     }</tbody></table>` : "";
     const meta = [["Cost", u.cost], ["Attack bonuses", u.attack_bonuses.join(", ")], ["Traits", u.traits.join(", ")], ["Elite upgrade", u.elite_upgrade]]
       .filter(([, v]) => v).map(([k, v]) => `<div class="cv-meta"><b>${k}:</b> ${cvEsc(v)}</div>`).join("");
-    uu = `<div class="cv-unit">${u.icon ? `<img src="${cvEsc(u.icon)}" alt="">` : ""}<div>
+    uu += `<div class="cv-unit"${first ? "" : ' style="margin-top:14px"'}>${u.icon ? `<img src="${cvEsc(u.icon)}" alt="">` : ""}<div>
       <div class="cv-unit-name">${cvEsc(u.name)}${u.base_name && u.base_name !== u.name ? ` <span class="cv-unit-base">(${cvEsc(u.base_name)})</span>` : ""}</div>
       ${u.description ? `<div class="cv-desc text-start mt-1">${cvEsc(u.description)}</div>` : ""}
-      <div id="cv-uu-stats">${stats}${meta}${u.stats.some(r => r.changed) ? `<div class="cv-meta"><span class="cv-changed">Gold</span> = changed from the original unit</div>` : ""}</div>
+      <div${first ? ' id="cv-uu-stats"' : ' class="cv-uu-stats2"'}>${stats}${meta}${u.stats.some(r => r.changed) ? `<div class="cv-meta"><span class="cv-changed">Gold</span> = changed from the original unit</div>` : ""}</div>
     </div></div>`;
   }
   const uts = s.unique_techs.length
@@ -192,7 +192,7 @@ function cvRender(s) {
        data-placeholder="Click to add a short description…">${cvEsc(s.description)}</p>
     <div class="cv-rule"></div>
     ${sec("Civilization Bonuses", list(s.civ_bonuses, "cv-bonuses"))}
-    ${sec("Unique Unit", uu)}
+    ${sec(s.second_unique_unit ? "Unique Units" : "Unique Unit", uu)}
     ${sec("Unique Technologies", uts)}
     ${sec("Team Bonus", list(s.team_bonuses, "cv-team"))}
     ${sec("Hero", s.hero ? `<div class="cv-unit-name">${cvEsc(s.hero.name)}</div>${s.hero.description ? `<div class="cv-desc text-start">${cvEsc(s.hero.description)}</div>` : ""}` : "")}

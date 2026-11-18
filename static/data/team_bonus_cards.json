@@ -647,6 +647,7 @@
   },
   "T87": {
     "chronicles": true,
+    "category": "chronicles",
     "heading": "Fortify",
     "stat": "Outposts can be individually upgraded into Fortified Outposts",
     "entity": "outpost",
@@ -655,6 +656,7 @@
   },
   "T88": {
     "chronicles": true,
+    "category": "chronicles",
     "heading": "+50%",
     "stat": "Barracks technologies research 50% faster",
     "entity": "barracks",
@@ -662,6 +664,7 @@
   },
   "T89": {
     "chronicles": true,
+    "category": "chronicles",
     "heading": "+3 LOS",
     "stat": "Buildings +3 line of sight",
     "entity": "house",
@@ -669,6 +672,7 @@
   },
   "T90": {
     "chronicles": true,
+    "category": "chronicles",
     "heading": "+15% speed",
     "stat": "Trade Carts move 15% faster",
     "entity": "trade_cart",

@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 
 from build_all import (
-    _kv_text, hero_string_lines, civ_tip_lines, civ_description,
+    _kv_text, hero_string_lines, civ_tip_lines, civ_description, drop_unavailable,
     ut_name_and_desc, ut_selection_text, ut_research_label,
     _build_combined_data_zip, dat_json_files,
     _build_combined_ui_zip,
@@ -44,7 +44,7 @@ from civ_appender import (
     get_km_uu_index, _KM_UU_NAMES,
 )
 from civ_overrides import apply_civ_with_overrides
-from civ_schema import norm_added_lines
+from civ_schema import norm_added_lines, norm_second_uu
 from dat_reader import load_dat
 import custom_bonus
 
@@ -101,6 +101,7 @@ def _draft_to_civ_def(draft: dict) -> dict:
         "starting_scout":        draft.get("starting_scout"),
         "monk_skin":             draft.get("monk_skin"),
         "monastery_skin_building": draft.get("monastery_skin_building"),
+        "waypoint_flag":         draft.get("waypoint_flag"),
         # Which line keeps page 1 where two share a training button — read by
         # civ_appender._resolve_button_collisions; absent means the default table.
         "button_moves":          draft.get("button_moves") or [],
@@ -110,6 +111,8 @@ def _draft_to_civ_def(draft: dict) -> dict:
         "custom_team_bonuses":   draft.get("custom_team_bonuses") or [],
         # The tree page's "+ Add Unit" lines — added_lines.apply_added_lines.
         "added_lines":           norm_added_lines(draft.get("added_lines")),
+        # A second unique unit at the Castle — civ_appender._apply_second_uu.
+        "second_uu":             norm_second_uu(draft.get("second_uu")),
         # Past retired_cards' one-time tree cleanup (its TREE_VERSION).
         "tree_version":          draft.get("tree_version"),
     }
@@ -250,8 +253,8 @@ def build_wizard_mod(draft: dict, dat_path: str, replace_civ: str) -> bytes:
     # Build civ-picker description string
     tagline      = _kv_text(civ_def.get("description", "") or "")
     alias_kv     = _kv_text(alias)
-    civ_bonuses  = get_civ_bonuses(civ_def)
-    team_entries = get_team_bonuses(civ_def)
+    civ_bonuses  = drop_unavailable(get_civ_bonuses(civ_def), civ_result)
+    team_entries = drop_unavailable(get_team_bonuses(civ_def), civ_result, team=True)
 
     bullets = []
     for entry in civ_bonuses:

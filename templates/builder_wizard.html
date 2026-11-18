@@ -11,7 +11,6 @@
       (2, "Tech Tree"),
       (3, "Civ Bonuses"),
       (4, "Team Bonus"),
-      (5, "Unique Unit"),
       (6, "Castle UT"),
       (7, "Imperial UT"),
       (8, "Hero Unit"),
@@ -19,7 +18,7 @@
     ] %}
     {% for num, label in steps %}
     <div class="wizard-step" id="wstep-{{ num }}" data-step="{{ num }}">
-      <div class="wizard-step-dot">{{ num }}</div>
+      <div class="wizard-step-dot">{{ loop.index }}</div>
       <div class="wizard-step-label">{{ label }}</div>
     </div>
     {% if not loop.last %}
@@ -136,6 +135,16 @@
           </select>
         </div>
         <div class="scene-control">
+          <label for="flag-select">Waypoint Flag</label>
+          <div class="scene-control-voice">
+            <select id="flag-select" class="form-select" data-slot="waypoint_flag"
+                    title="The flag your rally points show. Every civilization has its own.">
+              <option value="-1">— Architecture Default —</option>
+            </select>
+            <img id="flag-preview" alt="" style="height:38px;width:auto;flex:none">
+          </div>
+        </div>
+        <div class="scene-control">
           <label for="scout-select">Starting Scout</label>
           <select id="scout-select" class="form-select" data-slot="starting_scout">
             <option value="448">Loading…</option>
@@ -248,6 +257,9 @@
           </button>
         </div>
       </div>
+
+      {# The unique units: chosen on the tree's Castle (builder.js updateUUSummary) #}
+      <div id="uu-summary" class="mb-3"></div>
 
       {# Summary shown after the tree has been configured #}
       <div id="tt-summary" class="d-none">
@@ -538,6 +550,36 @@
         {{ uo_row("reload", "Reload",     pattern="[0-9]*\.?[0-9]*", inputmode="decimal", suffix="s") }}
         {{ uo_row("speed",  "Speed",      pattern="[0-9]*\.?[0-9]*", inputmode="decimal") }}
         {{ uo_row("train",  "Train Time", pattern="[1-9][0-9]*", suffix="s") }}
+        {{ uo_row("pop",    "Population", pattern="[0-9]*\.?[0-9]*", inputmode="decimal") }}
+
+        {# ── Bonus damage, per tier (builder.js _uoRenderBonus) ─────────────────── #}
+        <div id="uo-bonus" class="d-none">
+          <hr class="my-2" style="border-color:oklch(from var(--body-bg) calc(l + 0.12) c h);">
+          <div class="small fw-semibold mb-2" style="color:var(--accent-2);">
+            <i class="fa-solid fa-crosshairs me-1"></i>Bonus Damage
+          </div>
+          <div id="uo-bonus-rows"></div>
+          <div class="row g-2 mb-1 align-items-start">
+            <div class="col-4">
+              <select id="uo-bonus-cls" class="form-select form-select-sm" aria-label="Add bonus damage vs">
+                <option value="">Add bonus vs…</option>
+              </select>
+            </div>
+            <div class="col-4">
+              <input type="text" id="uo-bonus-new-base" class="form-control form-control-sm" aria-label="Standard bonus"
+                     pattern="[0-9]*" inputmode="numeric" placeholder="+" autocomplete="off">
+            </div>
+            <div class="col-4">
+              <div class="input-group input-group-sm">
+                <input type="text" id="uo-bonus-new-elite" class="form-control" aria-label="Elite bonus"
+                       pattern="[0-9]*" inputmode="numeric" placeholder="same" autocomplete="off">
+                <button type="button" id="uo-bonus-add" class="btn btn-outline-secondary">Add</button>
+              </div>
+            </div>
+          </div>
+          <div class="uo-def">Extra damage against units of that kind, on top of the attack. Blank keeps the game's.</div>
+        </div>
+        <div id="uo-armour"></div>
 
         {# ── Training Cost ─────────────────────────────────────────────────────── #}
         <hr class="my-2" style="border-color:oklch(from var(--body-bg) calc(l + 0.12) c h);">
@@ -623,21 +665,18 @@
             </div>
           </div>
 
-          {# Attack Ignores Armor — REMOVED 2026-09-18, kept hidden so a saved civ
-             that still carries the flag loads without error.  AoE2 has no
-             data-level way to grant it: the old implementation pointed the
-             attack at armour class 50, which no unit in the game has, and a
-             missing armour class resolves to the base armour value (~1000) — so
-             the unit dealt the engine's minimum of 1 damage to everything.
-             The Leitis's behaviour is hardcoded in the engine by unit id; see
-             BUGFIXES.md 2026-09-18 (b) for the two rejected alternatives. #}
-          <div class="col-12 d-none" id="ua-row-ignore-armor">
+          {# Attack Ignores Armor — back 2026-11-18 as "ignores_armor".  The
+             first version (key "ignore_armor", retired 2026-09-18) aimed the
+             attack at armour class 50 and left the unit hitting for 1.  The
+             real mechanism is Combat Ability (attribute 63) flag 1, which the
+             Leitis ships with and Wootz Steel adds to infantry and cavalry. #}
+          <div class="col-12" id="ua-row-ignore-armor">
             <div class="form-check">
-              <input class="form-check-input ua-check" type="checkbox" id="ua-ignore-armor" disabled>
-              <label class="form-check-label small fw-semibold" for="ua-ignore-armor">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-ignores-armor">
+              <label class="form-check-label small fw-semibold" for="ua-ignores-armor">
                 Attack Ignores Armor
               </label>
-              <div class="form-text mt-0">Not supported by the game's data files — this option has been removed.</div>
+              <div class="form-text mt-0">Its attacks ignore the target's melee and pierce armor, as the Leitis and the Dravidians' Wootz Steel.</div>
             </div>
           </div>
 
@@ -696,6 +735,37 @@
             </div>
           </div>
 
+          {# Defensive Charge (#125) — the Iron Pagoda's and Shrivamsha Rider's
+             charge.  A unit has one charge, so it and Charge Attack exclude
+             each other. #}
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-defense">
+              <label class="form-check-label small fw-semibold" for="ua-defense">
+                Defensive Charge
+              </label>
+              <div class="form-text mt-0">Shrugs off an attack, then recharges (e.g. the Iron Pagoda, Shrivamsha Rider). A unit has one charge, so this replaces Charge Attack.</div>
+            </div>
+            <div class="ua-defense-inputs d-none ms-4 mt-2">
+              <div class="d-flex gap-3 align-items-end flex-wrap">
+                <div>
+                  <label class="form-label mb-1" for="ua-defense-kind" style="font-size:.72rem; color:var(--accent-3);">Negates</label>
+                  <select id="ua-defense-kind" class="form-select form-select-sm">
+                    <option value="melee">One melee hit</option>
+                    <option value="ranged">Projectiles (dodges)</option>
+                  </select>
+                </div>
+                <div style="width:110px;">
+                  <label class="form-label mb-1" for="ua-defense-secs" style="font-size:.72rem; color:var(--accent-3);">Recharge (s)</label>
+                  <input type="text" id="ua-defense-secs" class="form-control form-control-sm"
+                         pattern="[0-9]*\.?[0-9]*" inputmode="decimal" placeholder="40" autocomplete="off">
+                </div>
+              </div>
+              <div class="form-text mt-1"><em>One melee hit</em>: the next melee attack does no damage, as the Iron Pagoda's (every 40 s; 30 s Elite).
+                <em>Projectiles</em>: dodges one, storing up to 5, as the Shrivamsha Rider (one back every 4 s).</div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -708,7 +778,7 @@
 <div class="wizard-panel d-none" id="panel-{{ step }}">
   <div class="card mb-3">
     <div class="card-header">
-      <span class="step-badge">{{ step }}</span>
+      <span class="step-badge">{{ step - 1 }}</span>
       <i class="{{ icon_class }} me-1" style="color: var(--accent-2);"></i> {{ age_label }} Unique Technology
     </div>
     <div class="card-body">
@@ -842,7 +912,7 @@
   <div class="card mb-3">
     <div class="card-header">
       <i class="fa-solid fa-star me-1" style="color: var(--accent-2);"></i>
-      <span class="step-badge">8</span> Hero Unit
+      <span class="step-badge">7</span> Hero Unit
       <span class="badge bg-secondary ms-2" style="font-size:.65rem;font-weight:500;">Optional</span>
     </div>
     <div class="card-body">
@@ -1021,7 +1091,7 @@
   {# Save #}
   <div class="card mb-3">
     <div class="card-header">
-      <span class="step-badge">9</span> Save Civilization
+      <span class="step-badge">8</span> Save Civilization
     </div>
     <div class="card-body">
       <div class="d-grid">
@@ -1121,7 +1191,7 @@
     <i class="fa-solid fa-arrow-left me-1"></i> Previous
   </button>
   <div class="d-flex align-items-center gap-3">
-    <div class="text-muted small" id="step-counter">Step 1 of 9</div>
+    <div class="text-muted small" id="step-counter">Step 1 of 8</div>
     <button class="ef-meter" hidden></button>
   </div>
   <button id="btn-next" class="btn btn-primary">
@@ -1153,7 +1223,9 @@
 <script src="{{ url_for('static', filename='aoe2techtree/js/svg.min.js') }}"></script>
 <script src="{{ url_for('static', filename='aoe2techtree/js/techtree.js') }}"></script>
 <script src="{{ url_for('static', filename='aoe2techtree/js/main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/armour_classes.js') }}"></script>
 <script src="{{ url_for('static', filename='aoe2techtree/js/inspector.js') }}"></script>
+<script src="{{ url_for('static', filename='js/card_views.js') }}"></script>
 <script src="{{ url_for('static', filename='js/custom_bonuses.js') }}"></script>
 <script src="{{ url_for('static', filename='js/builder.js') }}"></script>
 {% endblock %}

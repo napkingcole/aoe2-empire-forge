@@ -151,6 +151,25 @@ check("Civilization cards don't grow each age",
       "steps" not in (card({"type": "civ", "id": "civ"},
                            [{"attr": "pop_cap", "op": "add", "value": 5}], when={"steps": True}).get("when") or {}))
 
+# Per relic (#112): the Lithuanians' "+1 attack per relic", techs 699-702.
+KNIGHTS = {"type": "unit", "id": 38, "name": "Knight"}
+rel = card(KNIGHTS, [{"attr": "melee_attack", "op": "add", "value": 1}], when={"relics": 4, "age": 102, "building": 68})
+check("per relic is a gate of its own: no age, no building on top", rel["when"] == {"relics": 4}, rel["when"])
+st = steps_of(rel)
+check("four steps, each the whole effect (+1 attack)",
+      len(st) == 4 and all([c.d for c in s["cmds"]] == [1025.0] for s in st), [[c.d for c in s["cmds"]] for s in st])
+check("step k costs k relics", [s["relics"] for s in st] == [1, 2, 3, 4])
+check("the first waits on the Dark Age and a Monastery (107), the rest on the Dark Age and the step before",
+      [s["reqs"] for s in st] == [[104, 107], [104], [104], [104]] and [s["after"] for s in st] == [None, 0, 1, 2],
+      [(s["reqs"], s["after"]) for s in st])
+check("its text", cb.card_text(rel) == "Knight line: +1 melee attack per relic in a Monastery (up to 4)", cb.card_text(rel))
+check("capped at RELIC_MAX", card(KNIGHTS, [{"attr": "hp", "op": "add", "value": 5}],
+                                  when={"relics": 99})["when"] == {"relics": cb.RELIC_MAX})
+check("not on a Civilization card", "relics" not in (card({"type": "civ", "id": "civ"},
+      [{"attr": "pop_cap", "op": "add", "value": 5}], when={"relics": 4}).get("when") or {}))
+check("a per-relic card can't be a team bonus or go in a unique tech",
+      bool(cb.team_problem(rel)) and bool(cb.ut_problem(rel)))
+
 check("a gated card can't be a team bonus", bool(cb.team_problem(castle)))
 check("a gated card can't go in a unique tech", bool(cb.ut_problem(loom)))
 check("an ungated card still can", cb.team_problem(card(ARCHERS, [{"attr": "hp", "op": "add", "value": 5}])) is None)
@@ -176,6 +195,8 @@ for name in ("C-Bonus, +2% arc HP feudal", "C-Bonus, inf +1 armor castle"):
 
 units = dat.civs[1].units
 for bid, (label, marker) in cb.TRIGGER_BUILDINGS.items():
+    if marker is None:
+        continue                    # made by the build (MADE_TRIGGERS), checked below
     u = units[bid] if bid < len(units) else None
     got = u.building.tech_id if u is not None and u.building is not None else None
     t = dat.techs[marker] if got == marker else None
@@ -215,6 +236,51 @@ with contextlib.redirect_stdout(io.StringIO()):
                                           when={"building": 68})], buildings=[12, 1711]), target_slot=slot)
 check("a Folwark civ's 'once a Mill is built' doesn't warn — the Folwark fires the same marker",
       not any("can't build" in w for w in res.get("warnings", [])), res.get("warnings"))
+
+# Towers and the Outpost fire no marker in the game: the build gives this civ's
+# own, vanilla's "Castle built" shape (#123).
+dat = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    res = ca.apply_civ(dat, civ_def([card(ARCHERS, [{"attr": "hp", "op": "add", "value": 5}], when={"building": 79}),
+                                     card(ARCHERS, [{"attr": "hp", "op": "add", "value": 6}], when={"building": 598})],
+                                    buildings=[12, 79, 234, 235, 598]), target_slot=slot)
+us = dat.civs[slot].units
+tower = us[79].building.tech_id
+check("a Tower card: every tower form fires one marker of this civ's",
+      tower >= 0 and us[234].building.tech_id == us[235].building.tech_id == tower and dat.techs[tower].civ == slot,
+      (us[79].building.tech_id, us[234].building.tech_id, us[235].building.tech_id))
+check("...which nothing but building one fires (needs one of no prerequisites)",
+      tower >= 0 and all(r < 0 for r in dat.techs[tower].required_techs) and dat.techs[tower].required_tech_count == 1)
+outpost = us[598].building.tech_id
+gates = sorted(tuple(r for r in t.required_techs if r >= 0) for t in dat.techs
+               if t.civ == slot and t.name == "C-Bonus, Custom")
+check("the Outpost has its own, and each card waits on its marker",
+      outpost >= 0 and outpost != tower and gates == sorted([(tower,), (outpost,)]), (gates, tower, outpost))
+check("...without the can't-build warning", not any("can't build" in w for w in res.get("warnings", [])),
+      res.get("warnings"))
+check("other civs' towers are untouched", dat.civs[2].units[79].building.tech_id == -1)
+
+# Per relic, built — against the Lithuanians' own chain.
+lith = [dat.techs[t] for t in (699, 700, 701, 702)]
+check("precedent: 699-702 are auto-fire, chained, costing 1-4 relics (resource 7, flag 1)",
+      [(c.type, c.amount, c.flag) for t in lith for c in t.resource_costs[:1]]
+      == [(7, n, 1) for n in (1, 2, 3, 4)]
+      and [[r for r in t.required_techs if r >= 0] for t in lith] == [[104, 107], [104, 699], [104, 700], [104, 701]],
+      [[r for r in t.required_techs if r >= 0] for t in lith])
+dat = load_dat(str(dat_path))
+with contextlib.redirect_stdout(io.StringIO()):
+    ca.apply_civ(dat, civ_def([rel], buildings=[12, 101, 104]), target_slot=slot)
+ours = [(i, t) for i, t in enumerate(dat.techs) if t.civ == slot and t.name == "C-Bonus, Custom"]
+shape = [([r for r in t.required_techs if r >= 0], [(c.type, c.amount, c.flag) for c in t.resource_costs],
+          t.repeatable, [r.location_id for r in t.research_locations]) for _, t in ours]
+ids = [i for i, _ in ours]
+want = [([104, 107] if k == 1 else [104, ids[k - 2]], [(7, k, 1), (-1, 0, 0), (-1, 0, 0)], 1, [-1])
+        for k in range(1, 5)]
+check("the build writes the Lithuanian shape: four chained techs costing 1-4 relics", shape == want,
+      f"{shape}\n       want {want}")
+check("...each adding +1 attack to the Knight line",
+      all({(38, 9, 1025.0), (283, 9, 1025.0), (569, 9, 1025.0)}
+          <= {(int(c.a), int(c.c), c.d) for c in dat.effects[t.effect_id].effect_commands} for _, t in ours))
 
 print("\nAll checks passed." if not failures else f"\n{failures} check(s) FAILED.")
 sys.exit(1 if failures else 0)

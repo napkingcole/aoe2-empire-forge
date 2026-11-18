@@ -1191,6 +1191,8 @@ footer {
 }
 /* The age a UT preset comes from, on every UT card; one from the other age
    takes effect when THIS tech is researched (the tooltip says so). */
+/* A tech already picked in the other unique tech: shown, not pickable. */
+.bonus-card.ut-taken { opacity: .45; filter: grayscale(.7); cursor: not-allowed; }
 .ut-tier-badge { display: inline-block; width: 20px; height: 20px; margin: -2px 0 0 .3rem; vertical-align: middle; object-fit: contain; }
 .multiplier-circle {
   width: 30px;
@@ -1970,8 +1972,8 @@ img.card-main-image {
    overlaps the header's lower edge like a stamped seal: the header stays as
    tall as a vanilla card's.  `right` keeps it clear of the corner ornament. */
 .bonus-card .card-header .cb-card-badge {
-  position: absolute; top: 11px; right: 5px; z-index: 13;
-  width: 40px; height: 40px; object-fit: contain;
+  position: absolute; top: 1px; right: 5px; z-index: 13;
+  width: 30px; height: 30px; object-fit: contain;
   filter: drop-shadow(1px 2px 2px rgb(0 0 0 / 0.6));
 }
 .cb-card .card-header > div { padding-right: 40px; }   /* a long category clears the seal */
@@ -2043,7 +2045,12 @@ img.card-main-image {
 .cb-effect { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .cb-effect .cb-attr  { flex: 2 1 11rem; width: auto; }
 .cb-effect .cb-value { flex: 0 1 6rem; width: 6rem; }
-.cb-effect .cb-op, .cb-effect .cb-res { flex: 0 1 8rem; width: auto; }
+.cb-effect .cb-op, .cb-effect .cb-res, .cb-effect .cb-class { flex: 0 1 8rem; width: auto; }
+.cb-effect .cb-op { flex-basis: auto; }
+/* An aura row: amount, stat, who, range (#103). */
+.cb-effect .cb-aura-stat, .cb-effect .cb-aura-affects { flex: 1 1 9rem; width: auto; }
+.cb-effect .cb-aura-range { display: inline-flex; align-items: center; gap: .3rem; white-space: nowrap; }
+.cb-effect .cb-aura-range input { width: 4.2rem; }
 .cb-op-fixed { min-width: 4rem; }
 .cb-preview { padding: .4rem .6rem; background: var(--parch-mid); border-radius: var(--r-sm); color: var(--ink-mid); }
 
@@ -2135,7 +2142,7 @@ img.card-main-image {
 .cb-step .bc-age-badge { flex: none; font-size: .7rem; font-weight: 700; }
 .cb-step input { width: 3.6rem; }
 .cb-effect--steps .cb-attr { flex: 1 1 8rem; }
-.cb-effect--steps .cb-op, .cb-effect--steps .cb-res { flex: 0 1 6rem; }
+.cb-effect--steps .cb-op, .cb-effect--steps .cb-res, .cb-effect--steps .cb-class { flex: 0 1 6rem; }
 .cb-step input::placeholder { color: var(--ash); opacity: .7; }
 /* A gated card's "From Castle Age · Once a Mill is built". */
 .cb-card-when {
@@ -2338,3 +2345,190 @@ details.card.cb-fold:not([open]) > summary.card-header { border-bottom: 0; }
 .ef-meter-table td:first-child { white-space: nowrap; }
 .ef-meter-dialog .btn-primary { background: var(--crimson); border-color: var(--crimson-dark); }
 .ef-meter-dialog .btn-primary:hover { background: var(--crimson-light); border-color: var(--crimson); }
+
+/* Back to top of a long card list (builder.js _wireBackToTop). */
+.ef-back-top {
+  position: fixed;
+  z-index: 40;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.7);
+  color: #fff;
+  font-size: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.ef-back-top.is-shown { opacity: 1; pointer-events: auto; }
+.ef-back-top:hover, .ef-back-top:focus-visible { background: rgb(0 0 0 / 0.85); }
+
+/* ── Where a card comes from (#95): the source civ's emblem, bottom-left,
+   opposite the Chronicles helmet. ─────────────────────────────────────── */
+.bonus-card .civ-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  display: flex;
+  gap: 2px;
+  z-index: 13;
+  pointer-events: none;
+}
+.bonus-card .civ-badge img {
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+  filter: drop-shadow(1px 1px 1px rgb(0 0 0 / 0.6));
+}
+.card-fulltext { display: none; }
+
+/* The Civilization chip and its checklist. */
+.civ-filter { position: relative; display: inline-flex; }
+.civ-filter-pill { --pill-bg: #7a5c2e; }
+.civ-filter-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  width: 250px;
+  padding: 8px;
+  background: var(--parch-light);
+  border: 1px solid #7a5c2e;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+}
+.civ-filter-list {
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 6px 0;
+}
+.civ-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.civ-filter-item:hover { background: color-mix(in srgb, var(--gold-pale) 45%, transparent); }
+.civ-filter-item img { width: 22px; height: 22px; object-fit: contain; }
+.civ-filter-clear { width: 100%; border-top: 1px solid rgb(0 0 0 / 0.12); border-radius: 0; }
+
+/* ── Card views (card_views.js): the switch, then Condensed and Text only.
+   One rule set for every card list: vanilla, team, unique tech and custom. */
+.card-view-switch {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid rgb(0 0 0 / 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--parch-light);
+}
+.card-view-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 2px 10px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+.card-view-switch button + button { border-left: 1px solid rgb(0 0 0 / 0.15); }
+.card-view-switch button[aria-pressed="true"] { background: #7a5c2e; color: #fff; }
+
+/* Condensed: two standard columns wide (three across where six fit), a plain
+   rounded card, the header kept, then image(s) and the full text. */
+:root[data-cards] .bonus-section,
+:root[data-cards] .bonus-section.bonus-section-selected {
+  grid-template-columns: repeat(auto-fill, minmax(358px, 1fr));
+}
+:root[data-cards="text"] .bonus-section,
+:root[data-cards="text"] .bonus-section.bonus-section-selected {
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+}
+:root[data-cards] .bonus-card {
+  border: 2px solid #7a5c2e;
+  border-image: none;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: none;
+  background: #eaeada;
+}
+:root[data-cards] .bonus-card.selected {
+  border-color: var(--gold);
+  background: var(--gold-pale);
+}
+:root[data-cards] .bonus-card :is(.card-shadow, .top-corners, .bottom-corners, .chronicles-badge, .civ-badge) {
+  display: none;
+}
+:root[data-cards] .bonus-card .card-header { padding: 4px 8px; min-height: 34px; }
+:root[data-cards] .bonus-card .card-header::after { display: none; }
+:root[data-cards] .bonus-card .card-body {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  background: none;
+}
+:root[data-cards] .bonus-card .card-body > * { display: none; }
+:root[data-cards] .bonus-card .card-body > .card-fulltext {
+  display: block;
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--ink);
+  white-space: pre-line;
+  text-wrap: pretty;
+}
+:root[data-cards] .bonus-card .card-body > :is(.cb-card-why, .cb-card-actions) {
+  display: flex;
+  grid-column: 1 / -1;
+}
+.card-fulltext-src {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--ink-mid, #5a5048);
+  white-space: normal;
+}
+.card-fulltext-src img { width: 16px; height: 16px; object-fit: contain; }
+/* One image at 64px; two staggered, one top-left and one bottom-right. */
+:root[data-cards="condensed"] .bonus-card .card-body > .card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  grid-column: 1;
+  grid-row: 1;
+  width: 64px;
+  height: 64px;
+  font-size: 34px;
+  object-fit: contain;
+}
+:root[data-cards="condensed"] .bonus-card .card-body > .card-icon-row {
+  display: block;
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  width: 64px;
+  height: 64px;
+}
+:root[data-cards="condensed"] .bonus-card .card-icon-row > .card-icon {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+:root[data-cards="condensed"] .bonus-card .card-icon-row > .card-icon:nth-child(1) { top: 0; left: 0; }
+:root[data-cards="condensed"] .bonus-card .card-icon-row > .card-icon:nth-child(2) { right: 0; bottom: 0; z-index: 1; }
+:root[data-cards="condensed"] .bonus-card .card-icon-row > .card-icon:nth-child(n+3) { display: none; }
+/* No picture (some descriptions and unique techs), or Text only: one column. */
+:root[data-cards="condensed"] .bonus-card .card-body:not(:has(> .card-icon, > .card-icon-row)),
+:root[data-cards="text"] .bonus-card .card-body { grid-template-columns: 1fr; }
+:root[data-cards="condensed"] .bonus-card .card-body:not(:has(> .card-icon, > .card-icon-row)) > .card-fulltext,
+:root[data-cards="text"] .bonus-card .card-body > .card-fulltext { grid-column: 1; }

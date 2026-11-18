@@ -35,6 +35,9 @@ _FORMAT_KEY_V1 = "civbuilder_v1"
 #   ignore_armor — removed 2026-09-18.  AoE2 has no data-level way to grant it;
 #     the implementation aimed the attack at armour class 50, which no unit has,
 #     so the unit dealt the engine minimum of 1 damage to everything.
+#     Back since 2026-11-18 under a NEW key, "ignores_armor" (Combat Ability
+#     flag 1, the Leitis's); the old key stays retired so a civ saved with the
+#     broken flag doesn't gain the working one without asking.
 RETIRED_UU_FLAGS = frozenset({"ignore_armor"})
 
 # Civ bonus cards withdrawn because they cannot do what they say.  Filtered in
@@ -98,6 +101,34 @@ def _cost_dict(d: dict | None) -> dict:
     }
 
 
+# ── The second unique unit ────────────────────────────────────────────────────
+
+def norm_second_uu(raw) -> dict | None:
+    """The civ's second unique unit (civ_appender._apply_second_uu): the same
+    fields as unique_unit, or None when there is none."""
+    raw = _clean(raw) if isinstance(raw, dict) else {}
+    try:
+        km = int(raw["km_idx"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    out: dict = {"km_idx": km,
+                 "name": norm_unit_name(raw.get("name")) or "",
+                 "description": " ".join(str(raw.get("description") or "").split())[:200]}
+    overrides = norm_uu_overrides(raw.get("overrides"))
+    if overrides:
+        out["overrides"] = overrides
+    flags = {k: v for k, v in _clean(raw.get("advanced_flags") or {}).items()
+             if v is not None and v is not False and k not in RETIRED_UU_FLAGS}
+    if flags:
+        out["advanced_flags"] = flags
+    elite_up = norm_elite_upgrade(raw.get("elite_upgrade"))
+    if elite_up:
+        out["elite_upgrade"] = elite_up
+    if isinstance(raw.get("appearance"), int):
+        out["appearance"] = raw["appearance"]
+    return out
+
+
 # ── civbuilder_v1 → wizard draft ──────────────────────────────────────────────
 
 def to_draft(schema: dict) -> dict:
@@ -105,24 +136,19 @@ def to_draft(schema: dict) -> dict:
     Convert a civbuilder_v1 JSON dict into the wizard draft format expected by
     _draft_to_civ_def, _apply_uu_overrides, and _override_ut_costs.
 
-    Unknown / Phase-Two keys (unit_overrides, button_moves, free_techs, second_uu)
-    are passed through unchanged so future handlers can
-    act on them without schema changes.
-
-    When second_uu is implemented, build it on km_custom_uu.append_km_custom_uu
-    — it already appends new units to every civ's array and wires the make-avail
-    and elite-upgrade techs with the string-id arithmetic CLAUDE.md quirk 8
-    depends on.
+    Unknown / Phase-Two keys (unit_overrides, button_moves, free_techs) are
+    passed through unchanged so future handlers can act on them without schema
+    changes.  second_uu is a second unique unit (norm_second_uu), built by
+    civ_appender._apply_second_uu.
     """
     s = _clean(schema)
 
     # ── UU ───────────────────────────────────────────────────────────────────
     raw_uu   = _clean(s.get("unique_unit") or {})
-    overrides = _clean(raw_uu.get("overrides") or {})
     adv_flags = _clean(raw_uu.get("advanced_flags") or {})
 
     # Strip null values so the build functions treat absence == "no override"
-    overrides = {k: v for k, v in overrides.items() if v is not None}
+    overrides = norm_uu_overrides(raw_uu.get("overrides"))
     adv_flags = {k: v for k, v in adv_flags.items()
                  if v is not None and v is not False and k not in RETIRED_UU_FLAGS}
 
@@ -222,9 +248,10 @@ def to_draft(schema: dict) -> dict:
         "monk_skin":             s.get("monk_skin"),
         # DAT civ index whose Monastery is copied (civ_appender.MONASTERY_SKIN_OPTIONS).
         "monastery_skin_building": s.get("monastery_skin_building"),
+        "waypoint_flag":           s.get("waypoint_flag"),
 
+        "second_uu":              norm_second_uu(s.get("second_uu")),
         # Phase Two pass-throughs (not yet consumed by build pipeline)
-        "second_uu":              s.get("second_uu"),
         "unit_edits":             norm_unit_edits(s.get("unit_edits")),
         "tech_edits":             norm_tech_edits(s.get("tech_edits")),
         "added_lines":            norm_added_lines(s.get("added_lines")),
@@ -293,7 +320,7 @@ def from_draft(draft: dict) -> dict:
         "vanilla_id":  uu_raw.get("vanilla_id"),
         "name":        uu_raw.get("name",        ""),
         "description": uu_raw.get("description", ""),
-        "overrides":   {k: v for k, v in overrides.items()  if v is not None},
+        "overrides":   norm_uu_overrides(overrides),
         "advanced_flags": {k: v for k, v in adv_flags.items() if v is not None},
     }
     elite_up = norm_elite_upgrade(uu_raw.get("elite_upgrade"))
@@ -324,7 +351,7 @@ def from_draft(draft: dict) -> dict:
 
         "hero_unit":    hero_out,
         "unique_unit":  uu_out,
-        "second_uu":    draft.get("second_uu"),
+        "second_uu":    norm_second_uu(draft.get("second_uu")),
 
         "bonuses":      _bonus_out(draft.get("bonuses")),
         "custom_bonuses": custom_bonus.normalize(draft.get("custom_bonuses")),
@@ -341,6 +368,7 @@ def from_draft(draft: dict) -> dict:
         "starting_scout":          draft.get("starting_scout"),
         "monk_skin":               draft.get("monk_skin"),
         "monastery_skin_building": draft.get("monastery_skin_building"),
+        "waypoint_flag":           draft.get("waypoint_flag"),
 
         "unit_edits":              norm_unit_edits(draft.get("unit_edits")),
         "tech_edits":              norm_tech_edits(draft.get("tech_edits")),
@@ -400,6 +428,8 @@ _UNIT_EDIT_FIELDS: dict[str, tuple[type, float, float]] = {
     "speed":  (float, 0,   10),
     "los":    (float, 0,   100),
     "train":  (int,   1,   _SHORT),
+    # Population taken: 0.5 as the Karambit Warrior, 2 as the Sannahya (#121).
+    "pop":    (float, 0,   100),
 }
 _RESOURCES = ("food", "wood", "stone", "gold")
 
@@ -441,10 +471,63 @@ def norm_unit_name(raw) -> str:
     return text[:UNIT_NAME_MAX].strip()
 
 
+def norm_class_map(raw) -> dict:
+    """{"<armour class>": amount} for bonus damage (civ_overrides.
+    write_bonus_attacks): 0 removes the class.  Classes 3 and 4 are the unit's
+    own pierce and melee ("attack", "melee", "pierce"), so they are left out."""
+    out: dict = {}
+    if not isinstance(raw, dict):
+        return out
+    for c, a in raw.items():
+        ck = _id_key(c)
+        if ck is None or int(ck) in (3, 4):
+            continue
+        if (v := _num(a, int, 0, _SHORT)) is not None:
+            out[ck] = v
+    return out
+
+
+def norm_armour_map(raw) -> dict:
+    """{"<armour class>": amount | "immune"} (civ_overrides.write_armours).
+    Unlike bonus damage, 0 is a value (the full bonus) and a negative one is
+    allowed; "immune" removes the class.  3 and 4 are the melee and pierce
+    armour stats, so they are left out."""
+    out: dict = {}
+    if not isinstance(raw, dict):
+        return out
+    for c, a in raw.items():
+        ck = _id_key(c)
+        if ck is None or int(ck) in (3, 4):
+            continue
+        if a == "immune":
+            out[ck] = "immune"
+        elif (v := _num(a, int, -_SHORT, _SHORT)) is not None:
+            out[ck] = v
+    return out
+
+
+# The unique unit's bonus damage and armour classes, per tier, in its
+# overrides beside the stats.
+UU_CLASS_OVERRIDES = {"bonus_base": norm_class_map, "bonus_elite": norm_class_map,
+                      "armour_base": norm_armour_map, "armour_elite": norm_armour_map}
+
+
+def norm_uu_overrides(raw) -> dict:
+    """The unique unit's overrides with nulls dropped and its class maps cleaned."""
+    out = {k: v for k, v in (raw or {}).items() if v is not None and not k.startswith("_")}
+    for k, norm in UU_CLASS_OVERRIDES.items():
+        if k in out:
+            if m := norm(out[k]):
+                out[k] = m
+            else:
+                del out[k]
+    return out
+
+
 def norm_unit_edits(raw) -> dict:
     """{"<unit id>": {name, hp, attack, melee, pierce, range, reload, speed, los,
     train, cost: {food, wood, stone, gold}, bonus: {"<class>": amount},
-    age: 1-4, skin: "<civ>", appearance: <unit id>}}."""
+    armour: {"<class>": amount | "immune"}, age: 1-4, skin: "<civ>", appearance: <unit id>}}."""
     out: dict = {}
     if not isinstance(raw, dict):
         return out
@@ -472,17 +555,10 @@ def norm_unit_edits(raw) -> dict:
         # "Available from": the age it becomes available in (civ_overrides._apply_age_moves).
         if e.get("age") is not None and (a := _num(e["age"], int, 1, 4)) is not None:
             clean["age"] = a
-        if isinstance(e.get("bonus"), dict):
-            bonus = {}
-            for c, a in e["bonus"].items():
-                ck = _id_key(c)
-                # 3 and 4 are the unit's own pierce/melee attack ("attack").
-                if ck is None or int(ck) in (3, 4):
-                    continue
-                if (v := _num(a, int, 0, _SHORT)) is not None:
-                    bonus[ck] = v
-            if bonus:
-                clean["bonus"] = bonus
+        if bonus := norm_class_map(e.get("bonus")):
+            clean["bonus"] = bonus
+        if armour := norm_armour_map(e.get("armour")):
+            clean["armour"] = armour
         if clean:
             out[key] = clean
     return out
@@ -521,7 +597,7 @@ def norm_tech_edits(raw) -> dict:
 #   `role` is the AI's unit line it joins (a unitlines.json LineID, None = the
 #   one holding the base unit).  Built by added_lines.apply_added_lines.
 
-ADDED_LINE_BUILDINGS = (12, 87, 101, 49, 45, 104, 109)  # Barracks .. Town Center
+ADDED_LINE_BUILDINGS = (12, 87, 101, 49, 45, 104, 109, 82)  # Barracks .. Town Center, Castle
 ADDED_LINE_MAX_TIERS = 4
 ADDED_LINE_DESC_MAX = 300
 
@@ -543,13 +619,15 @@ def norm_added_lines(raw) -> list:
         # Elite Halberdier), rather than starting a line of their own.
         frm = _id_key(line.get("from")) if line.get("from") is not None else None
         # A replacement: the unit a vanilla upgrade gives (Paladin) becomes this
-        # line's one tier (Savar).  One tier, its upgrade the vanilla one.
+        # line's tier 1 (Savar), its upgrade the vanilla one.  Later tiers are
+        # our own upgrades, as an added line's (Heavy Pikeman for the
+        # Halberdier, then a custom Halberdier after it).
         rep = _id_key(line.get("replaces")) if line.get("replaces") is not None else None
         if rep is not None:
             frm = None
         tiers: list = []
         for t in line.get("tiers") or []:
-            if not isinstance(t, dict) or len(tiers) == (1 if rep is not None else ADDED_LINE_MAX_TIERS):
+            if not isinstance(t, dict) or len(tiers) == ADDED_LINE_MAX_TIERS:
                 continue
             age = _num(t.get("age"), int, 1, 4)
             # Ages never go back; two tiers may share one (Cavalier and Paladin
@@ -558,6 +636,8 @@ def norm_added_lines(raw) -> list:
                     or (len(tiers) >= 2 and tiers[-2]["age"] == age):
                 continue
             tier: dict = {"age": age, "name": norm_unit_name(t.get("name"))}
+            if t.get("appearance") is not None and (wear := _id_key(t["appearance"])) is not None:
+                tier["appearance"] = int(wear)           # this tier's own look (else the line's)
             edits = norm_unit_edits({"0": dict(t.get("edits") or {}, name=None, age=None, skin=None)}).get("0")
             if edits:
                 tier["edits"] = edits
