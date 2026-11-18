@@ -1804,8 +1804,8 @@ function _classifyBonus(id, label) {
   // civ_appender._UNLOCK_UNIT_BONUSES automatically and the hardcoded 405-417
   // entries above are now belt-and-braces rather than load-bearing.
   if (_isUnlockBonus(id)) {
-    // Units from the Chronicles civs get their own purple banner; Chronicles
-    // bonuses and techs stay filed by what they do, marked only by the badge.
+    // Units from the Chronicles civs get their own purple banner, as do the
+    // Chronicles bonuses (their card data names the category, above).
     const key = _cardOverrides[String(id)]?.chronicles ? 'chronicles' : 'unlock';
     return _BONUS_CATEGORIES.find(c => c.key === key) || _BONUS_CATEGORIES.at(-1);
   }
@@ -4839,6 +4839,37 @@ window.efMeter = (() => {
   return { changed, render, count };
 })();
 document.addEventListener("DOMContentLoaded", () => window.efMeter.count());
+
+// ── Back to top, for the long card lists ─────────────────────────────────────
+// The bonus, team bonus and unique tech grids scroll inside themselves and run
+// to dozens of rows.  Once one is scrolled past its first screenful, a button
+// just outside its bottom-right corner takes it back to the top.  It is fixed
+// to the window (kept on screen when the grid's bottom is below it) and a
+// child of the grid's step, so it hides with the step.
+function _wireBackToTop(grid) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ef-back-top";
+  btn.title = "Back to the top of the list";
+  btn.setAttribute("aria-label", btn.title);
+  btn.innerHTML = '<i class="fa-solid fa-arrow-up" aria-hidden="true"></i>';
+  btn.addEventListener("click", () => grid.scrollTo({ top: 0, behavior: "smooth" }));
+  grid.insertAdjacentElement("afterend", btn);
+  const place = () => {
+    const r = grid.getBoundingClientRect();
+    const show = r.height > 0 && grid.scrollTop > grid.clientHeight && r.top < innerHeight - 60;
+    btn.classList.toggle("is-shown", show);
+    if (!show) return;
+    const size = btn.offsetWidth || 40, gap = 10;
+    const outside = r.right + gap + size <= document.documentElement.clientWidth - 8;
+    btn.style.left = `${outside ? r.right + gap : r.right - size - gap}px`;
+    btn.style.top  = `${Math.min(r.bottom - size, innerHeight - size - 16)}px`;
+  };
+  grid.addEventListener("scroll", place, { passive: true });
+  addEventListener("scroll", place, { passive: true });
+  addEventListener("resize", place);
+}
+document.addEventListener("DOMContentLoaded", () => document.querySelectorAll(".bonus-grid").forEach(_wireBackToTop));
 
 // ── Tech tree ─────────────────────────────────────────────────────────────────
 

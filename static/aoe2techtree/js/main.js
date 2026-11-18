@@ -2190,7 +2190,8 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
     const resetBtn = mkBtn('Disable All',    '#5a1a1a', _disableAll);
     const hint     = document.createElement('span');
     hint.style.cssText = 'color:#aaa;font-size:12px;margin-left:8px;';
-    hint.textContent = 'Click a unit, building or tech for its details. Shift-click to turn it on or off.';
+    hint.textContent = 'Click a unit, building or tech for its details. Shift-click to turn it on or off. '
+                     + 'The mouse wheel or the \u2190 \u2192 keys scroll the tree.';
 
     toolbar.appendChild(doneBtn);
     toolbar.appendChild(fillBtn);
@@ -2447,6 +2448,21 @@ window.showTechtree = function showTechtree(civName, initialTree, relativepath) 
         treeWrap.scrollLeft += e.deltaY * step;
         e.preventDefault();
     }, { passive: false });
+
+    // The left and right arrow keys move a quarter of the visible tree a
+    // press (the browser's own step is a few dozen pixels).  Not while a
+    // field has the keys, and gone with the overlay.
+    const onArrow = function (e) {
+        if (!treeWrap.isConnected) { document.removeEventListener('keydown', onArrow); return; }
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        const t = e.target;
+        if (t && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))) return;
+        const step = treeWrap.clientWidth / 4;
+        treeWrap.scrollBy({ left: e.key === 'ArrowLeft' ? -step : step, behavior: e.repeat ? 'auto' : 'smooth' });
+        e.preventDefault();
+    };
+    document.addEventListener('keydown', onArrow);
 
     // Load data then render
     const dataUrl = relativepath + '/aoe2techtree/data/data.json';

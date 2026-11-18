@@ -2339,3 +2339,21 @@ details.card.cb-fold:not([open]) > summary.card-header { border-bottom: 0; }
 .ef-meter-table td:first-child { white-space: nowrap; }
 .ef-meter-dialog .btn-primary { background: var(--crimson); border-color: var(--crimson-dark); }
 .ef-meter-dialog .btn-primary:hover { background: var(--crimson-light); border-color: var(--crimson); }
+
+/* Back to top of a long card list (builder.js _wireBackToTop). */
+.ef-back-top {
+  position: fixed;
+  z-index: 40;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.7);
+  color: #fff;
+  font-size: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.ef-back-top.is-shown { opacity: 1; pointer-events: auto; }
+.ef-back-top:hover, .ef-back-top:focus-visible { background: rgb(0 0 0 / 0.85); }
