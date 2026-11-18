@@ -234,6 +234,23 @@ def _run_update_check():
 # the one-time "what's new" modal. Add the newest version at the top.
 CHANGELOG: dict[str, list[str]] = {
     "2.8.0": [
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Custom bonus auras.</strong> A building or unit boosts nearby units: work rate, speed, attack speed, regeneration, attack or armour, at the range you choose, the way the Caravanserai and Georgian churches do",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Extra projectiles and melee reach.</strong> Give ranged units and towers more arrows (a melee unique unit is left alone), or let melee units strike from further away, like the Kamayuk",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Bonus damage against any armour class</strong>, flat or as a percentage. A flat minus makes a penalty, as the Hand Cannoneer has against Condottieri",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Per relic.</strong> A card can apply once per relic in a Monastery, up to the number you pick, like the Lithuanians' attack bonus",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Villager jobs that generate resources</strong> while they work: Foragers make wood, Lumberjacks gold, and so on",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Unique unit traits:</strong> Defensive Charge (shrug off a melee hit like the Iron Pagoda, or dodge arrows like the Shrivamsha Rider) and <strong>Attack Ignores Armor</strong>, like the Leitis",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>A second unique unit at the Castle</strong>, with its own Elite upgrade. Anarchy, the Krepost and the Donjon train it too",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Card views.</strong> Standard, Condensed or Text only, on every card list, with the source civ's emblem on each card and a Civilization filter",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Three more civ bonuses as cards:</strong> Huns Trebuchet accuracy, Poles cavalry upgrades, Turks Bombard Tower and Elite Cannon Galleon",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Pick your waypoint flag</strong>, and the Chronicles civs' voices",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Buildings an age earlier</strong> from the tree, and cards that wait for a Tower or an Outpost",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Unit population</strong> and <strong>armour classes</strong> on the tech tree and the unique unit's panel; the unique unit's bonus damage per tier",
+        "<strong class=\"color-accent-2\">NEW:</strong> <strong>Replacements take later tiers</strong>: a Heavy Pikeman, then a custom Halberdier. Camel Riders without Camel Scouts",
+        "<strong class=\"color-accent-2\">IMPROVED:</strong> <strong>A unique tech can only be picked once</strong> across the Castle and Imperial unique techs",
+        "<strong class=\"color-accent-2\">IMPROVED:</strong> <strong>Chronicles bonuses</strong> sit under their own banner. The tech tree scrolls with the arrow keys, and long card lists have a back-to-top button",
+        "<strong class=\"color-accent-2\">IMPROVED:</strong> <strong>Cards a pre-DLC game lacks</strong> are left out with a note instead of breaking the build",
+        "<strong class=\"color-accent-2\">BUG FIX:</strong> Builders and Repairers offer their work rate again; added lines no longer take an ally's Condottiero or Genitour button; a tier after the Winged Hussar gets a button; looks from another civ copy every art field; customised units train at the Donjon, Krepost and Settlement",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Edit stats on the tech tree.</strong> Click any unit, building or tech to open a side panel with its stats and the game's stat icons, and change them there. It shows the numbers with your cards and fully upgraded, and the tree saves every change as you make it",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>Rename units</strong> on the tech tree page. The game's tooltips and the upgrade buttons use the new name, with their cost",
         "<strong class=\"color-accent-2\">NEW:</strong> <strong>+ Add Unit.</strong> Give a building a new unit line: any military unit, even ones no civ trains (War Dog, Ninja, mercenaries), up to two tiers an age, with its own description, AI role and F2 nodes. Custom bonus cards can target it",
