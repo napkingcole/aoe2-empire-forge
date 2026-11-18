@@ -2044,6 +2044,7 @@ img.card-main-image {
 .cb-effect .cb-attr  { flex: 2 1 11rem; width: auto; }
 .cb-effect .cb-value { flex: 0 1 6rem; width: 6rem; }
 .cb-effect .cb-op, .cb-effect .cb-res, .cb-effect .cb-class { flex: 0 1 8rem; width: auto; }
+.cb-effect .cb-op { flex-basis: auto; }
 .cb-op-fixed { min-width: 4rem; }
 .cb-preview { padding: .4rem .6rem; background: var(--parch-mid); border-radius: var(--r-sm); color: var(--ink-mid); }
 
