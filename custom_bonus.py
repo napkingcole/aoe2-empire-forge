@@ -227,12 +227,32 @@ JOBS: dict[str, dict] = {
 # Villager is ever trained.
 _RES_COST = {"food": 103, "wood": 104, "gold": 105, "stone": 106}
 
+# Armour class names, from the UGC guide's damage table (docs/general/
+# damage_calculation.md); 41 and 60 are named from the units that carry them
+# (fire ships; galleys, caravels and the other warships).  The unit editor's
+# armour panel and the "bonus damage" effect offer these classes.
+DAMAGE_CLASSES: dict[int, str] = {
+    1: "Infantry", 2: "Turtle Ships", 5: "War Elephants", 8: "Cavalry", 15: "Archers",
+    16: "Ships", 17: "Rams, Trebuchets, Siege Towers", 19: "Unique Units", 20: "Siege Weapons",
+    23: "Gunpowder Units", 25: "Monks", 27: "Spearmen", 28: "Cavalry Archers",
+    29: "Eagle Warriors", 30: "Camels", 32: "Condottieri", 34: "Fishing Ships", 35: "Mamelukes",
+    36: "Heroes and Kings", 37: "Hussite Wagons", 38: "Skirmishers", 41: "Fire Ships", 60: "Warships",
+}
+
 ATTRS: dict[str, dict] = {
     "hp":            {"label": "HP",               "ops": ("add", "mul"), "fields": [0],         "kinds": ("unit", "building")},
     "melee_armor":   {"label": "melee armor",      "ops": ("add",),       "field": 8, "armor": 4, "kinds": ("unit", "building", "job")},
     "pierce_armor":  {"label": "pierce armor",     "ops": ("add",),       "field": 8, "armor": 3, "kinds": ("unit", "building", "job")},
     "melee_attack":  {"label": "melee attack",     "ops": ("add",),       "field": 9, "armor": 4, "kinds": ("unit", "job")},
     "pierce_attack": {"label": "pierce attack",    "ops": ("add",),       "field": 9, "armor": 3, "kinds": ("unit", "building")},
+    # Bonus damage against one armour class (a Discord request, 2026-11-18):
+    # the same packed attack, its class picked from DAMAGE_CLASSES.  Flat goes
+    # either way: a minus past the unit's own bonus is a penalty, as the game's
+    # Hand Cannoneer has -10 vs Condottieri (261 negative entries ship).  A
+    # percentage only raises it — vanilla multiplies bonus damage 697 times,
+    # never by under 1 ("+20/30/40% Cav bonus damage" is x1.20, x1.11, x1.05).
+    "bonus_damage":  {"label": "bonus damage",     "ops": ("add", "mul"), "field": 9, "damage_class": True,
+                      "kinds": ("unit", "building")},
     "range":         {"label": "range",            "ops": ("add",),       "fields": [12, 1, 23], "kinds": ("unit", "building")},
     "los":           {"label": "line of sight",    "ops": ("add",),       "fields": [1, 23],     "kinds": ("unit", "building", "job")},
     "speed":         {"label": "movement speed",   "ops": ("mul",),       "fields": [5],         "kinds": ("unit", "job")},
@@ -496,6 +516,7 @@ _CAPABLE = {
     "range":         lambda u: bool(u.type_50) and u.type_50.max_range > 0,
     "melee_attack":  lambda u: _attack(u, 4),
     "pierce_attack": lambda u: _attack(u, 3),
+    "bonus_damage":  lambda u: bool(u.type_50) and any(a.amount > 0 for a in u.type_50.attacks),
     "attack_speed":  lambda u: bool(u.type_50) and u.type_50.reload_time > 0
                                and any(a.amount > 0 for a in u.type_50.attacks),
     "carry":         _moves_resources,
@@ -681,6 +702,7 @@ def catalog() -> dict:
                     "positive": bool(a.get("positive")), "pct": bool(a.get("pct"))}
                    for k, a in ATTRS.items()],
         "cost_resources": list(COST_RESOURCES),
+        "damage_classes": [{"id": k, "name": v} for k, v in DAMAGE_CLASSES.items()],
         "civ_ages": [{"id": k, "label": f"{v} Age"} for k, v in CIV_AGES.items()],
         "step_ages": [{"id": k, "label": f"{AGE_NAMES[k]} Age"} for k in STEP_AGES],
         "triggers": [{"id": k, "label": label} for k, (label, _) in
@@ -890,6 +912,14 @@ def _norm_effect(raw) -> dict | None:
     if value == int(value):
         value = int(value)
     out = {"attr": raw["attr"], "op": op, "value": value}
+    if spec.get("damage_class"):
+        try:
+            cls = int(raw.get("class"))
+        except (TypeError, ValueError):
+            return None
+        if cls not in DAMAGE_CLASSES or (op == "mul" and value < 0):
+            return None                  # no class to aim at; a percent only raises it
+        out["class"] = cls
     if raw["attr"] in ("cost", "tech_cost"):
         res = raw.get("resource", "all")
         out["resource"] = res if res in COST_RESOURCES else "all"
@@ -1034,6 +1064,8 @@ def effect_text(eff: dict, target: dict | None = None) -> str:
     elif eff["attr"] in ("tech_cost", "cost"):
         res = eff.get("resource", "all")
         text = f"{signed(pct)} {'cost' if res == 'all' else f'{res} cost'}"
+    elif spec.get("damage_class"):
+        text = f"{signed(pct)} bonus damage vs {DAMAGE_CLASSES.get(eff.get('class'), 'class ' + str(eff.get('class')))}"
     elif eff["attr"] == "research_speed":
         text = f"research {bare('%')} {'faster' if v > 0 else 'slower'}"
     elif spec.get("faster"):
@@ -1360,6 +1392,9 @@ def effect_commands(eff: dict, selectors: list[tuple[int, int]]) -> list[EffectC
     v    = float(eff["value"])
     out: list[EffectCommand] = []
 
+    if spec.get("damage_class"):
+        return _bonus_damage_commands(eff, v, selectors)
+
     if "armor" in spec:
         # The amount is one byte: past 255 it would spill into the class, so
         # larger values go out as several commands (issue #49's sweep).
@@ -1390,6 +1425,28 @@ def effect_commands(eff: dict, selectors: list[tuple[int, int]]) -> list[EffectC
 
 
 _RES_INDEX = {"food": 0, "wood": 1, "stone": 2, "gold": 3}   # EC_TECH_COST b
+
+
+def _bonus_damage_commands(eff: dict, v: float, selectors) -> list[EffectCommand]:
+    """Bonus damage vs eff["class"], packed as class*256 + a byte.  Flat: the
+    byte is the amount, a reduction the negated whole, past 255 several
+    commands (as armour above).  Percent: the byte is the factor x100, as
+    "C-Bonus, +20% Cav bonus damage" writes 120 — at most x2.55 a command, so
+    a bigger factor is several that multiply up to it."""
+    cls = int(eff["class"])
+    if eff["op"] == "add":
+        total = int(round(abs(v)))
+        chunks = [255] * (total // 255) + ([total % 255] if total % 255 else [])
+        cmd_type, ds = EC_ADD, [float(cls * 256 + n) * (1 if v > 0 else -1) for n in chunks]
+    else:
+        factor, chunks = 1 + v / 100, []
+        while factor > 2.55:
+            chunks.append(255)
+            factor /= 2.55
+        if round(factor * 100) > 100:
+            chunks.append(round(factor * 100))
+        cmd_type, ds = EC_MULTIPLY, [float(cls * 256 + n) for n in chunks]
+    return [EffectCommand(type=cmd_type, a=a, b=b, c=9, d=d) for d in ds for a, b in selectors]
 
 
 def _tech_ids(card: dict, resolve=None) -> list[int]:

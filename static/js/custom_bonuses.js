@@ -66,6 +66,10 @@ const _CB_COST    = new Set(["cost", "tech_cost"]);    // attrs with a resource 
 const _CB_SET_RESOURCES = ["food", "wood", "gold", "stone"];
 const _CB_ONE_RESOURCE  = new Set(["cost_set", "trickle"]);
 
+// Bonus damage names its armour class (custom_bonus.DAMAGE_CLASSES): "+4 bonus
+// damage vs Cavalry".  A percentage only raises it, as the game's own do.
+function _cbClassName(id) { return (_cbCatalog?.damage_classes || []).find(c => c.id === id)?.name || `class ${id}`; }
+
 function _cbAttr(id)  { return (_cbCatalog?.attrs || []).find(a => a.id === id); }
 function _cbGroup(id) { return (_cbCatalog?.groups || []).find(g => g.id === id); }
 function _cbJob(id)   { return (_cbCatalog?.jobs   || []).find(j => j.id === id); }
@@ -208,6 +212,8 @@ function _cbEffectText(e, target) {
   } else if (_CB_COST.has(e.attr)) {
     const res = e.resource || "all";
     text = `${signed(pct)} ${res === "all" ? "cost" : res + " cost"}`;
+  } else if (e.attr === "bonus_damage") {
+    text = `${signed(pct)} bonus damage vs ${_cbClassName(e.class)}`;
   } else if (_CB_FASTER[e.attr]) {
     text = `${_CB_FASTER[e.attr]} ${bare("%")} ${v > 0 ? "faster" : "slower"}`;
   } else if (e.attr === "work_rate" && target && _cbTargetKind(target) === "building") {
@@ -310,7 +316,7 @@ const _CB_ECO_GROUPS   = new Set(["villagers", "economic", "drop_off", "farms", 
 const _CB_COST_ATTRS   = new Set(["cost", "tech_cost", "free", "cost_set"]);
 const _CB_SPEED_ATTRS  = new Set(["speed", "attack_speed", "train_speed", "build_speed",
                                   "research_speed", "work_rate", "instant"]);
-const _CB_COMBAT_ATTRS = new Set(["hp", "melee_armor", "pierce_armor", "melee_attack", "pierce_attack",
+const _CB_COMBAT_ATTRS = new Set(["hp", "melee_armor", "pierce_armor", "melee_attack", "pierce_attack", "bonus_damage",
                                   "range", "los", "min_range", "no_min_range", "blast_radius", "accuracy", "regen"]);
 const _CB_DOCK = 45;
 
@@ -389,6 +395,7 @@ function _cbHeadline(e, target) {
   if (_CB_FASTER[e.attr]) return { heading: vals.map(x => `${_cbNum(Math.abs(x))}%`).join("/"),
                                    stat: `${_CB_FASTER[e.attr]} ${v > 0 ? "faster" : "slower"}` };
   if (e.attr === "cost_set") return { heading: _cbNum(v), stat: `${e.resource || "food"} cost` };
+  if (e.attr === "bonus_damage") return { heading: signed(e.op === "mul" ? "%" : ""), stat: `vs ${_cbClassName(e.class)}` };
   if (e.attr === "trickle") return { heading: `+${_cbNum(v)}`, stat: `${e.resource || "food"} per minute` };
   if (_CB_COST.has(e.attr)) {
     const res = e.resource || "all";
@@ -919,8 +926,11 @@ function _cbRenderEffects() {
       : _CB_COST.has(e.attr)
       ? `<select class="form-select form-select-sm cb-res">${_cbCatalog.cost_resources.map(r =>
           `<option value="${r}"${r === (e.resource || "all") ? " selected" : ""}>${r === "all" ? "all resources" : r}</option>`).join("")}</select>`
+      : e.attr === "bonus_damage"
+      ? `<select class="form-select form-select-sm cb-class" aria-label="Against">${(_cbCatalog.damage_classes || []).map(c =>
+          `<option value="${c.id}"${c.id === e.class ? " selected" : ""}>vs ${cbEsc(c.name)}</option>`).join("")}</select>`
       : "";
-    const numAttrs = a?.positive ? 'min="1" step="1"' : 'step="any"';
+    const numAttrs = a?.positive || (e.attr === "bonus_damage" && e.op === "mul") ? 'min="1" step="any"' : 'step="any"';
     // A growing card: one box per age, each the TOTAL from that age on; a
     // blank box keeps the amount before it (shown as its placeholder).
     const amount = stepped
@@ -938,7 +948,11 @@ function _cbRenderEffects() {
       ${resCtl}
       <button type="button" class="btn btn-sm btn-link text-danger cb-effect-remove" title="Remove effect"><i class="fa-solid fa-xmark"></i></button>
     </div>`;
-  }).join("") + (_cbWork.effects.some(e => e.attr === "cost_set")
+  }).join("") + (_cbWork.effects.some(e => e.attr === "bonus_damage")
+    ? `<div class="form-text mt-1">Bonus damage counts against a class the target carries in its armour. A flat minus can
+        take a unit below none at all: then it deals less damage to that class, as the Hand Cannoneer does against
+        Condottieri. A percentage only raises it, and does nothing for a unit with no bonus against that class.</div>`
+    : "") + (_cbWork.effects.some(e => e.attr === "cost_set")
     // The engine fills only a cost slot that already exists (civ_appender cost_slots).
     ? `<div class="form-text mt-1">From the start of the game, any cost works. From an age or a building, in a unique tech
         or as a team bonus, a unit can only take a resource it has a spare slot for. Most units cost two resources and
@@ -956,6 +970,8 @@ function _cbRenderEffects() {
       if (e.attr === "resources") e.resource = e.resource && e.resource !== "all" ? e.resource : "gold";
       else if (_CB_ONE_RESOURCE.has(e.attr)) e.resource = _CB_SET_RESOURCES.includes(e.resource) ? e.resource : (e.attr === "trickle" ? "gold" : "food");
       else if (!_CB_COST.has(e.attr)) delete e.resource;
+      if (e.attr === "bonus_damage") e.class = e.class ?? _cbCatalog.damage_classes?.[0]?.id;
+      else delete e.class;
       if (a.novalue) delete e.value;
       _cbRenderEffects();
     });
@@ -991,8 +1007,13 @@ function _cbRenderEffects() {
       });
     });
     if (stepped) _cbStepPlaceholders(row, e);
-    row.querySelector(".cb-op")?.addEventListener("change", ev => { e.op = ev.target.value; _cbRenderEffects(); });
+    row.querySelector(".cb-op")?.addEventListener("change", ev => {
+      e.op = ev.target.value;
+      if (e.attr === "bonus_damage" && e.op === "mul" && e.value < 0) e.value = null;   // a percentage only raises it
+      _cbRenderEffects();
+    });
     row.querySelector(".cb-res")?.addEventListener("change", ev => { e.resource = ev.target.value; _cbUpdatePreview(); });
+    row.querySelector(".cb-class")?.addEventListener("change", ev => { e.class = parseInt(ev.target.value, 10); _cbUpdatePreview(); });
     row.querySelector(".cb-effect-remove").addEventListener("click", () => {
       _cbWork.effects.splice(idx, 1);
       _cbRenderEffects();
@@ -1018,7 +1039,8 @@ function _cbNewEffect() {
   const a = attrs.find(x => !used.has(x.id)) || attrs[0];
   return { attr: a.id, op: a.id === "hp" ? "mul" : a.ops[0], value: null,
            ...(_cbWork.when?.steps && !a.novalue ? { steps: {} } : {}),
-           ...(a.id === "resources" || a.id === "trickle" ? { resource: "gold" } : a.id === "cost_set" ? { resource: "food" } : {}) };
+           ...(a.id === "resources" || a.id === "trickle" ? { resource: "gold" } : a.id === "cost_set" ? { resource: "food" } : {}),
+           ...(a.id === "bonus_damage" ? { class: _cbCatalog.damage_classes?.[0]?.id } : {}) };
 }
 
 // ── When: always / from an age / grows each age, and an optional building ──
@@ -1228,6 +1250,7 @@ async function _cbSave() {
       if (_CB_ONE_RESOURCE.has(e.attr)) out.resource = e.resource || "food";
       // Without this every one-time resources card saved as gold.
       if (e.attr === "resources") out.resource = e.resource || "gold";
+      if (e.attr === "bonus_damage") out.class = e.class;
       return out;
     }),
     text: _cbPlayerText(),

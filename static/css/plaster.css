@@ -2043,7 +2043,7 @@ img.card-main-image {
 .cb-effect { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .cb-effect .cb-attr  { flex: 2 1 11rem; width: auto; }
 .cb-effect .cb-value { flex: 0 1 6rem; width: 6rem; }
-.cb-effect .cb-op, .cb-effect .cb-res { flex: 0 1 8rem; width: auto; }
+.cb-effect .cb-op, .cb-effect .cb-res, .cb-effect .cb-class { flex: 0 1 8rem; width: auto; }
 .cb-op-fixed { min-width: 4rem; }
 .cb-preview { padding: .4rem .6rem; background: var(--parch-mid); border-radius: var(--r-sm); color: var(--ink-mid); }
 
@@ -2135,7 +2135,7 @@ img.card-main-image {
 .cb-step .bc-age-badge { flex: none; font-size: .7rem; font-weight: 700; }
 .cb-step input { width: 3.6rem; }
 .cb-effect--steps .cb-attr { flex: 1 1 8rem; }
-.cb-effect--steps .cb-op, .cb-effect--steps .cb-res { flex: 0 1 6rem; }
+.cb-effect--steps .cb-op, .cb-effect--steps .cb-res, .cb-effect--steps .cb-class { flex: 0 1 6rem; }
 .cb-step input::placeholder { color: var(--ash); opacity: .7; }
 /* A gated card's "From Castle Age · Once a Mill is built". */
 .cb-card-when {
