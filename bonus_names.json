@@ -47,7 +47,7 @@
   "45": "+5 Monk hit points for each Monastery technology",
   "46": "Start with +1 villager, but -50 food",
   "47": "Cavalry Archers cost -10% Castle, -20% Imperial Age",
-  "48": "Ranged Soldiers and Infantry cost -50% wood",
+  "48": "Ranged Soldiers and Infantry cost -50% wood; Warships cost -20% wood",
   "49": "Archer armor upgrades free",
   "50": "Can train Turtle Ships in docks",
   "51": "Can recruit Longships from docks",
@@ -263,7 +263,7 @@
   "299": "Can recruit Shrivamsha Riders",
   "300": "Can recruit Camel Scouts in Feudal Age",
   "301": "Gain 20 gold for each technology researched",
-  "302": "Ships receive additional armor from Blacksmith upgrades",
+  "302": "Galley-line and Dromons +1 melee/+1 pierce armor",
   "303": "Elephant units +1/+1P armor",
   "304": "Monk units +3/+3P armor",
   "305": "Infantry receives double effect from Blacksmith armor upgrades",
@@ -273,7 +273,7 @@
   "309": "Can upgrade Elite Battle Elephants to Royal Battle Elephants",
   "310": "Can upgrade Elite Steppe Lancers to Royal Lancers",
   "311": "Cavalry Archers +2 attack vs. Archers (except skirmishers)",
-  "312": "Wood and mining upgrades are 40% more effective, economic drop-off buildings cost -25%",
+  "312": "Mule Carts cost -25%; wood and mining upgrades are 40% more effective",
   "313": "First religious building receives a free relic",
   "314": "Savar replaces Paladin",
   "315": "Galley-line and Dromons fire an additional projectile",
@@ -433,5 +433,8 @@
   "457": "Palintonon replaces the Trebuchet (Chronicles), +15% attack",
   "458": "All buildings except Town Centers can be built on any elevation",
   "459": "Castles and towers make nearby Lumberjacks and Miners work 15% faster",
-  "460": "Wooden Castles: Castles cost 300 stone + 500 wood and build in 175 s, with 3000 HP"
+  "460": "Wooden Castles: Castles cost 300 stone + 500 wood and build in 175 s, with 3000 HP",
+  "461": "Trebuchets +35% accuracy against units and small targets",
+  "462": "Bloodlines and Scout Cavalry-line upgrades cost -50% food",
+  "463": "Bombard Tower and Elite Cannon Galleon upgrades cost -50%"
 }

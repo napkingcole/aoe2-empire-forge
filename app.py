@@ -2815,6 +2815,8 @@ _CARD_SOURCE_EXTRA: dict[str, dict[int, tuple[str, ...]]] = {"civ": {
     287: ("Persians",), 290: ("Dravidians",), 339: ("Wu",), 352: ("Jurchens",),
     356: ("Khitans",), 404: ("Bohemians",), 424: ("Persians",), 425: ("Persians",),
     427: ("Aztecs",), 52: ("Italians",), 81: ("Khmer",),
+    116: ("Turks",), 118: ("Koreans",),
+    461: ("Huns",), 462: ("Poles",), 463: ("Turks",),        # added from this pass
 }, "team": {}}
 
 
