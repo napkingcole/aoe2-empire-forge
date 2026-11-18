@@ -2368,16 +2368,25 @@ async function loadCardSources() {
   return _cardSources;
 }
 
-// kind: "civ", "team", "castle" or "imperial".  {slot, name, emblem} or null.
+// kind: "civ", "team", "castle" or "imperial".  A card can come from more
+// than one civ (Caravanserai: the Hindustanis and the Persians).
+// {slot: "2 31" (data-src-civ), civs: [{name, emblem}], name: "Hindustanis and Persians"} or null.
 function _cardSource(kind, id) {
-  const slot = _cardSources?.[kind]?.[String(id)];
-  const civ = slot == null ? null : _cardSources.civs[String(slot)];
-  return civ ? { slot: String(slot), ...civ } : null;
+  const civs = (_cardSources?.[kind]?.[String(id)] || [])
+    .map(s => ({ slot: String(s), ..._cardSources.civs[String(s)] })).filter(c => c.name);
+  if (!civs.length) return null;
+  const names = civs.map(c => c.name);
+  return { slot: civs.map(c => c.slot).join(' '), civs,
+           name: names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0] };
+}
+
+function _srcMatches(slots, civs) {
+  return !!slots && slots.split(' ').some(s => civs.has(s));
 }
 
 function _civBadge(src) {
   return src
-    ? `<img class="civ-badge" src="/api/civ-emblem/${src.emblem}" alt="${_esc(src.name)}" loading="lazy" onerror="this.remove()">`
+    ? `<span class="civ-badge">${src.civs.map(c => `<img src="/api/civ-emblem/${c.emblem}" alt="${_esc(c.name)}" loading="lazy" onerror="this.remove()">`).join('')}</span>`
     : '';
 }
 
@@ -2386,7 +2395,7 @@ function _civBadge(src) {
 // inline there, since the corner badges sit out those views.
 function _cardSourceLine(src) {
   return src
-    ? `<span class="card-fulltext-src"><img src="/api/civ-emblem/${src.emblem}" alt="" loading="lazy" onerror="this.remove()">${_esc(src.name)}</span>`
+    ? `<span class="card-fulltext-src">${src.civs.map(c => `<img src="/api/civ-emblem/${c.emblem}" alt="" loading="lazy" onerror="this.remove()">`).join('')}${_esc(src.name)}</span>`
     : '';
 }
 
@@ -2501,7 +2510,7 @@ function _civFilterPill(kinds, civs, filterFn) {
   wrap.append(pill, menu);
 
   const build = () => {
-    const slots = new Set(kinds.flatMap(k => Object.values(_cardSources?.[k] || {}).map(String)));
+    const slots = new Set(kinds.flatMap(k => Object.values(_cardSources?.[k] || {}).flat().map(String)));
     const list = [...slots].map(s => ({ slot: s, ...(_cardSources.civs[s] || {}) }))
       .filter(c => c.name).sort((a, b) => a.name.localeCompare(b.name));
     menu.innerHTML = `<input type="search" class="form-control form-control-sm civ-filter-search" placeholder="Find a civilization…" aria-label="Find a civilization">
@@ -2740,7 +2749,7 @@ function _cardVisible(el, id, catalog, q, catFilter) {
   const textMatch = !q || (c && c.label.toLowerCase().includes(q));
   const catMatch  = catFilter.size === 0 || catFilter.has(el.dataset.cat);
   const civs      = _civFilterFor(catFilter);
-  return textMatch && catMatch && (civs.size === 0 || civs.has(el.dataset.srcCiv));
+  return textMatch && catMatch && (civs.size === 0 || _srcMatches(el.dataset.srcCiv, civs));
 }
 
 function _filterBonusGrid(q) {
@@ -3481,7 +3490,7 @@ function renderUTGrid(step) {
       if (q && !t.name.toLowerCase().includes(q) && !t.desc.toLowerCase().includes(q)) continue;
       if (catFilter.size && !catFilter.has(cat)) continue;
       const civs = _civFilterFor(catFilter);
-      if (civs.size && !civs.has(_cardSource(tier, t.id)?.slot)) continue;
+      if (civs.size && !_srcMatches(_cardSource(tier, t.id)?.slot, civs)) continue;
       availHtml += cardHtml(t, tier, null);
       shown++;
     }

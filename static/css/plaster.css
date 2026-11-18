@@ -2364,11 +2364,15 @@ details.card.cb-fold:not([open]) > summary.card-header { border-bottom: 0; }
   position: absolute;
   left: 4px;
   bottom: 4px;
+  display: flex;
+  gap: 2px;
+  z-index: 13;
+  pointer-events: none;
+}
+.bonus-card .civ-badge img {
   width: 25px;
   height: 25px;
   object-fit: contain;
-  z-index: 13;
-  pointer-events: none;
   filter: drop-shadow(1px 1px 1px rgb(0 0 0 / 0.6));
 }
 .card-fulltext { display: none; }
@@ -2443,11 +2447,11 @@ details.card.cb-fold:not([open]) > summary.card-header { border-bottom: 0; }
   border-radius: 8px;
   overflow: hidden;
   box-shadow: none;
-  background: var(--parch-light);
+  background: #eaeada;
 }
 :root[data-cards] .bonus-card.selected {
   border-color: var(--gold);
-  background: color-mix(in srgb, var(--gold-light) 16%, var(--parch-light));
+  background: var(--gold-pale);
 }
 :root[data-cards] .bonus-card :is(.card-shadow, .top-corners, .bottom-corners, .chronicles-badge, .civ-badge) {
   display: none;
@@ -2522,4 +2526,3 @@ details.card.cb-fold:not([open]) > summary.card-header { border-bottom: 0; }
 :root[data-cards="text"] .bonus-card .card-body { grid-template-columns: 1fr; }
 :root[data-cards="condensed"] .bonus-card .card-body:not(:has(> .card-icon, > .card-icon-row)) > .card-fulltext,
 :root[data-cards="text"] .bonus-card .card-body > .card-fulltext { grid-column: 1; }
-:root[data-cards="text"] .card-fulltext-src img { display: none; }

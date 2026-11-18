@@ -2796,6 +2796,28 @@ def _civ_emblem_path(dat_path: str | None, key: str) -> Path | None:
     return disk if disk.exists() else None
 
 
+# Bonuses the techs can't place: built from an effect list or a handler (no
+# civ-gated tech), or one the DAT gives to two civs (281: the Poles' and a
+# Gaia tech), or a bonus a second civ has since been given (Caravanserai).
+# Checked bullet by bullet against every civ's in-game help text (2026-11-18,
+# the aoe2techtree help strings); a card whose numbers differ from today's is
+# listed when it is that civ's bonus at an older value (128: Aztecs 11%).
+_CARD_SOURCE_EXTRA: dict[str, dict[int, tuple[str, ...]]] = {"civ": {
+    105: ("Burgundians",), 103: ("Burgundians",), 138: ("Burgundians",),
+    110: ("Franks",), 111: ("Magyars",), 112: ("Slavs",), 113: ("Byzantines",),
+    114: ("Teutons",), 115: ("Turks",), 117: ("Vikings",), 119: ("Vietnamese",),
+    120: ("Slavs",), 121: ("Italians",), 122: ("Italians",), 123: ("Italians",),
+    124: ("Byzantines",), 125: ("Spanish",), 126: ("Spanish",), 127: ("Spanish",),
+    128: ("Aztecs",), 129: ("Aztecs",), 131: ("Huns",), 132: ("Mayans",), 133: ("Mayans",),
+    135: ("Koreans",), 136: ("Vietnamese",), 137: ("Bulgarians",), 149: ("Malay",),
+    202: ("Bohemians",), 212: ("Hindustanis",), 219: ("Slavs",), 221: ("Armenians",),
+    227: ("Spanish",), 247: ("Persians",), 281: ("Poles",), 283: ("Bohemians",),
+    287: ("Persians",), 290: ("Dravidians",), 339: ("Wu",), 352: ("Jurchens",),
+    356: ("Khitans",), 404: ("Bohemians",), 424: ("Persians",), 425: ("Persians",),
+    427: ("Aztecs",), 52: ("Italians",), 81: ("Khmer",),
+}, "team": {}}
+
+
 def _card_sources(dat_path: str) -> dict:
     if dat_path in _CARD_SOURCES_CACHE:
         return _CARD_SOURCES_CACHE[dat_path]
@@ -2808,9 +2830,9 @@ def _card_sources(dat_path: str) -> dict:
         if i > 0 and _civ_emblem_path(dat_path, key):
             civs[i] = {"name": name, "emblem": key}
 
-    def one(slots) -> int | None:
-        """The one civ, or None for none, several, or one without an emblem."""
-        return next(iter(slots)) if len(slots) == 1 and next(iter(slots)) in civs else None
+    def one(slots) -> list[int] | None:
+        """[the one civ], or None for none, several, or one without an emblem."""
+        return [next(iter(slots))] if len(slots) == 1 and next(iter(slots)) in civs else None
 
     def tech_civ(tid: int) -> int:
         return dat.techs[tid].civ if 0 <= tid < len(dat.techs) else -1
@@ -2832,13 +2854,20 @@ def _card_sources(dat_path: str) -> dict:
         for k, tid in table.items():
             if (s := one({tech_civ(tid)} - {-1})) is not None:
                 out[tier][str(k)] = s
+    slot_of = {v["name"]: i for i, v in civs.items()}
+    for kind, table in _CARD_SOURCE_EXTRA.items():
+        for k, names in table.items():
+            have = out[kind].setdefault(str(k), [])
+            have += [slot_of[n] for n in names if n in slot_of and slot_of[n] not in have]
+            if not have:
+                del out[kind][str(k)]
     _CARD_SOURCES_CACHE[dat_path] = out
     return out
 
 
 @app.route("/api/builder/card-sources")
 def api_builder_card_sources():
-    """{civs: {slot: {name, emblem}}, civ|team|castle|imperial: {card id: slot}}
+    """{civs: {slot: {name, emblem}}, civ|team|castle|imperial: {card id: [slots]}}
     — the civ each vanilla card comes from (_card_sources); empty without a game."""
     dat_path = _resolve_dat_path(request.args.get("dat_path"))
     if not dat_path or not Path(dat_path).exists():
