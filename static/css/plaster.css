@@ -1970,8 +1970,8 @@ img.card-main-image {
    overlaps the header's lower edge like a stamped seal: the header stays as
    tall as a vanilla card's.  `right` keeps it clear of the corner ornament. */
 .bonus-card .card-header .cb-card-badge {
-  position: absolute; top: 11px; right: 5px; z-index: 13;
-  width: 40px; height: 40px; object-fit: contain;
+  position: absolute; top: 1px; right: 5px; z-index: 13;
+  width: 30px; height: 30px; object-fit: contain;
   filter: drop-shadow(1px 2px 2px rgb(0 0 0 / 0.6));
 }
 .cb-card .card-header > div { padding-right: 40px; }   /* a long category clears the seal */
