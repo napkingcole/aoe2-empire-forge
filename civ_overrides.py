@@ -363,6 +363,17 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict,
               "it — the unit keeps its normal attack. (The previous behaviour "
               "was worse: it reduced the unit to 1 damage.)")
 
+    # Attack Ignores Armor, as the Leitis: Combat Ability (attribute 63, the
+    # unit's break_off_combat) flag 1, "ignore melee and pierce armours of the
+    # targeted unit".  Wootz Steel ADDs 1 to it for infantry and cavalry; a bit
+    # OR here, so a unit that has the flag already keeps one.  The retired
+    # "ignore_armor" above is a different key on purpose: it was ticked under
+    # the broken version, and must not switch this on unasked.
+    if flags.get("ignores_armor"):
+        for u, _ in tiers:
+            if u and u.type_50:
+                u.type_50.break_off_combat = int(u.type_50.break_off_combat or 0) | 1
+
     if flags.get("bonus_dmg_resist") is not None:
         pct = float(flags["bonus_dmg_resist"])
         resistance = max(0.0, min(1.0, 1.0 - pct / 100.0))
@@ -385,6 +396,25 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict,
                 u.creatable.charge_event  = 1
                 u.creatable.charge_type   = 1
 
+    # Defensive Charge (#125), as the game's own: type 5 "ignore melee attack"
+    # is the Iron Pagoda (1 stored, back every 40 s), type 4 "agility" the
+    # Shrivamsha Rider's projectile dodge (5 stored, one back every 4 s).
+    # Charging is passive (event 0).  A unit has one charge, so this replaces
+    # a Charge Attack; the wizard lets only one be ticked.
+    kind = flags.get("defense_charge")
+    if kind in _DEFENSE_CHARGES:
+        ctype, stored, secs = _DEFENSE_CHARGES[kind]
+        secs = float(flags.get("defense_recharge") or secs)
+        if flags.get("charge_pool") is not None:
+            print("       WARNING: the unique unit has both Charge Attack and Defensive Charge; "
+                  "a unit has one charge, so Defensive Charge was kept.")
+        for u, _ in tiers:
+            if u and u.creatable:
+                u.creatable.max_charge    = float(stored)
+                u.creatable.recharge_rate = 1.0 / max(secs, 0.1)
+                u.creatable.charge_event  = 0
+                u.creatable.charge_type   = ctype
+
     if flags.get("regen_hp"):
         regen_amount   = float(flags.get("regen_amount")   or 1)
         regen_interval = float(flags.get("regen_interval") or 5)
@@ -395,6 +425,10 @@ def _apply_uu_overrides(dat, slot: int, uu_info: dict | None, draft: dict,
                 tt_eff.effect_commands.append(
                     EffectCommand(type=0, a=uid, b=-1, c=109, d=regen_per_min)
                 )
+
+
+# Defensive Charge: kind -> (charge type, charges stored, seconds per charge).
+_DEFENSE_CHARGES = {"melee": (5, 1, 40.0), "ranged": (4, 5, 4.0)}
 
 
 # ── Hero unit ─────────────────────────────────────────────────────────────────

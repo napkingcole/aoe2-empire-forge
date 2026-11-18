@@ -665,21 +665,18 @@
             </div>
           </div>
 
-          {# Attack Ignores Armor — REMOVED 2026-09-18, kept hidden so a saved civ
-             that still carries the flag loads without error.  AoE2 has no
-             data-level way to grant it: the old implementation pointed the
-             attack at armour class 50, which no unit in the game has, and a
-             missing armour class resolves to the base armour value (~1000) — so
-             the unit dealt the engine's minimum of 1 damage to everything.
-             The Leitis's behaviour is hardcoded in the engine by unit id; see
-             BUGFIXES.md 2026-09-18 (b) for the two rejected alternatives. #}
-          <div class="col-12 d-none" id="ua-row-ignore-armor">
+          {# Attack Ignores Armor — back 2026-11-18 as "ignores_armor".  The
+             first version (key "ignore_armor", retired 2026-09-18) aimed the
+             attack at armour class 50 and left the unit hitting for 1.  The
+             real mechanism is Combat Ability (attribute 63) flag 1, which the
+             Leitis ships with and Wootz Steel adds to infantry and cavalry. #}
+          <div class="col-12" id="ua-row-ignore-armor">
             <div class="form-check">
-              <input class="form-check-input ua-check" type="checkbox" id="ua-ignore-armor" disabled>
-              <label class="form-check-label small fw-semibold" for="ua-ignore-armor">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-ignores-armor">
+              <label class="form-check-label small fw-semibold" for="ua-ignores-armor">
                 Attack Ignores Armor
               </label>
-              <div class="form-text mt-0">Not supported by the game's data files — this option has been removed.</div>
+              <div class="form-text mt-0">Its attacks ignore the target's melee and pierce armor, as the Leitis and the Dravidians' Wootz Steel.</div>
             </div>
           </div>
 
@@ -735,6 +732,37 @@
                 </div>
               </div>
               <div class="form-text mt-1"><em>Bonus Dmg</em>: flat damage added at full charge. <em>Recharge/s</em>: energy gained per second. (Comitatenses default: 5 dmg, 0.25/s)</div>
+            </div>
+          </div>
+
+          {# Defensive Charge (#125) — the Iron Pagoda's and Shrivamsha Rider's
+             charge.  A unit has one charge, so it and Charge Attack exclude
+             each other. #}
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input ua-check" type="checkbox" id="ua-defense">
+              <label class="form-check-label small fw-semibold" for="ua-defense">
+                Defensive Charge
+              </label>
+              <div class="form-text mt-0">Shrugs off an attack, then recharges (e.g. the Iron Pagoda, Shrivamsha Rider). A unit has one charge, so this replaces Charge Attack.</div>
+            </div>
+            <div class="ua-defense-inputs d-none ms-4 mt-2">
+              <div class="d-flex gap-3 align-items-end flex-wrap">
+                <div>
+                  <label class="form-label mb-1" for="ua-defense-kind" style="font-size:.72rem; color:var(--accent-3);">Negates</label>
+                  <select id="ua-defense-kind" class="form-select form-select-sm">
+                    <option value="melee">One melee hit</option>
+                    <option value="ranged">Projectiles (dodges)</option>
+                  </select>
+                </div>
+                <div style="width:110px;">
+                  <label class="form-label mb-1" for="ua-defense-secs" style="font-size:.72rem; color:var(--accent-3);">Recharge (s)</label>
+                  <input type="text" id="ua-defense-secs" class="form-control form-control-sm"
+                         pattern="[0-9]*\.?[0-9]*" inputmode="decimal" placeholder="40" autocomplete="off">
+                </div>
+              </div>
+              <div class="form-text mt-1"><em>One melee hit</em>: the next melee attack does no damage, as the Iron Pagoda's (every 40 s; 30 s Elite).
+                <em>Projectiles</em>: dodges one, storing up to 5, as the Shrivamsha Rider (one back every 4 s).</div>
             </div>
           </div>
 

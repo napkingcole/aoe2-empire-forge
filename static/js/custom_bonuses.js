@@ -68,6 +68,10 @@ const _CB_ONE_RESOURCE  = new Set(["cost_set", "trickle"]);
 
 // Bonus damage names its armour class (custom_bonus.DAMAGE_CLASSES): "+4 bonus
 // damage vs Cavalry".  A percentage only raises it, as the game's own do.
+// Auras (#103): what they give, who they reach, how far (custom_bonus.AURA_STATS).
+function _cbAuraStat(id) { return (_cbCatalog?.aura_stats || []).find(s => s.id === id); }
+function _cbAuraAffectsLabel(id) { return (_cbCatalog?.aura_affects || []).find(a => a.id === id)?.label || id; }
+function _cbAuraRange() { return _cbCatalog?.aura_range || { min: 1, max: 20, default: 8 }; }
 function _cbClassName(id) { return (_cbCatalog?.damage_classes || []).find(c => c.id === id)?.name || `class ${id}`; }
 
 function _cbAttr(id)  { return (_cbCatalog?.attrs || []).find(a => a.id === id); }
@@ -99,7 +103,7 @@ function cbWhen(card) {
   if (t?.type === "civ" && t.age && !w.age && !w.steps) w.age = t.age;
   return w;
 }
-function _cbGated(card) { const w = cbWhen(card); return !!(w.age || w.steps || w.building); }
+function _cbGated(card) { const w = cbWhen(card); return !!(w.age || w.steps || w.building || w.relics); }
 
 // Ages a growing card steps on, in order; "0" is the start (Dark Age).
 const _CB_STEP_ORDER = ["0", "101", "102", "103"];
@@ -122,6 +126,7 @@ function _cbStepsSuffix(e) {
 // Mirrors custom_bonus.gate_text: " from the Castle Age", " once a Mill is built".
 function _cbGateText(card) {
   const w = cbWhen(card);
+  if (w.relics) return ` per relic in a Monastery (up to ${w.relics})`;
   const parts = [];
   if (w.age && cbTargets(card)[0]?.type !== "civ") parts.push(`from the ${_cbAgeName(w.age)} Age`);
   if (w.building_name) parts.push(`once ${/^[aeiou]/i.test(w.building_name) ? "an" : "a"} ${w.building_name} is built`);
@@ -205,7 +210,10 @@ function _cbEffectText(e, target) {
   const signed = u => vals.map(x => `${x > 0 ? "+" : "-"}${_cbNum(Math.abs(x))}${u}`).join("/");
   const bare   = u => vals.map(x => `${_cbNum(Math.abs(x))}${u}`).join("/");
   let text;
-  if (e.attr === "cost_set") {
+  if (e.attr === "aura") {
+    const st = _cbAuraStat(e.stat);
+    return `gives nearby ${_cbAuraAffectsLabel(e.affects)} +${_cbNum(v)}${st?.pct ? "%" : ""} ${st?.label || ""} (range ${e.range ?? _cbAuraRange().default})`;
+  } else if (e.attr === "cost_set") {
     text = `costs ${_cbNum(v)} ${e.resource || "food"}`;
   } else if (e.attr === "trickle") {
     text = `generate ${_cbNum(v)} ${e.resource || "food"} per minute`;
@@ -317,7 +325,8 @@ const _CB_COST_ATTRS   = new Set(["cost", "tech_cost", "free", "cost_set"]);
 const _CB_SPEED_ATTRS  = new Set(["speed", "attack_speed", "train_speed", "build_speed",
                                   "research_speed", "work_rate", "instant"]);
 const _CB_COMBAT_ATTRS = new Set(["hp", "melee_armor", "pierce_armor", "melee_attack", "pierce_attack", "bonus_damage",
-                                  "range", "los", "min_range", "no_min_range", "blast_radius", "accuracy", "regen"]);
+                                  "range", "los", "min_range", "no_min_range", "blast_radius", "accuracy", "regen",
+                                  "projectiles", "reach", "aura"]);
 const _CB_DOCK = 45;
 
 function _cbUnitEntry(id) { return (_cbCatalog?.units || []).find(u => u.id === id); }
@@ -353,7 +362,7 @@ function cbCardCategory(card) {
   if (all(_CB_COST_ATTRS)) return "cost";
   if (ts.length && ts.every(_cbIsEconomy)) return "economy";
   if (all(_CB_SPEED_ATTRS)) return "speed";
-  if (fx.some(e => e.attr === "trickle")) return "economy";
+  if (fx.some(e => e.attr === "trickle" || (e.attr === "aura" && e.stat === "work_rate"))) return "economy";
   if (fx.some(e => _CB_COMBAT_ATTRS.has(e.attr))) return "combat";
   if (ts.length && ts.every(t => _cbTargetKind(t) === "building")) return "building";
   return "general";
@@ -397,6 +406,10 @@ function _cbHeadline(e, target) {
   if (e.attr === "cost_set") return { heading: _cbNum(v), stat: `${e.resource || "food"} cost` };
   if (e.attr === "bonus_damage") return { heading: signed(e.op === "mul" ? "%" : ""), stat: `vs ${_cbClassName(e.class)}` };
   if (e.attr === "trickle") return { heading: `+${_cbNum(v)}`, stat: `${e.resource || "food"} per minute` };
+  if (e.attr === "aura") {
+    const st = _cbAuraStat(e.stat);
+    return { heading: `+${_cbNum(v)}${st?.pct ? "%" : ""}`, stat: `${st?.label || ""} aura` };
+  }
   if (_CB_COST.has(e.attr)) {
     const res = e.resource || "all";
     const pct = e.attr === "cost" || e.op === "mul" ? "%" : "";
@@ -415,6 +428,7 @@ function _cbHeadline(e, target) {
 // or in each effect's own line (several), so they never need it.
 function _cbWhenLine(card) {
   const w = cbWhen(card);
+  if (w.relics) return `Per relic · up to ${w.relics}`;
   const parts = [];
   if (w.age) parts.push(`From ${_cbAgeName(w.age)} Age`);
   if (w.building_name) parts.push(`Once ${/^[aeiou]/i.test(w.building_name) ? "an" : "a"} ${w.building_name} is built`);
@@ -857,7 +871,7 @@ function _cbTargetsChanged() {
   const ok = new Set(_cbAttrsForAll(_cbWork.targets).map(a => a.id));
   _cbWork.effects = _cbWork.effects.filter(e => ok.has(e.attr));
   // Civilization cards don't grow each age (custom_bonus._norm_when).
-  if (_cbWork.targets[0]?.type === "civ" && _cbWork.when?.steps) _cbSetWhenMode("always");
+  if (_cbWork.targets[0]?.type === "civ" && (_cbWork.when?.steps || _cbWork.when?.relics)) _cbSetWhenMode("always");
   if (!_cbWork.effects.length && _cbWork.targets.length) _cbWork.effects.push(_cbNewEffect());
   _cbError("");
   _cbRenderPicker();
@@ -888,7 +902,9 @@ function _cbRenderEffects() {
   // never swaps that effect for another one silently.
   const stepped = !!_cbWork.when?.steps;
   // A replaced cost doesn't grow each age (the server drops it from such a card).
-  const offered = _cbAttrsForAll(_cbWork.targets).filter(a => !(stepped && _CB_ONE_RESOURCE.has(a.id)));
+  // Nor does an aura come per relic: it is switched on, not stacked.
+  const offered = _cbAttrsForAll(_cbWork.targets).filter(a => !(stepped && _CB_ONE_RESOURCE.has(a.id))
+                                                            && !(_cbWork.when?.relics && a.id === "aura"));
   const kept = _cbWork.effects.map(e => e.attr)
     .filter(id => !offered.some(a => a.id === id)).map(_cbAttr).filter(Boolean);
   const attrs = [...offered, ...kept];
@@ -906,6 +922,24 @@ function _cbRenderEffects() {
     }).join("");
     const unitLabel = op => e.attr === "trickle" ? "per minute"
                           : op === "set" ? "" : op === "add" ? "flat" : (_CB_FASTER[e.attr] ? "% faster" : "%");
+    if (e.attr === "aura") {
+      // An aura: amount, the stat, who it reaches, how far.  It doesn't grow
+      // each age — on a growing card it comes with the first step.
+      const st = _cbAuraStat(e.stat);
+      const rg = _cbAuraRange();
+      return `<div class="cb-effect cb-effect--aura" data-idx="${i}">
+        <select class="form-select form-select-sm cb-attr">${attrOpts}</select>
+        <input type="number" min="1" max="${st?.max ?? 100}" step="1" class="form-control form-control-sm cb-value" value="${e.value ?? ""}" placeholder="e.g. 15" aria-label="Amount">
+        <select class="form-select form-select-sm cb-aura-stat" aria-label="Gives">${(_cbCatalog.aura_stats || []).map(s =>
+          `<option value="${s.id}"${s.id === e.stat ? " selected" : ""}>${s.pct ? "% " : ""}${cbEsc(s.label)}</option>`).join("")}</select>
+        <select class="form-select form-select-sm cb-aura-affects" aria-label="To">${(_cbCatalog.aura_affects || []).map(o =>
+          `<option value="${o.id}"${o.id === e.affects ? " selected" : ""}>to ${cbEsc(o.label)}</option>`).join("")}</select>
+        <label class="cb-aura-range small text-muted mb-0">range
+          <input type="number" min="${rg.min}" max="${rg.max}" step="1" class="form-control form-control-sm cb-aura-range-val"
+                 value="${e.range ?? rg.default}" aria-label="Range in tiles"></label>
+        <button type="button" class="btn btn-sm btn-link text-danger cb-effect-remove" title="Remove effect"><i class="fa-solid fa-xmark"></i></button>
+      </div>`;
+    }
     if (a?.novalue) {
       // Free / instant take no amount; on a growing card they come with the first step.
       return `<div class="cb-effect" data-idx="${i}">
@@ -953,6 +987,16 @@ function _cbRenderEffects() {
     ? `<div class="form-text mt-1">Bonus damage counts against a class the target carries in its armour. A flat minus can
         take a unit below none at all: then it deals less damage to that class, as the Hand Cannoneer does against
         Condottieri. A percentage only raises it, and does nothing for a unit with no bonus against that class.</div>`
+    : "") + (_cbWork.effects.some(e => e.attr === "aura")
+    ? `<div class="form-text mt-1">An aura works while your units stand within range of what carries it, as the
+        Caravanserai speeds up nearby Trade Carts and the Georgian Fortified Church nearby Villagers. Your own units only.
+        It can wait for an age or a building, or go in a unique tech, but can't be a team bonus or grow per relic.</div>`
+    : "") + (_cbWork.effects.some(e => e.attr === "reach")
+    ? `<div class="form-text mt-1">Reach is how far a melee unit strikes from, as a Kamayuk's spear (1) or a Hoplite's
+        (0.5). It is not a ranged attack: the unit still fights hand to hand. Only melee units take it.</div>`
+    : "") + (_cbWork.effects.some(e => e.attr === "projectiles")
+    ? `<div class="form-text mt-1">Extra projectiles go to units that already shoot, as Bolt Magazine and Yasama do. A
+        melee unit in the same card, such as a melee unique unit, is left as it is.</div>`
     : "") + (_cbWork.effects.some(e => e.attr === "cost_set")
     // The engine fills only a cost slot that already exists (civ_appender cost_slots).
     ? `<div class="form-text mt-1">From the start of the game, any cost works. From an age or a building, in a unique tech
@@ -973,6 +1017,8 @@ function _cbRenderEffects() {
       else if (!_CB_COST.has(e.attr)) delete e.resource;
       if (e.attr === "bonus_damage") e.class = e.class ?? _cbCatalog.damage_classes?.[0]?.id;
       else delete e.class;
+      if (e.attr === "aura") Object.assign(e, _cbAuraDefaults(e));
+      else { delete e.stat; delete e.affects; delete e.range; }
       if (a.novalue) delete e.value;
       _cbRenderEffects();
     });
@@ -1015,6 +1061,13 @@ function _cbRenderEffects() {
     });
     row.querySelector(".cb-res")?.addEventListener("change", ev => { e.resource = ev.target.value; _cbUpdatePreview(); });
     row.querySelector(".cb-class")?.addEventListener("change", ev => { e.class = parseInt(ev.target.value, 10); _cbUpdatePreview(); });
+    row.querySelector(".cb-aura-stat")?.addEventListener("change", ev => { e.stat = ev.target.value; _cbRenderEffects(); });
+    row.querySelector(".cb-aura-affects")?.addEventListener("change", ev => { e.affects = ev.target.value; _cbUpdatePreview(); });
+    row.querySelector(".cb-aura-range-val")?.addEventListener("input", ev => {
+      const n = parseInt(ev.target.value, 10);
+      e.range = isNaN(n) ? null : n;
+      _cbUpdatePreview();
+    });
     row.querySelector(".cb-effect-remove").addEventListener("click", () => {
       _cbWork.effects.splice(idx, 1);
       _cbRenderEffects();
@@ -1041,7 +1094,14 @@ function _cbNewEffect() {
   return { attr: a.id, op: a.id === "hp" ? "mul" : a.ops[0], value: null,
            ...(_cbWork.when?.steps && !a.novalue ? { steps: {} } : {}),
            ...(a.id === "resources" || a.id === "trickle" ? { resource: "gold" } : a.id === "cost_set" ? { resource: "food" } : {}),
-           ...(a.id === "bonus_damage" ? { class: _cbCatalog.damage_classes?.[0]?.id } : {}) };
+           ...(a.id === "bonus_damage" ? { class: _cbCatalog.damage_classes?.[0]?.id } : {}),
+           ...(a.id === "aura" ? _cbAuraDefaults({}) : {}) };
+}
+
+// A new aura: villagers work faster nearby, the Fortified Church's own.
+function _cbAuraDefaults(e) {
+  return { stat: e.stat || "work_rate", affects: e.affects || "villagers",
+           range: e.range ?? _cbAuraRange().default };
 }
 
 // ── When: always / from an age / grows each age, and an optional building ──
@@ -1051,14 +1111,18 @@ function _cbRenderWhen() {
   const box = document.getElementById("cb-when");
   const w = _cbWork.when || (_cbWork.when = {});
   const civ = _cbWork.targets[0]?.type === "civ";
-  const mode = w.steps ? "steps" : w.age ? "age" : "always";
+  const mode = _cbWhenMode(w);
   const shields = ["ii", "iii", "iv"];
   const modes = [
     ["always", civ ? "From the start" : "Always", "fa-infinity", ""],
     ["age", "From an age", "fa-hourglass-start", ""],
     ["steps", "Grows each age", "fa-stairs",
      civ ? "Civilization bonuses are one-time grants or limits — pick an age instead." : ""],
+    ["relics", "Per relic", "fa-gem",
+     civ ? "Civilization bonuses are one-time grants or limits — pick an age instead."
+         : _cbWork.effects.some(e => e.attr === "aura") ? "An aura is switched on, not stacked — it can't grow per relic." : ""],
   ];
+  const relicMax = _cbCatalog.relic_max || 10;
   box.innerHTML = `
     <div class="cb-when-row">
       <div class="cb-tabs cb-tabs--sm" role="radiogroup" aria-label="When">${modes.map(([id, label, icon, off]) =>
@@ -1067,14 +1131,19 @@ function _cbRenderWhen() {
       ${mode === "age" ? `<div class="cb-tabs cb-tabs--sm cb-when-ages" role="radiogroup" aria-label="Age">${(_cbCatalog.civ_ages || []).map((a, k) =>
         `<button type="button" class="cb-tab${w.age === a.id ? " active" : ""}" role="radio" aria-checked="${w.age === a.id}" data-age="${a.id}">
            <img src="/static/icon-shield-${shields[k]}.png" alt="">${cbEsc(a.label.replace(/ Age$/, ""))}</button>`).join("")}</div>` : ""}
+      ${mode === "relics" ? `<label class="small text-muted mb-0" for="cb-when-relics">up to</label>
+        <select id="cb-when-relics" class="form-select form-select-sm cb-when-relics" style="width:auto">${
+          Array.from({ length: relicMax }, (_, k) => k + 1).map(n =>
+            `<option value="${n}"${w.relics === n ? " selected" : ""}>${n} relic${n > 1 ? "s" : ""}</option>`).join("")}
+        </select>` : ""}
     </div>
-    <div class="cb-when-row mt-2">
+    ${mode === "relics" ? "" : `<div class="cb-when-row mt-2">
       <label class="small text-muted mb-0" for="cb-when-building"><i class="fa-solid fa-hammer me-1"></i>Wait until built</label>
       <select id="cb-when-building" class="form-select form-select-sm cb-when-building">
         <option value="">No building</option>${(_cbCatalog.triggers || []).map(b =>
           `<option value="${b.id}"${String(w.building) === String(b.id) ? " selected" : ""}>${cbEsc(b.label)}</option>`).join("")}
       </select>
-    </div>
+    </div>`}
     <div class="form-text mt-1">${cbEsc(_cbWhenHint(mode, w))}</div>`;
   box.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => _cbSetWhenMode(b.dataset.mode)));
   box.querySelectorAll("[data-age]").forEach(b => b.addEventListener("click", () => {
@@ -1082,7 +1151,12 @@ function _cbRenderWhen() {
     _cbRenderWhen();
     _cbUpdatePreview();
   }));
-  box.querySelector(".cb-when-building").addEventListener("change", ev => {
+  box.querySelector(".cb-when-relics")?.addEventListener("change", ev => {
+    w.relics = parseInt(ev.target.value, 10);
+    _cbRenderWhen();
+    _cbUpdatePreview();
+  });
+  box.querySelector(".cb-when-building")?.addEventListener("change", ev => {
     const id = parseInt(ev.target.value, 10);
     const b = (_cbCatalog.triggers || []).find(x => x.id === id);
     if (b) { w.building = b.id; w.building_name = b.label; } else { delete w.building; delete w.building_name; }
@@ -1091,8 +1165,14 @@ function _cbRenderWhen() {
   });
 }
 
+function _cbWhenMode(w) {
+  return w.relics ? "relics" : w.steps ? "steps" : w.age ? "age" : "always";
+}
+
 function _cbWhenHint(mode, w) {
   const parts = [];
+  if (mode === "relics") parts.push("The amount is per relic held in a Monastery, up to that many — the way the "
+    + "Lithuanians' +1 attack per relic works. A percentage compounds per relic. Losing a relic takes one step back.");
   if (mode === "age") parts.push("Takes effect on reaching that age, the way the game's own age bonuses do.");
   if (mode === "steps") parts.push("Type the total at each age — e.g. 5, 10, 15 for +5/+10/+15. "
     + "A blank age keeps the amount before it. Percentages are worked out so the final age's total is exact.");
@@ -1105,10 +1185,16 @@ function _cbWhenHint(mode, w) {
 // step, and a growing card's first step becomes the single amount.
 function _cbSetWhenMode(mode) {
   const w = _cbWork.when || (_cbWork.when = {});
-  const was = w.steps ? "steps" : w.age ? "age" : "always";
+  const was = _cbWhenMode(w);
   if (mode === was) return;
   delete w.age;
   delete w.steps;
+  delete w.relics;
+  if (mode === "relics") {                               // waits on a Monastery itself
+    w.relics = 4;                                        // the Lithuanians' cap
+    delete w.building;
+    delete w.building_name;
+  }
   if (mode === "age") w.age = 102;                       // Castle: the usual ask
   if (mode === "steps") {
     w.steps = true;
@@ -1252,11 +1338,12 @@ async function _cbSave() {
       // Without this every one-time resources card saved as gold.
       if (e.attr === "resources") out.resource = e.resource || "gold";
       if (e.attr === "bonus_damage") out.class = e.class;
+      if (e.attr === "aura") Object.assign(out, { stat: e.stat, affects: e.affects, range: e.range ?? _cbAuraRange().default });
       return out;
     }),
     text: _cbPlayerText(),
   };
-  const when = {
+  const when = w.relics ? { relics: w.relics } : {
     ...(w.steps ? { steps: true } : w.age ? { age: w.age } : {}),
     ...(w.building ? { building: w.building, building_name: w.building_name } : {}),
   };

@@ -2331,8 +2331,14 @@ async function loadBonusCatalog() {
   }
 }
 
-async function loadUTCatalog() {
-  if (_castleUtCatalog.length) return;
+// One load, shared: callers that arrive while it is in flight wait on it
+// rather than each fetching and pushing another copy of the catalog.
+let _utCatalogLoad = null;
+function loadUTCatalog() {
+  return _utCatalogLoad ||= _loadUTCatalog();
+}
+
+async function _loadUTCatalog() {
   try {
     const [catalogRes, overridesRes, cardsRes] = await Promise.all([
       fetch("/api/builder/ut/catalog"),
@@ -2348,6 +2354,7 @@ async function loadUTCatalog() {
     _utCards = { castle: cards.castle || {}, imperial: cards.imperial || {} };
   } catch (e) {
     console.warn("Could not load UT catalog:", e);
+    _utCatalogLoad = null;                 // let a later call try again
   }
 }
 
@@ -3369,6 +3376,7 @@ function _utChange(step, mutate) {
   saveDraft();
   _utFillForm(step);
   renderUTGrid(step);
+  renderUTGrid(step === 6 ? 7 : 6);       // its picks are greyed out there
   _updateUTCostPreview(step);
   _renderCardHome(step === 6 ? "castle" : "imperial");
 }
@@ -3383,11 +3391,21 @@ function _utFillForm(step) {
   set(`${prefix}-time`, ut.time ?? 60);
 }
 
+// A tech picked in the other unique tech, by that slot's name ("" if not):
+// picking it twice would run its effect twice, so each tech goes in one.
+function _utTakenBy(step, tier, id) {
+  const ut = draft[UT_STEPS[step].key];
+  const picked = (ut?.effects || []).some(e => e.id === id && (e.tier || _utOwnTier(step)) === tier)
+    || (!ut?.effects?.length && ut?.vanilla_km_idx === id && tier === _utOwnTier(step));
+  return picked ? (step === 6 ? "Castle Age unique tech" : "Imperial Age unique tech") : "";
+}
+
 function _utToggle(step, tier, id) {
   const { prefix } = UT_STEPS[step];
   const ut = _utDraft(step);
   _utNormalize(step);
   const at = ut.effects.findIndex(e => e.id === id && e.tier === tier);
+  if (at < 0 && _utTakenBy(step === 6 ? 7 : 6, tier, id)) return;
   const limit = document.getElementById(`${prefix}-limit`);
   if (at < 0 && _utUsed(ut) >= MAX_UT_EFFECTS) {
     // Inline, not alert(): a browser dialog blocks the page.
@@ -3432,8 +3450,9 @@ function renderUTGrid(step) {
   const catFilter  = own === "castle" ? _cutCatFilter : _iutCatFilter;
   const tierFilter = _utTierFilter[step];
   const picks = (draft[key] || {}).effects || [];
+  const otherStep = step === 6 ? 7 : 6;
 
-  const cardHtml = (t, tier, pick) => {
+  const cardHtml = (t, tier, pick, takenBy = "") => {
     const card     = _utCards[tier][String(t.id)] || {};
     const cat      = _UT_CATEGORIES.find(c => c.key === card.category) || _UT_CATEGORIES.at(-1);
     const catLabel = cat.key.charAt(0).toUpperCase() + cat.key.slice(1);
@@ -3458,9 +3477,10 @@ function renderUTGrid(step) {
       tier === own ? `${ageName} Age tech.`
                    : `Originally ${tier === "imperial" ? "an" : "a"} ${ageName} Age tech — here it takes effect when this tech is researched.`,
       src ? `From the ${src.name}.` : "",
+      takenBy ? `Already in your ${takenBy} — a tech can be picked once.` : "",
     ].filter(Boolean).join("\n");
-    return `<div class="bonus-card${pick ? ' selected' : ''}" data-ut-id="${t.id}" data-ut-tier="${tier}" data-cat="${cat.key}"${src ? ` data-src-civ="${src.slot}"` : ''}
-      style="--cat-color:var(--cat-${cat.key})" data-tip-title="${_esc(t.name)}" data-tip="${_esc(tip)}" role="button" tabindex="0" aria-pressed="${!!pick}">
+    return `<div class="bonus-card${pick ? ' selected' : ''}${takenBy ? ' ut-taken' : ''}" data-ut-id="${t.id}" data-ut-tier="${tier}" data-cat="${cat.key}"${src ? ` data-src-civ="${src.slot}"` : ''}
+      style="--cat-color:var(--cat-${cat.key})" data-tip-title="${_esc(t.name)}" data-tip="${_esc(tip)}" role="button" tabindex="${takenBy ? -1 : 0}" aria-pressed="${!!pick}"${takenBy ? ' aria-disabled="true"' : ''}>
       <div class="card-header">
         <div><i class="fa-solid ${cat.icon}"></i><span class="bonus-type">${catLabel}</span>${tierBadge}</div>
         ${multWidget}
@@ -3491,7 +3511,7 @@ function renderUTGrid(step) {
       if (catFilter.size && !catFilter.has(cat)) continue;
       const civs = _civFilterFor(catFilter);
       if (civs.size && !_srcMatches(_cardSource(tier, t.id)?.slot, civs)) continue;
-      availHtml += cardHtml(t, tier, null);
+      availHtml += cardHtml(t, tier, null, _utTakenBy(otherStep, tier, t.id));
       shown++;
     }
   }
@@ -3504,7 +3524,7 @@ function renderUTGrid(step) {
   const used = _utUsed(draft[key]);
   if (count) count.textContent = used ? `${used} of ${MAX_UT_EFFECTS} picked` : "";
 
-  grid.querySelectorAll('.bonus-card[data-ut-id]').forEach(el => {
+  grid.querySelectorAll('.bonus-card[data-ut-id]:not(.ut-taken)').forEach(el => {
     const toggle = () => _utToggle(step, el.dataset.utTier, parseInt(el.dataset.utId, 10));
     el.addEventListener('click', e => { if (!e.target.closest('.multiplier-circle')) toggle(); });
     el.addEventListener('keydown', e => {
@@ -4636,10 +4656,10 @@ function _uaSetCheck(id, val) {
 }
 
 function _uaLoad() {
-  // "Attack ignores armor" was removed on 2026-09-18 — AoE2 has no data-level
-  // way to grant it, and the old implementation left the unit dealing 1 damage
-  // to everything.  Drop it from any saved civ that still carries it, so the
-  // flag count is honest and the build stops warning about it.
+  // The first "Attack ignores armor" (key ignore_armor, retired 2026-09-18)
+  // left the unit dealing 1 damage to everything.  Drop it from any saved civ
+  // that still carries it; the working trait is "ignores_armor", a new key so
+  // the old tick doesn't turn it on unasked.
   if (draft[_uuSlot]?.advanced_flags?.ignore_armor) {
     delete draft[_uuSlot].advanced_flags.ignore_armor;
     saveDraft();
@@ -4648,6 +4668,7 @@ function _uaLoad() {
 
   _uaSetCheck("ua-no-convert",   flags.no_convert);
   _uaSetCheck("ua-trample",      flags.trample);
+  _uaSetCheck("ua-ignores-armor", flags.ignores_armor);
 
   _uaSetCheck("ua-regen-hp", flags.regen_hp);
   document.querySelector(".ua-regen-inputs")?.classList.toggle("d-none", !flags.regen_hp);
@@ -4667,6 +4688,13 @@ function _uaLoad() {
   const cr = document.getElementById("ua-charge-rate");
   if (cp) cp.value = flags.charge_pool ?? "";
   if (cr) cr.value = flags.charge_rate  ?? "";
+
+  _uaSetCheck("ua-defense", flags.defense_charge);
+  document.querySelector(".ua-defense-inputs")?.classList.toggle("d-none", !flags.defense_charge);
+  const dk = document.getElementById("ua-defense-kind");
+  const ds = document.getElementById("ua-defense-secs");
+  if (dk) dk.value = flags.defense_charge || "melee";
+  if (ds) { ds.value = flags.defense_recharge ?? ""; ds.placeholder = _UA_DEFENSE_SECS[dk?.value || "melee"]; }
 
   _uaUpdateBadge();
 }
@@ -4689,7 +4717,9 @@ function _uaSave(key, val) {
 }
 
 // Only count top-level traits (checkbox-gated), not sub-inputs like regen_amount.
-const _UA_TOP_FLAGS = new Set(["no_convert","trample","regen_hp","bonus_dmg_resist","charge_pool"]);
+const _UA_TOP_FLAGS = new Set(["no_convert","trample","ignores_armor","regen_hp","bonus_dmg_resist","charge_pool","defense_charge"]);
+// The vanilla recharge for each defensive charge: Iron Pagoda, Shrivamsha Rider.
+const _UA_DEFENSE_SECS = { melee: 40, ranged: 4 };
 
 function _uaUpdateBadge() {
   const badge = document.getElementById("ua-badge");
@@ -4705,6 +4735,8 @@ function _wireUUAdvanced() {
     ?.addEventListener("change", e => _uaSave("no_convert", e.target.checked || null));
   document.getElementById("ua-trample")
     ?.addEventListener("change", e => _uaSave("trample", e.target.checked || null));
+  document.getElementById("ua-ignores-armor")
+    ?.addEventListener("change", e => _uaSave("ignores_armor", e.target.checked || null));
   document.getElementById("ua-regen-hp")?.addEventListener("change", e => {
     _uaSave("regen_hp", e.target.checked || null);
     document.querySelector(".ua-regen-inputs")?.classList.toggle("d-none", !e.target.checked);
@@ -4724,6 +4756,13 @@ function _wireUUAdvanced() {
     ?.addEventListener("input", e => _uaSave("bonus_dmg_resist", e.target.value ? Number(e.target.value) : null));
 
   document.getElementById("ua-charge")?.addEventListener("change", e => {
+    if (e.target.checked && document.getElementById("ua-defense")?.checked) {
+      // One charge per unit: the attack replaces the defence.
+      _uaSave("defense_charge", null);
+      _uaSave("defense_recharge", null);
+      _uaSetCheck("ua-defense", false);
+      document.querySelector(".ua-defense-inputs")?.classList.add("d-none");
+    }
     if (e.target.checked) {
       _uaSave("charge_pool", Number(document.getElementById("ua-charge-pool")?.value) || 10);
       _uaSave("charge_rate", Number(document.getElementById("ua-charge-rate")?.value) || 0.25);
@@ -4738,6 +4777,25 @@ function _wireUUAdvanced() {
     ?.addEventListener("input", e => _uaSave("charge_pool", e.target.value ? Number(e.target.value) : null));
   document.getElementById("ua-charge-rate")
     ?.addEventListener("input", e => _uaSave("charge_rate", e.target.value ? Number(e.target.value) : null));
+
+  document.getElementById("ua-defense")?.addEventListener("change", e => {
+    if (e.target.checked && document.getElementById("ua-charge")?.checked) {
+      _uaSave("charge_pool", null);
+      _uaSave("charge_rate", null);
+      _uaSetCheck("ua-charge", false);
+      document.querySelector(".ua-charge-inputs")?.classList.add("d-none");
+    }
+    _uaSave("defense_charge", e.target.checked ? (document.getElementById("ua-defense-kind")?.value || "melee") : null);
+    if (!e.target.checked) _uaSave("defense_recharge", null);
+    document.querySelector(".ua-defense-inputs")?.classList.toggle("d-none", !e.target.checked);
+  });
+  document.getElementById("ua-defense-kind")?.addEventListener("change", e => {
+    const ds = document.getElementById("ua-defense-secs");
+    if (ds) ds.placeholder = _UA_DEFENSE_SECS[e.target.value];
+    if (document.getElementById("ua-defense")?.checked) _uaSave("defense_charge", e.target.value);
+  });
+  document.getElementById("ua-defense-secs")
+    ?.addEventListener("input", e => _uaSave("defense_recharge", Number(e.target.value) > 0 ? Number(e.target.value) : null));
 
   // Rotate chevron on collapse toggle
   document.getElementById("uu-advanced-body")

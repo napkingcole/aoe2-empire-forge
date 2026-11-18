@@ -65,20 +65,41 @@ check("a trickle must name its resource",
 print("the build")
 feitoria_before = [(t.resource_out, t.resource_multiplier, t.work_value_1)
                    for t in dat.civs[0].units[1021].bird.tasks if t.action_type == 151]
-SLOT, SLOT2, PLAIN, GROW = 5, 6, 7, 8
+FORAGERS = {"type": "job", "id": "forager"}
+JOB_CARD = {"targets": [FORAGERS], "effects": [{"attr": "trickle", "op": "add", "value": 2, "resource": "wood"}]}
+j = cb.normalize([JOB_CARD])
+check("a villager job takes it (#113)", j and j[0]["effects"][0]["resource"] == "wood", j)
+check("its text", j and cb.card_text(j[0]) == "Foragers: generate 2 wood per minute", j and cb.card_text(j[0]))
+offered = cb.allowed_attrs(dat, [("building:12", "building", 12)])
+check("offered to foragers and lumberjacks, a building, not to builders or repairers",
+      "trickle" in offered["job:forager"] and "trickle" in offered["job:lumberjack"]
+      and "trickle" in offered["building:12"]
+      and "trickle" not in offered["job:builder"] and "trickle" not in offered["job:repairer"],
+      {k: "trickle" in v for k, v in offered.items() if k.startswith("job:") or k == "building:12"})
+puru = ca._generate_template(dat, ca._STONE_MINER)
+check("the template: the Puru stone miner's generate task, scaled by 512",
+      puru is not None and puru.resource_multiplier == 512, puru and puru.resource_multiplier)
+
+SLOT, SLOT2, PLAIN, GROW, JOB = 5, 6, 7, 8, 9
 for slot, cards in ((SLOT, [card]),
                     (SLOT2, [{**card, "effects": [{"attr": "trickle", "op": "add", "value": 25, "resource": "gold"}]}]),
                     (PLAIN, []),
-                    (GROW, [GROWING])):
+                    (GROW, [GROWING]),
+                    (JOB, [JOB_CARD])):
     civ_def = {"alias": f"Trickle {slot}", "tagline": "", "architecture": 1, "language": 0, "wonder": -1,
                "castle": -1, "bonuses": [[], [], [], [], []], "tree": [[], [], []], "custom_bonuses": cards}
     with contextlib.redirect_stdout(io.StringIO()):
         ca.apply_civ(dat, civ_def, target_slot=slot)
 
 reg = dat._ef_trickle
-check("one rate resource for Barracks gold, shared by both civs", len(reg) == 1, reg)
-rate_res = next(iter(reg.values()))
-check("...covering every Barracks copy", {12, 20, 132, 498} <= next(iter(reg))[0], sorted(next(iter(reg))[0]))
+barracks = [k for k in reg if 12 in k[0]]
+check("one rate resource for Barracks gold, shared by both civs", len(barracks) == 1, reg)
+rate_res = reg[barracks[0]]
+check("...covering every Barracks copy", {12, 20, 132, 498} <= barracks[0][0], sorted(barracks[0][0]))
+forage = [k for k in reg if k[0] == frozenset({120, 354})]
+check("the foragers have one of their own, for wood", len(forage) == 1 and forage[0][1] == 1, reg)
+job_res = reg[forage[0]] if forage else None
+check("...a different resource from the Barracks'", job_res is not None and job_res != rate_res)
 
 
 def card_cmds(slot):
@@ -120,6 +141,21 @@ check("only our civs raise the rate: everyone starts at 0",
 feitoria_after = [(t.resource_out, t.resource_multiplier, t.work_value_1)
                   for t in back.civs[0].units[1021].bird.tasks if t.action_type == 151]
 check("the Feitoria is untouched", feitoria_after == feitoria_before, feitoria_after)
+
+check("the forager card adds 2 to its resource", card_cmds(JOB) == [(1, job_res, 1, 2.0)], card_cmds(JOB))
+for uid in (120, 354):
+    for where, tasks in (("civ 0", back.civs[0].units[uid].bird.tasks),
+                         (f"civ {JOB}", back.civs[JOB].units[uid].bird.tasks),
+                         ("unit_headers", back.unit_headers[uid].task_list)):
+        gathers = {(t.class_id, t.unit_id) for t in tasks if t.action_type == 5 and t.resource_in >= 0}
+        made = {(t.class_id, t.unit_id) for t in tasks if t.action_type == 151 and t.resource_multiplier == job_res}
+        check(f"forager {uid}, {where}: a wood task per thing it forages {sorted(gathers)}",
+              gathers and made == gathers and all(
+                  (t.resource_out, round(t.work_value_1 * 60, 6), t.gather_type, t.auto_search_targets)
+                  == (1, 1.0, puru.gather_type, puru.auto_search_targets)
+                  for t in tasks if t.action_type == 151 and t.resource_multiplier == job_res),
+              f"gathers {sorted(gathers)}, made {sorted(made)}")
+check("the Puru stone miner is untouched", ca._generate_template(back, ca._STONE_MINER).resource_multiplier == 512)
 
 print("PASS" if not failures else f"{failures} FAILED")
 sys.exit(1 if failures else 0)

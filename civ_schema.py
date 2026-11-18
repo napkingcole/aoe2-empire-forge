@@ -35,6 +35,9 @@ _FORMAT_KEY_V1 = "civbuilder_v1"
 #   ignore_armor — removed 2026-09-18.  AoE2 has no data-level way to grant it;
 #     the implementation aimed the attack at armour class 50, which no unit has,
 #     so the unit dealt the engine minimum of 1 damage to everything.
+#     Back since 2026-11-18 under a NEW key, "ignores_armor" (Combat Ability
+#     flag 1, the Leitis's); the old key stays retired so a civ saved with the
+#     broken flag doesn't gain the working one without asking.
 RETIRED_UU_FLAGS = frozenset({"ignore_armor"})
 
 # Civ bonus cards withdrawn because they cannot do what they say.  Filtered in

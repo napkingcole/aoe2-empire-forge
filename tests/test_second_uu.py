@@ -66,7 +66,7 @@ SLOT = 1
 units, buildings, techs = json.loads(civ_file.read_text(encoding="utf-8"))["tree"]
 
 
-def build(second, hero=None, first=HUSKARL, lines=None):
+def build(second, hero=None, first=HUSKARL, lines=None, cards=None):
     draft = {
         "alias": "Two Units", "architecture": 2, "language": 0, "bonuses": [], "team_bonuses": [],
         "unique_unit": {"km_idx": first},
@@ -75,8 +75,8 @@ def build(second, hero=None, first=HUSKARL, lines=None):
                       "cost": {"food": 300, "gold": 200}, "time": 40, "effects": [{"id": 12, "multiplier": 1}]},
         "imperial_ut": {"mode": "vanilla", "effects": [{"id": 3, "multiplier": 1}]},
         "tree": {"units": units, "buildings": buildings, "techs": techs},
-        "custom_bonuses": [{"id": "uu1", "target": {"type": "group", "id": "unique_unit"},
-                            "effects": [{"attr": "hp", "op": "add", "value": 7}]}],
+        "custom_bonuses": cards or [{"id": "uu1", "target": {"type": "group", "id": "unique_unit"},
+                                     "effects": [{"attr": "hp", "op": "add", "value": 7}]}],
     }
     if lines:
         draft["added_lines"] = lines
@@ -190,6 +190,20 @@ print("=== the same unit twice ===")
 dat, r = build({"km_idx": HUSKARL})
 check("is left out, with a warning", r.get("second_uu") is None
       and any("same as the first" in w for w in r["warnings"]), r["warnings"])
+
+print("=== extra projectiles on the unique units: the ranged one only (#114) ===")
+LONGBOW = 0
+dat, r = build({"km_idx": HUSKARL}, first=LONGBOW,
+               cards=[{"id": "p2", "target": {"type": "group", "id": "unique_unit"},
+                       "effects": [{"attr": "projectiles", "op": "add", "value": 2}]}])
+s = r.get("second_uu") or {}
+proj = {(int(c.a), int(c.c)): c.d for e in dat.effects for c in e.effect_commands
+        if c.type == 4 and int(c.c) in (102, 107) and int(c.a) in (r["uu_id"], r["elite_uu_id"],
+                                                                 s.get("uu_id"), s.get("elite_uu_id"))}
+check("the Longbowman and its Elite: +2 to 102 and 107, as Bolt Magazine",
+      all(proj.get((u, f)) == 2.0 for u in (r["uu_id"], r["elite_uu_id"]) for f in (102, 107)), proj)
+check("the Huskarl (melee second) gets none", not any(a in (s.get("uu_id"), s.get("elite_uu_id"))
+                                                       for a, _ in proj), (s, proj))
 
 print("\nPASS" if not failures else "\nFAIL", f"({failures} failure(s))")
 sys.exit(1 if failures else 0)

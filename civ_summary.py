@@ -45,9 +45,11 @@ _STAT_ROWS = (("hp", "HP", "hp"), ("attack", "Attack", "attack"),
 _FLAG_TEXT = {
     "no_convert": "cannot be converted",
     "trample": "trample damage",
+    "ignores_armor": "attack ignores armor",
     "regen_hp": "regenerates HP",
     "bonus_dmg_resist": "resists {v}% bonus damage",
     "charge_pool": "charge attack (+{v} damage)",
+    "defense_charge": "defensive charge vs {v}",
 }
 
 

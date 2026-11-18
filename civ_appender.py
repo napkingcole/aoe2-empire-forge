@@ -4031,6 +4031,22 @@ def _add_auto_fire_tech(dat: DatFile, civ_index: int, cmds: list[EffectCommand],
     return len(dat.techs) - 1
 
 
+def _set_relic_cost(tech, n: int) -> None:
+    """Make an auto-fire tech wait for `n` relics, as the Lithuanians' 699-702
+    do: a first cost slot of (resource 7, n, flag 1), the rest empty."""
+    import custom_bonus
+    costs = list(tech.resource_costs)
+    first = deepcopy(costs[0])
+    first.type, first.amount, first.flag = custom_bonus.RELIC_RESOURCE, n, 1
+    tech.resource_costs = tuple([first] + [_empty_cost(c) for c in costs[1:]])
+
+
+def _empty_cost(c):
+    c = deepcopy(c)
+    c.type, c.amount, c.flag = -1, 0, 0
+    return c
+
+
 _UT_EFFECT_CHUNK = 180
 
 
@@ -4099,9 +4115,32 @@ def _upgrade_line(neighbours: dict[int, set[int]], unit_id: int) -> set[int]:
 # "Unused Resource 103-133" in the UGC guide's table: unreferenced by any
 # effect, task, cost or storage in the shipped DAT and 0 for every civ
 # (checked 2026-10-24; re-checked per build below).
+# Aura tasks (#103): the Caravanserai's is the template (action 155); the
+# fields that make one aura are set per card.  combat_level_flag bits: 1 =
+# multiply, 4 = show the range; target_diplomacy 1 = your own units.
+_AURA_ACTION = 155
+_CARAVANSERAI = 1754
+_AURA_MULTIPLY, _AURA_SHOWN = 1, 4
+_AURA_YOURS = 1
+
+
+def _aura_template(dat: DatFile):
+    units = dat.civs[0].units
+    u = units[_CARAVANSERAI] if _CARAVANSERAI < len(units) else None
+    return next((t for t in (u.bird.tasks if u is not None and u.bird else ())
+                 if t.action_type == _AURA_ACTION), None)
+
+
 _TRICKLE_RESOURCES = tuple(range(103, 134))
 _GENERATE_ACTION = 151
 _FEITORIA = 1021
+# A villager job's template is the Puru stone miner's (#113): a generate task
+# aimed at the stone it mines, scaled by resource 512, which only the Puru set.
+# Copied once per thing the job gathers from — the job's own gather (5) and
+# hunt/chop (110) tasks — so it runs only while working.
+_STONE_MINER = 124
+_GATHER_ACTIONS = (5, 110)
+_VILLAGER_CLASS = 4
 
 
 def _made_marker(dat: DatFile, civ_index: int, bid: int) -> int:
@@ -4127,43 +4166,61 @@ def _made_marker(dat: DatFile, civ_index: int, bid: int) -> int:
     return tid
 
 
-def _trickle_rate_resource(dat: DatFile, building_ids: set[int], res_index: int) -> int | None:
-    """The resource that scales `building_ids`' generate task for `res_index`
-    (0 food, 1 wood, 2 stone, 3 gold), adding the task the first time."""
+def _generate_template(dat: DatFile, uid: int):
+    """The first generate task on civ 0's unit `uid`, or None."""
+    units = dat.civs[0].units
+    u = units[uid] if uid < len(units) else None
+    return next((t for t in (u.bird.tasks if u is not None and u.bird else ())
+                 if t.action_type == _GENERATE_ACTION), None)
+
+
+def _trickle_rate_resource(dat: DatFile, unit_ids: set[int], res_index: int,
+                           villager: bool = False) -> int | None:
+    """The resource that scales `unit_ids`' generate task for `res_index`
+    (0 food, 1 wood, 2 stone, 3 gold), adding the task the first time.
+    Buildings generate all the time (the Feitoria's task); a villager job
+    while it works (the Puru stone miner's, aimed at each of its targets)."""
     reg = getattr(dat, "_ef_trickle", None)
     if reg is None:
         reg = dat._ef_trickle = {}
-    key = (frozenset(building_ids), res_index)
+    key = (frozenset(unit_ids), res_index)
     if key in reg:
         return reg[key]
     taken = set(reg.values())
     free = [r for r in _TRICKLE_RESOURCES if r not in taken
             and all(r < len(c.resources) and c.resources[r] == 0 for c in dat.civs)]
-    template = next((t for t in (dat.civs[0].units[_FEITORIA].bird.tasks
-                                 if _FEITORIA < len(dat.civs[0].units) and dat.civs[0].units[_FEITORIA]
-                                 and dat.civs[0].units[_FEITORIA].bird else ())
-                     if t.action_type == _GENERATE_ACTION), None)
+    template = _generate_template(dat, _STONE_MINER if villager else _FEITORIA)
     if not free or template is None:
-        print("       WARNING: generating building: no free rate resource or no Feitoria task to copy — skipped")
+        what = "villager job" if villager else "building"
+        print(f"       WARNING: generating {what}: no free rate resource or no task to copy — skipped")
         return None
     rate_res = free[0]
 
-    def task_for(tasks):
+    def task_for(tasks, aim=None):
         t = deepcopy(template)
         t.id = len(tasks)
         t.resource_out = res_index
         t.resource_multiplier = rate_res
         t.work_value_1 = 1.0 / 60.0          # x the resource = per minute
+        if aim is not None:
+            t.class_id, t.unit_id = aim
         return t
 
-    for uid in sorted(building_ids):
+    def aims(tasks):
+        """What a villager job works on: (class, unit) of each gather task."""
+        return list(dict.fromkeys((t.class_id, t.unit_id) for t in tasks
+                                  if t.action_type in _GATHER_ACTIONS and t.resource_in >= 0))
+
+    for uid in sorted(unit_ids):
         for civ in _every_civ(dat):
             u = civ.units[uid] if uid < len(civ.units) else None
             if u is not None and u.bird is not None:
-                u.bird.tasks.append(task_for(u.bird.tasks))
+                for aim in (aims(u.bird.tasks) if villager else [None]):
+                    u.bird.tasks.append(task_for(u.bird.tasks, aim))
         if uid < len(dat.unit_headers) and dat.unit_headers[uid] is not None:
             hdr = dat.unit_headers[uid]
-            hdr.task_list = [*(hdr.task_list or []), task_for(hdr.task_list or [])]
+            for aim in (aims(hdr.task_list or []) if villager else [None]):
+                hdr.task_list = [*(hdr.task_list or []), task_for(hdr.task_list or [], aim)]
     reg[key] = rate_res
     return rate_res
 
@@ -4275,7 +4332,8 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
         for uid in sorted(ids):
             u = units[uid] if uid < n_units else None
             if u is not None and u.type_50 and ok(u):
-                out.append((uid, float(getattr(u.type_50, spec["unit_field"]))))
+                part = getattr(u, spec.get("unit_part", "type_50"))
+                out.append((uid, float(getattr(part, spec["unit_field"]))))
         return out
 
     # A generating building (custom effect "trickle"): the buildings the
@@ -4284,6 +4342,9 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
         ids = {a for a, _ in selectors if a >= 0}
         classes = {b for a, b in selectors if a < 0 and b >= 0}
         ids |= {i for i, u in enumerate(units) if u is not None and u.type == 80 and u.class_ in classes}
+        jobs = {i for i in ids if i < n_units and units[i] is not None and units[i].class_ == _VILLAGER_CLASS}
+        if jobs:
+            return _trickle_rate_resource(dat, jobs, custom_bonus._RES_INDEX[res], villager=True)
         ids = {i for i in ids if i < n_units and units[i] is not None and units[i].type == 80}
         return _trickle_rate_resource(dat, ids, custom_bonus._RES_INDEX[res]) if ids else None
 
@@ -4366,9 +4427,88 @@ def _custom_bonus_resolver(dat: DatFile, civ_index: int, civ_def: dict,
 
     tree_buildings = _tree_building_ids(civ_def)
 
+    # An aura (custom effect "aura", #103): tasks on this civ's own copies of
+    # the sources, once per card effect; returns (source, Combat Ability with
+    # the aura bit) for the card to SET.  Only this civ's units carry them, as
+    # the Centurion's and Caravanserai's live on the civ units alone.
+    def aura_sources(selectors, eff):
+        reg = getattr(dat, "_ef_auras", None)
+        if reg is None:
+            reg = dat._ef_auras = {}
+        ids = {a for a, _ in selectors if a >= 0}
+        classes = {b for a, b in selectors if a < 0 and b >= 0}
+        ids |= {i for i, u in enumerate(units) if u is not None and u.class_ in classes}
+        ids = sorted(i for i in ids if i < n_units and units[i] is not None
+                     and units[i].bird is not None and units[i].type_50 is not None)
+        key = (civ_index, tuple(ids), eff["stat"], eff["affects"], eff["range"], eff["value"])
+        if key in reg:
+            return reg[key]
+        template = _aura_template(dat)
+        target = custom_bonus._aura_target(eff["affects"])
+        if template is None or target is None:
+            print("       WARNING: aura: no aura task in this game to copy — skipped")
+            reg[key] = []
+            return []
+        aff_classes, aff_ids = custom_bonus._target_selectors(target, line_of, resolve)
+        aims = [(c, -1) for c in aff_classes] + [(-1, u) for u in sorted(aff_ids)]
+        value, mult = custom_bonus.aura_task_value(eff["stat"], float(eff["value"]))
+        out = []
+        cleared = getattr(dat, "_ef_aura_cleared", None)
+        if cleared is None:
+            cleared = dat._ef_aura_cleared = set()
+        for uid in ids:
+            tasks = units[uid].bird.tasks
+            # Sources often carry auras the game keeps switched off — the Town
+            # Center's +15 HP/min, a Chu Ko Nu's hero aura, the Ports' before
+            # Delian League.  The bit wakes all of them, so this civ's copy
+            # drops them first: only the aura on the card comes on.  Once per
+            # source, or a second card would drop the first's.
+            if not int(units[uid].type_50.break_off_combat or 0) & custom_bonus._AURA_BIT \
+                    and (civ_index, uid) not in cleared:
+                tasks[:] = [t for t in tasks if t.action_type != _AURA_ACTION]
+                for k, t in enumerate(tasks):
+                    t.id = k
+            cleared.add((civ_index, uid))
+            for cls, unit in aims:
+                t = deepcopy(template)
+                t.id = len(tasks)
+                t.class_id, t.unit_id = cls, unit
+                t.work_value_1 = value
+                t.work_value_2 = 1.0                              # one unit in range turns it on
+                t.work_range = float(eff["range"])
+                t.search_wait_time = float(custom_bonus.AURA_STATS[eff["stat"]]["attr"])
+                t.combat_level_flag = _AURA_SHOWN | (_AURA_MULTIPLY if mult else 0)
+                t.target_diplomacy = _AURA_YOURS
+                tasks.append(t)
+            ca = int(units[uid].type_50.break_off_combat or 0) | custom_bonus._AURA_BIT
+            out.append((uid, ca))
+        reg[key] = out
+        return out
+
+    # A Combat Ability bit a card switches on (auras 32, volleys 16): ADDed
+    # once per unit, by the first card that asks, and never when the unit
+    # already carries it — an ADD of a bit it has would carry into the next.
+    # The same effect asking again (a second pass over one card) still gets it.
+    def ability_bit(uid, bit, eff):
+        claimed = getattr(dat, "_ef_ability_bits", None)
+        if claimed is None:
+            claimed = dat._ef_ability_bits = {}
+        u = units[uid] if 0 <= uid < n_units else None
+        if u is None or u.type_50 is None or int(u.type_50.break_off_combat or 0) & bit:
+            return False
+        owner = json.dumps(eff, sort_keys=True)
+        return claimed.setdefault((civ_index, uid, bit), owner) == owner
+
     def resolve(kind: str, arg):
         if kind == "trigger":
             return marker_of(arg)
+        if kind == "ability_bit":
+            return False if team else ability_bit(*arg)
+        if kind == "is_building":
+            u = units[arg] if 0 <= arg < n_units else None
+            return u is not None and u.type == 80
+        if kind == "aura":
+            return [] if team else aura_sources(*arg)
         if kind == "has_building":
             marker = marker_of(arg)
             return not tree_buildings or any(marker is not None and marker_of(b) == marker
@@ -4500,6 +4640,8 @@ def _apply_custom_bonuses(dat: DatFile, civ_index: int, civ_def: dict,
             for start in range(0, len(cmds), CHUNK):
                 tid = _add_auto_fire_tech(dat, civ_index, cmds[start:start + CHUNK], reqs=tuple(reqs),
                                           name="C-Bonus, Custom")
+                if step.get("relics"):
+                    _set_relic_cost(dat.techs[tid], step["relics"])
                 if labels is not None:      # the card's text, for the stats preview
                     labels[tid] = text
                 first = tid if first is None else first

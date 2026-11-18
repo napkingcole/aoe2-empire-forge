@@ -1191,6 +1191,8 @@ footer {
 }
 /* The age a UT preset comes from, on every UT card; one from the other age
    takes effect when THIS tech is researched (the tooltip says so). */
+/* A tech already picked in the other unique tech: shown, not pickable. */
+.bonus-card.ut-taken { opacity: .45; filter: grayscale(.7); cursor: not-allowed; }
 .ut-tier-badge { display: inline-block; width: 20px; height: 20px; margin: -2px 0 0 .3rem; vertical-align: middle; object-fit: contain; }
 .multiplier-circle {
   width: 30px;
@@ -2045,6 +2047,10 @@ img.card-main-image {
 .cb-effect .cb-value { flex: 0 1 6rem; width: 6rem; }
 .cb-effect .cb-op, .cb-effect .cb-res, .cb-effect .cb-class { flex: 0 1 8rem; width: auto; }
 .cb-effect .cb-op { flex-basis: auto; }
+/* An aura row: amount, stat, who, range (#103). */
+.cb-effect .cb-aura-stat, .cb-effect .cb-aura-affects { flex: 1 1 9rem; width: auto; }
+.cb-effect .cb-aura-range { display: inline-flex; align-items: center; gap: .3rem; white-space: nowrap; }
+.cb-effect .cb-aura-range input { width: 4.2rem; }
 .cb-op-fixed { min-width: 4rem; }
 .cb-preview { padding: .4rem .6rem; background: var(--parch-mid); border-radius: var(--r-sm); color: var(--ink-mid); }
 
